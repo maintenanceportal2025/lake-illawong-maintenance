@@ -871,14 +871,45 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     console.log('🔄 Syncing changes to Google Sheets...', updateData);
                     
-                    // Use POST request with JSON payload
-                    const response = await fetch(WEB_APP_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify(updateData)
-                    });
+ // Use JSONP GET request to bypass CORS (same as data loading)
+window.handleSaveResponse = function(data) {
+    console.log('💾 Save response:', data);
+    
+    if (data.success) {
+        statusEl.className = 'data-status live';
+        statusEl.innerHTML = '✅ Saved to Google Sheets!';
+        console.log('✅ Problem saved successfully:', data.message);
+        
+        setTimeout(() => {
+            statusEl.className = 'data-status live';
+            statusEl.innerHTML = `🟢 Live Data (${problems.length} problems loaded)`;
+        }, 3000);
+    } else {
+        throw new Error(data.message || 'Save failed');
+    }
+};
+
+// Build GET URL with parameters instead of POST body
+const params = new URLSearchParams({
+    action: 'updateProblem',
+    callback: 'handleSaveResponse',
+    ...updateData
+});
+
+const script = document.createElement('script');
+script.src = `${WEB_APP_URL}?${params.toString()}`;
+script.onerror = function() {
+    throw new Error('Failed to save - script error');
+};
+
+document.head.appendChild(script);
+
+// Clean up after 10 seconds
+setTimeout(() => {
+    if (script.parentNode) {
+        script.parentNode.removeChild(script);
+    }
+}, 10000);
                     
                     const result = await response.json();
                     console.log('✅ Sync response:', result);
