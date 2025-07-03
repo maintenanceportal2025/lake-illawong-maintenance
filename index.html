@@ -512,46 +512,41 @@ async function loadFaultLogData() {
         statusEl.className = 'data-status loading';
         statusEl.innerHTML = '<div class="loading-spinner"></div> Loading live data...';
         
-        const apiUrl = `${WEB_APP_URL}?action=getFaultLogData`;
-        console.log('📞 Full API call:', apiUrl);
-        
-        const response = await fetch(apiUrl, {
-            method: 'GET',
-            mode: 'cors',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
+        // Use JSONP to bypass CORS
+        window.handleFaultLogResponse = function(data) {
+            console.log('📊 JSONP Response data:', data);
+            
+            if (data.success && data.problems && Array.isArray(data.problems)) {
+                problems = data.problems;
+                dataSource = 'live';
+                statusEl.className = 'data-status live';
+                statusEl.innerHTML = `🟢 Live Data (${data.problems.length} problems loaded)`;
+                console.log(`✅ Loaded ${data.problems.length} problems from FaultLog`);
+                renderProblems();
+                updateCounts();
+            } else {
+                throw new Error(data.message || 'Invalid data format received');
             }
-        });
+        };
         
-        console.log('📡 Response status:', response.status);
+        const script = document.createElement('script');
+        script.src = `${WEB_APP_URL}?action=getFaultLogData&callback=handleFaultLogResponse`;
+        script.onerror = function() {
+            throw new Error('Failed to load script');
+        };
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+        document.head.appendChild(script);
         
-        const data = await response.json();
-        console.log('📊 Response data:', data);
-        
-        if (data.success && data.problems && Array.isArray(data.problems)) {
-            problems = data.problems;
-            dataSource = 'live';
-            statusEl.className = 'data-status live';
-            statusEl.innerHTML = `🟢 Live Data (${data.problems.length} problems loaded)`;
-            console.log(`✅ Loaded ${data.problems.length} problems from FaultLog`);
-        } else {
-            throw new Error(data.message || 'Invalid data format received');
-        }
+        // Clean up after 10 seconds
+        setTimeout(() => {
+            if (script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
+        }, 10000);
         
     } catch (error) {
         console.error('❌ Error loading FaultLog data:', error);
-        
-        // Fallback to sample data
-        problems = getSampleData();
-        dataSource = 'sample';
-        statusEl.className = 'data-status error';
-        statusEl.innerHTML = `🔴 API Error - Using Sample Data (${problems.length} problems)`;
-        console.log('📋 Using sample data as fallback');
+        loadSampleData();
     }
 }
 
