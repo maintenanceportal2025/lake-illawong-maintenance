@@ -1084,29 +1084,43 @@ setTimeout(() => {
             }
         }
 
-        function endDrag() {
-            if (!draggedItem) return;
+        async function endDrag() {
+    if (!draggedItem) return;
+    
+    const dropTarget = document.querySelector('.drag-target');
+    
+    if (dropTarget) {
+        const dropIndex = parseInt(dropTarget.dataset.index);
+        
+        if (draggedIndex !== dropIndex) {
+            const filtered = getFilteredProblems();
+            const item = filtered[draggedIndex];
             
-            const dropTarget = document.querySelector('.drag-target');
+            // Reorder locally
+            filtered.splice(draggedIndex, 1);
+            filtered.splice(dropIndex, 0, item);
             
-            if (dropTarget) {
-                const dropIndex = parseInt(dropTarget.dataset.index);
-                
-                if (draggedIndex !== dropIndex) {
-                    const filtered = getFilteredProblems();
-                    const item = filtered[draggedIndex];
-                    
-                    filtered.splice(draggedIndex, 1);
-                    filtered.splice(dropIndex, 0, item);
-                    
-                    if (activeFilter === 'All Problems') {
-                        problems.length = 0;
-                        problems.push(...filtered);
-                    }
-                    
-                    renderProblems();
-                }
+            if (activeFilter === 'All Problems') {
+                problems.length = 0;
+                problems.push(...filtered);
             }
+            
+            // ✨ NEW: Sync sort order to backend
+            await syncSortOrderToBackend(filtered);
+            
+            renderProblems();
+        }
+    }
+    
+    // ✨ NEW: Essential cleanup code
+    document.querySelectorAll('.problem-card').forEach(card => {
+        card.classList.remove('dragging', 'drop-zone', 'drag-target');
+        card.style.zIndex = '';
+    });
+    
+    draggedItem = null;
+    draggedIndex = null;
+}
             
             document.querySelectorAll('.problem-card').forEach(card => {
                 card.classList.remove('dragging', 'drop-zone', 'drag-target');
