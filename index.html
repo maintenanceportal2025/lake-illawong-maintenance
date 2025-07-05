@@ -1182,78 +1182,44 @@ async function endDrag() {
     if (dropTarget) {
         const dropIndex = parseInt(dropTarget.dataset.index);
         
-        console.log('🔍 DEBUG: Starting drag operation');
-        console.log('- draggedIndex:', draggedIndex, '(display position:', draggedIndex + 1, ')');
-        console.log('- dropIndex:', dropIndex, '(display position:', dropIndex + 1, ')');
-        
         if (draggedIndex !== dropIndex) {
             const filtered = getFilteredProblems();
-            
             const draggedItem = filtered[draggedIndex];
             const dropItem = filtered[dropIndex];
-            
-            console.log('- draggedItem ID:', draggedItem.internalId);
-            console.log('- dropItem ID:', dropItem.internalId);
-            
-            // Show the current order before any changes
-            console.log('📋 BEFORE - Current problems array order:');
-            problems.forEach((problem, index) => {
-                const pid = problem.internalId.split('-')[1];
-                console.log(`  Position ${index + 1}: PID ${pid}`);
-            });
             
             // Find positions in main array
             const draggedMainIndex = problems.findIndex(p => p.internalId === draggedItem.internalId);
             const dropMainIndex = problems.findIndex(p => p.internalId === dropItem.internalId);
             
-            console.log('- draggedMainIndex:', draggedMainIndex, '(main array position:', draggedMainIndex + 1, ')');
-            console.log('- dropMainIndex:', dropMainIndex, '(main array position:', dropMainIndex + 1, ')');
-            
             if (draggedMainIndex !== -1 && dropMainIndex !== -1) {
                 // Remove the dragged item
                 const [movedItem] = problems.splice(draggedMainIndex, 1);
-                console.log('- Removed item:', movedItem.internalId);
                 
-                // 🔧 KEY FIX: The target position in the DISPLAY is dropIndex + 1
-                // After removing an item, to get to display position N, we need array index N-1
-                const targetDisplayPosition = dropIndex + 1;
-                const insertIndex = targetDisplayPosition - 1;
-                
-                console.log('- Target display position:', targetDisplayPosition);
-                console.log('- Calculated insertIndex:', insertIndex);
+                // 🔧 CORRECTED LOGIC: Account for the removal shift
+                let insertIndex;
+                if (draggedMainIndex < dropMainIndex) {
+                    // Moving forward: target position shifts down after removal
+                    insertIndex = dropMainIndex - 1;
+                } else {
+                    // Moving backward: target position stays the same
+                    insertIndex = dropMainIndex;
+                }
                 
                 // Insert at new position
                 problems.splice(insertIndex, 0, movedItem);
-                console.log('- Inserted at array index:', insertIndex);
                 
-                // Show the order after changes
-                console.log('📋 AFTER - New problems array order:');
+                // 🔧 KEY FIX: Update sort order values in the local array
                 problems.forEach((problem, index) => {
-                    const pid = problem.internalId.split('-')[1];
-                    console.log(`  Position ${index + 1}: PID ${pid}`);
-                });
-                
-                // Verify the moved item is at the correct position
-                const actualPosition = problems.findIndex(p => p.internalId === movedItem.internalId) + 1;
-                console.log(`✅ Verification: ${movedItem.internalId} is now at position ${actualPosition} (wanted ${targetDisplayPosition})`);
-                
-                // Show what will be sent to backend
-                const orderData = problems.map((problem, index) => ({
-                    internalId: problem.internalId,
-                    order: index + 1
-                }));
-                
-                console.log('📤 Order data being sent to backend:');
-                orderData.forEach(item => {
-                    const pid = item.internalId.split('-')[1];
-                    console.log(`  PID ${pid} = Sort Order ${item.order}`);
+                    problem.sortOrder = index + 1;
                 });
                 
                 // Sync to backend
                 await syncSortOrderToBackend();
                 
-                // Re-render
+                // Re-render with updated sort order
                 renderProblems();
+                
+                console.log('✅ Local sort order updated and synced to backend');
             }
         }
     }
@@ -1267,7 +1233,6 @@ async function endDrag() {
     draggedItem = null;
     draggedIndex = null;
 }
-
 /**
  * 🔍 ALSO DEBUG: Enhanced syncSortOrderToBackend
  */
