@@ -1174,6 +1174,12 @@ function testDragLogic() {
 /**
  * 🔧 CORRECTED endDrag - Based on the pattern analysis
  */
+/**
+ * 🔧 SIMPLE DRAG FIX - Use display positions directly
+ * 
+ * The issue: We were mixing up filtered array positions with main array positions
+ * Solution: Work entirely with the filtered array, then replace the main array
+ */
 async function endDrag() {
     if (!draggedItem) return;
     
@@ -1183,44 +1189,41 @@ async function endDrag() {
         const dropIndex = parseInt(dropTarget.dataset.index);
         
         if (draggedIndex !== dropIndex) {
+            console.log(`🔄 Moving from display position ${draggedIndex + 1} to ${dropIndex + 1}`);
+            
+            // Work entirely with the filtered array
             const filtered = getFilteredProblems();
-            const draggedItem = filtered[draggedIndex];
-            const dropItem = filtered[dropIndex];
             
-            // Find positions in main array
-            const draggedMainIndex = problems.findIndex(p => p.internalId === draggedItem.internalId);
-            const dropMainIndex = problems.findIndex(p => p.internalId === dropItem.internalId);
+            // Simple array reordering in the filtered array
+            const [draggedItem] = filtered.splice(draggedIndex, 1);
+            filtered.splice(dropIndex, 0, draggedItem);
             
-            if (draggedMainIndex !== -1 && dropMainIndex !== -1) {
-                // Remove the dragged item
-                const [movedItem] = problems.splice(draggedMainIndex, 1);
-                
-                // 🔧 CORRECTED LOGIC: Account for the removal shift
-                let insertIndex;
-                if (draggedMainIndex < dropMainIndex) {
-                    // Moving forward: target position shifts down after removal
-                    insertIndex = dropMainIndex - 1;
-                } else {
-                    // Moving backward: target position stays the same
-                    insertIndex = dropMainIndex;
-                }
-                
-                // Insert at new position
-                problems.splice(insertIndex, 0, movedItem);
-                
-                // 🔧 KEY FIX: Update sort order values in the local array
-                problems.forEach((problem, index) => {
-                    problem.sortOrder = index + 1;
-                });
-                
-                // Sync to backend
-                await syncSortOrderToBackend();
-                
-                // Re-render with updated sort order
-                renderProblems();
-                
-                console.log('✅ Local sort order updated and synced to backend');
-            }
+            console.log('📋 New filtered order:');
+            filtered.forEach((problem, index) => {
+                const pid = problem.internalId.split('-')[1];
+                console.log(`  Position ${index + 1}: PID ${pid}`);
+            });
+            
+            // Replace the main problems array with the reordered filtered array
+            problems.length = 0;
+            problems.push(...filtered);
+            
+            // Update sort order values in the problems array
+            problems.forEach((problem, index) => {
+                problem.sortOrder = index + 1;
+            });
+            
+            // Verify the moved item is at the correct position
+            const actualPosition = problems.findIndex(p => p.internalId === draggedItem.internalId) + 1;
+            console.log(`✅ Verification: Item is now at position ${actualPosition} (wanted ${dropIndex + 1})`);
+            
+            // Sync to backend
+            await syncSortOrderToBackend();
+            
+            // Re-render
+            renderProblems();
+            
+            console.log('✅ Drag operation completed');
         }
     }
     
@@ -1233,6 +1236,7 @@ async function endDrag() {
     draggedItem = null;
     draggedIndex = null;
 }
+
 /**
  * 🔍 ALSO DEBUG: Enhanced syncSortOrderToBackend
  */
