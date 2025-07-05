@@ -1132,6 +1132,10 @@ setTimeout(() => {
  * 🔧 FINAL WORKING endDrag Function 
  * This version fixes the "position 4 shows as 5" bug
  */
+/**
+ * 🔍 DEBUG VERSION - Let's trace exactly what's happening
+ * This version adds extensive logging to find the exact issue
+ */
 async function endDrag() {
     if (!draggedItem) return;
     
@@ -1140,42 +1144,81 @@ async function endDrag() {
     if (dropTarget) {
         const dropIndex = parseInt(dropTarget.dataset.index);
         
+        console.log('🔍 DEBUG: Starting drag operation');
+        console.log('- draggedIndex:', draggedIndex);
+        console.log('- dropIndex:', dropIndex);
+        
         if (draggedIndex !== dropIndex) {
-            console.log(`🔄 Moving from position ${draggedIndex + 1} to position ${dropIndex + 1}`);
-            
             const filtered = getFilteredProblems();
+            console.log('- filtered array length:', filtered.length);
+            console.log('- problems array length:', problems.length);
+            
             const draggedItem = filtered[draggedIndex];
             const dropItem = filtered[dropIndex];
             
-            // ✅ Find the actual problems in the main array
+            console.log('- draggedItem ID:', draggedItem.internalId);
+            console.log('- dropItem ID:', dropItem.internalId);
+            
+            // Show the current order before any changes
+            console.log('📋 BEFORE - Current problems array order:');
+            problems.forEach((problem, index) => {
+                const pid = problem.internalId.split('-')[1];
+                console.log(`  Position ${index + 1}: PID ${pid}`);
+            });
+            
+            // Find positions in main array
             const draggedMainIndex = problems.findIndex(p => p.internalId === draggedItem.internalId);
             const dropMainIndex = problems.findIndex(p => p.internalId === dropItem.internalId);
             
+            console.log('- draggedMainIndex:', draggedMainIndex);
+            console.log('- dropMainIndex:', dropMainIndex);
+            
             if (draggedMainIndex !== -1 && dropMainIndex !== -1) {
-                // ✅ Remove the dragged item from main array
+                // Remove the dragged item
                 const [movedItem] = problems.splice(draggedMainIndex, 1);
+                console.log('- Removed item:', movedItem.internalId);
                 
-                // ✅ Find the new position of the drop target after removal
+                // Find new position of drop target after removal
                 const newDropIndex = problems.findIndex(p => p.internalId === dropItem.internalId);
+                console.log('- newDropIndex after removal:', newDropIndex);
                 
-                // ✅ Calculate correct insertion position
+                // Calculate insertion position
                 const insertIndex = draggedMainIndex < dropMainIndex ? newDropIndex + 1 : newDropIndex;
+                console.log('- calculated insertIndex:', insertIndex);
                 
-                // ✅ Insert the moved item at the correct position
+                // Insert at new position
                 problems.splice(insertIndex, 0, movedItem);
+                console.log('- Inserted at position:', insertIndex);
                 
-                console.log(`✅ Moved ${movedItem.internalId} from position ${draggedMainIndex + 1} to position ${insertIndex + 1}`);
+                // Show the order after changes
+                console.log('📋 AFTER - New problems array order:');
+                problems.forEach((problem, index) => {
+                    const pid = problem.internalId.split('-')[1];
+                    console.log(`  Position ${index + 1}: PID ${pid}`);
+                });
                 
-                // ✅ Sync the entire main problems array to backend
+                // Show what will be sent to backend
+                const orderData = problems.map((problem, index) => ({
+                    internalId: problem.internalId,
+                    order: index + 1
+                }));
+                
+                console.log('📤 Order data being sent to backend:');
+                orderData.forEach(item => {
+                    const pid = item.internalId.split('-')[1];
+                    console.log(`  PID ${pid} = Sort Order ${item.order}`);
+                });
+                
+                // Sync to backend
                 await syncSortOrderToBackend();
                 
-                // ✅ Re-render with the new order
+                // Re-render
                 renderProblems();
             }
         }
     }
     
-    // Essential cleanup code
+    // Cleanup
     document.querySelectorAll('.problem-card').forEach(card => {
         card.classList.remove('dragging', 'drop-zone', 'drag-target');
         card.style.zIndex = '';
@@ -1185,25 +1228,22 @@ async function endDrag() {
     draggedIndex = null;
 }
 
-            
 /**
- * 🔧 UPDATED syncSortOrderToBackend Function
- * This version uses the main problems array and creates proper sequential order
+ * 🔍 ALSO DEBUG: Enhanced syncSortOrderToBackend
  */
 async function syncSortOrderToBackend() {
     try {
         showSortSyncStatus('💾 Syncing order...', 'info');
         
-        // ✅ Use the main problems array to ensure proper sequential order
         const orderData = problems.map((problem, index) => ({
             internalId: problem.internalId,
-            order: index + 1  // This gives 1, 2, 3, 4, 5... (correct sequence)
+            order: index + 1
         }));
         
-        console.log('🔄 Syncing order for', problems.length, 'problems');
-        console.log('📊 Order mapping:', orderData.map(item => `${item.internalId.split('-')[1]} = ${item.order}`).join(', '));
+        console.log('🔄 syncSortOrderToBackend called');
+        console.log('- Total problems:', problems.length);
+        console.log('- Order data:', orderData.map(item => `${item.internalId.split('-')[1]}=${item.order}`).join(', '));
         
-        // Send to backend using JSONP
         const params = new URLSearchParams({
             action: 'updateSortOrder',
             orderData: JSON.stringify(orderData),
@@ -1221,16 +1261,26 @@ async function syncSortOrderToBackend() {
 }
 
 /**
- * 🔧 DEBUGGING: Add this function to verify the fix
+ * 🔍 DEBUGGING HELPER: Call this to see current state
  */
-function debugDragOrder() {
-    console.log('🔍 Current problems array order:');
+function debugCurrentState() {
+    console.log('=== CURRENT STATE DEBUG ===');
+    console.log('activeFilter:', activeFilter);
+    console.log('problems array length:', problems.length);
+    console.log('filtered problems length:', getFilteredProblems().length);
+    
+    console.log('\n📋 Problems array order:');
     problems.forEach((problem, index) => {
         const pid = problem.internalId.split('-')[1];
-        console.log(`Position ${index + 1}: PID ${pid} - ${problem.problemDescription.substring(0, 30)}...`);
+        console.log(`  ${index + 1}: PID ${pid} - ${problem.problemDescription.substring(0, 30)}...`);
+    });
+    
+    console.log('\n📋 Filtered problems order:');
+    getFilteredProblems().forEach((problem, index) => {
+        const pid = problem.internalId.split('-')[1];
+        console.log(`  ${index + 1}: PID ${pid} - ${problem.problemDescription.substring(0, 30)}...`);
     });
 }
-
 /**
  * ✨ NEW FUNCTION: Handle sort order sync response
  */
