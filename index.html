@@ -8,7 +8,7 @@ DEPLOYMENT: GitHub → Netlify Auto-Deploy
 URL: timely-haupia-9c75dc.netlify.app
 
 🎯 SYSTEM OVERVIEW:
-Complete fault management system for 44-unit retirement village.
+Complete faultestDragLogic() management system for 44-unit retirement village.
 React-style vanilla JS implementation with Google Sheets backend.
 
 ✅ CONFIRMED WORKING FEATURES:
@@ -1136,6 +1136,44 @@ setTimeout(() => {
  * 🔍 DEBUG VERSION - Let's trace exactly what's happening
  * This version adds extensive logging to find the exact issue
  */
+/**
+ * 🔍 POSITION DEBUG - Let's trace the exact issue
+ * 
+ * The fact that positions 2 & 3 work but 4+ fails suggests a specific
+ * boundary condition in the insertion logic.
+ */
+
+// Let's add a simple test function to understand the pattern
+function testDragLogic() {
+    console.log('=== TESTING DRAG LOGIC ===');
+    
+    // Simulate the array operations for different positions
+    const testArray = ['A', 'B', 'C', 'D', 'E', 'F'];
+    
+    for (let targetPos = 2; targetPos <= 5; targetPos++) {
+        console.log(`\n--- Moving A to position ${targetPos} ---`);
+        
+        const arr = [...testArray];
+        console.log('Before:', arr.join(','));
+        
+        // Remove A (index 0)
+        const [removed] = arr.splice(0, 1);
+        console.log('After removal:', arr.join(','));
+        
+        // Insert at target position - 1 (because we removed one item)
+        const insertIndex = targetPos - 1;
+        arr.splice(insertIndex, 0, removed);
+        console.log('After insertion at index', insertIndex, ':', arr.join(','));
+        
+        // Check if A is actually at the target position
+        const actualPosition = arr.indexOf('A') + 1;
+        console.log(`Result: A is at position ${actualPosition} (wanted ${targetPos}) ${actualPosition === targetPos ? '✅' : '❌'}`);
+    }
+}
+
+/**
+ * 🔧 CORRECTED endDrag - Based on the pattern analysis
+ */
 async function endDrag() {
     if (!draggedItem) return;
     
@@ -1145,13 +1183,11 @@ async function endDrag() {
         const dropIndex = parseInt(dropTarget.dataset.index);
         
         console.log('🔍 DEBUG: Starting drag operation');
-        console.log('- draggedIndex:', draggedIndex);
-        console.log('- dropIndex:', dropIndex);
+        console.log('- draggedIndex:', draggedIndex, '(display position:', draggedIndex + 1, ')');
+        console.log('- dropIndex:', dropIndex, '(display position:', dropIndex + 1, ')');
         
         if (draggedIndex !== dropIndex) {
             const filtered = getFilteredProblems();
-            console.log('- filtered array length:', filtered.length);
-            console.log('- problems array length:', problems.length);
             
             const draggedItem = filtered[draggedIndex];
             const dropItem = filtered[dropIndex];
@@ -1170,25 +1206,25 @@ async function endDrag() {
             const draggedMainIndex = problems.findIndex(p => p.internalId === draggedItem.internalId);
             const dropMainIndex = problems.findIndex(p => p.internalId === dropItem.internalId);
             
-            console.log('- draggedMainIndex:', draggedMainIndex);
-            console.log('- dropMainIndex:', dropMainIndex);
+            console.log('- draggedMainIndex:', draggedMainIndex, '(main array position:', draggedMainIndex + 1, ')');
+            console.log('- dropMainIndex:', dropMainIndex, '(main array position:', dropMainIndex + 1, ')');
             
             if (draggedMainIndex !== -1 && dropMainIndex !== -1) {
                 // Remove the dragged item
                 const [movedItem] = problems.splice(draggedMainIndex, 1);
                 console.log('- Removed item:', movedItem.internalId);
                 
-                // Find new position of drop target after removal
-                const newDropIndex = problems.findIndex(p => p.internalId === dropItem.internalId);
-                console.log('- newDropIndex after removal:', newDropIndex);
+                // 🔧 KEY FIX: The target position in the DISPLAY is dropIndex + 1
+                // After removing an item, to get to display position N, we need array index N-1
+                const targetDisplayPosition = dropIndex + 1;
+                const insertIndex = targetDisplayPosition - 1;
                 
-                // Calculate insertion position
-                const insertIndex = draggedMainIndex < dropMainIndex ? newDropIndex + 1 : newDropIndex;
-                console.log('- calculated insertIndex:', insertIndex);
+                console.log('- Target display position:', targetDisplayPosition);
+                console.log('- Calculated insertIndex:', insertIndex);
                 
                 // Insert at new position
                 problems.splice(insertIndex, 0, movedItem);
-                console.log('- Inserted at position:', insertIndex);
+                console.log('- Inserted at array index:', insertIndex);
                 
                 // Show the order after changes
                 console.log('📋 AFTER - New problems array order:');
@@ -1196,6 +1232,10 @@ async function endDrag() {
                     const pid = problem.internalId.split('-')[1];
                     console.log(`  Position ${index + 1}: PID ${pid}`);
                 });
+                
+                // Verify the moved item is at the correct position
+                const actualPosition = problems.findIndex(p => p.internalId === movedItem.internalId) + 1;
+                console.log(`✅ Verification: ${movedItem.internalId} is now at position ${actualPosition} (wanted ${targetDisplayPosition})`);
                 
                 // Show what will be sent to backend
                 const orderData = problems.map((problem, index) => ({
