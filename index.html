@@ -1834,13 +1834,26 @@ async function checkForOrderChanges() {
                 });
                 
                 // Check if order has changed
-                if (currentOrderHash !== newOrderHash && currentOrderHash !== null) {
-                    console.log('🚨 Order change detected - showing modal');
-                    showSyncModal();
-                    showSyncStatus('changed');
-                } else {
-                    showSyncStatus('synced');
-                }
+                // Check if order has changed
+if (currentOrderHash !== newOrderHash && currentOrderHash !== null) {
+    // Check if someone just refreshed recently (within 5 seconds)
+    const lastRefresh = localStorage.getItem('lastRefreshTime');
+    const timeSinceRefresh = Date.now() - (lastRefresh ? parseInt(lastRefresh) : 0);
+    
+    if (timeSinceRefresh > 5000) { // Only show if no recent refresh
+        console.log('🚨 Order change detected - showing modal');
+        showSyncModal();
+        showSyncStatus('changed');
+    } else {
+        console.log('🔇 Change detected but recent refresh - suppressing modal');
+        showSyncStatus('synced');
+    }
+} else {
+    showSyncStatus('synced');
+}
+
+// Always update our hash to the latest
+currentOrderHash = newOrderHash;
                 
                 lastSyncCheck = Date.now();
             }
@@ -1945,12 +1958,15 @@ function handleSyncRefresh() {
     // Refresh the data
     setTimeout(async () => {
         try {
-            await loadFaultLogData(); // Reload fresh data
-            calculateInitialOrderHash(); // Update our hash
-            renderProblems(); // Re-render the UI
-            hideSyncModal();
-            
-            console.log('✅ Data refreshed successfully');
+    await loadFaultLogData(); // Reload fresh data
+    calculateInitialOrderHash(); // Update our hash
+    renderProblems(); // Re-render the UI
+    hideSyncModal();
+    
+    // Prevent other tabs from showing modal for a short time
+    localStorage.setItem('lastRefreshTime', Date.now().toString());
+    
+    console.log('✅ Data refreshed successfully');
             
         } catch (error) {
             console.error('❌ Refresh failed:', error);
