@@ -1407,6 +1407,8 @@ async function endDrag() {
             
             // Update our hash AFTER backend sync
             calculateInitialOrderHash();
+            localStorage.setItem('lastChangeBy', 'me');
+            console.log('🏷️ Set flag: lastChangeBy = me');
             
             // Cleanup
             document.querySelectorAll('.problem-card').forEach(card => {
@@ -1840,23 +1842,33 @@ console.log('🔍 Order check:', {
     tab: 'Tab-' + Math.random().toString(36).substr(2, 5)
 });
                 
-                // Check if order has changed
+
                 // Check if order has changed
 if (currentOrderHash !== newOrderHash && currentOrderHash !== null) {
     // Check if someone just refreshed recently (within 5 seconds)
     
     
     if (timeSinceRefresh > 5000) { // Only show if no recent refresh
+    // Check if we made this change ourselves
+    const lastChangeBy = localStorage.getItem('lastChangeBy');
+    console.log('🔍 Checking flag: lastChangeBy =', lastChangeBy);
+    
+    if (lastChangeBy === 'me') {
+        // We made this change - don't show modal
+        localStorage.removeItem('lastChangeBy');
+        console.log('🔇 Change detected but we made it - no modal');
+        showSyncStatus('synced');
+    } else {
+        // Someone else made this change - show modal
         console.log('🚨 Order change detected - showing modal');
         showSyncModal();
         showSyncStatus('changed');
-    } else {
-        console.log('🔇 Change detected but recent refresh - suppressing modal');
-        showSyncStatus('synced');
     }
 } else {
+    console.log('🔇 Change detected but recent refresh - suppressing modal');
     showSyncStatus('synced');
 }
+
 
 // Always update our hash to the latest
 currentOrderHash = newOrderHash;
