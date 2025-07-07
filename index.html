@@ -714,6 +714,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('mainApp').classList.remove('hidden');
                 showListView();
+
+// ITERATION 2: Start auto-sync polling
+setTimeout(() => {
+    syncPollingInterval = setInterval(checkForOrderChanges, SYNC_CHECK_INTERVAL);
+    console.log('⏱️ Auto-sync polling started - checking every 45 seconds');
+}, 2000);
+               
                 document.getElementById('passwordInput').value = '';
                 loginAttempts = 0;
             } else {
@@ -1608,6 +1615,56 @@ function calculateOrderHash() {
     return hash.toString();
 }
 
+        // ITERATION 2: Check for order changes from other tabs
+function checkForOrderChanges() {
+    console.log('🔍 Checking for order changes...');
+    
+    // Only check if we have live data
+    if (dataSource !== 'live') {
+        console.log('⏭️ Skipping check - not live data');
+        return;
+    }
+    
+    // Get fresh data from backend
+    window.handleSyncCheckResponse = function(data) {
+        if (data.success && Array.isArray(data.problems)) {
+            const newOrderHash = calculateOrderHash(data.problems);
+            
+            console.log('📊 Hash comparison:', {
+                current: currentOrderHash,
+                new: newOrderHash,
+                changed: currentOrderHash !== newOrderHash
+            });
+            
+            if (currentOrderHash !== newOrderHash && currentOrderHash !== null) {
+                // Check if we made this change recently (within 10 seconds)
+                const lastChangeTime = localStorage.getItem('lastChangeTime') || '0';
+                const timeSinceChange = Date.now() - parseInt(lastChangeTime);
+                
+                if (timeSinceChange < 10000) {
+                    console.log('🔇 Recent change detected - suppressing notification');
+                } else {
+                    console.log('🚨 ORDER CHANGE DETECTED - Would show modal here!');
+                }
+                
+                // Always update our hash
+                currentOrderHash = newOrderHash;
+            } else {
+                console.log('✅ Order unchanged');
+            }
+        }
+    };
+    
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?action=getFaultLogData&callback=handleSyncCheckResponse&_t=${Date.now()}`;
+    document.head.appendChild(script);
+    
+    setTimeout(() => {
+        if (script.parentNode) {
+            script.parentNode.removeChild(script);
+        }
+    }, 10000);
+}
         
     </script>
 </body>
