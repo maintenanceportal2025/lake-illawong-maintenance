@@ -302,125 +302,6 @@ STATUS: Production ready - deploy immediately
             .problem-header { flex-direction: column; }
             .badges { margin-top: 10px; }
         }
-/* Auto-Sync Modal Styles */
-.sync-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    backdrop-filter: blur(2px);
-}
-
-.sync-modal {
-    background: white;
-    border-radius: 12px;
-    padding: 30px;
-    max-width: 450px;
-    width: 90%;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-    text-align: center;
-    animation: modalSlideIn 0.3s ease-out;
-}
-
-@keyframes modalSlideIn {
-    from {
-        transform: translateY(-20px);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-
-.sync-modal-icon {
-    font-size: 48px;
-    margin-bottom: 15px;
-    animation: rotateIcon 2s ease-in-out infinite;
-}
-
-@keyframes rotateIcon {
-    0%, 100% { transform: rotate(0deg); }
-    50% { transform: rotate(180deg); }
-}
-
-.sync-modal-title {
-    font-size: 22px;
-    font-weight: bold;
-    color: #1f2937;
-    margin-bottom: 15px;
-}
-
-.sync-modal-message {
-    color: #4b5563;
-    line-height: 1.6;
-    margin-bottom: 25px;
-    font-size: 16px;
-}
-
-.sync-modal-buttons {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.sync-btn {
-    padding: 12px 24px;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    min-width: 140px;
-}
-
-.sync-btn-primary {
-    background: #2563eb;
-    color: white;
-}
-
-.sync-btn-primary:hover {
-    background: #1d4ed8;
-    transform: translateY(-1px);
-}
-
-.sync-status {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: #10b981;
-    color: white;
-    padding: 8px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-    z-index: 1000;
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-
-.sync-status.visible {
-    opacity: 1;
-}
-
-.sync-status.checking {
-    background: #3b82f6;
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-}
-        
     </style>
 </head>
 <body>
@@ -682,22 +563,11 @@ STATUS: Production ready - deploy immediately
         let draggedIndex = null;
         let dataSource = 'loading';
         let hasChanges = false;
-
-let isAuthenticated = false;
-let isLiveData = false;
-
-// =================================================================
-// AUTO-SYNC SYSTEM VARIABLES
-// =================================================================
-let syncPollingInterval = null;
-let currentOrderHash = null;
-let lastSyncCheck = 0;
-let isModalVisible = false;
-
-// Configuration
-const SYNC_CHECK_INTERVAL = 45000; // 45 seconds
-const STATUS_DISPLAY_TIME = 3000;  // 3 seconds
         
+        // Auto-sync variables - ITERATION 1
+let currentOrderHash = null;
+let syncPollingInterval = null;
+const SYNC_CHECK_INTERVAL = 45000; // 45 seconds
 
         // Load data on page load
 async function loadFaultLogData() {
@@ -715,16 +585,16 @@ async function loadFaultLogData() {
             
             if (data.success && data.problems && Array.isArray(data.problems)) {
                 problems = data.problems;
-                
                 dataSource = 'live';
-                isLiveData = true;
-
-                
                 statusEl.className = 'data-status live';
                 statusEl.innerHTML = `🟢 Live Data (${data.problems.length} problems loaded)`;
                 console.log(`✅ Loaded ${data.problems.length} problems from FaultLog`);
-                renderProblems();
+
+               renderProblems();
                 updateCounts();
+            // ITERATION 1: Calculate initial hash
+            currentOrderHash = calculateOrderHash();
+            console.log('📊 Initial order hash:', currentOrderHash);  
             } else {
                 throw new Error(data.message || 'Invalid data format received');
             }
@@ -748,7 +618,6 @@ async function loadFaultLogData() {
     } catch (error) {
         console.error('❌ Error loading FaultLog data:', error);
         loadSampleData();
-        isLiveData = false;
     }
 }
 // Add this test function right after loadFaultLogData()
@@ -839,21 +708,21 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        function login() {isAuthenticated = true;
-                          
+        function login() {
             const password = document.getElementById('passwordInput').value;
             if (password === MAINTENANCE_PASSWORD) {
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('mainApp').classList.remove('hidden');
                 showListView();
+
+// ITERATION 2: Start auto-sync polling
+setTimeout(() => {
+    syncPollingInterval = setInterval(checkForOrderChanges, SYNC_CHECK_INTERVAL);
+    console.log('⏱️ Auto-sync polling started - checking every 45 seconds');
+}, 2000);
+               
                 document.getElementById('passwordInput').value = '';
-                
                 loginAttempts = 0;
-        // Initialize auto-sync when entering main app
-        setTimeout(() => {
-        initializeAutoSync();
-        }, 1000);
-                
             } else {
                 loginAttempts++;
                 const errorEl = document.getElementById('errorMessage');
@@ -1382,9 +1251,15 @@ async function endDrag() {
             problems.forEach((problem, index) => {
                 problem.sortOrder = index + 1;
             });
+
+            // ITERATION 1: Mark change time
+localStorage.setItem('lastChangeTime', Date.now().toString());
+console.log('🔄 Change marked at:', new Date().toLocaleTimeString());
             
             // Sync to backend
             await syncSortOrderToBackend();
+
+            
             
             // Cleanup FIRST
             document.querySelectorAll('.problem-card').forEach(card => {
@@ -1718,255 +1593,144 @@ Report generated by Maintenance Portal Fault Management System`;
                 }
             });
 
-            document.getElementById('closeModal').addEventListener('click', hideModal);
-            document.getElementById('modal').addEventListener('click', function(e) {
-                if (e.target === this) hideModal();
+           document.getElementById('closeModal').addEventListener('click', hideModal);
+           document.getElementById('modal').addEventListener('click', function(e) {
+           if (e.target === this) hideModal();
             });
 
+// Auto-sync modal button handlers
+            
+document.getElementById('syncRefreshBtn').addEventListener('click', function() {
+    console.log('🔄 User clicked Refresh Now');
+    
+    // Hide the modal
+    document.getElementById('syncModal').classList.add('hidden');
+    
+    // Mark that a refresh is happening to prevent cross-tab confusion
+    localStorage.setItem('lastRefreshTime', Date.now().toString());
+    
+    // Reload the data
+    loadFaultLogData();
+});
+
+
+            
+
+document.getElementById('syncRemindBtn').addEventListener('click', function() {
+    console.log('⏰ User clicked Remind in 5 min');
+    
+    // Hide the modal  
+    document.getElementById('syncModal').classList.add('hidden');
+    
+    // Set reminder (we'll implement this in next iteration)
+    alert('Reminder set for 5 minutes (placeholder)');
+});
             window.showEditor = showEditor;
             window.handleProblemClick = handleProblemClick;
-        });
+ });
 
-// =================================================================
-// AUTO-SYNC INITIALIZATION
-// =================================================================
-function initializeAutoSync() {
-    setupSyncEventListeners();
-    calculateInitialOrderHash();
-    startSyncPolling();
-    console.log('🔄 Auto-sync system initialized - checking every 45 seconds');
-}
-
-function setupSyncEventListeners() {
-    document.getElementById('syncRefreshBtn').addEventListener('click', handleSyncRefresh);
-}
-
-// =================================================================
-// ORDER HASH CALCULATION
-// =================================================================
-function calculateOrderHash(problemArray = null) {
-    const dataToHash = problemArray || problems;
-    
-    // Create a simple hash based on order and internal IDs
-    const orderString = dataToHash
+        // ITERATION 1: Calculate order hash for change detection
+function calculateOrderHash() {
+    const orderString = problems
         .map((problem, index) => `${index}:${problem.internalId}`)
         .join('|');
     
-    // Simple hash function
     let hash = 0;
     for (let i = 0; i < orderString.length; i++) {
         const char = orderString.charCodeAt(i);
         hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32-bit integer
+        hash = hash & hash;
     }
-    
     return hash.toString();
 }
 
-function calculateInitialOrderHash() {
-    currentOrderHash = calculateOrderHash();
-    console.log('📊 Initial order hash calculated:', currentOrderHash);
-}
-
-// =================================================================
-// SYNC POLLING SYSTEM
-// =================================================================
-function startSyncPolling() {
-    // Clear any existing interval
-    if (syncPollingInterval) {
-        clearInterval(syncPollingInterval);
-    }
+        // ITERATION 2: Check for order changes from other tabs
+function checkForOrderChanges() {
+    console.log('🔍 Checking for order changes...');
     
-    syncPollingInterval = setInterval(checkForOrderChanges, SYNC_CHECK_INTERVAL);
-    console.log('⏱️ Sync polling started - checking every 45 seconds');
-}
-
-function stopSyncPolling() {
-    if (syncPollingInterval) {
-        clearInterval(syncPollingInterval);
-        syncPollingInterval = null;
-        console.log('⏹️ Sync polling stopped');
-    }
-}
-
-async function checkForOrderChanges() {
-    // Skip if modal is already visible
-    if (isModalVisible) {
+    // Only check if we have live data
+    if (dataSource !== 'live') {
+        console.log('⏭️ Skipping check - not live data');
         return;
     }
     
-    // Skip if not authenticated or no live data
-    if (!isAuthenticated || !isLiveData) {
-        return;
-    }
-    
-    try {
-        showSyncStatus('checking');
-        
-        // Create JSONP callback
-        window.handleSyncCheckResponse = function(data) {
-            if (data.success && Array.isArray(data.problems)) {
-                const newOrderHash = calculateOrderHash(data.problems);
+    // Get fresh data from backend
+    window.handleSyncCheckResponse = function(data) {
+        if (data.success && Array.isArray(data.problems)) {
+            
+            // Temporarily store the new data
+            const tempProblems = problems; // Save current
+            problems = data.problems; // Use new data for hash
+            const newOrderHash = calculateOrderHash();
+            problems = tempProblems; // Restore current
+            
+            console.log('📊 Hash comparison:', {
+                current: currentOrderHash,
+                new: newOrderHash,
+                changed: currentOrderHash !== newOrderHash
+            });
+            
+            if (currentOrderHash !== newOrderHash && currentOrderHash !== null) {
+                // Check if we made this change recently (within 10 seconds)
+                const lastChangeTime = localStorage.getItem('lastChangeTime') || '0';
+                const timeSinceChange = Date.now() - parseInt(lastChangeTime);
                 
-                console.log('🔍 Order check:', {
-                    current: currentOrderHash,
-                    new: newOrderHash,
-                    changed: currentOrderHash !== newOrderHash
-                });
-                
-                // Simple check - if order changed, show modal
-                if (currentOrderHash !== newOrderHash && currentOrderHash !== null) {
-                    console.log('🚨 Order change detected - showing modal');
-                    showSyncModal();
-                    showSyncStatus('changed');
+                if (timeSinceChange < 10000) {
+                    console.log('🔇 Recent change detected - suppressing notification');
                 } else {
-                    showSyncStatus('synced');
+                    // Also check if someone just refreshed recently
+                    const lastRefreshTime = localStorage.getItem('lastRefreshTime') || '0';
+                    const timeSinceRefresh = Date.now() - parseInt(lastRefreshTime);
+                    
+                    if (timeSinceRefresh < 15000) {
+                        console.log('🔇 Recent refresh detected - suppressing notification');
+                    } else {
+                        console.log('🚨 ORDER CHANGE DETECTED - Showing modal!');
+                        document.getElementById('syncModal').classList.remove('hidden');
+                    }
                 }
                 
-                lastSyncCheck = Date.now();
+                // Always update our hash
+                currentOrderHash = newOrderHash;
+            } else {
+                console.log('✅ Order unchanged');
             }
-        };
-        
-        // Use JSONP to fetch fresh data
-        const script = document.createElement('script');
-        script.src = `${WEB_APP_URL}?action=getFaultLogData&callback=handleSyncCheckResponse&_t=${Date.now()}`;
-        document.head.appendChild(script);
-        
-        // Clean up after 10 seconds
-        setTimeout(() => {
-            if (script.parentNode) {
-                script.parentNode.removeChild(script);
-            }
-        }, 10000);
-        
-    } catch (error) {
-        console.warn('⚠️ Sync check failed:', error);
-        showSyncStatus('error');
-    }
-}
-
-// =================================================================
-// SYNC STATUS INDICATOR
-// =================================================================
-function showSyncStatus(type) {
-    const statusDiv = document.getElementById('syncStatus');
-    
-    // Clear existing classes
-    statusDiv.classList.remove('checking', 'visible');
-    
-    let message = '';
-    let className = '';
-    
-    switch (type) {
-        case 'checking':
-            message = '🔄 Checking for updates...';
-            className = 'checking';
-            break;
-        case 'synced':
-            message = '✅ Up to date';
-            className = '';
-            break;
-        case 'changed':
-            message = '🔄 Order updated';
-            className = '';
-            break;
-        case 'error':
-            message = '⚠️ Sync check failed';
-            className = '';
-            break;
-    }
-    
-    statusDiv.textContent = message;
-    statusDiv.classList.add('visible');
-    
-    if (className) {
-        statusDiv.classList.add(className);
-    }
-    
-    // Hide status after delay (except for checking)
-    if (type !== 'checking') {
-        setTimeout(() => {
-            statusDiv.classList.remove('visible');
-        }, STATUS_DISPLAY_TIME);
-    }
-}
-
-// =================================================================
-// SYNC MODAL MANAGEMENT
-// =================================================================
-function showSyncModal() {
-    if (isModalVisible) return;
-    
-    isModalVisible = true;
-    document.getElementById('syncModal').classList.remove('hidden');
-    document.body.style.overflow = 'hidden'; // Prevent background scrolling
-    
-    console.log('📢 Sync modal displayed');
-}
-
-function hideSyncModal() {
-    isModalVisible = false;
-    document.getElementById('syncModal').classList.add('hidden');
-    document.body.style.overflow = ''; // Restore scrolling
-    
-    console.log('✅ Sync modal hidden');
-}
-
-function handleSyncRefresh() {
-    console.log('🔄 User chose to refresh now');
-    
-    // Show loading state
-    const refreshBtn = document.getElementById('syncRefreshBtn');
-    const originalText = refreshBtn.innerHTML;
-    refreshBtn.innerHTML = '🔄 Refreshing...';
-    refreshBtn.disabled = true;
-    
-    // Refresh the data
-    setTimeout(async () => {
-        try {
-            await loadFaultLogData(); // Reload fresh data
-            calculateInitialOrderHash(); // Update our hash
-            renderProblems(); // Re-render the UI
-            hideSyncModal();
-            
-            console.log('✅ Data refreshed successfully');
-            
-        } catch (error) {
-            console.error('❌ Refresh failed:', error);
-            // Reset button state
-            refreshBtn.innerHTML = originalText;
-            refreshBtn.disabled = false;
         }
-    }, 1000); // Small delay for better UX
+    };
+    
+    const script = document.createElement('script');
+    script.src = `${WEB_APP_URL}?action=getFaultLogData&callback=handleSyncCheckResponse&_t=${Date.now()}`;
+    document.head.appendChild(script);
+    
+    setTimeout(() => {
+        if (script.parentNode) {
+            script.parentNode.removeChild(script);
+        }
+    }, 10000);
 }
 
-  function updateCounts() {
+        function updateCounts() {
     // Simple function to update counters - currently no specific functionality needed
     console.log('📊 Counts updated');
-}      
+}
         
     </script>
 
 <!-- Auto-Sync Modal -->
-<div id="syncModal" class="sync-modal-overlay hidden">
-    <div class="sync-modal">
-        <div class="sync-modal-icon">🔄</div>
-        <div class="sync-modal-title">Problem Order Updated</div>
-        <div class="sync-modal-message">
-            Another maintenance team member has reordered the problem cards.<br><br>
-            To see the current arrangement, please refresh the page.
+<div id="syncModal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>🔄 Order Updated</h3>
         </div>
-        <div class="sync-modal-buttons">
-            <button id="syncRefreshBtn" class="sync-btn sync-btn-primary">
-                🔄 Refresh Now
-            </button>
+        <p style="margin-bottom: 20px;">
+            Another team member has reordered the problem cards.<br>
+            <strong>Refresh to see the current arrangement.</strong>
+        </p>
+        <div style="display: flex; gap: 15px; justify-content: center;">
+            <button id="syncRefreshBtn" class="btn btn-primary">🔄 Refresh Now</button>
+            <button id="syncRemindBtn" class="btn" style="background: #f3f4f6; color: #4b5563;">⏰ Remind in 5 min</button>
         </div>
     </div>
-</div>
-
-<!-- Sync Status Indicator -->
-<div id="syncStatus" class="sync-status">
-    🔄 Checking for updates...
 </div>
     
 </body>
