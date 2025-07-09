@@ -456,7 +456,7 @@ DATE: July 9, 2025
                         </div>
                     </div>
 
-                    <button id="saveChangesBtn" class="save-btn">💾 Save Changes</button>
+                    <button id="Btn" class="save-btn">💾 Save Changes</button>
                     <div style="clear: both;"></div>
                 </div>
             </div>
@@ -988,37 +988,56 @@ hideReportModal();
         }
 
         async function saveProblemToBackend(problem) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'saveCallback_' + Date.now();
-                const script = document.createElement('script');
-                
-                window[callbackName] = function(response) {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
-                    
-                    if (response && response.success) {
-                        console.log('✅ Problem saved to backend successfully');
-                        resolve(response);
-                    } else {
-                        console.error('❌ Backend save failed:', response);
-                        reject(new Error(response ? response.error : 'Save failed'));
-                    }
-                };
-                
-                const problemData = encodeURIComponent(JSON.stringify(problem));
-                script.src = `${WEB_APP_URL}?action=updateProblem&problemData=${problemData}&callback=${callbackName}&_=${Date.now()}`;
-                document.head.appendChild(script);
-                
-                // Timeout
-                setTimeout(() => {
-                    if (document.head.contains(script)) {
-                        document.head.removeChild(script);
-                        delete window[callbackName];
-                        reject(new Error('Save timeout'));
-                    }
-                }, 10000);
-            });
-        }
+    return new Promise((resolve, reject) => {
+        const callbackName = 'saveCallback_' + Date.now();
+        const script = document.createElement('script');
+        
+        window[callbackName] = function(response) {
+            document.head.removeChild(script);
+            delete window[callbackName];
+            
+            if (response && response.success) {
+                console.log('✅ Problem saved to backend successfully');
+                resolve(response);
+            } else {
+                console.error('❌ Backend save failed:', response);
+                reject(new Error(response ? response.error : 'Save failed'));
+            }
+        };
+        
+        // Build individual parameters instead of JSON object
+        const params = new URLSearchParams({
+            action: 'updateProblem',
+            callback: callbackName,
+            internalId: problem.internalId,
+            unitNumber: problem.unitNumber || '',
+            reportedBy: problem.reportedBy || '',
+            zone: problem.zone || '',
+            residentName: problem.residentName || '',
+            residentMobile: problem.residentMobile || '',
+            problemDescription: problem.problemDescription || '',
+            priority: problem.problemPriority || '',
+            status: problem.problemStatus || '',
+            comments: problem.comments || '',
+            completionDate: problem.completionDate || '',
+            assignedTo: problem.assignedTo || '',
+            category: problem.category || '',
+            subCategory: problem.subCategory || ''
+        });
+        
+        script.src = `${WEB_APP_URL}?${params.toString()}`;
+        document.head.appendChild(script);
+        
+        // Timeout
+        setTimeout(() => {
+            if (document.head.contains(script)) {
+                document.head.removeChild(script);
+                delete window[callbackName];
+                reject(new Error('Save timeout'));
+            }
+        }, 10000);
+    });
+}
 
         // View Management
         function showView(view) {
