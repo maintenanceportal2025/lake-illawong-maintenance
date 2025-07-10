@@ -991,58 +991,125 @@ console.log('🔍 saveChanges() function called!');
             }
         }
 
-        async function saveProblemToBackend(problem) {
-            console.log('🔍 WEB_APP_URL value:', WEB_APP_URL);
-    console.log('🔍 WEB_APP_URL type:', typeof WEB_APP_URL);
-    return new Promise((resolve, reject) => {
-        const callbackName = 'saveCallback_' + Date.now();
-        const script = document.createElement('script');
+        async function handleSaveChanges() {
+    try {
+        console.log('💾 Starting save process...');
         
-        window[callbackName] = function(response) {
-            document.head.removeChild(script);
-            delete window[callbackName];
-            
-            if (response && response.success) {
-                console.log('✅ Problem saved to backend successfully');
-                resolve(response);
-            } else {
-                console.error('❌ Backend save failed:', response);
-                reject(new Error(response ? response.error : 'Save failed'));
-            }
+        // Get the save button and show saving state immediately
+        const saveBtn = document.getElementById('saveChangesBtn');
+        const originalText = saveBtn.textContent;
+        saveBtn.innerHTML = '⏳ Saving...';
+        saveBtn.disabled = true;
+        
+        // Collect form data
+        const updatedProblem = {
+            internalId: currentProblem.internalId,
+            reportedDate: currentProblem.reportedDate, // Keep original - don't modify
+            unitNumber: document.getElementById('unitNumber').value.trim(),
+            reportedBy: document.getElementById('reportedBy').value.trim(),
+            zone: document.getElementById('zone').value.trim(),
+            residentName: document.getElementById('residentName').value.trim(),
+            residentMobile: document.getElementById('residentMobile').value.trim(),
+            problemDescription: document.getElementById('problemDescription').value.trim(),
+            category: document.getElementById('category').value,
+            subCategory: document.getElementById('subCategory').value,
+            assignedTo: document.getElementById('assignedTo').value,
+            comments: document.getElementById('internalComments').value.trim(),
+            problemPriority: document.getElementById('priority').value,
+            problemStatus: document.getElementById('problemStatus').value,
+            completionDate: document.getElementById('completionDate').value
         };
         
-        // Build individual parameters instead of JSON object
-        const params = new URLSearchParams({
-            action: 'updateProblem',
-            callback: callbackName,
-            internalId: problem.internalId,
-            unitNumber: problem.unitNumber || '',
-            reportedBy: problem.reportedBy || '',
-            zone: problem.zone || '',
-            residentName: problem.residentName || '',
-            residentMobile: problem.residentMobile || '',
-            problemDescription: problem.problemDescription || '',
-            priority: problem.problemPriority || '',
-            status: problem.problemStatus || '',
-            comments: problem.comments || '',
-            completionDate: problem.completionDate || '',
-            assignedTo: problem.assignedTo || '',
-            category: problem.category || '',
-            subCategory: problem.subCategory || ''
-        });
+        // Update local data immediately
+        const problemIndex = problems.findIndex(p => p.internalId === currentProblem.internalId);
+        if (problemIndex !== -1) {
+            problems[problemIndex] = updatedProblem;
+            currentProblem = updatedProblem;
+        }
         
-        script.src = `${WEB_APP_URL}?${params.toString()}`;
-        document.head.appendChild(script);
+        // Only attempt backend sync if we have live data
+        if (dataConnectionStatus === 'live') {
+            console.log('🔄 Syncing to Google Sheets...');
+            
+            // Prepare data for backend (matches your Google Apps Script parameter names)
+            const updateData = {
+                action: 'updateProblem',
+                callback: 'handleSaveResponse', // ✅ CRITICAL: Must match your backend fix
+                internalId: updatedProblem.internalId,
+                reportedDate: updatedProblem.reportedDate,
+                unitNumber: updatedProblem.unitNumber,
+                reportedBy: updatedProblem.reportedBy,
+                zone: updatedProblem.zone,
+                residentName: updatedProblem.residentName,
+                residentMobile: updatedProblem.residentMobile,
+                problemDescription: updatedProblem.problemDescription,
+                priority: updatedProblem.problemPriority,
+                status: updatedProblem.problemStatus,
+                category: updatedProblem.category,
+                subCategory: updatedProblem.subCategory,
+                assignedTo: updatedProblem.assignedTo,
+                completionDate: updatedProblem.completionDate,
+                comments: updatedProblem.comments
+            };
+            
+            // Create JSONP script request
+            const params = new URLSearchParams(updateData);
+            const script = document.createElement('script');
+            script.src = `${WEB_APP_URL}?${params.toString()}`;
+            
+            // Handle script loading errors
+            script.onerror = function() {
+                console.error('❌ Failed to load save script');
+                saveBtn.innerHTML = '⚠️ Connection Failed';
+                saveBtn.style.backgroundColor = '#ef4444'; // Red
+                saveBtn.disabled = false;
+                
+                setTimeout(() => {
+                    saveBtn.innerHTML = originalText;
+                    saveBtn.style.backgroundColor = '';
+                }, 3000);
+            };
+            
+            document.head.appendChild(script);
+            
+            // Safety timeout cleanup
+            setTimeout(() => {
+                if (script.parentNode) {
+                    script.parentNode.removeChild(script);
+                    console.warn('⚠️ Save request cleaned up after 30 seconds');
+                }
+            }, 30000);
+            
+        } else {
+            // Sample data mode - just show local save
+            console.log('📱 Sample data mode - local save only');
+            saveBtn.innerHTML = '✅ Saved Locally';
+            saveBtn.style.backgroundColor = '#10b981'; // Green
+            saveBtn.disabled = false;
+            
+            setTimeout(() => {
+                saveBtn.innerHTML = originalText;
+                saveBtn.style.backgroundColor = '';
+            }, 2000);
+        }
         
-        // Timeout
+        // Update the editor display
+        populateEditor(updatedProblem);
+        console.log('✅ Local save completed');
+        
+    } catch (error) {
+        console.error('❌ Error in save process:', error);
+        
+        const saveBtn = document.getElementById('saveChangesBtn');
+        saveBtn.innerHTML = '❌ Save Error';
+        saveBtn.style.backgroundColor = '#ef4444'; // Red
+        saveBtn.disabled = false;
+        
         setTimeout(() => {
-            if (document.head.contains(script)) {
-                document.head.removeChild(script);
-                delete window[callbackName];
-                reject(new Error('Save timeout'));
-            }
-        }, 10000);
-    });
+            saveBtn.innerHTML = 'Save Changes';
+            saveBtn.style.backgroundColor = '';
+        }, 3000);
+    }
 }
 
         // View Management
