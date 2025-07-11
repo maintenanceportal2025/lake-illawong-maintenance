@@ -26,6 +26,10 @@ DATE: July 9, 2025
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init();</script>
+
+    
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Maintenance Portal v2.3 - Corrected with Pop-up System</title>
@@ -292,12 +296,25 @@ DATE: July 9, 2025
             
             <div class="container">
                 <div class="search-section">
-                    <h2>Search by Problem ID (PID)</h2>
-                    <div class="search-box">
-                        <input type="text" id="searchInput" class="search-input" placeholder="PID 110716">
-                        <button id="searchBtn" class="search-btn">Search</button>
-                    </div>
-                </div>
+    <h2>Search by Problem ID (PID)</h2>
+    <div class="search-box">
+        <input type="text" id="searchInput" class="search-input" placeholder="PID 110716">
+        <button class="search-btn">Search</button>
+    </div>
+    
+    <!-- 🎯 NEW: Auto-Number Button -->
+    <div style="margin: 15px 0; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #28a745;">
+        <button id="autoNumberBtn" class="btn" style="background: #28a745; color: white; padding: 12px 20px; font-size: 16px;">
+            📋 Number New Problems
+        </button>
+        <br>
+        <small style="color: #6c757d; margin-top: 8px; display: block;">
+            Click to assign sequential numbers to all problems (including new submissions)
+        </small>
+    </div>
+</div>
+
+                
                 
                 <h3 id="resultsCount">All Problems (0)</h3>
                 
@@ -722,7 +739,7 @@ DATE: July 9, 2025
                 
                 // Load data and start monitoring
                 loadProblemsData();
-            
+            debugAfterLogin();
                 
             } else {
                 // Failed login
@@ -788,8 +805,6 @@ hideReportModal();
     try {
         if (response && response.success && response.problems && response.problems.length > 0) {
             // ✅ FIX: Process live data with mobile number correction
-
-
             
             problems = response.problems.map((problem, index) => {
     return {
@@ -806,9 +821,6 @@ hideReportModal();
             '0' + problem.residentMobile : problem.residentMobile
     };
 });
-
-
-
             
                             
                             // Sort by order
@@ -818,7 +830,8 @@ hideReportModal();
                             showDataStatus('live', `Live Data - ${problems.length} problems loaded`);
                             
                             console.log('✅ Live data loaded successfully:', problems.length, 'problems');
-                            
+                            // Auto-cleanup: Check for misplaced problems and organize them
+                            autoCleanupMisplacedProblems();
                             
                         } else {
                             // Fall back to sample data
@@ -844,7 +857,6 @@ hideReportModal();
                     delete window[callbackName];
                 };
                 
-                //script.src = `${WEB_APP_URL}?action=getProblems&callback=${callbackName}&_=${Date.now()}`;
 
                 script.src = `${WEB_APP_URL}?action=getFaultLogData&callback=${callbackName}&_=${Date.now()}`;
 
@@ -1020,6 +1032,10 @@ if (dataConnectionStatus === 'live') {
         async function handleSaveChanges() {
     try {
         console.log('💾 Starting save process...');
+
+        // Store the original date before anything else
+        const originalDate = currentProblem.reportedDate;
+        console.log('🔍 Stored original date:', originalDate);
         
         // Get the save button and show saving state immediately
         //const saveBtn = document.getElementById('saveChangesBtn');
@@ -1036,7 +1052,7 @@ if (dataConnectionStatus === 'live') {
         // Collect form data
         const updatedProblem = {
             internalId: currentProblem.internalId,
-            //reportedDate: currentProblem.reportedDate, // Keep original - don't modify
+            reportedDate: currentProblem.reportedDate, // Keep original - don't modify
             unitNumber: document.getElementById('unitNumber').value.trim(),
             reportedBy: document.getElementById('reportedBy').value.trim(),
             zone: document.getElementById('zone').value.trim(),
@@ -1058,6 +1074,11 @@ if (dataConnectionStatus === 'live') {
             problems[problemIndex] = updatedProblem;
             currentProblem = updatedProblem;
         }
+        // Restore the reported date after save (since we don't send it to backend)
+console.log('🔍 Original currentProblem.reportedDate:', currentProblem.reportedDate);
+console.log('🔍 Field before restore:', document.getElementById('reportedDate').value);
+document.getElementById('reportedDate').value = currentProblem.reportedDate;
+console.log('🔍 Field after restore:', document.getElementById('reportedDate').value);
         
         // Only attempt backend sync if we have live data
         if (dataConnectionStatus === 'live') {
@@ -1094,12 +1115,18 @@ console.log('🔍 Script URL:', script.src);
 document.head.appendChild(script);
 
 // Add timeout to handle case where callback never fires
+            
 setTimeout(() => {
     if (saveBtn.innerHTML === '⏳ Saving...') {
         console.log('⏰ Save timeout - assuming success since local save completed');
+        console.log('🔍 About to restore date:', currentProblem.reportedDate);
+        
         saveBtn.innerHTML = '✅ Saved!';
         saveBtn.style.backgroundColor = '#10b981';
         saveBtn.disabled = false;
+        
+        document.getElementById('reportedDate').value = currentProblem.reportedDate;
+        console.log('🔍 Date restored to field');
         
         setTimeout(() => {
             saveBtn.innerHTML = originalText;
@@ -1107,6 +1134,7 @@ setTimeout(() => {
         }, 2000);
     }
 }, 3000);
+            
 
 // Safety timeout cleanup
 setTimeout(() => {
@@ -1177,10 +1205,14 @@ setTimeout(() => {
         }
 
         function populateEditor(problem) {
+
+console.log('🔍 populateEditor called with:', problem.reportedDate);
+            
             if (!problem) return;
             
             // Problem Details (readonly fields)
-            document.getElementById('reportedDate').value = formatDate(problem.reportedDate);
+            //document.getElementById('reportedDate').value = formatDate(problem.reportedDate);
+            document.getElementById('reportedDate').value = problem.reportedDate;
             document.getElementById('unitNumber').value = problem.unitNumber || '';
             document.getElementById('reportedBy').value = problem.reportedBy || '';
             document.getElementById('zone').value = problem.zone || '';
@@ -1500,6 +1532,46 @@ if (dataConnectionStatus === 'live') {
             console.log('✅ Problem order updated');
         }
 
+
+/**
+ * 🎯 NEW FUNCTION: Auto-number all problems
+ */
+async function autoNumberProblems() {
+    try {
+        console.log('🔢 Auto-numbering all problems...');
+        
+        // Show loading state
+        const btn = document.getElementById('autoNumberBtn');
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Numbering...';
+        btn.disabled = true;
+        
+        // Use existing saveSortOrderToBackend function
+        await saveSortOrderToBackend();
+        
+        // Show success feedback
+        btn.textContent = '✅ Numbered!';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }, 2000);
+        
+        console.log('✅ Auto-numbering completed');
+        
+    } catch (error) {
+        console.error('❌ Auto-numbering failed:', error);
+        
+        // Show error feedback
+        const btn = document.getElementById('autoNumberBtn');
+        btn.textContent = '❌ Failed';
+        setTimeout(() => {
+            btn.textContent = '📋 Number New Problems';
+            btn.disabled = false;
+        }, 2000);
+    }
+}
+        
+
         async function saveSortOrderToBackend() {
             try {
                 const orderData = problems.map((problem, index) => ({
@@ -1765,7 +1837,14 @@ if (refreshOrderBtn) {
 if (refreshOrderBtnEditor) {
     refreshOrderBtnEditor.addEventListener('click', refreshOrder);
 }
-
+// 🎯 NEW: Auto-number button event listener
+const autoNumberBtn = document.getElementById('autoNumberBtn');
+if (autoNumberBtn) {
+    autoNumberBtn.addEventListener('click', function() {
+        console.log('🔢 Auto-number button clicked');
+        autoNumberProblems();
+    });
+}
 
             
             
@@ -1998,7 +2077,6 @@ updateCounts();
 window.handleSaveResponse = function(data) {
     console.log('💾 Save response received:', data);
     
-    //const saveBtn = document.getElementById('saveChangesBtn');
     const saveBtn = document.getElementById('Btn');
     
     if (data && data.success) {
@@ -2007,6 +2085,12 @@ window.handleSaveResponse = function(data) {
         saveBtn.innerHTML = '✅ Saved to Sheets!';
         saveBtn.style.backgroundColor = '#10b981';
         saveBtn.disabled = false;
+        
+        // Repopulate the entire editor to restore all field values
+        if (typeof populateEditor === 'function' && currentProblem) {
+            populateEditor(currentProblem);
+            console.log('🔍 Editor repopulated with current problem data');
+        }
         
         setTimeout(() => {
             saveBtn.innerHTML = 'Save Changes';
@@ -2032,6 +2116,48 @@ window.handleSaveResponse = function(data) {
         }
     });
 };
+
+        async function autoCleanupMisplacedProblems() {
+    try {
+        console.log('🧹 Checking for misplaced problems...');
+        
+        // Call backend to check for and fix misplaced problems
+        const callbackName = 'cleanupCallback_' + Date.now();
+        const script = document.createElement('script');
+        
+        window[callbackName] = function(response) {
+            if (response && response.success && response.moved > 0) {
+                console.log(`🧹 Auto-cleanup: Moved ${response.moved} problems to proper positions`);
+                console.log(`📊 Details: ${response.message}`);
+            } else if (response && response.success) {
+                console.log('🧹 Auto-cleanup: No misplaced problems found');
+            }
+            
+            // Cleanup
+            document.head.removeChild(script);
+            delete window[callbackName];
+        };
+        
+        script.src = `${WEB_APP_URL}?action=autoCleanup&callback=${callbackName}&_=${Date.now()}`;
+        document.head.appendChild(script);
+        
+    } catch (error) {
+        console.error('❌ Error in auto-cleanup:', error);
+    }
+}
+        // 📱 MOBILE DEBUG: Test after login
+function debugAfterLogin() {
+    setTimeout(() => {
+        const cards = document.querySelectorAll('.problem-card');
+        alert(`After login: Found ${cards.length} cards. Touch events check coming next...`);
+        
+        if (cards.length > 0) {
+            const firstCard = cards[0];
+            alert(`First card has touch events: touchstart=${firstCard.ontouchstart !== null}, touchmove=${firstCard.ontouchmove !== null}, touchend=${firstCard.ontouchend !== null}`);
+        }
+    }, 1000);
+}
+        
 
         
 
