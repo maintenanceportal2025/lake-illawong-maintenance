@@ -788,8 +788,6 @@ hideReportModal();
     try {
         if (response && response.success && response.problems && response.problems.length > 0) {
             // ✅ FIX: Process live data with mobile number correction
-
-
             
             problems = response.problems.map((problem, index) => {
     return {
@@ -806,9 +804,6 @@ hideReportModal();
             '0' + problem.residentMobile : problem.residentMobile
     };
 });
-
-
-
             
                             
                             // Sort by order
@@ -818,7 +813,8 @@ hideReportModal();
                             showDataStatus('live', `Live Data - ${problems.length} problems loaded`);
                             
                             console.log('✅ Live data loaded successfully:', problems.length, 'problems');
-                            
+                            // Auto-cleanup: Check for misplaced problems and organize them
+                            autoCleanupMisplacedProblems();
                             
                         } else {
                             // Fall back to sample data
@@ -844,7 +840,6 @@ hideReportModal();
                     delete window[callbackName];
                 };
                 
-                //script.src = `${WEB_APP_URL}?action=getProblems&callback=${callbackName}&_=${Date.now()}`;
 
                 script.src = `${WEB_APP_URL}?action=getFaultLogData&callback=${callbackName}&_=${Date.now()}`;
 
@@ -2057,6 +2052,35 @@ window.handleSaveResponse = function(data) {
         }
     });
 };
+
+        async function autoCleanupMisplacedProblems() {
+    try {
+        console.log('🧹 Checking for misplaced problems...');
+        
+        // Call backend to check for and fix misplaced problems
+        const callbackName = 'cleanupCallback_' + Date.now();
+        const script = document.createElement('script');
+        
+        window[callbackName] = function(response) {
+            if (response && response.success && response.moved > 0) {
+                console.log(`🧹 Auto-cleanup: Moved ${response.moved} problems to proper positions`);
+                console.log(`📊 Details: ${response.message}`);
+            } else if (response && response.success) {
+                console.log('🧹 Auto-cleanup: No misplaced problems found');
+            }
+            
+            // Cleanup
+            document.head.removeChild(script);
+            delete window[callbackName];
+        };
+        
+        script.src = `${WEB_APP_URL}?action=autoCleanup&callback=${callbackName}&_=${Date.now()}`;
+        document.head.appendChild(script);
+        
+    } catch (error) {
+        console.error('❌ Error in auto-cleanup:', error);
+    }
+}
 
         
 
