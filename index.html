@@ -1217,13 +1217,17 @@ if (dataConnectionStatus === 'live') {
             }
         }
 
-        async function handleSaveChanges() {
+       async function handleSaveChanges() {
     try {
         console.log('💾 Starting save process...');
 
         // Store the original date before anything else
         const originalDate = currentProblem.reportedDate;
         console.log('🔍 Stored original date:', originalDate);
+        
+        // NEW: Store original status for completion detection
+        const originalStatus = currentProblem.problemStatus;
+        console.log('🔍 Stored original status:', originalStatus);
         
         // Get the save button and show saving state immediately
         //const saveBtn = document.getElementById('saveChangesBtn');
@@ -1250,78 +1254,89 @@ if (dataConnectionStatus === 'live') {
             category: document.getElementById('category').value,
             subCategory: document.getElementById('subCategory').value,
             assignedTo: document.getElementById('assignedTo').value,
-            comments: document.getElementById('internalComments').value.trim(),
-            problemPriority: document.getElementById('priority').value,
+            priority: document.getElementById('priority').value,
             problemStatus: document.getElementById('problemStatus').value,
+            internalComments: document.getElementById('internalComments').value.trim(),
             completionDate: document.getElementById('completionDate').value
         };
-        
+
+        console.log('📋 Collected form data:', updatedProblem);
+
         // Update local data immediately
-        const problemIndex = problems.findIndex(p => p.internalId === currentProblem.internalId);
-        if (problemIndex !== -1) {
-            problems[problemIndex] = updatedProblem;
-            currentProblem = updatedProblem;
+        const index = problems.findIndex(p => p.internalId === currentProblem.internalId);
+        if (index !== -1) {
+            problems[index] = { ...problems[index], ...updatedProblem };
         }
-        // Restore the reported date after save (since we don't send it to backend)
-console.log('🔍 Original currentProblem.reportedDate:', currentProblem.reportedDate);
-console.log('🔍 Field before restore:', document.getElementById('reportedDate').value);
-document.getElementById('reportedDate').value = currentProblem.reportedDate;
-console.log('🔍 Field after restore:', document.getElementById('reportedDate').value);
-        
-        // Only attempt backend sync if we have live data
-        if (dataConnectionStatus === 'live') {
-            console.log('🔄 Syncing to Google Sheets...');
-            
-            // Prepare data for backend (matches your Google Apps Script parameter names)
-            const updateData = {
-                action: 'updateProblem',
-                callback: 'handleSaveResponse', // ✅ CRITICAL: Must match your backend fix
-                internalId: updatedProblem.internalId,
-                reportedDate: updatedProblem.reportedDate,
-                unitNumber: updatedProblem.unitNumber,
-                reportedBy: updatedProblem.reportedBy,
-                zone: updatedProblem.zone,
-                residentName: updatedProblem.residentName,
-                residentMobile: updatedProblem.residentMobile,
-                problemDescription: updatedProblem.problemDescription,
-                priority: updatedProblem.problemPriority,
-                status: updatedProblem.problemStatus,
-                category: updatedProblem.category,
-                subCategory: updatedProblem.subCategory,
-                assignedTo: updatedProblem.assignedTo,
-                completionDate: updatedProblem.completionDate,
-                comments: updatedProblem.comments
-            };
-            
-            // Create JSONP script request
-const params = new URLSearchParams(updateData);
-const script = document.createElement('script');
-script.src = `${WEB_APP_URL}?${params.toString()}`;
 
-            
-console.log('🔍 Script URL:', script.src);
-document.head.appendChild(script);
+        // Store the new status for comparison (make it accessible to the callback)
+        window.originalStatus = originalStatus;
 
-// Add timeout to handle case where callback never fires
+        // Create update data for API
+        const updateData = {
+            action: 'updateProblem',
+            internalId: updatedProblem.internalId,
+            reportedDate: originalDate, // Keep original date
+            unitNumber: updatedProblem.unitNumber,
+            reportedBy: updatedProblem.reportedBy,
+            zone: updatedProblem.zone,
+            residentName: updatedProblem.residentName,
+            residentMobile: updatedProblem.residentMobile,
+            problemDescription: updatedProblem.problemDescription,
+            priority: updatedProblem.priority,
+            status: updatedProblem.problemStatus,
+            category: updatedProblem.category,
+            subCategory: updatedProblem.subCategory,
+            assignedTo: updatedProblem.assignedTo,
+            completionDate: updatedProblem.completionDate,
+            comments: updatedProblem.internalComments
+        };
+
+        console.log('🔄 Sending update to API...', updateData);
+
+        // Build GET URL with parameters
+        const params = new URLSearchParams({
+            action: 'updateProblem',
+            callback: 'handleSaveResponse',
+            ...updateData
+        });
+
+        const script = document.createElement('script');
+        script.src = `${WEB_APP_URL}?${params.toString()}`;
+        script.onerror = function() {
+            console.error('❌ Script error during save');
+            saveBtn.innerHTML = '❌ Save Failed';
+            saveBtn.style.backgroundColor = '#ef4444';
+            saveBtn.disabled = false;
             
-setTimeout(() => {
-    if (saveBtn.innerHTML === '⏳ Saving...') {
-        console.log('⏰ Save timeout - assuming success since local save completed');
-        console.log('🔍 About to restore date:', currentProblem.reportedDate);
-        
-        saveBtn.innerHTML = '✅ Saved!';
-        saveBtn.style.backgroundColor = '#10b981';
+            setTimeout(() => {
+                saveBtn.innerHTML = originalText;
+                saveBtn.style.backgroundColor = '';
+            }, 3000);
+        };
+
+        document.head.appendChild(script);
+
+        // Clean up after 10 seconds
+        setTimeout(() => {
+            if (script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
+        }, 10000);
+
+    } catch (error) {
+        console.error('❌ Error in handleSaveChanges:', error);
+        const saveBtn = document.getElementById('Btn');
+        saveBtn.innerHTML = '❌ Error';
+        saveBtn.style.backgroundColor = '#ef4444';
         saveBtn.disabled = false;
         
-        document.getElementById('reportedDate').value = currentProblem.reportedDate;
-        console.log('🔍 Date restored to field');
-        
         setTimeout(() => {
-            saveBtn.innerHTML = originalText;
+            saveBtn.innerHTML = 'Save Changes';
             saveBtn.style.backgroundColor = '';
-        }, 2000);
+        }, 3000);
     }
-}, 3000);
+}
+
             
 
 // Safety timeout cleanup
@@ -2276,6 +2291,15 @@ window.handleSaveResponse = function(data) {
         saveBtn.style.backgroundColor = '#10b981';
         saveBtn.disabled = false;
         
+        // NEW: Check for completion notification BEFORE repopulating editor
+        const newStatus = document.getElementById('problemStatus').value;
+        const originalStatus = window.originalStatus;
+        
+        if (newStatus === 'Completed' && originalStatus !== 'Completed') {
+            console.log('🎯 Status changed to Completed - sending notification...');
+            sendCompletionNotification(currentProblem.internalId);
+        }
+        
         // Repopulate the entire editor to restore all field values
         if (typeof populateEditor === 'function' && currentProblem) {
             populateEditor(currentProblem);
@@ -2288,10 +2312,10 @@ window.handleSaveResponse = function(data) {
         }, 2000);
         
     } else {
-        console.error('❌ Save failed:', data ? data.message : 'No response');
+        console.error('❌ Save failed:', data ? data.message : 'Unknown error');
         
-        saveBtn.innerHTML = '⚠️ Saved Locally';
-        saveBtn.style.backgroundColor = '#f59e0b';
+        saveBtn.innerHTML = '❌ Save Failed';
+        saveBtn.style.backgroundColor = '#ef4444';
         saveBtn.disabled = false;
         
         setTimeout(() => {
@@ -2299,12 +2323,6 @@ window.handleSaveResponse = function(data) {
             saveBtn.style.backgroundColor = '';
         }, 3000);
     }
-    
-    document.querySelectorAll('script[src*="updateProblem"]').forEach(script => {
-        if (script.parentNode) {
-            script.parentNode.removeChild(script);
-        }
-    });
 };
 
         async function autoCleanupMisplacedProblems() {
@@ -2462,9 +2480,29 @@ function updateAssignedToDropdown() {
         assignedToSelect.appendChild(option);
     });
 }        
-
+function sendCompletionNotification(internalId) {
+    console.log(`📧 Triggering completion notification for ${internalId}`);
     
+    const url = `${WEB_APP_URL}?action=sendCompletionNotification&internalId=${encodeURIComponent(internalId)}&callback=handleCompletionNotificationResponse`;
+    
+    const script = document.createElement('script');
+    script.src = url;
+    document.head.appendChild(script);
+    
+    script.onload = () => {
+        document.head.removeChild(script);
+    };
+}
 
-        </script>
+function handleCompletionNotificationResponse(response) {
+    if (response.success) {
+        console.log('✅ Completion notification sent successfully');
+        console.log('📧 Sent to:', response.recipients);
+    } else {
+        console.error('❌ Failed to send completion notification:', response.message);
+    }
+}
+    
+ </script>
     </body>
 </html>
