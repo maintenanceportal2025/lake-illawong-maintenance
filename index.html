@@ -2204,14 +2204,25 @@ async function loadDropdownOptions() {
         const callbackName = 'handleDropdownData_' + Date.now();
         
         window[callbackName] = function(response) {
-            if (response.success) {
-                dynamicDropdownData = response.data;
-                console.log('✅ Dropdown data loaded:', dynamicDropdownData);
-            } else {
-                console.error('❌ Failed to load dropdown data:', response.error);
+            try {
+                if (response && response.success) {
+                    dynamicDropdownData = response.data;
+                    console.log('✅ Dropdown data loaded:', dynamicDropdownData);
+                    
+                    // Update category dropdown if it exists
+                    updateCategoryDropdown();
+                } else {
+                    console.error('❌ Failed to load dropdown data:', response ? response.error : 'No response');
+                }
+            } catch (error) {
+                console.error('❌ Error processing dropdown data:', error);
             }
             
             // Cleanup
+            const script = document.querySelector(`script[src*="${callbackName}"]`);
+            if (script && script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
             delete window[callbackName];
         };
         
@@ -2220,16 +2231,21 @@ async function loadDropdownOptions() {
         document.head.appendChild(script);
         
         setTimeout(() => {
-            if (document.head.contains(script)) {
-                document.head.removeChild(script);
+            if (window[callbackName]) {
+                console.log('⏰ Dropdown load timeout - using fallback values');
                 delete window[callbackName];
+                const script = document.querySelector(`script[src*="${callbackName}"]`);
+                if (script && script.parentNode) {
+                    script.parentNode.removeChild(script);
+                }
             }
         }, 8000);
         
     } catch (error) {
         console.error('❌ Error loading dropdown options:', error);
     }
-}        
+}
+        
 function updateCategoryDropdown() {
     const categorySelect = document.getElementById('category');
     if (!categorySelect) return;
