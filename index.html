@@ -395,6 +395,66 @@ Status: Production Ready with Dynamic Dropdown System ✅
             .header-content { flex-direction: column; gap: 10px; }
             .header-right { justify-content: center; }
         }
+
+/* Sort Mode Toggle Section */
+.sort-mode-section { 
+    background: white; 
+    border-radius: 10px; 
+    padding: 20px; 
+    margin-bottom: 20px; 
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+}
+.sort-mode-header { 
+    font-size: 18px; 
+    font-weight: 600; 
+    color: #333; 
+    margin-bottom: 15px; 
+    display: flex; 
+    align-items: center; 
+    gap: 10px; 
+}
+.sort-mode-buttons { 
+    display: flex; 
+    gap: 10px; 
+    flex-wrap: wrap; 
+}
+.sort-mode-btn { 
+    padding: 12px 24px; 
+    border: 2px solid #e5e7eb; 
+    border-radius: 8px; 
+    background: white; 
+    color: #6b7280; 
+    font-weight: 500; 
+    cursor: pointer; 
+    transition: all 0.2s; 
+}
+.sort-mode-btn:hover { 
+    border-color: #2563eb; 
+    color: #2563eb; 
+}
+.sort-mode-btn.active { 
+    border-color: #2563eb; 
+    background: #2563eb; 
+    color: white; 
+}
+.sort-mode-description { 
+    font-size: 14px; 
+    color: #6b7280; 
+    margin-top: 10px; 
+}
+.priority-view .drag-handle { 
+    display: none; 
+}
+.priority-view .problem-card { 
+    padding-left: 20px; 
+}
+.priority-view .problem-content { 
+    margin-left: 0; 
+}
+
+
+
+        
     </style>
 </head>
 <body>
@@ -455,7 +515,25 @@ Status: Production Ready with Dynamic Dropdown System ✅
             </div>
             
             <div class="container">
-                <div class="search-section">
+
+<!-- Sort Mode Toggle Section -->
+<div class="sort-mode-section">
+    <div class="sort-mode-header">
+        📊 Sort Mode
+    </div>
+    <div class="sort-mode-buttons">
+        <button id="sortModeAll" class="sort-mode-btn active" onclick="setSortMode('all')">
+            All Problems
+        </button>
+        <button id="sortModePriority" class="sort-mode-btn" onclick="setSortMode('priority')">
+            Priority View
+        </button>
+    </div>
+    <div class="sort-mode-description" id="sortModeDescription">
+        Manual drag & drop ordering - Arrange problems in your preferred sequence
+    </div>
+</div>          
+                <div class="search-section"
     <h2>Search by Problem ID (PID)</h2>
     <div class="search-box">
         <input type="text" id="searchInput" class="search-input" placeholder="PID 110716">
@@ -652,6 +730,9 @@ Status: Production Ready with Dynamic Dropdown System ✅
         let problems = [];
         let filteredProblems = [];
         let searchTerm = '';
+
+let currentSortMode = 'all'; // 'all' or 'priority'
+        
         let dataConnectionStatus = 'loading'; // 'loading', 'live', 'sample', 'error'
 
          // NEW: Dynamic dropdown data
@@ -1456,8 +1537,10 @@ document.getElementById('internalComments').value = problem.comments || '';
                 return;
             }
             
-            // Sort by sortOrder for display
-            const sortedProblems = [...filteredProblems].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+            // Sort problems based on current mode
+const sortedProblems = currentSortMode === 'priority' 
+    ? sortByPriority(filteredProblems)
+    : [...filteredProblems].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
             
             sortedProblems.forEach((problem, index) => {
                 const card = createProblemCard(problem, index);
@@ -2453,7 +2536,37 @@ function updateAssignedToDropdown() {
         assignedToSelect.appendChild(option);
     });
 }        
+// Sort Mode Management
+function setSortMode(mode) {
+    console.log('🔄 Setting sort mode to:', mode);
+    currentSortMode = mode;
+    
+    // Update button states
+    document.getElementById('sortModeAll').classList.toggle('active', mode === 'all');
+    document.getElementById('sortModePriority').classList.toggle('active', mode === 'priority');
+    
+    // Update description
+    const description = mode === 'all' 
+        ? 'Manual drag & drop ordering - Arrange problems in your preferred sequence'
+        : 'Priority-based sorting - Problems sorted by urgency (Urgent → High → Medium → Low)';
+    document.getElementById('sortModeDescription').textContent = description;
+    
+    // Update container class for styling
+    const container = document.getElementById('problemsContainer');
+    container.classList.toggle('priority-view', mode === 'priority');
+    
+    // Re-render problems with new sort mode
+    renderProblems();
+}
 
+function sortByPriority(problems) {
+    const priorityOrder = { 'Urgent': 1, 'High': 2, 'Medium': 3, 'Low': 4 };
+    return [...problems].sort((a, b) => {
+        const aPriority = priorityOrder[a.priority] || 5;
+        const bPriority = priorityOrder[b.priority] || 5;
+        return aPriority - bPriority;
+    });
+}
     
 
         </script>
