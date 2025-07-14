@@ -861,6 +861,9 @@ Phase 3 Complete: Automatic Sort Order + Data Integrity Enhancements - July 2025
         
         // Drag and Drop State
         let isDragging = false;
+        let lastTapTime = 0;
+let lastTappedCard = null;
+const DOUBLE_TAP_DELAY = 500;
         let draggedElement = null;
         let draggedIndex = -1;
         let touchStartTime = 0;
@@ -1712,25 +1715,45 @@ function getStatusClass(status) {
         }
 
         function addCardEventListeners(card, problem, index) {
-            // Click to edit (avoid during drag)
-            card.addEventListener('click', (e) => {
-                if (!isDragging) {
-                    showProblemEditor(problem);
-                }
-            });
-            
-            // Desktop drag events
-            card.addEventListener('mousedown', (e) => {
-                if (e.button === 0) { // Left mouse button
-                    startDrag(card, index, e.clientX, e.clientY);
-                }
-            });
-            
-            // Mobile touch events
-            card.addEventListener('touchstart', handleTouchStart, { passive: false });
-            card.addEventListener('touchmove', handleTouchMove, { passive: false });
-            card.addEventListener('touchend', handleTouchEnd, { passive: false });
+    // 🎯 DOUBLE-TAP CLICK HANDLER (replaces single click)
+    card.addEventListener('click', (e) => {
+        if (!isDragging) {
+            handleDoubleTapClick(card, problem);
         }
+    });
+    
+    // Desktop drag events
+    card.addEventListener('mousedown', (e) => {
+        if (e.button === 0) { // Left mouse button
+            startDrag(card, index, e.clientX, e.clientY);
+        }
+    });
+    
+    // Mobile touch events
+    card.addEventListener('touchstart', handleTouchStart, { passive: false });
+    card.addEventListener('touchmove', handleTouchMove, { passive: false });
+    card.addEventListener('touchend', handleTouchEnd, { passive: false });
+}
+        function handleDoubleTapClick(card, problem) {
+    const currentTime = new Date().getTime();
+    const timeDiff = currentTime - lastTapTime;
+    
+    // Check if this is a double-tap on the same card
+    if (timeDiff < DOUBLE_TAP_DELAY && lastTappedCard === card) {
+        // ✅ DOUBLE-TAP DETECTED - Open editor
+        console.log('🎯 Double-tap detected - opening editor for PID:', getPIDFromInternalId(problem.internalId));
+        showProblemEditor(problem);
+        
+        // Reset timing to prevent triple-tap issues
+        lastTapTime = 0;
+        lastTappedCard = null;
+    } else {
+        // 👆 SINGLE TAP - Just track for potential double-tap
+        console.log('👆 Single tap on PID:', getPIDFromInternalId(problem.internalId), '- waiting for potential double-tap');
+        lastTapTime = currentTime;
+        lastTappedCard = card;
+    }
+}
 
         // Drag and Drop Functions
         function startDrag(element, index, startX, startY) {
@@ -2740,7 +2763,21 @@ function getPriorityValue(priority) {
     };
     return priorityMap[priority] || 0;
 }        
-        
+    // Reset double-tap tracking when user scrolls
+document.addEventListener('scroll', () => {
+    if (lastTapTime > 0) {
+        lastTapTime = 0;
+        lastTappedCard = null;
+    }
+});
+
+// Reset when clicking outside cards
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.problem-card') && lastTapTime > 0) {
+        lastTapTime = 0;
+        lastTappedCard = null;
+    }
+});    
     
 
         </script>
