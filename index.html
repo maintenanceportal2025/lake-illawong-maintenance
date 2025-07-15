@@ -1392,12 +1392,7 @@ console.log('🔍 saveChanges() function called!');
                 // Save to backend if live data - should be deleted
                 //if (dataConnectionStatus === 'live') {
                 //    await saveProblemToBackend(updatedProblem);
-               // }
-
-
-
-
-                
+               // }  
                 
                 // Update display
                 populateEditor(updatedProblem);
@@ -1433,10 +1428,10 @@ if (dataConnectionStatus === 'live') {
     script.src = `${WEB_APP_URL}?${params.toString()}`;
     document.head.appendChild(script);
    
-}
-                
-                
-                console.log('✅ Changes saved successfully');
+}               
+         console.log('✅ Changes saved successfully');
+
+        checkForCompletionNotification(updatedProblem);
                 
             } catch (error) {
                 console.error('❌ Error saving changes:', error);
@@ -2847,7 +2842,62 @@ document.addEventListener('click', (e) => {
         lastTappedCard = null;
     }
 });    
-    
+
+        // 🎯 Extract friendly PID for emails
+function getFriendlyPID(internalId) {
+    if (!internalId) return '';
+    const parts = internalId.split('-');
+    return parts.length > 1 ? parts[1] : internalId;
+}
+// 🎯 COMPLETION NOTIFICATION FUNCTIONS - Add at bottom
+
+function checkForCompletionNotification(updatedProblem) {
+    if (updatedProblem.problemStatus === 'Completed') {
+        console.log('🎯 Problem completed - sending notification for:', updatedProblem.internalId);
+        sendCompletionNotification(updatedProblem);
+    }
+}
+
+function sendCompletionNotification(problemData) {
+    try {
+        const callbackName = 'completionCallback_' + Date.now();
+        const friendlyPID = getFriendlyPID(problemData.internalId);
+        
+        window[callbackName] = function(response) {
+            console.log('📧 Completion notification response:', response);
+            
+            // Cleanup
+            const script = document.querySelector(`script[src*="${callbackName}"]`);
+            if (script && script.parentNode) {
+                script.parentNode.removeChild(script);
+            }
+            delete window[callbackName];
+        };
+        
+        const params = new URLSearchParams({
+            action: 'completionNotification',
+            callback: callbackName,
+            internalId: problemData.internalId,
+            friendlyPID: friendlyPID,
+            unitNumber: problemData.unitNumber,
+            zone: problemData.zone,
+            residentName: problemData.residentName,
+            problemDescription: problemData.problemDescription,
+            completionDate: problemData.completionDate || new Date().toLocaleDateString('en-AU'),
+            assignedTo: problemData.assignedTo || ''
+        });
+        
+        const script = document.createElement('script');
+        script.src = `${WEB_APP_URL}?${params.toString()}`;
+        document.head.appendChild(script);
+        
+    } catch (error) {
+        console.error('❌ Error sending completion notification:', error);
+    }
+}
+
+        
+        
 
         </script>
     </body>
