@@ -1505,16 +1505,18 @@ console.log('🔍 Testing - updatedProblem status:', updatedProblem.problemStatu
         console.log('🔍 Stored original date:', originalDate);
         
         // Get the save button and show saving state immediately
-        //const saveBtn = document.getElementById('saveChangesBtn');
-
         const saveBtn = document.getElementById('Btn');
         console.log('🔍 Save button found:', saveBtn);
 
-        
         const originalText = saveBtn.textContent;
         saveBtn.innerHTML = '⏳ Saving...';
         saveBtn.disabled = true;
         console.log('🔍 Button set to Saving, current text:', saveBtn.innerHTML);
+        
+        // Detect new comments by comparing with existing
+        const currentCommentsField = document.getElementById('internalComments').value.trim();
+        const existingComments = currentProblem.comments || '';
+        const newCommentText = currentCommentsField.replace(existingComments, '').trim();
         
         // Collect form data
         const updatedProblem = {
@@ -1529,7 +1531,7 @@ console.log('🔍 Testing - updatedProblem status:', updatedProblem.problemStatu
             category: document.getElementById('category').value,
             subCategory: document.getElementById('subCategory').value,
             assignedTo: document.getElementById('assignedTo').value,
-            comments: document.getElementById('internalComments').value.trim(),
+            comments: addTimestampToComments(existingComments, newCommentText),
             problemPriority: document.getElementById('priority').value,
             problemStatus: document.getElementById('problemStatus').value,
             completionDate: document.getElementById('completionDate').value
@@ -1542,16 +1544,15 @@ console.log('🔍 Testing - updatedProblem status:', updatedProblem.problemStatu
             currentProblem = updatedProblem;
         }
 
-// ADD THIS DEBUG LINE HERE:
-console.log('🔍 Testing - updatedProblem status:', updatedProblem.problemStatus);
-checkForCompletionNotification(updatedProblem);
+        // ADD THIS DEBUG LINE HERE:
+        console.log('🔍 Testing - updatedProblem status:', updatedProblem.problemStatus);
+        checkForCompletionNotification(updatedProblem);
 
-        
         // Restore the reported date after save (since we don't send it to backend)
-console.log('🔍 Original currentProblem.reportedDate:', currentProblem.reportedDate);
-console.log('🔍 Field before restore:', document.getElementById('reportedDate').value);
-document.getElementById('reportedDate').value = currentProblem.reportedDate;
-console.log('🔍 Field after restore:', document.getElementById('reportedDate').value);
+        console.log('🔍 Original currentProblem.reportedDate:', currentProblem.reportedDate);
+        console.log('🔍 Field before restore:', document.getElementById('reportedDate').value);
+        document.getElementById('reportedDate').value = currentProblem.reportedDate;
+        console.log('🔍 Field after restore:', document.getElementById('reportedDate').value);
         
         // Only attempt backend sync if we have live data
         if (dataConnectionStatus === 'live') {
@@ -1579,70 +1580,65 @@ console.log('🔍 Field after restore:', document.getElementById('reportedDate')
             };
             
             // Create JSONP script request
-const params = new URLSearchParams(updateData);
-const script = document.createElement('script');
-script.src = `${WEB_APP_URL}?${params.toString()}`;
+            const params = new URLSearchParams(updateData);
+            const script = document.createElement('script');
+            script.src = `${WEB_APP_URL}?${params.toString()}`;
 
-            
-console.log('🔍 Script URL:', script.src);
-document.head.appendChild(script);
+            console.log('🔍 Script URL:', script.src);
+            document.head.appendChild(script);
 
-// Add timeout to handle case where callback never fires
-            
-setTimeout(() => {
-    if (saveBtn.innerHTML === '⏳ Saving...') {
-        console.log('⏰ Save timeout - assuming success since local save completed');
-        console.log('🔍 About to restore date:', currentProblem.reportedDate);
-        
-        saveBtn.innerHTML = '✅ Saved!';
-        saveBtn.style.backgroundColor = '#10b981';
-        saveBtn.disabled = false;
-        
-        document.getElementById('reportedDate').value = currentProblem.reportedDate;
-        console.log('🔍 Date restored to field');
-        
-        setTimeout(() => {
-            saveBtn.innerHTML = originalText;
-            saveBtn.style.backgroundColor = '';
-        }, 2000);
-    }
-}, 3000);
-            
-
-// Safety timeout cleanup
-setTimeout(() => {
-    if (script.parentNode) {
-        script.parentNode.removeChild(script);
-        console.warn('⚠️ Save request cleaned up after 30 seconds');
-    }
-}, 30000);
-            
+            // Add timeout to handle case where callback never fires
+            setTimeout(() => {
+                if (saveBtn.innerHTML === '⏳ Saving...') {
+                    console.log('⏰ Save timeout - assuming success since local save completed');
+                    console.log('🔍 About to restore date:', currentProblem.reportedDate);
+                    
+                    saveBtn.innerHTML = '✅ Saved!';
+                    saveBtn.style.backgroundColor = '#10b981';
+                    saveBtn.disabled = false;
+                    
+                    // Repopulate the entire editor to restore all field values
+                    if (typeof populateEditor === 'function' && currentProblem) {
+                        populateEditor(currentProblem);
+                        console.log('🔍 Editor repopulated with current problem data');
+                    }
+                    
+                    setTimeout(() => {
+                        saveBtn.innerHTML = 'Save Changes';
+                        saveBtn.style.backgroundColor = '';
+                    }, 2000);
+                }
+            }, 8000);
             
         } else {
-            // Sample data mode - just show local save
-            console.log('📱 Sample data mode - local save only');
-            saveBtn.innerHTML = '✅ Saved Locally';
-            saveBtn.style.backgroundColor = '#10b981'; // Green
+            console.log('📊 Sample data mode - save completed locally');
+            
+            saveBtn.innerHTML = '✅ Saved!';
+            saveBtn.style.backgroundColor = '#10b981';
             saveBtn.disabled = false;
             
+            // Repopulate the entire editor to restore all field values
+            if (typeof populateEditor === 'function' && currentProblem) {
+                populateEditor(currentProblem);
+                console.log('🔍 Editor repopulated with current problem data');
+            }
+            
             setTimeout(() => {
-                saveBtn.innerHTML = originalText;
+                saveBtn.innerHTML = 'Save Changes';
                 saveBtn.style.backgroundColor = '';
             }, 2000);
         }
         
-        // Update the editor display
-        populateEditor(updatedProblem);
-        console.log('✅ Local save completed');
+        // Re-render problems list with updated data
+        applySearchFilter();
+        renderProblems();
         
     } catch (error) {
-        console.error('❌ Error in save process:', error);
+        console.error('❌ Error in handleSaveChanges:', error);
         
-        //const saveBtn = document.getElementById('saveChangesBtn');
-//const saveBtn = document.getElementById('Btn');
-        
-        saveBtn.innerHTML = '❌ Save Error';
-        saveBtn.style.backgroundColor = '#ef4444'; // Red
+        const saveBtn = document.getElementById('Btn');
+        saveBtn.innerHTML = '⚠️ Error';
+        saveBtn.style.backgroundColor = '#ef4444';
         saveBtn.disabled = false;
         
         setTimeout(() => {
@@ -1651,7 +1647,6 @@ setTimeout(() => {
         }, 3000);
     }
 }
-
         // View Management
         function showView(view) {
             currentView = view;
@@ -2996,7 +2991,23 @@ function updateSearchButtonState() {
         searchToggleBtn.disabled = false;
     }
 } 
-
+function addTimestampToComments(existingComments, newComment) {
+    if (newComment.trim() === '') return existingComments; // No new comment to add
+    
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const time = now.toLocaleTimeString('en-AU', {hour12: true, hour: '2-digit', minute: '2-digit'});
+    
+    const timestamp = `[${day}/${month}/${year} ${time}]`;
+    
+    if (existingComments.trim()) {
+        return existingComments + '\n\n' + newComment + '\n' + timestamp;
+    } else {
+        return newComment + '\n' + timestamp;
+    }
+}
      
         
 
