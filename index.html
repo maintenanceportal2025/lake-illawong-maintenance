@@ -1513,12 +1513,7 @@ console.log('🔍 Testing - updatedProblem status:', updatedProblem.problemStatu
         saveBtn.disabled = true;
         console.log('🔍 Button set to Saving, current text:', saveBtn.innerHTML);
         
-        // Detect new comments by comparing with existing
-        const currentCommentsField = document.getElementById('internalComments').value.trim();
-        const existingComments = currentProblem.comments || '';
-        const newCommentText = currentCommentsField.replace(existingComments, '').trim();
-        
-        // Collect form data
+        // Collect form data FIRST (before tracking changes)
         const updatedProblem = {
             internalId: currentProblem.internalId,
             reportedDate: currentProblem.reportedDate, // Keep original - don't modify
@@ -1531,11 +1526,22 @@ console.log('🔍 Testing - updatedProblem status:', updatedProblem.problemStatu
             category: document.getElementById('category').value,
             subCategory: document.getElementById('subCategory').value,
             assignedTo: document.getElementById('assignedTo').value,
-            comments: addTimestampToComments(existingComments, newCommentText),
             problemPriority: document.getElementById('priority').value,
             problemStatus: document.getElementById('problemStatus').value,
             completionDate: document.getElementById('completionDate').value
         };
+        
+        // Detect new comments by comparing with existing
+        const currentCommentsField = document.getElementById('internalComments').value.trim();
+        const existingComments = currentProblem.comments || '';
+        const newCommentText = currentCommentsField.replace(existingComments, '').trim();
+        
+        // Track system changes
+        const systemChanges = trackChanges(currentProblem, updatedProblem);
+        const allNewText = [newCommentText, systemChanges].filter(text => text.trim()).join('\n\n');
+        
+        // Add final comments to updatedProblem
+        updatedProblem.comments = addTimestampToComments(existingComments, allNewText);
         
         // Update local data immediately
         const problemIndex = problems.findIndex(p => p.internalId === currentProblem.internalId);
@@ -3009,6 +3015,21 @@ function addTimestampToComments(existingComments, newComment) {
     }
 }
      
+function trackChanges(oldProblem, newData) {
+    let changeEntries = [];
+    
+    // Track status changes
+    if (oldProblem.problemStatus !== newData.problemStatus) {
+        changeEntries.push(`⚡ Status changed: ${oldProblem.problemStatus} → ${newData.problemStatus}`);
+    }
+    
+    // Track priority changes  
+    if (oldProblem.problemPriority !== newData.problemPriority) {
+        changeEntries.push(`⚡ Priority changed: ${oldProblem.problemPriority} → ${newData.problemPriority}`);
+    }
+    
+    return changeEntries.join('\n');
+}     
         
 
         </script>
