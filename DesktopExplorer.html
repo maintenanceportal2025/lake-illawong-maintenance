@@ -1,0 +1,1552 @@
+<!--
+=====================================================================
+🔍 HOLDEN-DESKTOP-EXPLORER.HTML - DESKTOP PROBLEM DATA ANALYTICS
+=====================================================================
+
+🔄 WORKFLOW PROCESS:
+1. **Before ANY change**: Copy current file to backup folder
+2. **Make change**: Update the file
+3. **Update header**: Increment version, add to VERSION HISTORY
+4. **Document change**: Note what was modified
+
+🎯 VERSION NUMBERING:
+• **Major.Minor.Patch** (e.g., v1.2.3)
+• **Major**: Big functionality changes
+• **Minor**: Feature additions
+• **Patch**: Bug fixes, documentation updates
+
+This gives you instant rollback capability and change tracking!
+
+📋 DOCUMENT INFORMATION:
+• File Name: holden-desktop-explorer.html
+• System: Lake Illawong Maintenance Portal (Development)
+• Component Type: Desktop Problem Data Analytics Interface
+• Version: v1.0.0
+• Status: 🚧 DEVELOPMENT (Not Production)
+• Created: August 2025
+• Last Modified: August 15, 2025
+• Backup Location: MyDrive/MaintenancePortal/Backups/holden-desktop-explorer/
+
+📊 VERSION HISTORY:
+• v1.0.0 (Aug 15, 2025): Initial documentation added
+• [Next version]: [Description of changes]
+
+🔄 BACKUP PROTOCOL:
+• Before ANY changes: Copy to MyDrive/MaintenancePortal/Backups/holden-desktop-explorer/v[X.X.X]_[Date]/
+• Update version number in header after changes
+• Document what changed in VERSION HISTORY
+• Keep last 3 versions minimum for rollback
+
+🎯 PRIMARY PURPOSE:
+Desktop-optimized analytics interface for comprehensive exploration and analysis
+of maintenance problem data. Provides advanced filtering, statistical dashboards,
+data export capabilities, and detailed problem visualization for supervisory analysis.
+
+🔗 SYSTEM CONNECTIONS:
+• Backend API: HOLDEN PROBLEM DATA EXPLORER API V1.0.js
+• Data Sources: FaultLog (current) and LegacyLog datasets
+• Mobile Counterpart: holden-mobile-explorer.html (same backend, different UI)
+• Landing Page Integration: Linked from index.html auto-switching system
+• Related Files: holden-mobile-explorer.html, index.html
+
+⚙️ TECHNICAL SPECIFICATIONS:
+• Technology: HTML5 + CSS3 + Vanilla JavaScript
+• Design: Desktop-optimized dual-pane layout with sidebar filters
+• Authentication: None (public read-only access)
+• Dependencies: Problem Data Explorer API
+• Browser Support: Modern desktop browsers optimized
+• Layout: Grid-based responsive design with advanced filtering
+
+🎨 UI/UX FEATURES:
+• Dual-Pane Layout: Sidebar filters + main content area
+• Dataset Toggle: Switch between Current and Legacy data
+• Advanced Filtering: Multi-criteria filtering with checkbox lists
+• Search Functionality: Real-time search with debouncing
+• Statistics Dashboard: 6-card stats overview with trend indicators
+• Problem Cards: Grid-based problem visualization with priority indicators
+• Modal Details: Click-through detailed problem view
+• Export Options: CSV export with date range filtering
+
+🔄 WORKFLOW:
+1. Data Selection: Choose Current vs Legacy dataset
+2. Apply Filters: Use sidebar to filter by unit, status, priority, category, etc.
+3. Search Problems: Real-time text search across problem descriptions
+4. Browse Results: Grid-based problem cards with visual priority indicators
+5. View Details: Click problem cards for detailed modal view
+6. Export Data: Generate CSV exports with current filter settings
+7. Statistical Analysis: Review dashboard statistics and trends
+
+🚀 DEPLOYMENT STATUS: 🚧 DEVELOPMENT
+• Current State: Functional desktop analytics interface
+• Integration: Connected to shared Problem Data Explorer API
+• Production Ready: No - part of development system
+
+🔍 ARCHITECTURE ANALYSIS:
+• Module Category: Data Analytics / Problem Exploration (Desktop)
+• Access Level: Public read-only interface (no authentication)
+• Data Sources: Shared backend with mobile explorer
+• Unique Features: Desktop-optimized layout, advanced filtering, export capabilities
+
+🎯 RESPONSIVE DESIGN PATTERN:
+• DESKTOP COUNTERPART: Companion to holden-mobile-explorer.html
+• SAME BACKEND: Shares Problem Data Explorer API with mobile version
+• DIFFERENT UX: Desktop-optimized layout vs mobile touch interface
+• AUTO-SWITCHING: Landing page detects device and routes appropriately
+
+⚠️ ARCHITECTURE DUPLICATION:
+• DUAL INTERFACES: Desktop and mobile versions for same functionality
+• SAME BACKEND API: Both explorers use identical data source
+• MAINTENANCE OVERHEAD: Two interfaces to maintain for same feature set
+• CONSOLIDATION OPPORTUNITY: Could be unified responsive design
+
+🎯 INTEGRATION QUESTIONS:
+• Should desktop and mobile explorers be consolidated into responsive design?
+• Is separate interface justification sufficient vs unified approach?
+• How does auto-switching from landing page affect user experience?
+• Should advanced desktop features be made available on mobile?
+
+🚨 DEVELOPMENT NOTES:
+• Grid layout optimized for desktop screen real estate
+• LocalStorage used for user preferences (items per page)
+• Advanced filtering system with multiple criteria support
+• Modal system for detailed problem viewing
+• CSV export functionality with date range filtering
+• Statistical dashboard with trend indicators
+
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head> 
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holden Problem Data Explorer</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; line-height: 1.6; color: #334155; }
+        .hidden { display: none !important; }
+        .desktop-container { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: auto 1fr; height: 100vh; }
+        .header { grid-column: 1 / -1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 24px; }
+        .header h1 { font-size: 1.75rem; font-weight: 600; margin-bottom: 4px; }
+        .header p { opacity: 0.9; font-size: 1rem; margin-bottom: 12px; }
+        .header-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .dataset-toggle { background: rgba(255,255,255,0.2); border-radius: 8px; padding: 3px; display: flex; gap: 2px; }
+        .dataset-btn { background: transparent; color: white; padding: 6px 12px; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+        .dataset-btn.active { background: rgba(255,255,255,0.3); font-weight: 600; }
+        .access-badge { background: rgba(255,255,255,0.2); padding: 6px 16px; border-radius: 20px; font-size: 0.9rem; }
+        .filters-sidebar { background: white; border-right: 1px solid #e2e8f0; padding: 20px; overflow-y: auto; }
+        .sidebar-header { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #e2e8f0; }
+        .sidebar-title { font-weight: 700; color: #1e293b; font-size: 1.1rem; }
+        .filter-section { margin-bottom: 28px; }
+        .filter-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .filter-label { font-weight: 600; color: #374151; font-size: 0.95rem; }
+        .search-input { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.9rem; background: white; margin-bottom: 20px; }
+        .checkbox-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; padding: 4px; }
+        .checkbox-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+        .checkbox-item:hover { background: #f1f5f9; }
+        .checkbox-item input { margin: 0; cursor: pointer; }
+        .checkbox-item label { cursor: pointer; font-size: 0.85rem; flex: 1; }
+        .main-content { padding: 20px; overflow-y: auto; }
+        .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 16px 20px; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .results-info { font-size: 1.1rem; color: #1e293b; font-weight: 600; }
+        .results-actions { display: flex; gap: 8px; align-items: center; }
+        .sort-btn { background: #3b82f6; color: white; padding: 8px 16px; border: none; border-radius: 8px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+        .sort-btn:hover { background: #2563eb; }
+        .sort-btn.active { background: #1d4ed8; }
+        .export-btn { background: #059669; color: white; padding: 8px 16px; border: none; border-radius: 8px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+        .export-btn:hover { background: #047857; }
+        .problems-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
+        .problem-card { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s; cursor: pointer; border-left: 4px solid #e5e7eb; }
+        .problem-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateY(-2px); }
+        .problem-card.urgent { border-left-color: #ef4444; }
+        .problem-card.high { border-left-color: #f97316; }
+        .problem-card.medium { border-left-color: #eab308; }
+        .problem-card.low { border-left-color: #22c55e; }
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .card-pid { font-weight: 700; color: #1e293b; font-size: 1.1rem; }
+        .card-unit { background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
+        .card-body { margin-bottom: 12px; }
+        .card-description { color: #64748b; font-size: 0.9rem; line-height: 1.4; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #64748b; }
+        .card-footer { display: flex; justify-content: space-between; align-items: center; }
+        .status-badge { padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+        .status-reported { background: #dbeafe; color: #1d4ed8; }
+        .status-in-progress { background: #fef3c7; color: #d97706; }
+        .status-completed { background: #d1fae5; color: #047857; }
+        .status-on-hold { background: #fde2e8; color: #be185d; }
+        .priority-badge { padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+        .priority-urgent { background: #fecaca; color: #dc2626; }
+        .priority-high { background: #fed7aa; color: #ea580c; }
+        .priority-medium { background: #fef3c7; color: #d97706; }
+        .priority-low { background: #bbf7d0; color: #16a34a; }
+        .loading { text-align: center; padding: 60px 20px; color: #64748b; }
+        .loading-spinner { width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top: 3px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; border-radius: 12px; width: 90%; max-width: 800px; max-height: 90%; overflow: hidden; display: flex; flex-direction: column; }
+        .modal-header { padding: 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+        .modal-title { font-size: 1.25rem; font-weight: 600; color: #1e293b; }
+        .close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b; }
+        .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+        .detail-section { margin-bottom: 24px; }
+        .detail-label { font-weight: 600; color: #374151; margin-bottom: 8px; }
+        .detail-value { color: #64748b; line-height: 1.5; }
+        .report-btn { background: #3b82f6; color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; margin-right: 10px; }
+        .report-btn.green { background: #059669; }
+        .report-btn.secondary { background: #6b7280; }
+        .date-range-display { font-size: 0.75rem; color: #64748b; text-align: center; padding: 4px; background: #f8fafc; border-radius: 4px; margin-bottom: 8px; }
+   
+    .card-top-line { 
+    display: flex; 
+    align-items: center; 
+    gap: 8px; 
+}
+
+.card-zone { 
+    background: #e0f2fe; 
+    color: #0369a1; 
+    padding: 4px 8px; 
+    border-radius: 6px; 
+    font-size: 0.8rem; 
+    font-weight: 600; 
+}
+
+.card-footer { 
+    display: flex; 
+    gap: 8px; 
+    align-items: center; 
+}
+        /* Enhanced Stats Dashboard - COMPACT VERSION */
+.stats-dashboard {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 16px;
+    padding: 16px;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.stat-card {
+    text-align: center;
+    padding: 12px 8px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.stat-number {
+    font-size: 1.6em;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 2px;
+    line-height: 1;
+}
+
+.stat-label {
+    font-weight: 600;
+    color: #475569;
+    font-size: 0.8rem;
+    margin-bottom: 1px;
+}
+
+.stat-sublabel {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+/* Specific stat card colors */
+.stat-card:nth-child(1) .stat-number { color: #3b82f6; }
+.stat-card:nth-child(2) .stat-number { color: #f59e0b; }
+.stat-card:nth-child(3) .stat-number { color: #ef4444; }
+.stat-card:nth-child(4) .stat-number { color: #10b981; }
+.stat-card:nth-child(5) .stat-number { color: #8b5cf6; }
+.stat-card:nth-child(6) .stat-number { color: #06b6d4; }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+    
+    .stat-card {
+        padding: 8px 6px;
+    }
+    
+    .stat-number {
+        font-size: 1.4em;
+    }
+    
+    .stat-label {
+        font-size: 0.75rem;
+    }
+    
+    .stat-sublabel {
+        font-size: 0.65rem;
+    }
+}
+/* Scroll Navigation Buttons */
+.scroll-buttons {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+}
+
+.scroll-btn {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    transition: all 0.2s;
+}
+
+.scroll-btn:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}    
+    </style>
+</head>
+<body>
+    <div class="desktop-container">
+        <div class="header">
+            <h1>🔍 Problem Data Explorer</h1>
+            <p>Comprehensive maintenance problem analysis and reporting</p>
+            <div class="header-actions">
+                <div class="dataset-toggle">
+                    <button class="dataset-btn active" id="currentBtn">📊 Current Data</button>
+                    <button class="dataset-btn" id="legacyBtn">📚 Legacy Data</button>
+                </div>
+                <div class="access-badge">Live Data</div>
+            </div>
+        </div>
+        <div class="filters-sidebar">
+            <div class="sidebar-header">
+                <span class="sidebar-title">🎛️ Data Slicers</span>
+            </div>
+            <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search PID, unit, description...">
+            <div class="filter-section">
+                <div class="filter-header"><div class="filter-label">📅 Date Range</div></div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
+                    <button onclick="setDateRange('1M')" style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">📅 1M</button>
+                    <button onclick="setDateRange('3M')" style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">📅 3M</button>
+                    <button onclick="setDateRange('6M')" style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">📅 6M</button>
+                    <button onclick="setDateRange('1Y')" style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">📅 1Y</button>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
+                    <button onclick="setDateRange('2023')" style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">📊 2023</button>
+                    <button onclick="setDateRange('2024')" style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">📊 2024</button>
+                    <button onclick="setDateRange('2025')" style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">📊 2025</button>
+                    <button onclick="clearDateFilter()" style="background: #fef3c7; border: 1px solid #f59e0b; padding: 6px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">🗓️ All</button>
+                </div>
+                <div style="border-top: 1px solid #e2e8f0; margin: 12px 0; padding-top: 12px;">
+                    <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 8px; font-weight: 500;">📅 Custom Range:</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                        <input type="date" id="startDate" style="padding: 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.75rem;" placeholder="Start">
+                        <input type="date" id="endDate" style="padding: 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.75rem;" placeholder="End">
+                    </div>
+                    <button onclick="applyCustomDateRange()" style="width: 100%; background: #3b82f6; color: white; border: none; padding: 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500;">🎯 Apply Range</button>
+                </div>
+                <div id="dateRangeDisplay" class="date-range-display">All dates</div>
+            </div>
+            <div class="filter-section">
+                <div class="filter-header"><div class="filter-label">🏠 Units</div></div>
+                <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+                    <button onclick="selectAllUnits()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">All</button>
+                    <button onclick="clearUnits()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">Clear</button>
+                </div>
+                <div class="checkbox-list" id="unitFilters"></div>
+            </div>
+            <div class="filter-section">
+                <div class="filter-header"><div class="filter-label">📋 Status</div></div>
+                <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+                    <button onclick="selectAllStatuses()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">All</button>
+                    <button onclick="clearStatuses()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">Clear</button>
+                </div>
+                <div class="checkbox-list" id="statusFilters"></div>
+            </div>
+
+            
+            <div class="filter-section">
+    <div class="filter-header"><div class="filter-label">⚡ Priority</div></div>
+    <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+        <button onclick="selectAllPriorities()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">All</button>
+        <button onclick="clearPriorities()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">Clear</button>
+    </div>
+    <div class="checkbox-list" id="priorityFilters"></div>
+</div>
+
+            
+            <div class="filter-section">
+    <div class="filter-header"><div class="filter-label">📂 Category</div></div>
+    <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+        <button onclick="selectAllCategories()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">All</button>
+        <button onclick="clearCategories()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">Clear</button>
+    </div>
+    <div class="checkbox-list" id="categoryFilters"></div>
+</div>
+
+            <div class="filter-section">
+    <div class="filter-header"><div class="filter-label">📂Sub-Category</div></div>
+    <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+        <button onclick="selectAllSubCategories()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">All</button>
+        <button onclick="clearSubCategories()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">Clear</button>
+    </div>
+    <div class="checkbox-list" id="subCategoryFilters"></div>
+</div>
+            
+            <div class="filter-section">
+    <div class="filter-header"><div class="filter-label">🏘️ Zone</div></div>
+    <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+        <button onclick="selectAllZones()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">All</button>
+        <button onclick="clearZones()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">Clear</button>
+    </div>
+    <div class="checkbox-list" id="zoneFilters"></div>
+</div>
+            
+            <div class="filter-section">
+    <div class="filter-header"><div class="filter-label">👷 Assigned To</div></div>
+    <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+        <button onclick="selectAllAssigned()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">All</button>
+        <button onclick="clearAssigned()" style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer;">Clear</button>
+    </div>
+    <div class="checkbox-list" id="assignedToFilters"></div>
+</div>
+            
+            <!-- Toggle All Filters Button -->
+<div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e2e8f0;">
+    <button id="toggleAllFiltersBtn" onclick="toggleAllFilters()" style="width: 100%; background: #10b981; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 0.9rem; cursor: pointer; font-weight: 600;">✅ Check All Filters</button>
+</div>
+        </div>
+       <div class="main-content">
+    <!-- NEW: Enhanced Stats Dashboard -->
+    <div class="stats-dashboard">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="totalProblemsCount">-</div>
+                <div class="stat-label">Total Problems</div>
+                <div class="stat-sublabel" id="totalProblemsSub">Filtered results</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="activeProblemsCount">-</div>
+                <div class="stat-label">Active Problems</div>
+                <div class="stat-sublabel" id="activeProblemsSub">Not completed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="urgentProblemsCount">-</div>
+                <div class="stat-label">Urgent + High</div>
+                <div class="stat-sublabel" id="urgentProblemsSub">Priority issues</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="completionRate">-</div>
+                <div class="stat-label">Completion Rate</div>
+                <div class="stat-sublabel" id="completionRateSub">Overall %</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="avgResolutionDays">-</div>
+                <div class="stat-label">Avg Resolution</div>
+                <div class="stat-sublabel" id="avgResolutionSub">Days to complete</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="thisWeekCount">-</div>
+                <div class="stat-label">This Week</div>
+                <div class="stat-sublabel" id="thisWeekSub">New reports</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="results-header">
+    <div class="results-info" id="resultsInfo">Loading...</div>
+    <div class="results-actions">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="font-size: 0.85rem; color: #64748b; font-weight: 500;">Show:</label>
+            <select id="itemsPerPageSelect" onchange="changeItemsPerPage()" style="padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.85rem; background: white; cursor: pointer;">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="all">Show All</option>
+            </select>
+        </div>
+        <button class="sort-btn" id="sortToggleBtn" onclick="toggleSort()">📅 Newest First</button>
+        <button class="export-btn" onclick="exportToCSV()">📊 Export CSV</button>
+    </div>
+</div>
+            <div class="problems-grid" id="problemsGrid">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <div>Loading problems...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Problem Detail Modal -->
+    <div class="modal hidden" id="problemModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle">Problem Details</div>
+                <button class="close-btn" id="closeProblemModal">×</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Problem details will be populated dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Modal -->
+    <div class="modal hidden" id="reportModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">📄 Problem Report</div>
+                <button class="close-btn" id="closeReportModal">×</button>
+            </div>
+            <pre id="reportText" style="white-space: pre-wrap; font-family: monospace; font-size: 12px; background: #f8f9fa; padding: 20px; border-radius: 6px; max-height: 60vh; overflow-y: auto;"></pre>
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button id="copyReportFromModal" class="report-btn green">📋 Copy to Clipboard</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
+        let allProblems = [], filteredProblems = [], currentProblem = null, currentDataset = 'current';
+        let currentDateFilter = null;
+        let customDateRange = null;
+        let sortDirection = 'desc'; // NEW: Track sort direction
+        let dynamicDropdowns = {}; // NEW: Store dynamic dropdown data
+        let currentPage = 1;
+        let itemsPerPage = 20; // Changed from const to let - now user-selectable
+const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100, 'All']; // Available options
+        
+        document.addEventListener('DOMContentLoaded', function() {
+    console.log('🖥️ Problem Data Explorer - Starting...');
+    document.getElementById('currentBtn').addEventListener('click', () => switchDataset('current'));
+    document.getElementById('legacyBtn').addEventListener('click', () => switchDataset('legacy'));
+    document.getElementById('searchInput').addEventListener('input', () => setTimeout(applyFilters, 300));
+    document.getElementById('closeProblemModal').addEventListener('click', closeModal);
+    document.getElementById('closeReportModal').addEventListener('click', closeModal);
+    document.getElementById('copyReportFromModal').addEventListener('click', copyFromModal);
+    document.getElementById('problemModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeModal(); });
+    document.getElementById('reportModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeModal(); });
+
+
+            
+    // Load saved items per page preference
+    const savedItemsPerPage = localStorage.getItem('explorerItemsPerPage');
+    if (savedItemsPerPage) {
+        document.getElementById('itemsPerPageSelect').value = savedItemsPerPage;
+        changeItemsPerPage(); // Apply the saved preference
+    }
+    
+    loadProblemsData();
+    loadDynamicDropdowns(); // NEW: Load dynamic dropdown data
+});
+
+        // NEW: Load dynamic dropdown options from Categories tab
+        async function loadDynamicDropdowns() {
+            try {
+                console.log('🎛️ Loading dynamic dropdown options...');
+                const response = await makeRequest('getDropdownOptions');
+                
+                if (response && response.success) {
+                    dynamicDropdowns = response.data || {};
+                    console.log('✅ Dynamic dropdowns loaded:', Object.keys(dynamicDropdowns));
+                } else {
+                    console.log('⚠️ Failed to load dynamic dropdowns, using fallback');
+                    dynamicDropdowns = {
+                        categories: ['Aircon', 'Doors', 'Electrical', 'Plumbing', 'Structural'],
+                        subCategories: ['General', 'Leaking Tap', 'Lighting', 'Repair'],
+                        assignedTo: ['Ben', 'Jade', 'David', 'Gardening Club']
+                    };
+                }
+            } catch (error) {
+                console.error('Error loading dynamic dropdowns:', error);
+                dynamicDropdowns = {};
+            }
+        }
+        
+        async function switchDataset(dataset) {
+            console.log(`🔄 Switching to ${dataset} dataset...`);
+            currentDataset = dataset;
+            document.getElementById('currentBtn').classList.toggle('active', dataset === 'current');
+            document.getElementById('legacyBtn').classList.toggle('active', dataset === 'legacy');
+            document.querySelector('.access-badge').textContent = dataset === 'current' ? 'Live Data' : 'Legacy Data';
+            
+            // Reset pagination when switching datasets
+            currentPage = 1;
+            
+            if (dataset === 'current') { 
+                await loadProblemsData(); 
+            } else { 
+                await loadLegacyData(); 
+            }
+        }
+        
+        async function loadLegacyData() {
+            try {
+                console.log('📚 Loading legacy data...');
+                const response = await makeRequest('getLegacyLogData');
+                if (response && response.success) {
+                    allProblems = response.data || [];
+                    console.log('Loaded', allProblems.length, 'legacy problems');
+                    
+                    // Clear date filters when switching to legacy data
+                    currentDateFilter = null;
+                    customDateRange = null;
+                    clearCustomDateInputs();
+                    updateDateRangeDisplay('all');
+                    
+                    buildFilters(); 
+                    applyFilters();
+                } else { 
+                    throw new Error('Failed to load legacy data'); 
+                }
+            } catch (error) {
+                console.error('Error loading legacy data:', error);
+                showError('Failed to load legacy data');
+            }
+        }
+        
+        async function loadProblemsData() {
+            try {
+                console.log('Loading current data...');
+                const response = await makeRequest('getFaultLogData');
+                if (response && response.success) {
+                    allProblems = response.data || [];
+                    console.log('Loaded', allProblems.length, 'problems');
+                    buildFilters(); 
+                    applyFilters();
+                } else { 
+                    throw new Error('Failed to load data'); 
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showError('Failed to load data');
+            }
+        }
+        
+        function buildFilters() {
+    const units = [...new Set(allProblems.map(p => String(p.unitNumber || '')).filter(Boolean))].sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, '') || '0') || 0;
+        const numB = parseInt(b.replace(/\D/g, '') || '0') || 0;
+        return numA - numB;
+    });
+    buildCheckboxSection('unitFilters', units, 'unit');
+    
+    const statuses = [...new Set(allProblems.map(p => String(p.problemStatus || '')).filter(Boolean))].sort();
+    buildCheckboxSection('statusFilters', statuses, 'status');
+    
+    const priorities = ['Urgent', 'High', 'Medium', 'Low'];
+    buildCheckboxSection('priorityFilters', priorities, 'priority');
+    
+    // Use dynamic categories if available
+    const categories = dynamicDropdowns.categories && dynamicDropdowns.categories.length > 0 
+        ? dynamicDropdowns.categories 
+        : [...new Set(allProblems.map(p => String(p.category || '')).filter(Boolean))].sort();
+    buildCheckboxSection('categoryFilters', categories, 'category');
+    
+    // NEW: Use dynamic sub-categories if available
+    const subCategories = dynamicDropdowns.subCategories && dynamicDropdowns.subCategories.length > 0
+        ? dynamicDropdowns.subCategories
+        : [...new Set(allProblems.map(p => String(p.subCategory || '')).filter(Boolean))].sort();
+    buildCheckboxSection('subCategoryFilters', subCategories, 'subCategory');
+    
+    const zones = [...new Set(allProblems.map(p => String(p.zone || '')).filter(Boolean))].sort();
+    buildCheckboxSection('zoneFilters', zones, 'zone');
+    
+    // Use dynamic assignedTo if available
+    const assignedTo = dynamicDropdowns.assignedTo && dynamicDropdowns.assignedTo.length > 0
+        ? dynamicDropdowns.assignedTo
+        : [...new Set(allProblems.map(p => String(p.assignedTo || '')).filter(Boolean))].sort();
+    buildCheckboxSection('assignedToFilters', assignedTo, 'assignedTo');
+}
+        
+        function buildCheckboxSection(containerId, items, filterType) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            items.forEach(item => {
+                if (!item) return;
+                
+                const div = document.createElement('div');
+                div.className = 'checkbox-item';
+                
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.value = item;
+                input.checked = true;
+                input.addEventListener('change', applyFilters);
+                
+                const label = document.createElement('label');
+                label.textContent = item;
+                
+                div.appendChild(input);
+                div.appendChild(label);
+                container.appendChild(div);
+            });
+        }
+
+        // NEW: Toggle sort direction function
+        function toggleSort() {
+            sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+            const btn = document.getElementById('sortToggleBtn');
+            btn.textContent = sortDirection === 'desc' ? '📅 Newest First' : '📅 Oldest First';
+            applyFilters();
+        }
+        
+        function applyFilters() {
+            let filtered = [...allProblems];
+            
+            // Apply date filter first
+            if (currentDateFilter || customDateRange) {
+                if (customDateRange) {
+                    filtered = applyCustomDateFilter(filtered);
+                } else if (currentDateFilter) {
+                    filtered = applyDateFilter(filtered, currentDateFilter);
+                }
+            }
+            
+            ['unit', 'status', 'priority', 'category', 'subCategory', 'zone', 'assignedTo'].forEach(filterType => {
+                const checked = Array.from(document.querySelectorAll(`#${filterType}Filters input:checked`)).map(cb => cb.value);
+                const all = Array.from(document.querySelectorAll(`#${filterType}Filters input`)).map(cb => cb.value);
+                if (checked.length < all.length && checked.length > 0) {
+                    filtered = filtered.filter(p => checked.includes(getFieldValue(p, filterType)));
+                }
+            });
+            
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+            if (searchTerm) {
+                filtered = filtered.filter(problem => {
+                    const searchText = [getFriendlyPID(problem.internalId), problem.unitNumber, problem.problemDescription, problem.reportedBy].filter(Boolean).join(' ').toLowerCase();
+                    return searchText.includes(searchTerm);
+                });
+            }
+            
+            // NEW: Apply sort direction
+            filtered.sort((a, b) => {
+                const dateA = parseDate(a.timestamp);
+                const dateB = parseDate(b.timestamp);
+                
+                if (sortDirection === 'desc') {
+                    if (dateB !== dateA) return dateB - dateA;
+                    // Same date - sort by PID number
+                    return getFriendlyPID(b.internalId).localeCompare(getFriendlyPID(a.internalId));
+                } else {
+                    if (dateA !== dateB) return dateA - dateB;
+                    // Same date - sort by PID number
+                    return getFriendlyPID(a.internalId).localeCompare(getFriendlyPID(b.internalId));
+                }
+            });
+            
+            filteredProblems = filtered;
+            currentPage = 1; // Reset to first page when filters change
+            updateResults();
+        }
+        
+        function toggleAllFilters() {
+    // Check if any filters are currently unchecked
+    const allCheckboxes = document.querySelectorAll('.checkbox-list input[type="checkbox"]');
+    const uncheckedCount = Array.from(allCheckboxes).filter(cb => !cb.checked).length;
+    
+    // If any are unchecked, check all. If all are checked, uncheck all
+    const shouldCheck = uncheckedCount > 0;
+    
+    // Clear date filters and search
+    currentDateFilter = null;
+    customDateRange = null;
+    clearCustomDateInputs();
+    updateDateRangeDisplay('all');
+    document.getElementById('searchInput').value = '';
+    
+    // Toggle all checkboxes
+    allCheckboxes.forEach(cb => {
+        cb.checked = shouldCheck;
+    });
+    
+    // Reset button styles
+    document.querySelectorAll('.filter-section button').forEach(btn => {
+        btn.style.background = '#f1f5f9';
+        btn.style.borderColor = '#e2e8f0';
+    });
+    
+    // Update button text and color
+    const btn = document.getElementById('toggleAllFiltersBtn');
+    if (shouldCheck) {
+        btn.innerHTML = '🗑️ Clear All Filters';
+        btn.style.background = '#ef4444';
+    } else {
+        btn.innerHTML = '✅ Check All Filters';
+        btn.style.background = '#10b981';
+    }
+    
+    currentPage = 1;
+    applyFilters();
+}
+        
+        function applyCustomDateFilter(problems) {
+            if (!customDateRange) return problems;
+            
+            const startTime = customDateRange.start.getTime();
+            const endTime = customDateRange.end.getTime();
+            
+            return problems.filter(problem => {
+                const problemDate = parseDate(problem.timestamp);
+                return problemDate >= startTime && problemDate <= endTime;
+            });
+        }
+        
+        function applyDateFilter(problems, range) {
+            const now = new Date();
+            let startDate, endDate;
+            
+            switch (range) {
+                case '1M':
+                    startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                    endDate = now;
+                    break;
+                case '3M':
+                    startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+                    endDate = now;
+                    break;
+                case '6M':
+                    startDate = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+                    endDate = now;
+                    break;
+                case '1Y':
+                    startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+                    endDate = now;
+                    break;
+                case '2023':
+                    startDate = new Date(2023, 0, 1);
+                    endDate = new Date(2023, 11, 31);
+                    break;
+                case '2024':
+                    startDate = new Date(2024, 0, 1);
+                    endDate = new Date(2024, 11, 31);
+                    break;
+                case '2025':
+                    startDate = new Date(2025, 0, 1);
+                    endDate = new Date(2025, 11, 31);
+                    break;
+                default:
+                    return problems;
+            }
+            
+            return problems.filter(problem => {
+                const problemDate = parseDate(problem.timestamp);
+                return problemDate >= startDate.getTime() && problemDate <= endDate.getTime();
+            });
+        }
+        
+        function setDateRange(range) {
+            currentDateFilter = range;
+            customDateRange = null;
+            clearCustomDateInputs();
+            updateDateRangeDisplay(range);
+            applyFilters();
+            
+            // Visual feedback for button press
+            document.querySelectorAll('.filter-section button').forEach(btn => {
+                btn.style.background = '#f1f5f9';
+                btn.style.borderColor = '#e2e8f0';
+            });
+            
+            event.target.style.background = '#dbeafe';
+            event.target.style.borderColor = '#3b82f6';
+        }
+        
+        function clearDateFilter() {
+            currentDateFilter = null;
+            customDateRange = null;
+            clearCustomDateInputs();
+            updateDateRangeDisplay('all');
+            applyFilters();
+            
+            // Reset all button styles
+            document.querySelectorAll('.filter-section button').forEach(btn => {
+                btn.style.background = '#f1f5f9';
+                btn.style.borderColor = '#e2e8f0';
+            });
+        }
+        
+        function applyCustomDateRange() {
+            const startInput = document.getElementById('startDate');
+            const endInput = document.getElementById('endDate');
+            
+            if (!startInput.value || !endInput.value) {
+                alert('Please select both start and end dates');
+                return;
+            }
+            
+            const startDate = new Date(startInput.value);
+            const endDate = new Date(endInput.value);
+            
+            if (startDate > endDate) {
+                alert('Start date must be before end date');
+                return;
+            }
+            
+            customDateRange = { start: startDate, end: endDate };
+            currentDateFilter = null;
+            updateDateRangeDisplay('custom');
+            applyFilters();
+        }
+        
+        function clearCustomDateInputs() {
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+        }
+        
+        function updateDateRangeDisplay(range) {
+            const display = document.getElementById('dateRangeDisplay');
+            let text;
+            
+            if (customDateRange) {
+                const start = customDateRange.start.toLocaleDateString('en-AU');
+                const end = customDateRange.end.toLocaleDateString('en-AU');
+                text = `Custom: ${start} - ${end}`;
+            } else {
+                switch (range) {
+                    case '1M':
+                        text = 'Last 1 month';
+                        break;
+                    case '3M':
+                        text = 'Last 3 months';
+                        break;
+                    case '6M':
+                        text = 'Last 6 months';
+                        break;
+                    case '1Y':
+                        text = 'Last 1 year';
+                        break;
+                    case '2023':
+                        text = 'Year 2023 (1 Jan - 31 Dec)';
+                        break;
+                    case '2024':
+                        text = 'Year 2024 (1 Jan - 31 Dec)';
+                        break;
+                    case '2025':
+                        text = 'Year 2025 (1 Jan - 31 Dec)';
+                        break;
+                    default:
+                        text = 'All dates';
+                }
+            }
+            
+            display.textContent = text;
+        }
+        
+        // FIXED: MM/DD date parsing (from mobile solution)
+        function parseDate(dateString) {
+            if (!dateString) return 0;
+            try {
+                if (dateString instanceof Date) return dateString.getTime();
+                if (typeof dateString === 'string' && dateString.includes('/')) {
+                    const parts = dateString.trim().split('/');
+                    if (parts.length === 3) {
+                        // FIXED: MM/DD format instead of DD/MM
+                        const month = parseInt(parts[0]) - 1;
+                        const day = parseInt(parts[1]);
+                        const year = parseInt(parts[2]);
+                        if (day >= 1 && day <= 31 && month >= 0 && month <= 11 && year >= 1900) {
+                            return new Date(year, month, day).getTime();
+                        }
+                    }
+                }
+                return new Date(dateString).getTime();
+            } catch (error) { 
+                return 0; 
+            }
+        }
+        
+        function formatDate(dateString) {
+            if (!dateString) return 'No Date';
+            try {
+                let date;
+                if (dateString instanceof Date) {
+                    date = dateString;
+                } else if (typeof dateString === 'string' && dateString.includes('/')) {
+                    const parts = dateString.trim().split('/');
+                    if (parts.length === 3) {
+                        // FIXED: MM/DD parsing but DD/MM display
+                        const month = parseInt(parts[0]) - 1;
+                        const day = parseInt(parts[1]);
+                        const year = parseInt(parts[2]);
+                        if (day >= 1 && day <= 31 && month >= 0 && month <= 11 && year >= 1900) {
+                            date = new Date(year, month, day);
+                        } else { 
+                            return 'Invalid Date'; 
+                        }
+                    }
+                } else { 
+                    date = new Date(dateString); 
+                }
+                
+                return isNaN(date.getTime()) ? 'Invalid Date' : date.toLocaleDateString('en-AU', {
+                    day: '2-digit',
+                    month: '2-digit', 
+                    year: 'numeric'
+                });
+            } catch (error) {
+                return 'Invalid Date';
+            }
+        }
+        
+        function getFriendlyPID(internalId) {
+            if (!internalId) return 'Unknown';
+            if (typeof internalId === 'string' && internalId.includes('-')) {
+                const parts = internalId.split('-');
+                return parts.length > 1 ? `PID ${parts[parts.length - 1]}` : `PID ${internalId}`;
+            }
+            return `PID ${internalId}`;
+        }
+        
+        function getFieldValue(problem, fieldType) {
+            switch (fieldType) {
+                case 'unit': return problem.unitNumber;
+                case 'status': return problem.problemStatus;
+                case 'priority': return problem.problemPriority;
+                case 'category': return problem.category;
+                case 'subCategory': return problem.subCategory;
+                case 'zone': return problem.zone;
+                case 'assignedTo': return problem.assignedTo;
+                default: return '';
+            }
+        }
+        
+        function updateResults() {
+            const resultsInfo = document.getElementById('resultsInfo');
+            const problemsGrid = document.getElementById('problemsGrid');
+            
+            // Calculate pagination
+            const totalItems = filteredProblems.length;
+            const totalPages = itemsPerPage >= totalItems ? 1 : Math.ceil(totalItems / itemsPerPage);
+            
+            const startIndex = (currentPage - 1) * itemsPerPage;
+const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+            
+            const paginatedProblems = filteredProblems.slice(startIndex, endIndex);
+            
+            // Update results info with pagination
+            resultsInfo.innerHTML = `
+                <div>
+                    ${totalItems} problems found
+                    ${totalPages > 1 ? `<span style="color: #64748b; font-weight: normal;"> (Page ${currentPage} of ${totalPages})</span>` : ''}
+                </div>
+            `;
+            
+            if (filteredProblems.length === 0) {
+                problemsGrid.innerHTML = '<div class="loading">No problems found matching current filters</div>';
+                return;
+            }
+            
+            problemsGrid.innerHTML = '';
+            
+            // Add pagination controls if needed
+            if (totalPages > 1) {
+                const paginationContainer = document.createElement('div');
+                paginationContainer.style.cssText = 'display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 20px; padding: 20px; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
+                
+                // Previous button
+                const prevBtn = document.createElement('button');
+                prevBtn.textContent = '← Previous';
+                prevBtn.disabled = currentPage === 1;
+                prevBtn.style.cssText = `padding: 8px 16px; border: 1px solid #e2e8f0; border-radius: 6px; background: ${currentPage === 1 ? '#f8fafc' : '#3b82f6'}; color: ${currentPage === 1 ? '#9ca3af' : 'white'}; cursor: ${currentPage === 1 ? 'not-allowed' : 'pointer'};`;
+                prevBtn.onclick = () => {
+                    if (currentPage > 1) {
+                        currentPage--;
+                        updateResults();
+                    }
+                };
+                
+                // Page info
+                const pageInfo = document.createElement('span');
+                pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+                pageInfo.style.cssText = 'font-weight: 600; color: #374151;';
+                
+                // Next button
+                const nextBtn = document.createElement('button');
+                nextBtn.textContent = 'Next →';
+                nextBtn.disabled = currentPage === totalPages;
+                nextBtn.style.cssText = `padding: 8px 16px; border: 1px solid #e2e8f0; border-radius: 6px; background: ${currentPage === totalPages ? '#f8fafc' : '#3b82f6'}; color: ${currentPage === totalPages ? '#9ca3af' : 'white'}; cursor: ${currentPage === totalPages ? 'not-allowed' : 'pointer'};`;
+                nextBtn.onclick = () => {
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        updateResults();
+                    }
+                };
+                
+                paginationContainer.appendChild(prevBtn);
+                paginationContainer.appendChild(pageInfo);
+                paginationContainer.appendChild(nextBtn);
+                problemsGrid.appendChild(paginationContainer);
+            }
+            
+            // Add problem cards
+            paginatedProblems.forEach(problem => {
+                const card = createProblemCard(problem);
+                problemsGrid.appendChild(card);
+            });
+            
+            // Add pagination controls at bottom too if more than one page
+if (totalPages > 1) {
+    const bottomPagination = problemsGrid.firstChild.cloneNode(true);
+    
+    // Re-attach event listeners to the cloned buttons
+    const bottomButtons = bottomPagination.querySelectorAll('button');
+    
+    // Previous button (first button)
+    bottomButtons[0].onclick = () => {
+        if (currentPage > 1) {
+            currentPage--;
+            updateResults();
+        }
+    };
+    
+    // Next button (last button) 
+    bottomButtons[1].onclick = () => {
+        if (currentPage < totalPages) {
+            currentPage++;
+            updateResults();
+        }
+    };
+    
+    problemsGrid.appendChild(bottomPagination);
+}
+
+            
+            // Add this line at the very end of the function:
+    updateStatsDisplay();
+        }
+        
+       function createProblemCard(problem) {
+    const card = document.createElement('div');
+    card.className = `problem-card ${(problem.problemPriority || 'medium').toLowerCase()}`;
+    card.onclick = () => showProblemDetail(problem);
+    
+    const priorityClass = `priority-${(problem.problemPriority || 'medium').toLowerCase()}`;
+    const statusClass = `status-${(problem.problemStatus || 'reported').toLowerCase().replace(/\s+/g, '-')}`;
+    
+    card.innerHTML = `
+        <div class="card-header">
+            <div class="card-top-line">
+                <div class="card-pid">${getFriendlyPID(problem.internalId)}</div>
+                <div class="card-unit">${problem.unitNumber || 'No Unit'}</div>
+                ${problem.zone ? `<div class="card-zone">${problem.zone}</div>` : ''}
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="card-description">${problem.problemDescription || 'No description'}</div>
+            <div class="card-meta">
+                <span>📅 ${formatDate(problem.timestamp)}</span>
+                <span>👤 ${problem.reportedBy || 'Unknown'}</span>
+            </div>
+        </div>
+        <div class="card-footer">
+            <span class="status-badge ${statusClass}">${problem.problemStatus || 'Reported'}</span>
+            <span class="priority-badge ${priorityClass}">${problem.problemPriority || 'Medium'}</span>
+        </div>
+    `;
+    
+    return card;
+}
+        
+        function showProblemDetail(problem) {
+    currentProblem = problem;
+    const modal = document.getElementById('problemModal');
+    const title = document.getElementById('modalTitle');
+    const body = document.getElementById('modalBody');
+    
+    title.textContent = getFriendlyPID(problem.internalId) + ' - ' + (problem.unitNumber || 'No Unit');
+    
+    // Build comprehensive modal content like mobile version
+    let modalContent = '';
+    
+    // Section 1: Problem Details
+    modalContent += '<div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; overflow: hidden;">';
+    modalContent += '<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 20px; font-weight: 600; font-size: 16px;">📋 Problem Details</div>';
+    modalContent += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px;">';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Problem ID</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + getFriendlyPID(problem.internalId) + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Unit Number</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.unitNumber || 'Not specified') + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Reported Date</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + formatDate(problem.timestamp) + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Zone</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.zone || 'Not specified') + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Status</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.problemStatus || 'Not assigned') + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Priority</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.problemPriority || 'Not assigned') + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Category</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.category || 'Not assigned') + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Sub-Category</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.subCategory || 'Not assigned') + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Assigned To</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.assignedTo || 'Not assigned') + '</div></div>';
+    modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Completion Date</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.completionDate ? formatDate(problem.completionDate) : 'Not completed') + '</div></div>';
+    
+    // Problem Description (full width)
+    modalContent += '<div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Problem Description</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.problemDescription || 'No description available') + '</div></div>';
+    
+    // Comments (full width if exists)
+    if (problem.comments) {
+        modalContent += '<div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Comments</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center; white-space: pre-wrap;">' + problem.comments + '</div></div>';
+    }
+    modalContent += '</div></div>';
+    
+    // Section 2: Contact Info
+modalContent += '<div style="background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; overflow: hidden;">';
+modalContent += '<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 20px; font-weight: 600; font-size: 16px;">👥 Contact Info</div>';
+modalContent += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px;">';
+modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Reported By</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.reportedBy || 'Unknown') + '</div></div>';
+modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Reporter Email</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.reporterEmail || 'Not provided') + '</div></div>';
+modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Unit Owner</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.unitPrimaryName || 'Not provided') + '</div></div>';
+modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Unit Contact</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.unitPrimaryPhone || 'Not provided') + '</div></div>';
+modalContent += '<div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-weight: 600; color: #374151; font-size: 14px;">Unit Email</div><div style="padding: 10px 12px; background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 6px; color: #6b7280; font-size: 14px; min-height: 38px; display: flex; align-items: center;">' + (problem.unitPrimaryEmail || 'Not provided') + '</div></div>';
+modalContent += '</div></div>';
+    
+    // Action buttons
+    modalContent += '<div style="margin-top: 30px; display: flex; gap: 10px; justify-content: center; padding-top: 20px; border-top: 1px solid #e2e8f0;">';
+    modalContent += '<button class="report-btn" onclick="showReport()">📄 Generate Report</button>';
+   
+    modalContent += '<button class="report-btn secondary" onclick="closeModal()">✖️ Close</button>';
+    modalContent += '</div>';
+    
+    body.innerHTML = modalContent;
+    modal.classList.remove('hidden');
+}
+        
+        function showReport() {
+            if (!currentProblem) return;
+            
+            const report = generateSingleProblemReport(currentProblem);
+            document.getElementById('reportText').textContent = report;
+            document.getElementById('reportModal').classList.remove('hidden');
+        }
+        
+        function generateSingleProblemReport(problem) {
+            const now = new Date();
+            return `MAINTENANCE PROBLEM REPORT
+${'-'.repeat(50)}
+
+Generated: ${now.toLocaleDateString('en-AU')} at ${now.toLocaleTimeString('en-AU')}
+Report Type: Individual Problem Analysis
+
+PROBLEM IDENTIFICATION:
+${'-'.repeat(25)}
+Problem ID: ${getFriendlyPID(problem.internalId)}
+Unit Number: ${problem.unitNumber || 'Not specified'}
+Zone: ${problem.zone || 'Not specified'}
+
+REPORTING INFORMATION:
+${'-'.repeat(25)}
+Reported Date: ${formatDate(problem.timestamp)}
+Reported By: ${problem.reportedBy || 'Unknown'}
+Reporter Email: ${problem.reporterEmail || 'Not provided'}
+
+PROBLEM DETAILS:
+${'-'.repeat(25)}
+Description: ${problem.problemDescription || 'No description provided'}
+
+MANAGEMENT STATUS:
+${'-'.repeat(25)}
+Current Status: ${problem.problemStatus || 'Reported'}
+Priority Level: ${problem.problemPriority || 'Medium'}
+Category: ${problem.category || 'Not categorized'}
+Sub-Category: ${problem.subCategory || 'Not specified'}
+Assigned To: ${problem.assignedTo || 'Unassigned'}
+${problem.completionDate ? `Completion Date: ${formatDate(problem.completionDate)}` : 'Not completed'}
+
+${problem.comments ? `COMMENTS:
+${'-'.repeat(25)}
+${problem.comments}` : ''}
+
+END OF REPORT`;
+        }
+        
+        function closeModal() {
+            document.getElementById('problemModal').classList.add('hidden');
+            document.getElementById('reportModal').classList.add('hidden');
+        }
+        
+        function copyFromModal() {
+            const text = document.getElementById('reportText').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById('copyReportFromModal');
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+        
+        function exportToCSV() {
+            if (filteredProblems.length === 0) {
+                alert('No problems to export');
+                return;
+            }
+            
+            const headers = [
+                'PID', 'Unit', 'Zone', 'Reported Date', 'Reported By', 'Description',
+                'Status', 'Priority', 'Category', 'Sub-Category', 'Assigned To', 'Comments'
+            ];
+            
+            const csvData = filteredProblems.map(problem => [
+                getFriendlyPID(problem.internalId),
+                problem.unitNumber || '',
+                problem.zone || '',
+                formatDate(problem.timestamp),
+                problem.reportedBy || '',
+                (problem.problemDescription || '').replace(/"/g, '""'),
+                problem.problemStatus || '',
+                problem.problemPriority || '',
+                problem.category || '',
+                problem.subCategory || '',
+                problem.assignedTo || '',
+                (problem.comments || '').replace(/"/g, '""')
+            ]);
+            
+            const csv = [headers, ...csvData]
+                .map(row => row.map(field => `"${field}"`).join(','))
+                .join('\n');
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `problems_export_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }
+        
+        // Filter helper functions
+        function selectAllUnits() {
+            document.querySelectorAll('#unitFilters input').forEach(cb => cb.checked = true);
+            applyFilters();
+        }
+        
+        function clearUnits() {
+            document.querySelectorAll('#unitFilters input').forEach(cb => cb.checked = false);
+            applyFilters();
+        }
+        
+        function selectAllStatuses() {
+            document.querySelectorAll('#statusFilters input').forEach(cb => cb.checked = true);
+            applyFilters();
+        }
+        
+        function clearStatuses() {
+            document.querySelectorAll('#statusFilters input').forEach(cb => cb.checked = false);
+            applyFilters();
+        }
+
+// Priority buttons
+function selectAllPriorities() {
+    document.querySelectorAll('#priorityFilters input').forEach(cb => cb.checked = true);
+    applyFilters();
+}
+
+function clearPriorities() {
+    document.querySelectorAll('#priorityFilters input').forEach(cb => cb.checked = false);
+    applyFilters();
+}
+
+// Category buttons  
+function selectAllCategories() {
+    document.querySelectorAll('#categoryFilters input').forEach(cb => cb.checked = true);
+    applyFilters();
+}
+
+function clearCategories() {
+    document.querySelectorAll('#categoryFilters input').forEach(cb => cb.checked = false);
+    applyFilters();
+}
+
+// Sub-Category buttons
+function selectAllSubCategories() {
+    document.querySelectorAll('#subCategoryFilters input').forEach(cb => cb.checked = true);
+    applyFilters();
+}
+
+function clearSubCategories() {
+    document.querySelectorAll('#subCategoryFilters input').forEach(cb => cb.checked = false);
+    applyFilters();
+}
+
+// Zone buttons
+function selectAllZones() {
+    document.querySelectorAll('#zoneFilters input').forEach(cb => cb.checked = true);
+    applyFilters();
+}
+
+function clearZones() {
+    document.querySelectorAll('#zoneFilters input').forEach(cb => cb.checked = false);
+    applyFilters();
+}
+
+// Assigned To buttons
+function selectAllAssigned() {
+    document.querySelectorAll('#assignedToFilters input').forEach(cb => cb.checked = true);
+    applyFilters();
+}
+
+function clearAssigned() {
+    document.querySelectorAll('#assignedToFilters input').forEach(cb => cb.checked = false);
+    applyFilters();
+}
+        
+        
+        function showError(message) {
+            const problemsGrid = document.getElementById('problemsGrid');
+            problemsGrid.innerHTML = `<div class="loading">❌ Error: ${message}</div>`;
+        }
+        
+        // API helper function
+        async function makeRequest(action, params = {}) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'callback_' + Math.random().toString(36).substr(2, 9);
+                const script = document.createElement('script');
+                const queryParams = new URLSearchParams({ action, callback: callbackName, ...params });
+                
+                window[callbackName] = function(data) {
+                    document.body.removeChild(script);
+                    delete window[callbackName];
+                    resolve(data);
+                };
+                
+                script.onerror = () => {
+                    document.body.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error('Network error'));
+                };
+                
+                script.src = `${WEB_APP_URL}?${queryParams}`;
+                document.body.appendChild(script);
+                
+                setTimeout(() => {
+                    if (window[callbackName]) {
+                        document.body.removeChild(script);
+                        delete window[callbackName];
+                        reject(new Error('Request timeout'));
+                    }
+                }, 10000);
+            });
+        }
+
+function updateStatsDisplay() {
+    const total = filteredProblems.length;
+    const active = filteredProblems.filter(p => !['Completed', 'Cancelled'].includes(p.problemStatus)).length;
+    const urgent = filteredProblems.filter(p => ['Urgent', 'High'].includes(p.problemPriority)).length;
+    const completed = filteredProblems.filter(p => p.problemStatus === 'Completed').length;
+    
+    // Calculate completion rate
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    
+    // Calculate average resolution time for completed problems
+    const completedWithDates = filteredProblems.filter(p => 
+        p.problemStatus === 'Completed' && p.completionDate && p.timestamp
+    );
+    
+    let avgDays = '-';
+    if (completedWithDates.length > 0) {
+        const totalDays = completedWithDates.reduce((sum, problem) => {
+            const reportedDate = parseDate(problem.timestamp);
+            const completedDate = parseDate(problem.completionDate);
+            const days = Math.ceil((completedDate - reportedDate) / (1000 * 60 * 60 * 24));
+            return sum + (days > 0 ? days : 0);
+        }, 0);
+        avgDays = Math.round(totalDays / completedWithDates.length);
+    }
+    
+    // Calculate this week's problems (last 7 days)
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const thisWeek = filteredProblems.filter(p => {
+        const problemDate = parseDate(p.timestamp);
+        return problemDate >= oneWeekAgo.getTime();
+    }).length;
+    
+    // Update the display
+    document.getElementById('totalProblemsCount').textContent = total.toLocaleString();
+    document.getElementById('activeProblemsCount').textContent = active.toLocaleString();
+    document.getElementById('urgentProblemsCount').textContent = urgent.toLocaleString();
+    document.getElementById('completionRate').textContent = `${completionRate}%`;
+    document.getElementById('avgResolutionDays').textContent = avgDays === '-' ? '-' : `${avgDays}d`;
+    document.getElementById('thisWeekCount').textContent = thisWeek.toLocaleString();
+    
+    // Update sublabels with contextual info
+    document.getElementById('totalProblemsSub').textContent = currentDataset === 'current' ? 'Live data' : 'Legacy data';
+    document.getElementById('activeProblemsSub').textContent = `${total - active} completed`;
+    document.getElementById('urgentProblemsSub').textContent = urgent > 0 ? 'Need attention' : 'All normal';
+    document.getElementById('completionRateSub').textContent = `${completed}/${total} problems`;
+    document.getElementById('avgResolutionSub').textContent = avgDays === '-' ? 'No data' : 'Average days';
+    document.getElementById('thisWeekSub').textContent = thisWeek > 0 ? 'Recent activity' : 'No new reports';
+    
+    console.log('📊 Stats updated:', { total, active, urgent, completionRate, avgDays, thisWeek });
+}
+function changeItemsPerPage() {
+    const select = document.getElementById('itemsPerPageSelect');
+    const value = select.value;
+    
+    if (value === 'all') {
+        itemsPerPage = filteredProblems.length || 9999; // Show all items
+    } else {
+        itemsPerPage = parseInt(value);
+    }
+    
+    // Reset to first page when changing items per page
+    currentPage = 1;
+    
+    // Save user preference
+    localStorage.setItem('explorerItemsPerPage', value);
+    
+    // Refresh display
+    updateResults();
+    
+    console.log(`📄 Items per page changed to: ${value}`);
+}
+
+        
+// Scroll functions - simple version
+window.scrollToTop = function() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.scrollToBottom = function() {
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+};     
+        
+        
+    </script>
+
+    <!-- Scroll Navigation Buttons -->
+<div class="scroll-buttons">
+    <button class="scroll-btn" onclick="document.querySelector('.main-content').scrollTop = 0" title="Scroll to top">
+        ↑ Top
+    </button>
+    <button class="scroll-btn" onclick="document.querySelector('.main-content').scrollTop = document.querySelector('.main-content').scrollHeight" title="Scroll to bottom">
+        ↓ Bottom
+    </button>
+</div>
+
+
+</body>
+</html>
