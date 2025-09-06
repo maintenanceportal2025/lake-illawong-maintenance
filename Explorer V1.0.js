@@ -373,7 +373,7 @@ function doGet(e) {
  */
 function getDropdownOptions() {
   try {
-    console.log('🎛️ Loading dropdown options from Maintenance tab...');
+    console.log('🎛️ Loading dropdown options from Dropdowns tab...');
     console.log('Using Sheet ID:', HOLDEN_EXPLORER_SHEET_ID);
     
     const spreadsheet = SpreadsheetApp.openById(HOLDEN_EXPLORER_SHEET_ID);
@@ -384,21 +384,21 @@ function getDropdownOptions() {
     console.log('📋 Available sheets:', sheetNames);
     
     // Get Maintenance sheet (same structure as Holden Portal)
-    const maintenanceSheet = spreadsheet.getSheetByName('Maintenance');
+    const maintenanceSheet = spreadsheet.getSheetByName('Dropdowns');
     
     if (!maintenanceSheet) {
-      console.error('❌ Maintenance sheet not found in sheets:', sheetNames);
+      console.error('❌ Dropdowns sheet not found in sheets:', sheetNames);
       return {
         success: false,
-        error: 'Maintenance sheet not found. Available sheets: ' + sheetNames.join(', ')
+        error: 'Dropdowns  sheet not found. Available sheets: ' + sheetNames.join(', ')
       };
     }
     
-    console.log('✅ Maintenance sheet found');
+    console.log('✅ Dropdowns sheet found');
     
-    // Read data from Maintenance sheet
+    // Read data from Dropdowns sheet
     const data = maintenanceSheet.getDataRange().getValues();
-    console.log('✅ Data read from Maintenance sheet:', data.length, 'rows');
+    console.log('✅ Data read from Dropdowns sheet:', data.length, 'rows');
     
     const dropdownData = {
       categories: [],
