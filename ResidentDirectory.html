@@ -1011,7 +1011,7 @@ RELATED FILES: residents-portal.html
             setupViewToggle();
         });
 
-        // Load all residents data
+// Load all residents data
 async function loadResidents() {
     try {
         console.log('📞 Loading residents from API...');
@@ -1019,13 +1019,24 @@ async function loadResidents() {
         const data = await makeApiCall(API_URL + '?action=getResidents');
         
         if (data && data.success) {
-            // Filter to only include proper unit numbers
+            // Filter to include proper units AND external entries
             allResidents = (data.residents || []).filter(resident => {
                 const unit = (resident.unit || '').trim();
+                const name = (resident.name || '').trim();
                 
-                // Only include entries that match unit number pattern
-                // Matches: "Unit 1", "Unit 2", "Unit 42", etc.
-                return /^Unit\s+\d+$/i.test(unit);
+                // Include if it's a proper unit number
+                if (/^Unit\s+\d+$/i.test(unit)) {
+                    return true;
+                }
+                
+                // Include if it has no unit (or "NO UNIT") but has a real name
+                if ((unit === '' || unit.toLowerCase() === 'no unit') && 
+                    name !== '' && 
+                    name.toLowerCase() !== 'unknown') {
+                    return true;
+                }
+                
+                return false;
             });
             
             filteredResidents = [...allResidents];
@@ -1043,6 +1054,7 @@ async function loadResidents() {
     } catch (error) {
         console.error('⚠️ Error loading residents:', error);
         showError('Unable to load resident directory. Please try again later.');
+        hideLoading();
     }
 }
 
