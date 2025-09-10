@@ -41,12 +41,6 @@
  * 5. **Redeploy**: Publish new web app version
  * 6. **Update frontend URLs**: If major version change
  *
- * 🎯 VERSION NUMBERING:
- * 
- * • **Major**: Architecture changes, new authentication system
- * • **Minor**: New features, activity logging, user management
- * • **Patch**: Bug fixes, performance improvements, documentation
- *
  * 📋 SCRIPT INFORMATION:
  * • Script Name: MAaintenencePortal 
  * • System: Lake Illawong Maintenance Portal (Production)
@@ -54,7 +48,7 @@
  * • **FRONTEND INTEGRATION**: MaintenancePortal.html, Email Notification Management
  * • Status: ✅ PRODUCTION READY - Complete backend with individual user accounts
  * • Created: August 2025
- * • Last Modified: September 3rd , 2025
+ * • Last Modified: September 10th , 2025
  * • Backup Location: Google Apps Script Version History + Drive Backups
  *
  * 📊 BACKEND VERSION HISTORY: (this is left in for historical purposes)
@@ -152,14 +146,6 @@
  * • User Accounts: 4 default accounts auto-created (director, team1, team2, committee)
  * • Activity Logging: JSON format activity tracking with 50-entry rolling history
  *
- * 📊 PERFORMANCE METRICS:
- * • **Authentication**: < 2 seconds for user login verification
- * • **Activity Logging**: Real-time change tracking with minimal performance impact
- * • **Data Loading**: ~3-5 seconds for complete problem dataset with activity logs
- * • **Problem Updates**: < 3 seconds including activity log append
- * • **Admin Operations**: < 2 seconds for dropdown management functions
- * • **Backup Compatibility**: Zero downtime deployment with V2.3 fallback
- *
  * 🔧 AUTHENTICATION ARCHITECTURE:
  * • Module Category: Individual User Authentication / Role-Based Access Control
  * • Access Pattern: Username/password with SHA-256 hashing
@@ -168,12 +154,6 @@
  * • Security Features: Password hashing, login attempt monitoring, account disable/enable
  * • Future Enhancement: Role-based permissions and advanced access control ready
  *
- * • **INDIVIDUAL AUTHENTICATION**: Move from simple password to user accounts
- * • **ACTIVITY TRACKING**: Comprehensive logging of all changes with user attribution
- * • **USER MANAGEMENT**: Complete CRUD operations for user account administration
- * • **ENHANCED DATA**: New columns T, U, V for activity logging and user tracking
- * • **BACKWARD COMPATIBILITY**: All V2.3 endpoints preserved exactly
- * • **ZERO RISK DEPLOYMENT**: Safe addition approach with instant rollback capability
  *
  * 📋 GOOGLE SHEETS INTEGRATION:
  * • **Sheet ID**: 14u4Hl3Uluvk45ABIcgKGltX8EpBdGj1JvF_kEtZwmEE
@@ -191,13 +171,6 @@
  * • **Admin Portals**: All dropdown management functions preserved exactly
  * • **Activity Display**: Frontend must parse activityLogParsed for timeline display
  *
- * 📧 PRESERVED FUNCTIONALITY:
- * • **V2.3 Admin Functions**: All dropdown CRUD operations working exactly as before
- * • **V2.2 Completion Automation**: Email notifications and completion workflow preserved
- * • **V2.1 Dynamic Dropdowns**: All dropdown functionality maintained
- * • **ZoneRepEmailList**: 3-column email lookup system preserved
- * • **Email Integration**: All existing email notification functions working
- *
  * 🔄 DEPLOYMENT REQUIREMENTS:
  * • **Google Sheets Setup**: Add columns T, U, V to FaultLog sheet before deployment
  * • **Default Users**: UserAccounts sheet auto-created with 4 accounts on first API call
@@ -212,54 +185,7 @@
  * • **Rolling History**: Maintains last 50 activities per problem
  * • **System Activities**: Automatic logging for completion and email events
  * • **Timeline Display**: Frontend parsing for activity timeline visualization
- *
- *
- * 🔍 TESTING REQUIREMENTS:
- * • **Authentication**: Verify all 4 default accounts login correctly
- * • **Activity Logging**: Confirm all field changes tracked with user attribution
- * • **Timeline Display**: Test activity log parsing and frontend display
- * • **V2.3 Compatibility**: Verify ALL existing functions work exactly as before
- * • **Admin Functions**: Test all dropdown management operations
- * • **Email Integration**: Confirm completion automation and notifications work
- * • **Error Handling**: Test authentication failures and invalid operations
- *
- * 📈 MONITORING & MAINTENANCE:
- * • **Daily**: Monitor authentication success rates and activity log performance
- * • **Weekly**: Review user account activity and login patterns
- * • **Monthly**: Analyze activity log data for system usage insights
- * • **Quarterly**: User account maintenance and password policy reviews
- * • **Version Control**: Maintain deployment history for rollbacks
- * • **Performance**: Monitor API response times with activity logging overhead
- *
- * 🛡️ SECURITY & PERMISSIONS:
- * • **Script Execution**: Runs under owner's Google account permissions
- * • **Sheet Access**: Enhanced read/write access for activity logging and user management
- * • **Gmail Access**: Preserved email permissions for completion notifications
- * • **Authentication**: SHA-256 password hashing with login attempt tracking
- * • **User Management**: Secure user account creation and management
- * • **Activity Audit**: Complete audit trail of all system changes
- * • **Data Privacy**: User activity logging with appropriate data retention
- *
- * 📋 MAINTENANCE CHECKLIST:
- * ✅ User account maintenance and password resets
- * ✅ Activity log performance monitoring and optimization
- * ✅ Authentication security reviews and update
- * ✅ Integration testing with all frontend components
- * ✅ Backup and recovery testing for enhanced data structure
- * ✅ Documentation updates for any changes
- * ✅ Performance monitoring with activity logging overhead
- *
- * 🔧 DEVELOPMENT ENVIRONMENT SETUP:
- * 1. **Google Apps Script Project**: Create V2.4 project from V2.3 baseline
- * 2. **Enhanced Permissions**: Enable Google Sheets API and Gmail API
- * 3. **Test Sheet**: Configure test Google Sheet with columns T, U, V added
- * 4. **User Accounts**: Test UserAccounts sheet auto-creation
- * 5. **Authentication**: Test all 4 default accounts and login flows
- * 6. **Activity Logging**: Verify activity tracking and JSON format
- * 7. **Integration**: Test with development versions of frontend systems
- * 8. **Production**: Deploy with proper URL updates and fallback maintenance
- *
- *
+ * 
  * =====================================================================
  */
 
@@ -422,11 +348,6 @@ function doGet(e) {
   }
 }
 
-/**
- * =====================================================================
- * PRESERVED V2.3: FAULT LOG DATA LOADING
- * =====================================================================
- */
 function getFaultLogData() {
   try {
     console.log('📊 Loading FaultLog data...');
@@ -507,11 +428,6 @@ function getFaultLogData() {
   }
 }
 
-/**
- * =====================================================================
- * PRESERVED V2.3: UPDATE PROBLEM - For backward compatibility
- * =====================================================================
- */
 function updateProblem(params) {
   // Call the new function with 'SYSTEM' as user for backward compatibility
   return updateProblemWithActivity({
@@ -520,32 +436,7 @@ function updateProblem(params) {
   });
 }
 
-/**
- * =====================================================================
- * NEW V2.4: ENHANCED UPDATE PROBLEM WITH ACTIVITY LOGGING
- * =====================================================================
- */
-/**
- * =====================================================================
- * FIXED V2.4: ENHANCED UPDATE PROBLEM WITH ACTIVITY LOGGING
- * =====================================================================
- * BUG FIX: Update currentRow array as changes are made to ensure accurate change detection
- */
-/**
- * =====================================================================
- * COMPLETE V2.4: ENHANCED UPDATE PROBLEM WITH ACTIVITY LOGGING
- * =====================================================================
- * INCLUDES: Fixed change detection + Enhanced comment handling + Individual comment additions
- */
 
-
-
-/**
- * =====================================================================
- * COMPLETE V2.4: ENHANCED UPDATE PROBLEM WITH ACTIVITY LOGGING
- * =====================================================================
- * INCLUDES: Fixed change detection + Robust comment handling + Copy/paste safe
- */
 function updateProblemWithActivity(params) {
   try {
     console.log('✏️ Updating problem with activity:', params.internalId);
@@ -605,7 +496,7 @@ function updateProblemWithActivity(params) {
       if (currentStatus !== 'Completed') {
         isBecomingCompleted = true;
         const today = new Date();
-        const completionDate = today.toISOString().split('T')[0];
+        const completionDate = Utilities.formatDate(today, 'Australia/Melbourne', 'yyyy-MM-dd');
         
         faultLogSheet.getRange(rowNum, columnMap['Completion Date'] + 1).setValue(completionDate);
         updates.push(`Auto-completion date: ${completionDate}`);
@@ -622,13 +513,16 @@ function updateProblemWithActivity(params) {
         // Send completion email notification
         try {
           const problemData = {
-            internalId: currentRow[columnMap['Internal ID']],
-            unitNumber: currentRow[columnMap['Unit Number']],
-            problemDescription: currentRow[columnMap['Problem Description']],
-            unitPrimaryEmail: currentRow[columnMap['Unit Primary Email']],
-            zone: currentRow[columnMap['Zone']],
-            completionDate: completionDate
-          };
+  internalId: currentRow[columnMap['Internal ID']],
+  unitNumber: currentRow[columnMap['Unit Number']],
+  problemDescription: currentRow[columnMap['Problem Description']],
+  unitPrimaryEmail: currentRow[columnMap['Unit Primary Email']],
+  unitPrimaryName: currentRow[columnMap['Unit Primary Name']],
+  reportedBy: currentRow[columnMap['Reported By']],
+  reporterEmail: currentRow[columnMap['Reporter Email']],
+  zone: currentRow[columnMap['Zone']],
+  completionDate: completionDate
+};
           
           sendCompletionNotification(problemData);
           updates.push('📧 Completion notification sent');
@@ -903,12 +797,6 @@ function updateProblemWithActivity(params) {
   }
 }
 
-/**
- * =====================================================================
- * PRESERVED V2.3: DROPDOWN OPTIONS LOADING 
- * =====================================================================
- */
-
 
 /**
  * =====================================================================
@@ -997,37 +885,47 @@ function getDropdownOptions() {
   }
 }
 
-/**
- * =====================================================================
- * PRESERVED V2.3: COMPLETION EMAIL NOTIFICATION SYSTEM
- * =====================================================================
- */
+
 function sendCompletionNotification(problemData) {
-  console.log('📧 Sending completion notification for:', problemData.internalId);
+  console.log('🔧 Sending completion notification for:', problemData.internalId);
   
   const friendlyPID = getFriendlyPID(problemData.internalId);
   
-  // Determine email recipient using smart fallback logic - PRESERVED V2.3 LOGIC
-  let recipientEmail = '';
-  let recipientType = '';
+  // IMPROVED RECIPIENT LOGIC - Multiple recipients based on business rules
+  const recipients = [];
   
+  // Add unit primary email (if exists)
   if (problemData.unitPrimaryEmail && problemData.unitPrimaryEmail.trim() !== '') {
-    // Send to Unit Primary Email
-    recipientEmail = problemData.unitPrimaryEmail.trim();
-    recipientType = 'Unit Primary';
-    console.log('📧 Sending to Unit Primary Email:', recipientEmail);
-  } else {
-    // Fallback to Zone Rep Email
-    const zoneRepEmail = getZoneRepEmail(problemData.zone);
-    if (zoneRepEmail) {
-      recipientEmail = zoneRepEmail;
-      recipientType = 'Zone Representative';
-      console.log('📧 Unit Primary Email blank, sending to Zone Rep:', recipientEmail);
-    } else {
-      console.error('❌ No email found - Unit Primary blank and Zone Rep lookup failed');
-      throw new Error('No email recipient found for notification');
+    recipients.push(problemData.unitPrimaryEmail.trim());
+    console.log('🔧 Added Unit Primary Email:', problemData.unitPrimaryEmail);
+  }
+  
+  // Add zone rep email (if exists) 
+  const zoneRepEmail = getZoneRepEmail(problemData.zone);
+  if (zoneRepEmail && zoneRepEmail.trim() !== '') {
+    recipients.push(zoneRepEmail.trim());
+    console.log('🔧 Added Zone Rep Email:', zoneRepEmail);
+  }
+  
+  // Add reporter email ONLY if reporter is different from unit primary
+  const reporterIsDifferent = problemData.reportedBy !== problemData.unitPrimaryName;
+  if (reporterIsDifferent && problemData.reporterEmail && problemData.reporterEmail.trim() !== '') {
+    if (problemData.reporterEmail !== problemData.unitPrimaryEmail) {
+      recipients.push(problemData.reporterEmail.trim());
+      console.log('🔧 Added Reporter Email:', problemData.reporterEmail);
     }
   }
+  
+  // Remove duplicates and ensure we have recipients
+  const uniqueRecipients = [...new Set(recipients)];
+  if (uniqueRecipients.length === 0) {
+    console.error('❌ No email recipients found');
+    throw new Error('No email recipient found for notification');
+  }
+  
+  const recipientEmail = uniqueRecipients.join(', ');
+  const recipientType = `${uniqueRecipients.length} recipient(s)`;
+  console.log('🔧 Final recipients:', recipientEmail);
   
   // Generate email content - PRESERVED V2.3 FORMAT
   const subject = `Problem Completed - ${friendlyPID} - ${problemData.unitNumber}`;
@@ -1067,11 +965,6 @@ Lake Illawong Maintenance Team
   }
 }
 
-/**
- * =====================================================================
- * PRESERVED V2.3: Get Zone Representative email - CORRECTED 3-COLUMN STRUCTURE
- * =====================================================================
- */
 function getZoneRepEmail(zone) {
   console.log(`🔍 Looking for zone rep email for zone: "${zone}"`);
   
@@ -1126,15 +1019,6 @@ function getFriendlyPID(internalId) {
   return parts.length === 2 ? `PID ${parts[1]}` : `PID ${internalId}`;
 }
 
-/**
- * =====================================================================
- * PRESERVED V2.3: COMPLETE ADMIN DROPDOWN MANAGEMENT FUNCTIONS
- * =====================================================================
- */
-
-/**
- * ADD DROPDOWN ITEM - PRESERVED V2.3 FUNCTIONALITY
- */
 function addDropdownItem(params) {
   try {
     const type = params.type;
@@ -1194,9 +1078,6 @@ function addDropdownItem(params) {
   }
 }
 
-/**
- * UPDATE DROPDOWN ITEM - PRESERVED V2.3 FUNCTIONALITY
- */
 function updateDropdownItem(params) {
   try {
     const type = params.type;
@@ -1268,9 +1149,6 @@ function updateDropdownItem(params) {
   }
 }
 
-/**
- * DELETE DROPDOWN ITEM - PRESERVED V2.3 FUNCTIONALITY
- */
 function deleteDropdownItem(params) {
   try {
     const type = params.type;
@@ -1331,7 +1209,7 @@ function deleteDropdownItem(params) {
 }
 
 /**
- * SORT MAINTENANCE DATA - PRESERVED V2.3 FUNCTIONALITY
+ * SORT MAINTENANCE DATA - 
  */
 function sortMaintenanceData(sheet) {
   try {
@@ -1409,14 +1287,9 @@ function sortMaintenanceData(sheet) {
   }
 }
 
-/**
- * =====================================================================
- * PRESERVED V2.3: COMPLETE NAMED RANGE MANAGEMENT FUNCTIONS
- * =====================================================================
- */
 
 /**
- * GET NAMED RANGE DATA - PRESERVED V2.3 WITH 3-COLUMN SUPPORT
+ * GET NAMED RANGE DATA - WITH 3-COLUMN SUPPORT
  */
 function getNamedRangeData(rangeName) {
   try {
@@ -1482,7 +1355,7 @@ function getNamedRangeData(rangeName) {
 }
 
 /**
- * UPDATE NAMED RANGE CELL - PRESERVED V2.3 FUNCTIONALITY
+ * UPDATE NAMED RANGE CELL 
  */
 function updateNamedRangeCell(params) {
   try {
@@ -1525,7 +1398,7 @@ function updateNamedRangeCell(params) {
 }
 
 /**
- * UPDATE NAMED RANGE ROW - PRESERVED V2.3 WITH 3-COLUMN SUPPORT
+ * UPDATE NAMED RANGE ROW - WITH 3-COLUMN SUPPORT
  */
 function updateNamedRangeRow(params) {
   try {
@@ -1583,7 +1456,7 @@ function updateNamedRangeRow(params) {
 }
 
 /**
- * ADD NAMED RANGE ROW - PRESERVED V2.3 WITH 3-COLUMN SUPPORT
+ * ADD NAMED RANGE ROW - WITH 3-COLUMN SUPPORT
  */
 function addNamedRangeRow(params) {
   try {
@@ -1655,7 +1528,7 @@ function addNamedRangeRow(params) {
 }
 
 /**
- * DELETE NAMED RANGE ROW - PRESERVED V2.3 FUNCTIONALITY
+ * DELETE NAMED RANGE ROW 
  */
 function deleteNamedRangeRow(params) {
   try {
@@ -1714,7 +1587,7 @@ function deleteNamedRangeRow(params) {
 
 /**
  * =====================================================================
- * NEW V2.4: USER AUTHENTICATION SYSTEM
+ * USER AUTHENTICATION SYSTEM -REDUNDANT AS OF 10/09/2025
  * =====================================================================
  */
 
@@ -1964,11 +1837,7 @@ function getActivityLog(params) {
   }
 }
 
-/**
- * =====================================================================
- * USER MANAGEMENT CRUD FUNCTIONS - ADD TO WORKING V2.4
- * =====================================================================
- */
+
 
 /**
  * Create a new user
@@ -2301,116 +2170,3 @@ function generateTempPassword() {
 }
 
 
-/**
- * =====================================================================
- * V2.4 DEPLOYMENT INSTRUCTIONS
- * =====================================================================
- * 
- * 🏗️ SETUP REQUIREMENTS:
- * 
- * 1. ADD NEW COLUMNS TO FAULTLOG:
- *    - Column T: ActivityLog (for JSON activity data)
- *    - Column U: LastActionBy (username of last person to modify)
- *    - Column V: LastActionTime (timestamp of last modification)
- * 
- * 
- * 2. NEW GOOGLE SHEETS STRUCTURE:
- *    - UserAccounts sheet will be auto-created on first run
- *    - Default users: director, team1, team2, committee
- *    - Passwords: maint2025, team2025, team2025, rc2025
- * 
- * 3. DEFAULT USER ACCOUNTS:
- *    Username: director    | Role: Director   | Password: maint2025
- *    Username: team1       | Role: Team       | Password: team2025  
- *    Username: team2       | Role: Team       | Password: team2025
- *    Username: committee   | Role: Committee  | Password: rc2025
- * 
- * 🔄 ACTIVITY LOG FEATURES:
- * 
- * ✅ Tracks all field changes with user attribution
- * ✅ JSON format in column T for rich activity history
- * ✅ Displays as timeline in portal interfaces
- * ✅ Automatic system activities (completion, emails)
- * ✅ Maintains last 50 activities per problem
- * 
- * 📧 PRESERVED FUNCTIONALITY:
- * 
- * ✅ All V2.3 admin dropdown functions working
- * ✅ All V2.2 completion automation and emails working
- * ✅ All V2.1 dynamic dropdown functionality working
- * ✅ Backward compatibility with existing updateProblem calls
- * ✅ PRESERVED: ZoneRepEmailList 3-column email lookup
- * ✅ PRESERVED: Email Notification Management compatibility
- * 
- * 🚀 DEPLOYMENT STEPS:
- * 
- * 1. Add columns T, U, V to FaultLog sheet
- * 2. Deploy this V2.4 script as new web app
- * 3. Test authentication with default accounts
- * 4. Update Maintenance Portal frontend to use new login system
- * 5. Verify activity logging works correctly
- * 6. Update portal URLs to new V2.4 deployment
- * 
- * 🎯 FRONTEND CHANGES NEEDED:
- * 
- * - Maintenance Portal: Add login form with username/password
- * - Problem Editor: Display activity timeline from activityLogParsed
- * - All update calls: Include user parameter in API calls
- * 
- * 🌐 URL UPDATE REQUIREMENTS:
- * 
- * Update these frontend files to point to new V2.4 API:
- * - holden-maintenance-portal.html
- * - Email Notification Management.html
- * - Any admin portals using dropdown management
- * 
- * 📊 PORTALS THAT DON'T NEED URL UPDATES:
- * - Problem Data Explorer (uses separate API)
- * - Resident Submission Portal (uses V1.5 API)
- * 
- * ⚠️ TESTING CHECKLIST:
- * 
- * 1. ✅ UserAccounts sheet auto-creates with 4 users
- * 2. ✅ Login works with all 4 default accounts
- * 3. ✅ Activity log captures all field changes
- * 4. ✅ Timeline displays properly in problem details
- * 5. ✅ All existing V2.3 admin functions still work
- * 6. ✅ Completion automation and emails still work
- * 7. ✅ Dropdown management still works through admin portal
- * 8. ✅ ZoneRepEmailList 3-column email lookup works
- * 9. ✅ Email Notification Management module works
- * 10. ✅ Backward compatibility with existing API calls
- * 
- * 💾 BACKUP STRATEGY:
- * 
- * - Keep V2.3 web app URL as fallback
- * - New columns T, U, V are safe additions
- * - Can revert to V2.3 instantly if needed
- * - All existing data remains intact
- * - Zero risk deployment approach
- * 
- * 📝 API COMPATIBILITY:
- * 
- * - All V2.3 endpoints preserved exactly
- * - New V2.4 endpoints added without breaking existing calls
- * - updateProblem() works with or without user parameter
- * - Email Notification Management uses preserved named range functions
- * 
- * 🔐 AUTHENTICATION DETAILS:
- * 
- * - New UserAccounts sheet auto-created on first API call
- * - 4 default accounts ready for immediate use
- * - Simple password hashing with SHA-256
- * - Login attempt tracking for security
- * - Role-based access control ready for future enhancement
- * 
- * 📊 ACTIVITY LOGGING DETAILS:
- * 
- * - JSON format in ActivityLog column (T)
- * - Tracks field-level changes with before/after values
- * - Includes user attribution and timestamps
- * - Maintains rolling 50-entry history per problem
- * - Automatic system activities for completion/emails
- * 
- * =====================================================================
- */
