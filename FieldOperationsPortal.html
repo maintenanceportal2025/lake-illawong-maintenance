@@ -594,7 +594,6 @@
                 </div>
 
 <!-- Mobile Analytics Module (4th Card) -->
-<!-- Mobile Analytics Module (4th Card) -->
 <div class="module-card mobile-analytics" onclick="openModule('mobile-analytics')">
     <div class="status-badge">Active</div>
     <div class="module-icon">📱</div>
@@ -644,45 +643,150 @@
         </div>
     </div>
 
-    <script>
-        // Field Operations Portal Configuration
-        const FIELD_OPS_CONFIG = {
-            password: 'field2025',
-            modules: {
-                'maintenance': 'MaintenanceModule.html',
-                'field-alerts': 'FieldAlerts.html',
-                'analytics': 'DesktopExplorer.html'
-            }
-        };
+    <!-- 
+This is the UPDATED Field Operations Portal with dynamic password loading
+ONLY the password loading mechanism has been changed - everything else stays the same
+-->
 
-        // Initialize portal
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 Field Operations Portal v1.0 - Initializing...');
+<!-- Keep your existing HTML structure completely unchanged -->
+<!-- Just replace the JavaScript section with this updated version -->
+
+<script>
+    console.log('🔧 Field Operations Portal v1.1 - Dynamic Password Loading');
+    
+    // Configuration - NOW WITH DYNAMIC PASSWORD LOADING
+    const FIELD_OPS_CONFIG = {
+        password: null, // Will be loaded dynamically
+        passwordAPI: 'https://script.google.com/macros/s/AKfycbyu0RdVfmlQEnr1wi5tfkPi-tGNLzKcs5H3R9DAnKXzZROwqEPhnCvpNq3CsjKGeaxXwA/exec',
+        fallbackPassword: 'field2025', // Emergency fallback
+        modules: {
+            'maintenance': 'MaintenanceModule.html',
+            'field-alerts': 'FieldAlerts.html',
+            'analytics': 'DesktopExplorer.html'
+        }
+    };
+
+    // JSONP function for API calls
+    function makeJSONPCall(action, params) {
+        params = params || {};
+        console.log('📡 Making JSONP call:', action);
+        
+        return new Promise(function(resolve, reject) {
+            var callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+            var script = document.createElement('script');
+            var queryParams = new URLSearchParams();
+            
+            queryParams.append('action', action);
+            queryParams.append('callback', callbackName);
+            
+            for (var key in params) {
+                queryParams.append(key, params[key]);
+            }
+            
+            script.src = FIELD_OPS_CONFIG.passwordAPI + '?' + queryParams.toString();
+            
+            window[callbackName] = function(response) {
+                document.head.removeChild(script);
+                delete window[callbackName];
+                resolve(response);
+            };
+            
+            script.onerror = function() {
+                document.head.removeChild(script);
+                delete window[callbackName];
+                reject(new Error('Network request failed'));
+            };
+            
+            document.head.appendChild(script);
+            
+            setTimeout(function() {
+                if (window[callbackName]) {
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error('Request timeout'));
+                }
+            }, 10000);
+        });
+    }
+
+    // Load current password from API
+    function loadFieldPassword() {
+        console.log('🔑 Loading field operations password...');
+        
+        return makeJSONPCall('getPasswords')
+            .then(function(data) {
+                if (data.success && data.passwords.field) {
+                    FIELD_OPS_CONFIG.password = data.passwords.field;
+                    console.log('✅ Field operations password loaded dynamically');
+                    return true;
+                } else {
+                    console.warn('⚠️ API returned no password, using fallback');
+                    FIELD_OPS_CONFIG.password = FIELD_OPS_CONFIG.fallbackPassword;
+                    return false;
+                }
+            })
+            .catch(function(error) {
+                console.warn('⚠️ Failed to load password, using fallback:', error);
+                FIELD_OPS_CONFIG.password = FIELD_OPS_CONFIG.fallbackPassword;
+                return false;
+            });
+    }
+
+    // Initialize portal
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('🔧 Field Operations Portal v1.1 - Initializing...');
+        
+        // Load password first, then setup event listeners
+        loadFieldPassword().then(function(success) {
+            if (success) {
+                console.log('✅ Using dynamic password from SysAdmin Portal');
+            } else {
+                console.log('⚠️ Using fallback password - check SysAdmin Portal');
+            }
             setupEventListeners();
         });
+    });
 
-        // Event listeners
-        function setupEventListeners() {
-            // Login form
-            document.getElementById('loginBtn').addEventListener('click', handleLogin);
-            document.getElementById('passwordInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    handleLogin();
-                }
+    // Event listeners - UNCHANGED
+    function setupEventListeners() {
+        // Login form
+        document.getElementById('loginBtn').addEventListener('click', handleLogin);
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                handleLogin();
+            }
+        });
+
+        // Password toggle
+        document.getElementById('togglePassword').addEventListener('click', togglePasswordVisibility);
+
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+    }
+
+    // Handle login - ENHANCED WITH DYNAMIC PASSWORD
+    function handleLogin() {
+        const password = document.getElementById('passwordInput').value;
+        const errorDiv = document.getElementById('loginError');
+        const loginBtn = document.getElementById('loginBtn');
+
+        // Check if password is loaded
+        if (!FIELD_OPS_CONFIG.password) {
+            errorDiv.textContent = '⏳ Loading authentication system...';
+            errorDiv.classList.remove('hidden');
+            
+            // Retry loading password
+            loadFieldPassword().then(function() {
+                handleLogin(); // Retry login
             });
-
-            // Password toggle
-            document.getElementById('togglePassword').addEventListener('click', togglePasswordVisibility);
-
-            // Logout
-            document.getElementById('logoutBtn').addEventListener('click', logout);
+            return;
         }
 
-        // Handle login
-        function handleLogin() {
-            const password = document.getElementById('passwordInput').value;
-            const errorDiv = document.getElementById('loginError');
+        // Disable button during processing
+        loginBtn.disabled = true;
+        loginBtn.textContent = '⏳ Authenticating...';
 
+        setTimeout(function() {
             if (password === FIELD_OPS_CONFIG.password) {
                 console.log('✅ Field operations authentication successful');
                 
@@ -695,78 +799,85 @@
                 errorDiv.classList.add('hidden');
             } else {
                 console.log('❌ Invalid field operations password');
+                errorDiv.textContent = '❌ Invalid field operations password';
                 errorDiv.classList.remove('hidden');
                 
                 // Clear password field after delay
-                setTimeout(() => {
+                setTimeout(function() {
                     document.getElementById('passwordInput').value = '';
                 }, 1500);
             }
-        }
-
-        // Toggle password visibility
-        function togglePasswordVisibility() {
-            const passwordInput = document.getElementById('passwordInput');
-            const toggleBtn = document.getElementById('togglePassword');
             
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                toggleBtn.textContent = '🙈';
-            } else {
-                passwordInput.type = 'password';
-                toggleBtn.textContent = '👁️';
-            }
-        }
-
-        // Open module
-        function openModule(moduleType) {
-    let moduleUrl;
-    
-    switch(moduleType) {
-        case 'maintenance':
-            moduleUrl = 'MaintenanceModule.html';
-            break;
-        case 'alerts':
-            moduleUrl = 'FieldAlerts.html';
-            break;
-        case 'analytics-desktop':
-            moduleUrl = 'DesktopExplorer.html';
-            break;
-        case 'mobile-analytics':
-            moduleUrl = 'MobileExplorer.html';
-            break;
-        default:
-            console.log('Module not found:', moduleType);
-            return;
+            // Re-enable button
+            loginBtn.disabled = false;
+            loginBtn.textContent = '🔐 Access Field Operations';
+        }, 1000);
     }
-    
-    // Open module in new tab
-    window.open(moduleUrl, '_blank');
-}
 
-        // Logout
-        function logout() {
-            console.log('🚪 Logging out of field operations portal');
-            
-            // Show login, hide dashboard
-            document.getElementById('dashboardView').classList.add('hidden');
-            document.getElementById('loginView').classList.remove('hidden');
-            
-            // Clear any cached data
-            document.getElementById('passwordInput').value = '';
-            document.getElementById('loginError').classList.add('hidden');
+    // Toggle password visibility - UNCHANGED
+    function togglePasswordVisibility() {
+        const passwordInput = document.getElementById('passwordInput');
+        const toggleBtn = document.getElementById('togglePassword');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            toggleBtn.textContent = '🙈';
+        } else {
+            passwordInput.type = 'password';
+            toggleBtn.textContent = '👁️';
         }
+    }
 
-        // Error handling
-        window.addEventListener('error', function(e) {
-            console.error('❌ Field Operations Portal error:', e.error);
-        });
+    // Open module - UNCHANGED
+    function openModule(moduleType) {
+        let moduleUrl;
+        
+        switch(moduleType) {
+            case 'maintenance':
+                moduleUrl = 'MaintenanceModule.html';
+                break;
+            case 'alerts':
+                moduleUrl = 'FieldAlerts.html';
+                break;
+            case 'analytics-desktop':
+                moduleUrl = 'DesktopExplorer.html';
+                break;
+            case 'mobile-analytics':
+                moduleUrl = 'MobileExplorer.html';
+                break;
+            default:
+                console.log('Module not found:', moduleType);
+                return;
+        }
+        
+        // Open module in new tab
+        window.open(moduleUrl, '_blank');
+    }
 
-        // Performance monitoring
-        window.addEventListener('load', function() {
-            const loadTime = (performance.now() / 1000).toFixed(2);
-            console.log(`⚡ Field Operations Portal loaded in ${loadTime} seconds`);
-        });
-    </script>
+    // Logout - UNCHANGED
+    function logout() {
+        console.log('🚪 Logging out of field operations portal');
+        
+        // Show login, hide dashboard
+        document.getElementById('dashboardView').classList.add('hidden');
+        document.getElementById('loginView').classList.remove('hidden');
+        
+        // Clear any cached data
+        document.getElementById('passwordInput').value = '';
+        document.getElementById('loginError').classList.add('hidden');
+    }
+
+    // Error handling - UNCHANGED
+    window.addEventListener('error', function(e) {
+        console.error('❌ Field Operations Portal error:', e.error);
+    });
+
+    // Performance monitoring - ENHANCED
+    window.addEventListener('load', function() {
+        const loadTime = (performance.now() / 1000).toFixed(2);
+        console.log(`⚡ Field Operations Portal loaded in ${loadTime} seconds`);
+        console.log('🔑 Password mode:', FIELD_OPS_CONFIG.password ? 'Dynamic' : 'Loading...');
+    });
+</script>
 </body>
 </html>
