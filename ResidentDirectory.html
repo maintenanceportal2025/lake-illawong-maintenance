@@ -1012,31 +1012,39 @@ RELATED FILES: residents-portal.html
         });
 
         // Load all residents data
-        async function loadResidents() {
-            try {
-                console.log('📞 Loading residents from API...');
+async function loadResidents() {
+    try {
+        console.log('📞 Loading residents from API...');
+        
+        const data = await makeApiCall(API_URL + '?action=getResidents');
+        
+        if (data && data.success) {
+            // Filter to only include proper unit numbers
+            allResidents = (data.residents || []).filter(resident => {
+                const unit = (resident.unit || '').trim();
                 
-                const data = await makeApiCall(API_URL + '?action=getResidents');
-                
-                if (data && data.success) {
-                    allResidents = data.residents || [];
-                    filteredResidents = [...allResidents];
-                    
-                    console.log(`📞 Loaded ${allResidents.length} residents`);
-                    console.log('📋 Sample resident data:', allResidents[0]); // Debug sample
-                    
-                    displayResults();
-                    updateResultsCount();
-                    hideLoading();
-                } else {
-                    throw new Error(data?.message || 'Failed to load residents');
-                }
-                
-            } catch (error) {
-                console.error('❌ Error loading residents:', error);
-                showError('Unable to load resident directory. Please try again later.');
-            }
+                // Only include entries that match unit number pattern
+                // Matches: "Unit 1", "Unit 2", "Unit 42", etc.
+                return /^Unit\s+\d+$/i.test(unit);
+            });
+            
+            filteredResidents = [...allResidents];
+            
+            console.log(`📞 Loaded ${allResidents.length} residents`);
+            console.log('📋 Sample resident data:', allResidents[0]); // Debug sample
+            
+            displayResults();
+            updateResultsCount();
+            hideLoading();
+        } else {
+            throw new Error(data?.message || 'Failed to load residents');
         }
+        
+    } catch (error) {
+        console.error('⚠️ Error loading residents:', error);
+        showError('Unable to load resident directory. Please try again later.');
+    }
+}
 
         // Setup search functionality
         function setupSearch() {
