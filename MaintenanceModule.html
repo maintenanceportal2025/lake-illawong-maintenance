@@ -1434,6 +1434,34 @@ to view, edit, update, assign, and track all maintenance problems across the vil
         
         
         const MAINTENANCE_PASSWORD = 'maint2025';
+
+// ADD THIS NEW FUNCTION HERE:
+async function getMaintenancePassword() {
+    return new Promise((resolve, reject) => {
+        const callbackName = `callback_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        
+        window[callbackName] = function(data) {
+            delete window[callbackName];
+            if (data.success && data.passwords && data.passwords.maint) {
+                resolve(data.passwords.maint);
+            } else {
+                console.warn('⚠️ Password API failed, using fallback');
+                resolve('maint2025');
+            }
+        };
+        
+        const script = document.createElement('script');
+        script.src = `${PASSWORD_API}?action=getPasswords&callback=${callbackName}`;
+        script.onerror = () => {
+            delete window[callbackName];
+            console.warn('⚠️ Password API unavailable, using fallback');
+            resolve('maint2025');
+        };
+        document.head.appendChild(script);
+    });
+}
+
+        
         
         // CLEAN STATE MANAGEMENT
         let problems = [];
@@ -1534,15 +1562,29 @@ to view, edit, update, assign, and track all maintenance problems across the vil
         }
         
         async function authenticateUser(password) {
-            if (password === MAINTENANCE_PASSWORD) {
-                isAuthenticated = true;
-                showMainPortal();
-                await initializeSystem();
-                return true;
-            } else {
-                return false;
-            }
+    try {
+        const currentPassword = await getMaintenancePassword();
+        
+        if (password === currentPassword) {
+            isAuthenticated = true;
+            showMainPortal();
+            await initializeSystem();
+            return true;
+        } else {
+            return false;
         }
+    } catch (error) {
+        console.error('⚠️ Password check failed, trying fallback:', error);
+        if (password === MAINTENANCE_PASSWORD) {
+            isAuthenticated = true;
+            showMainPortal();
+            await initializeSystem();
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
 
         // NEW FUNCTION: Apply the pending search
         function applyPendingSearch() {
