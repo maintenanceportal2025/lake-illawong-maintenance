@@ -830,17 +830,49 @@ justify-content: center;
     </div>
 
     <script>
-        // Zone Rep Portal JavaScript
-        console.log('🏘️ Zone Rep Portal v1.0 - Loaded');
-        console.log('📱 Design System: Lake Illawong Unified v1.2');
+    // PASSWORD API CONFIGURATION
+    const PASSWORD_API = 'https://script.google.com/macros/s/AKfycbyu0RdVfmlQEnr1wi5tfkPi-tGNLzKcs5H3R9DAnKXzZROwqEPhnCvpNq3CsjKGeaxXwA/exec';
 
-        // Authentication
-        function handleLogin() {
-            const password = document.getElementById('passwordInput').value;
-            const errorMessage = document.getElementById('errorMessage');
+    // Zone Rep Portal JavaScript
+    console.log('🏙️ Zone Rep Portal v1.0 - Loaded');
+    console.log('📱 Design System: Lake Illawong Unified v1.2');
+
+    // GET ZONE REP PASSWORD FROM API
+    async function getZoneRepPassword() {
+        return new Promise((resolve, reject) => {
+            const callbackName = `callback_${Date.now()}_${Math.random().toString(36).substring(7)}`;
             
-            // Zone rep access code
-            if (password === 'zonerep2025' || password === 'zone2025') {
+            window[callbackName] = function(data) {
+                delete window[callbackName];
+                if (data.success && data.passwords && data.passwords.zonerep) {
+                    resolve(data.passwords.zonerep);
+                } else {
+                    console.warn('⚠️ Zone Rep Password API failed, using fallback');
+                    resolve('zonerep2025');
+                }
+            };
+            
+            const script = document.createElement('script');
+            script.src = `${PASSWORD_API}?action=getPasswords&callback=${callbackName}`;
+            script.onerror = () => {
+                delete window[callbackName];
+                console.warn('⚠️ Zone Rep Password API unavailable, using fallback');
+                resolve('zonerep2025');
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    // AUTHENTICATION WITH DYNAMIC PASSWORD
+    async function handleLogin() {
+        const password = document.getElementById('passwordInput').value;
+        const errorMessage = document.getElementById('errorMessage');
+        
+        try {
+            const currentPassword = await getZoneRepPassword();
+            
+            // Zone rep access code (dynamic + legacy fallback)
+            if (password === currentPassword || password === 'zone2025') {
                 // Hide login, show dashboard
                 document.getElementById('loginContainer').style.display = 'none';
                 document.getElementById('dashboard').classList.add('show');
@@ -855,55 +887,72 @@ justify-content: center;
                 
                 console.log('❌ Invalid zone rep login attempt');
             }
-        }
-
-        // Logout function
-        function logout() {
-            document.getElementById('dashboard').classList.remove('show');
-            document.getElementById('loginContainer').style.display = 'flex';
-            document.getElementById('passwordInput').value = '';
-            document.getElementById('errorMessage').style.display = 'none';
             
-            console.log('🚪 Zone rep logged out');
-        }
-
-        // Password toggle functionality
-        function togglePasswordVisibility() {
-            const passwordInput = document.getElementById('passwordInput');
-            const toggleButton = document.getElementById('togglePassword');
+        } catch (error) {
+            console.error('⚠️ Zone Rep password check failed, trying fallback:', error);
             
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                toggleButton.textContent = '🙈';
+            // Fallback to hardcoded passwords
+            if (password === 'zonerep2025' || password === 'zone2025') {
+                console.log('✅ Zone Rep fallback authentication successful');
+                document.getElementById('loginContainer').style.display = 'none';
+                document.getElementById('dashboard').classList.add('show');
+                errorMessage.style.display = 'none';
             } else {
-                passwordInput.type = 'password';
-                toggleButton.textContent = '👁️';
+                console.log('❌ Zone Rep fallback password also failed');
+                errorMessage.style.display = 'block';
+                document.getElementById('passwordInput').value = '';
+                document.getElementById('passwordInput').focus();
             }
         }
+    }
 
-        // Future feature placeholders
-        function showZoneAnalytics() {
-            alert('Zone Analytics coming soon! This feature will provide specialized analytics for your zone with trends and community insights.');
+    // Logout function
+    function logout() {
+        document.getElementById('dashboard').classList.remove('show');
+        document.getElementById('loginContainer').style.display = 'flex';
+        document.getElementById('passwordInput').value = '';
+        document.getElementById('errorMessage').style.display = 'none';
+        
+        console.log('🚪 Zone rep logged out');
+    }
+
+    // Password toggle functionality
+    function togglePasswordVisibility() {
+        const passwordInput = document.getElementById('passwordInput');
+        const toggleButton = document.getElementById('togglePassword');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            toggleButton.textContent = '🙈';
+        } else {
+            passwordInput.type = 'password';
+            toggleButton.textContent = '👁️';
         }
+    }
 
-        function showCommunitySupport() {
-            alert('Community Support tools coming soon! This will include help guides, templates, and resources for zone representatives.');
-        }
+    // Future feature placeholders
+    function showZoneAnalytics() {
+        alert('Zone Analytics coming soon! This feature will provide specialized analytics for your zone with trends and community insights.');
+    }
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('passwordInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    handleLogin();
-                }
-            });
-            
-            // Password toggle functionality
-            document.getElementById('togglePassword').addEventListener('click', togglePasswordVisibility);
-            
-            // Focus on password field
-            document.getElementById('passwordInput').focus();
+    function showCommunitySupport() {
+        alert('Community Support tools coming soon! This will include help guides, templates, and resources for zone representatives.');
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                handleLogin();
+            }
         });
-    </script>
+        
+        // Password toggle functionality
+        document.getElementById('togglePassword').addEventListener('click', togglePasswordVisibility);
+        
+        // Focus on password field
+        document.getElementById('passwordInput').focus();
+    });
+</script>
 </body>
 </html>
