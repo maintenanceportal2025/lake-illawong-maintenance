@@ -595,19 +595,20 @@
             });
         });
 
-        // Load all problems from backend
+        // Load all problems from backend using JSONP protocol
         async function loadAllProblems() {
             try {
-                console.log('📡 Loading problems from backend...');
+                console.log('📡 Loading problems from backend using JSONP...');
                 
-                const response = await fetch(`${API_URL}?action=getFaultLogData&callback=handleProblemsData`, {
-                    method: 'GET'
-                });
+                const response = await makeAPICall('getFaultLogData');
                 
-                const scriptText = await response.text();
-                
-                // Execute JSONP response
-                eval(scriptText);
+                if (response.success) {
+                    currentProblems = response.data || [];
+                    console.log(`✅ Loaded ${currentProblems.length} problems`);
+                } else {
+                    console.error('❌ Backend error:', response.error);
+                    showError('Backend error: ' + (response.error || 'Unknown error'));
+                }
                 
             } catch (error) {
                 console.error('❌ Error loading problems:', error);
@@ -615,15 +616,46 @@
             }
         }
 
-        // Handle JSONP callback
-        function handleProblemsData(response) {
-            if (response.success) {
-                currentProblems = response.data || [];
-                console.log(`✅ Loaded ${currentProblems.length} problems`);
-            } else {
-                console.error('❌ Backend error:', response.error);
-                showError('Backend error: ' + (response.error || 'Unknown error'));
-            }
+        // JSONP API call function - MANDATORY for GitHub Pages compatibility
+        async function makeAPICall(action, params = {}) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+                const script = document.createElement('script');
+                const queryParams = new URLSearchParams({ 
+                    action, 
+                    callback: callbackName, 
+                    ...params 
+                });
+                
+                script.src = `${API_URL}?${queryParams}`;
+                console.log('🌐 JSONP Request URL:', script.src);
+                
+                window[callbackName] = function(response) {
+                    console.log('✅ Received JSONP response:', response);
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    resolve(response);
+                };
+                
+                script.onerror = function() {
+                    console.error('❌ JSONP request failed');
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error('Network request failed'));
+                };
+                
+                document.head.appendChild(script);
+                
+                // Timeout after 15 seconds
+                setTimeout(() => {
+                    if (window[callbackName]) {
+                        console.warn('⏰ JSONP request timeout');
+                        document.head.removeChild(script);
+                        delete window[callbackName];
+                        reject(new Error('Request timeout'));
+                    }
+                }, 15000);
+            });
         }
 
         // Search by Problem ID
