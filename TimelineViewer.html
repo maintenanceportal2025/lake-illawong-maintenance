@@ -658,31 +658,77 @@
             });
         }
 
-        // Search by Problem ID
+        // Search by Problem ID - Enhanced to handle both friendly PID and full internal ID
         function searchByProblemId() {
-            const problemId = document.getElementById('problemIdInput').value.trim();
+            const problemIdInput = document.getElementById('problemIdInput').value.trim();
             
-            if (!problemId) {
+            if (!problemIdInput) {
                 showError('Please enter a Problem ID to search');
                 return;
             }
 
-            // Convert friendly PID to internal ID if needed
-            const internalId = problemId.replace(/^PID/, '');
+            console.log(`🔍 Searching for Problem ID: "${problemIdInput}"`);
             
-            console.log(`🔍 Searching for Problem ID: ${problemId} (Internal: ${internalId})`);
+            // Handle multiple input formats:
+            // 1. Full internal ID: "20250816-222323"
+            // 2. Friendly PID with prefix: "PID 222323" or "PID222323"  
+            // 3. Just the 6-digit suffix: "222323"
             
-            const problem = currentProblems.find(p => 
-                p.internalId === internalId || 
-                p.internalId === problemId ||
-                getFriendlyPID(p.internalId) === problemId
-            );
+            let searchTerms = [];
+            
+            // If it contains a hyphen, it's likely a full internal ID
+            if (problemIdInput.includes('-')) {
+                searchTerms.push(problemIdInput); // Exact match for full ID
+            }
+            
+            // If it starts with "PID", extract the number part
+            if (problemIdInput.toUpperCase().startsWith('PID')) {
+                const pidNumber = problemIdInput.replace(/^PID\s*/i, '').trim();
+                searchTerms.push(pidNumber); // Just the number part
+            }
+            
+            // If it's just digits (6 digits typical), use as-is
+            if (/^\d{6}$/.test(problemIdInput)) {
+                searchTerms.push(problemIdInput); // The 6-digit number
+            }
+            
+            // If none of the above, try as-is
+            if (searchTerms.length === 0) {
+                searchTerms.push(problemIdInput);
+            }
+            
+            console.log(`🔍 Search terms generated:`, searchTerms);
+            
+            // Search through problems with multiple matching strategies
+            const problem = currentProblems.find(p => {
+                // Strategy 1: Exact internal ID match
+                if (searchTerms.some(term => p.internalId === term)) {
+                    return true;
+                }
+                
+                // Strategy 2: Match against friendly PID (last 6 digits)
+                const friendlyPID = getFriendlyPID(p.internalId);
+                if (searchTerms.some(term => friendlyPID.includes(term))) {
+                    return true;
+                }
+                
+                // Strategy 3: Extract last 6 digits from internal ID and match
+                if (p.internalId && p.internalId.includes('-')) {
+                    const lastPart = p.internalId.split('-')[1];
+                    if (searchTerms.some(term => term === lastPart)) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            });
 
             if (problem) {
+                console.log(`✅ Found problem:`, problem.internalId);
                 displayProblemTimeline(problem);
                 document.getElementById('unitNumberInput').value = ''; // Clear other input
             } else {
-                showError(`Problem ID "${problemId}" not found. Please check the ID and try again.`);
+                showError(`Problem ID "${problemIdInput}" not found. Try using just the 6-digit number (e.g., "222323") or the full ID.`);
             }
         }
 
