@@ -1,0 +1,1680 @@
+<!--
+=====================================================================
+LAKE ILLAWONG MAINTENANCE SYSTEM - RESIDENTS DIRECTORY
+=====================================================================
+PURPOSE: Searchable contact directory for all residents
+PORTAL: Residents Portal Module
+VERSION: 1.0
+LAST UPDATED: August 2025
+BACKEND API: Explorer API (getResidents action)
+DESIGN SYSTEM: Lake Illawong Unified v1.0
+- Terminology: "Maintenance" standard
+- Header: White rounded box style (NO LOGO - Module standard)
+- Colors: Blue gradient primary palette
+- Background: #eeeeee standard
+AUTHENTICATION: None (Public Access)
+DEPENDENCIES: Explorer API with getResidents extension
+RELATED FILES: residents-portal.html
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Residents Directory - Lake Illawong</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    /* UNIFIED DESIGN SYSTEM - Standard Typography */
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); /* Primary Gradient */
+        min-height: 100vh;
+        color: #1e293b;
+        line-height: 1.6;
+    }
+
+    /* UNIFIED DESIGN SYSTEM - Container Standards */
+    .container {
+        max-width: 1200px; /* Desktop standard */
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    /* UNIFIED DESIGN SYSTEM - Header Standards (NO LOGO - Module) */
+    .header {
+        background: transparent;
+        
+        padding: 30px;
+        margin-bottom: 25px;
+        text-align: center;
+    }
+
+    .header-title {
+        font-size: 2.5rem;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 8px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+
+            text-align: center;
+    }
+
+    .header-subtitle {
+        font-size: 1rem;
+        color: #eeeeee;
+        font-weight: 500;
+    }
+
+    /* Search Section */
+    .search-section {
+        background: transparent;
+       
+    }
+
+    .search-container {
+        position: relative;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 16px 20px 16px 50px;
+        border: 2px solid #e2e8f0;
+        border-radius: 3px;
+        font-size: 1.1rem;
+        transition: all 0.3s ease;
+        background: #ffffff;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #64748b;
+        font-size: 1.2rem;
+    }
+
+    .search-results-count {
+        text-align: center;
+        margin-top: 15px;
+        color: #64748b;
+        font-size: 0.9rem;
+    }
+
+    /* Results Grid */
+    .results-section {
+        background: #F0F0F8;
+        border-radius: 3px;
+        padding: 30px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        min-height: 400px;
+    }
+
+    .results-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+    }
+
+    .resident-card {
+        background: #f8fafc;
+        border: 2px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 20px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .resident-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        border-color: #667eea;
+    }
+
+    .resident-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+
+    .resident-name {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0;
+    }
+
+    .unit-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: #f0f9ff;
+        color: #0284c7;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .resident-details {
+        space-y: 8px;
+    }
+
+    .detail-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+        color: #374151;
+    }
+
+    .detail-icon {
+        width: 16px;
+        text-align: center;
+        color: #64748b;
+    }
+
+    .detail-value {
+        flex: 1;
+    }
+
+    /* Filter and Export Section */
+    .controls-section {
+        background: #f8fafc;
+        border-radius: 3px;
+        padding: 25px;
+        margin-bottom: 25px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+    }
+
+    .controls-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+
+
+
+    .filter-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 10px 16px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #374151;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.filter-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+}
+
+.filter-btn.active {
+    background: #667eea;
+    border-color: #667eea;
+    color: white;
+}
+
+/* Committee filter button styles */
+.filter-btn.committee-btn {
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border-color: #bae6fd;
+}
+
+.filter-btn.committee-btn.active {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    border-color: #0284c7;
+}
+
+.filter-btn.committee-btn:hover:not(.active) {
+    border-color: #0284c7;
+    background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .filter-buttons {
+        gap: 6px;
+    }
+    
+    .filter-btn {
+        padding: 8px 12px;
+        font-size: 0.9rem;
+        min-height: 40px;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    /* Make committee buttons full width on mobile for better touch targets */
+    .filter-btn.committee-btn {
+        flex: 1 0 100%;
+        margin-top: 5px;
+    }
+}
+
+/* Remove the filter-separator styles since we're not using them anymore */
+
+
+
+    .export-buttons {
+        display: flex;
+        gap: 8px;
+    }
+
+    .view-buttons {
+        display: flex;
+        gap: 8px;
+    }
+
+    .view-btn {
+        padding: 10px 20px;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #374151;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .view-btn:hover {
+        border-color: #667eea;
+        color: #667eea;
+    }
+
+    .view-btn.active {
+        background: #667eea;
+        border-color: #667eea;
+        color: white;
+    }
+
+    .export-btn {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        text-decoration: none;
+    }
+
+    .export-btn.print {
+        background: #f0fdf4;
+        color: #059669;
+    }
+
+    .export-btn.copy {
+        background: #f0f9ff;
+        color: #0284c7;
+    }
+
+    .export-btn.download {
+        background: #faf5ff;
+        color: #8b5cf6;
+    }
+
+    .export-btn.pdf {
+        background: #fef2f2;
+        color: #dc2626;
+    }
+
+    .export-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .contact-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: auto;
+        padding-top: 15px;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .action-btn {
+        flex: 1;
+        padding: 10px 12px;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        text-align: center;
+        min-height: 44px; /* Touch target standard */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    .action-btn.call {
+        background: #f0fdf4;
+        color: #059669;
+        border: 1px solid #bbf7d0;
+    }
+
+    .action-btn.call:hover {
+        background: #dcfce7;
+        transform: translateY(-1px);
+    }
+
+    .action-btn.email {
+        background: #f0f9ff;
+        color: #0284c7;
+        border: 1px solid #bae6fd;
+    }
+
+    .action-btn.email:hover {
+        background: #e0f2fe;
+        transform: translateY(-1px);
+    }
+
+    .action-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background: #f1f5f9;
+        color: #94a3b8;
+    }
+
+    /* Loading and Empty States */
+    .loading-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #64748b;
+    }
+
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #e2e8f0;
+        border-top: 3px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* List View Styles */
+    .results-list {
+        overflow-x: auto;
+    }
+
+    .directory-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    .directory-table th {
+        background: #f8fafc;
+        padding: 16px 12px;
+        text-align: left;
+        font-weight: 700;
+        color: #1e293b;
+        border-bottom: 2px solid #e2e8f0;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+    }
+
+    .directory-table th:nth-child(1) { width: 90px; }    /* Unit */
+    .directory-table th:nth-child(2) { width: 250px; }   /* Name */
+    .directory-table th:nth-child(3) { width: 140px; }   /* Phone */
+    .directory-table th:nth-child(4) { width: auto; }    /* Email - takes remaining space */
+    .directory-table th:nth-child(5) { width: 90px; }    /* Actions */
+    .directory-table td {
+        padding: 12px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+        color: #374151;
+    }
+
+    .directory-table tr:hover {
+        background: #f8fafc;
+    }
+
+    .directory-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .list-actions {
+        display: flex;
+        gap: 6px;
+    }
+
+    .list-action-btn {
+        padding: 6px 12px;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+    }
+
+    .list-action-btn.call {
+        background: #f0fdf4;
+        color: #059669;
+        border: 1px solid #bbf7d0;
+    }
+
+    .list-action-btn.call:hover {
+        background: #dcfce7;
+    }
+
+    .list-action-btn.email {
+        background: #f0f9ff;
+        color: #0284c7;
+        border: 1px solid #bae6fd;
+    }
+
+    .list-action-btn.email:hover {
+        background: #e0f2fe;
+    }
+
+    .list-action-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background: #f1f5f9;
+        color: #94a3b8;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #64748b;
+    }
+
+    .empty-icon {
+        font-size: 3rem;
+        margin-bottom: 20px;
+        opacity: 0.5;
+    }
+
+    .empty-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 8px;
+    }
+
+    .empty-message {
+        font-size: 0.9rem;
+        color: #64748b;
+    }
+
+    /* Navigation */
+    .nav-section {
+        margin-bottom: 25px;
+    }
+
+    .nav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 600;
+        padding: 10px 15px;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+
+    .nav-link:hover {
+        background: rgba(102, 126, 234, 0.1);
+        transform: translateX(-2px);
+    }
+
+    /* Desktop: Hide call and email buttons completely */
+@media (min-width: 769px) {
+    .action-btn.call,
+    .action-btn.email,
+    .list-action-btn.call,
+    .list-action-btn.email {
+        display: none;
+    }
+}
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+        .container {
+            padding: 15px;
+        }
+
+        .header {
+            padding: 20px;
+        }
+
+        .header-title {
+            font-size: 1.5rem;
+        }
+
+        .controls-section {
+            padding: 20px;
+        }
+
+        .controls-row {
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .view-buttons {
+            display: none;
+        }
+
+        .filter-buttons {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .filter-btn {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .export-buttons {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .export-btn {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .search-section {
+            padding: 20px;
+        }
+
+        .results-section {
+            padding: 20px;
+        }
+
+        .results-grid {
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+
+        .contact-actions {
+            flex-direction: column;
+        }
+
+        .action-btn {
+            min-height: 48px; /* Larger touch target on mobile */
+        }
+
+        /* Mobile responsive adjustment for the separator */
+        .filter-separator {
+            display: none;
+        }
+        
+        .filter-buttons {
+            gap: 0;
+        }
+        
+        .filter-btn {
+            border-radius: 0;
+            border-left: none;
+        }
+        
+        .filter-btn:first-child {
+            border-top-left-radius: 8px;
+            border-bottom-left-radius: 8px;
+            border-left: 2px solid #e2e8f0;
+        }
+        
+        .filter-btn:last-child {
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }
+    }
+
+    /* Accessibility */
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+
+    /* High Contrast Mode */
+    @media (prefers-contrast: high) {
+        .resident-card {
+            border-width: 3px;
+        }
+        
+        .action-btn {
+            border-width: 2px;
+        }
+    }
+
+
+.stage-divider {
+    grid-column: 1 / -1;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #cbd5e1, transparent);
+    margin: 30px 0;
+    position: relative;
+    text-align: center;
+}
+
+.stage-divider::before {
+    content: "";
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    padding: 0 15px;
+    color: #64748b;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+/* Specific labels for each section type */
+.stage-divider[data-section="Stage 1 Units"]::before {
+    content: "Stage 1 Units";
+}
+
+.stage-divider[data-section="Stage 1 External"]::before {
+    content: "Stage 1 External";
+    color: #dc2626; /* Red color for emphasis */
+}
+
+.stage-divider[data-section="Stage 2 Units"]::before {
+    content: "Stage 2 Units";
+}
+
+.stage-divider[data-section="Stage 2 External"]::before {
+    content: "Stage 2 External";
+    color: #dc2626; /* Red color for emphasis */
+}
+
+.filter-btn.committee-btn {
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border-color: #bae6fd;
+}
+
+.filter-btn.committee-btn.active {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    border-color: #0284c7;
+}
+
+.filter-btn.committee-btn:hover:not(.active) {
+    border-color: #0284c7;
+    background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+}
+
+@media (max-width: 768px) {
+    .results-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+        min-width: 0; /* Allow grid to shrink below content size */
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .resident-card {
+        min-width: 0; /* Critical: allows cards to shrink */
+        max-width: 100%;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        box-sizing: border-box;
+    }
+    
+    /* Force all text content to wrap */
+    .resident-card * {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        min-width: 0;
+    }
+
+	@media (max-width: 768px) {
+    /* Container with small margin */
+    .container {
+        max-width: 100vw !important;
+        width: 100vw !important;
+        padding: 10px 10px 0 10px !important; /* Top, sides, bottom, left */
+        margin: 0 !important;
+    }
+    
+    /* Add top margin to first section */
+    .header {
+        margin-top: 10px !important;
+    }
+    
+    .results-section {
+        background: none !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    
+    .results-grid {
+        padding: 0 !important;
+        gap: 10px;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+    
+    .resident-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+@media (max-width: 768px) {
+    /* Hide the contact action buttons */
+    .contact-actions {
+        display: none !important;
+    }
+    
+    /* Make phone numbers and emails clickable */
+    .detail-value {
+        color: #667eea !important;
+        text-decoration: underline !important;
+        cursor: pointer !important;
+    }
+    
+    /* Keep existing styling */
+    .container {
+        max-width: 100vw !important;
+        width: 100vw !important;
+        padding: 10px 10px 0 10px !important;
+        margin: 0 !important;
+    }
+    
+    .header {
+        margin-top: 10px !important;
+    }
+    
+    .results-section {
+        background: none !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    
+    .results-grid {
+        padding: 0 !important;
+        gap: 10px;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+    
+    .resident-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+
+@media (max-width: 768px) {
+    .detail-link {
+        color: #667eea !important;
+        text-decoration: none !important;
+        cursor: pointer !important;
+    }
+    
+    .detail-link:hover {
+        text-decoration: underline !important;
+    }
+}
+	
+
+</style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="header-title">Resident Directory</h1>
+            <p class="header-subtitle">Search and contact Lake Illawong residents</p>
+        </header>
+
+        <!-- Filter and Export Controls -->
+        <section class="controls-section">
+            <div class="controls-row">
+
+
+    <div class="filter-buttons">
+    <button class="filter-btn active" data-stage="all">All Residents</button>
+    <button class="filter-btn" data-stage="stage1">Stage 1</button>
+    <button class="filter-btn" data-stage="stage2">Stage 2</button>
+    <button class="filter-btn committee-btn" data-committee="social">Social Committee</button>
+    <button class="filter-btn committee-btn" data-committee="resident">Resident Committee</button>
+</div>
+
+    <div class="view-buttons">
+        <button class="view-btn active" data-view="cards">📇 Cards</button>
+        <button class="view-btn" data-view="list">📋 List</button>
+    </div>
+    <div class="export-buttons">
+                    <button class="export-btn print" onclick="printDirectory()">
+                        🖨️ Print
+                    </button>
+                    <button class="export-btn copy" onclick="copyToClipboard()">
+                        📋 Copy
+                    </button>
+                    <button class="export-btn download" onclick="downloadCSV()">
+                        📥 CSV
+                    </button>
+                    <button class="export-btn pdf" onclick="downloadPDF()">
+                        📄 PDF
+                    </button>
+                </div>
+            </div>
+        </section>
+        <section class="search-section">
+            <div class="search-container">
+                <div style="position: relative;">
+                    <span class="search-icon">🔍</span>
+                    <input 
+                        type="text" 
+                        id="searchInput" 
+                        class="search-input" 
+                        placeholder="Search by name, unit, email, or phone..."
+                        autocomplete="off"
+                    >
+                </div>
+                <div id="resultsCount" class="search-results-count">
+                    Loading residents...
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section">
+            <div id="loadingState" class="loading-state">
+                <div class="loading-spinner"></div>
+                <p>Loading resident directory...</p>
+            </div>
+
+           <div id="resultsGrid" class="results-grid" style="display: none;">
+    <!-- Results will be populated by JavaScript -->
+</div>
+
+<div id="resultsList" class="results-list" style="display: none;">
+    <table class="directory-table">
+        <thead>
+            <tr>
+                <th>Unit</th>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="listTableBody">
+            <!-- List results will be populated by JavaScript -->
+        </tbody>
+    </table>
+</div>
+
+<div id="emptyState" class="empty-state" style="display: none;">
+                <div class="empty-icon">👥</div>
+                <h3 class="empty-title">No residents found</h3>
+                <p class="empty-message">Try adjusting your search terms</p>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // RESIDENTS DIRECTORY - WITH STAGE FILTERING & EXPORT
+        let allResidents = [];
+        let filteredResidents = [];
+        let currentStageFilter = 'all';
+	let currentCommitteeFilter = null;
+
+        // API Configuration
+         const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
+
+		// V2.1 RESIDENT CONTACT BACKEND
+		// const API_URL = 'https://script.google.com/macros/s/AKfycbz0U0zpKs7CcnNJNb8dle31Wc6BiQv_NMlTywgPxzGWLcDdI-lPNats6-BAeCtUmsl-Rw/exec';
+
+		// V1.1 RESIDENT CONTACT BACKEND
+		// const API_URL = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec';
+
+		
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('📞 Residents Directory - Frontend Loading');
+            loadResidents();
+            setupSearch();
+            setupFilters();
+            setupViewToggle();
+        });
+
+// Load all residents data
+async function loadResidents() {
+    try {
+        console.log('📞 Loading residents from API...');
+        
+        const data = await makeApiCall(API_URL + '?action=getResidents');
+        
+        if (data && data.success) {
+            // Filter to include proper units AND external entries
+            allResidents = (data.residents || []).filter(resident => {
+                const unit = (resident.unit || '').trim();
+                const name = (resident.name || '').trim();
+                
+                // Include if it's a proper unit number
+                if (/^Unit\s+\d+$/i.test(unit)) {
+                    return true;
+                }
+                
+                // Include if it has no unit (or "NO UNIT") but has a real name
+                if ((unit === '' || unit.toLowerCase() === 'no unit') && 
+                    name !== '' && 
+                    name.toLowerCase() !== 'unknown') {
+                    return true;
+                }
+                
+                return false;
+            });
+            
+            filteredResidents = [...allResidents];
+            
+            console.log(`📞 Loaded ${allResidents.length} residents`);
+            console.log('📋 Sample resident data:', allResidents[0]); // Debug sample
+            
+            displayResults();
+            updateResultsCount();
+            hideLoading();
+        } else {
+            throw new Error(data?.message || 'Failed to load residents');
+        }
+        
+    } catch (error) {
+        console.error('⚠️ Error loading residents:', error);
+        showError('Unable to load resident directory. Please try again later.');
+        hideLoading();
+    }
+}
+
+        // Setup search functionality
+        function setupSearch() {
+            const searchInput = document.getElementById('searchInput');
+            
+            searchInput.addEventListener('input', function() {
+                applyFilters();
+            });
+        }
+
+
+       // Setup filter buttons
+function setupFilters() {
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    
+    filterButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const isCommitteeBtn = this.classList.contains('committee-btn');
+            
+            // Update active states - only deactivate the same type of buttons
+            filterButtons.forEach(btn => {
+                const btnIsCommittee = btn.classList.contains('committee-btn');
+                
+                // If clicking a committee button, only deactivate other committee buttons
+                if (isCommitteeBtn && btnIsCommittee) {
+                    btn.classList.remove('active');
+                }
+                // If clicking a stage button, only deactivate other stage buttons
+                else if (!isCommitteeBtn && !btnIsCommittee) {
+                    btn.classList.remove('active');
+                }
+            });
+            
+            // Set the clicked button as active
+            this.classList.add('active');
+            
+            // Update filter variables
+            if (isCommitteeBtn) {
+                currentCommitteeFilter = this.dataset.committee;
+                currentStageFilter = 'all';
+            } else {
+                currentStageFilter = this.dataset.stage;
+                currentCommitteeFilter = null;
+            }
+            
+            applyFilters();
+        });
+    });
+}
+
+// Setup view toggle buttons
+        function setupViewToggle() {
+            const viewButtons = document.querySelectorAll('.view-btn');
+            
+            viewButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Update active button
+                    viewButtons.forEach(btn => btn.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Switch view
+                    const viewType = this.dataset.view;
+                    toggleView(viewType);
+                });
+            });
+        }
+        
+        // Toggle between card and list views
+        function toggleView(viewType) {
+            const cardsView = document.getElementById('resultsGrid');
+            const listView = document.getElementById('resultsList');
+            
+            if (viewType === 'list') {
+                cardsView.style.display = 'none';
+                listView.style.display = 'block';
+                displayListResults();
+            } else {
+                cardsView.style.display = 'grid';
+                listView.style.display = 'none';
+            }
+        }
+
+// Apply search, stage, and committee filters
+function applyFilters() {
+    const searchInput = document.getElementById('searchInput');
+    const searchTerm = searchInput.value.toLowerCase().trim();
+    
+    // Start with all residents
+    let filtered = [...allResidents];
+    
+    // Apply stage filter (only if not using committee filter)
+    if (currentStageFilter !== 'all' && !currentCommitteeFilter) {
+        const stageNumber = currentStageFilter === 'stage1' ? '1' : '2';
+        filtered = filtered.filter(resident => 
+            resident.stage && resident.stage.includes(stageNumber)
+        );
+    }
+    
+    // Apply committee filter
+    if (currentCommitteeFilter) {
+        filtered = filtered.filter(resident => {
+            if (!resident.roleTags) return false;
+            
+            const tags = resident.roleTags.toLowerCase().split(',').map(tag => tag.trim());
+            
+            if (currentCommitteeFilter === 'social') {
+                return tags.some(tag => 
+                    tag.includes('social-committee') ||
+                    tag.includes('social_committee')
+                );
+            } else if (currentCommitteeFilter === 'resident') {
+                return tags.some(tag => 
+                    tag.includes('resident-committee') ||
+                    tag.includes('resident_committee')
+                );
+            }
+            
+            return false;
+        });
+    }
+    
+    // Apply search filter
+    if (searchTerm !== '') {
+        filtered = filtered.filter(resident => {
+            const nameMatch = resident.name.toLowerCase().includes(searchTerm);
+            const unitMatch = resident.unit.toLowerCase().includes(searchTerm);
+            const emailMatch = resident.email.toLowerCase().includes(searchTerm);
+            const phoneMatch = resident.phone.toLowerCase().includes(searchTerm);
+            
+            // Handle role tags with flexible spacing
+            let roleMatch = false;
+            if (resident.roleTags) {
+                // Split tags, trim whitespace, and check each tag
+                const tags = resident.roleTags.toLowerCase().split(',').map(tag => tag.trim());
+                roleMatch = tags.some(tag => tag.includes(searchTerm));
+            }
+            
+            // Debug logging for role tags
+            if (searchTerm.includes('manage') || searchTerm.includes('social') || searchTerm.includes('director')) {
+                console.log(`🔍 Debug search "${searchTerm}" for ${resident.name}:`, {
+                    roleTags: resident.roleTags,
+                    parsedTags: resident.roleTags ? resident.roleTags.split(',').map(tag => tag.trim()) : [],
+                    roleMatch: roleMatch
+                });
+            }
+            
+            return nameMatch || unitMatch || emailMatch || phoneMatch || roleMatch;
+        });
+    }
+    
+    filteredResidents = filtered;
+    displayResults();
+    updateResultsCount();
+}
+
+
+
+        // Display search results
+function displayResults() {
+    const resultsGrid = document.getElementById('resultsGrid');
+    const resultsList = document.getElementById('resultsList');
+    const emptyState = document.getElementById('emptyState');
+    const activeView = document.querySelector('.view-btn.active').dataset.view;
+    
+    if (filteredResidents.length === 0) {
+        resultsGrid.style.display = 'none';
+        resultsList.style.display = 'none';
+        emptyState.style.display = 'block';
+        return;
+    }
+    
+    emptyState.style.display = 'none';
+    
+    // Update card view WITH stage separators
+    resultsGrid.innerHTML = createResidentCardsWithSeparators();
+    
+    // Update list view  
+    displayListResults();
+    
+    // Show correct view
+    if (activeView === 'list') {
+        resultsGrid.style.display = 'none';
+        resultsList.style.display = 'block';
+    } else {
+        resultsGrid.style.display = 'grid';
+        resultsList.style.display = 'none';
+    }
+}
+
+      // Create resident card HTML
+function createResidentCard(resident) {
+    const hasPhone = resident.phone && resident.phone.trim();
+    const hasEmail = resident.email && resident.email.trim();
+    const stage = resident.stage || 'Stage 1';
+    const stageClass = stage.toLowerCase().includes('2') ? 'stage2' : 'stage1';
+    const roleTags = resident.roleTags || '';
+    
+    // Filter out "Resident" from the roles list
+    const displayRoles = roleTags ? 
+        roleTags.split(',')
+               .map(role => role.trim())
+               .filter(role => role.toLowerCase() !== 'resident')
+               .join(', ') : '';
+    
+    return `
+        <div class="resident-card">
+            <div class="resident-header">
+                <h3 class="resident-name">${escapeHtml(resident.name || 'Unknown')}</h3>
+                <span class="unit-badge">${escapeHtml(resident.unit || 'No Unit')}</span>
+            </div>
+            
+            <div class="resident-details">
+                ${hasPhone ? `
+                    <div class="detail-item">
+                        <span class="detail-icon">📞</span>
+                        <a href="tel:${resident.phone.replace(/[^\d+]/g, '')}" class="detail-value detail-link">
+                            ${escapeHtml(resident.phone)}
+                        </a>
+                    </div>
+                ` : ''}
+                
+                ${hasEmail ? `
+                    <div class="detail-item">
+                        <span class="detail-icon">📧</span>
+                        <a href="mailto:${resident.email}" class="detail-value detail-link">
+                            ${escapeHtml(resident.email)}
+                        </a>
+                    </div>
+                ` : ''}
+                
+                ${displayRoles ? `
+                    <div class="detail-item">
+                        <span class="detail-icon">👤</span>
+                        <span class="detail-value">${escapeHtml(displayRoles)}</span>
+                    </div>
+                ` : ''}
+            </div>
+            
+            <div class="contact-actions">
+                <a href="${hasPhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
+                   class="action-btn call ${!hasPhone ? 'disabled' : ''}"
+                   ${!hasPhone ? 'onclick="return false;"' : ''}>
+                    📞 Call
+                </a>
+                <a href="${hasEmail ? `mailto:${resident.email}` : '#'}" 
+                   class="action-btn email ${!hasEmail ? 'disabled' : ''}"
+                   ${!hasEmail ? 'onclick="return false;"' : ''}>
+                    📧 Email
+                </a>
+            </div>
+        </div>
+    `;
+}
+// Create resident cards with section separators
+function createResidentCardsWithSeparators() {
+    let html = '';
+    let previousSection = null;
+    
+    // Only add separators when showing all stages
+    if (currentStageFilter === 'all') {
+        filteredResidents.forEach((resident, index) => {
+            const currentStage = resident.stage || 'Stage 1';
+            const hasUnit = resident.unit && resident.unit !== 'NO UNIT' && resident.unit !== '';
+            const currentSection = hasUnit ? `${currentStage} Units` : `${currentStage} External`;
+            
+            // Add section divider when section changes
+            if (previousSection && previousSection !== currentSection) {
+                html += `<div class="stage-divider" data-section="${currentSection}"></div>`;
+            }
+            
+            html += createResidentCard(resident);
+            previousSection = currentSection;
+        });
+    } else {
+        // No separators needed when filtering by specific stage
+        filteredResidents.forEach(resident => {
+            html += createResidentCard(resident);
+        });
+    }
+    
+    return html;
+}
+        // Update results count display
+        function updateResultsCount() {
+            const resultsCount = document.getElementById('resultsCount');
+            const searchInput = document.getElementById('searchInput');
+            const searchTerm = searchInput.value.trim();
+            
+            let message = '';
+            if (currentStageFilter === 'all') {
+                message = searchTerm ? 
+                    `Found ${filteredResidents.length} of ${allResidents.length} residents` :
+                    `Showing all ${allResidents.length} residents`;
+            } else {
+                const stageName = currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+                const stageTotal = allResidents.filter(r => 
+                    currentStageFilter === 'stage1' ? 
+                    (!r.stage || r.stage.includes('1')) : 
+                    (r.stage && r.stage.includes('2'))
+                ).length;
+                
+                message = searchTerm ? 
+                    `Found ${filteredResidents.length} of ${stageTotal} ${stageName} residents` :
+                    `Showing ${filteredResidents.length} ${stageName} residents`;
+            }
+            
+            resultsCount.textContent = message;
+        }
+
+        // Export Functions
+        function printDirectory() {
+            const printContent = generatePrintHTML();
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            printWindow.focus();
+            printWindow.print();
+        }
+
+        function generatePrintHTML() {
+            const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                            currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+            
+            let html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Lake Illawong Residents Directory - ${stageName}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        h1 { color: #1e293b; margin-bottom: 5px; }
+                        .subtitle { color: #64748b; margin-bottom: 20px; }
+                        table { width: 100%; border-collapse: collapse; }
+                        th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+                        th { background: #f8fafc; font-weight: 600; }
+                        .stage-badge { 
+                            background: #f0f9ff; 
+                            color: #0284c7; 
+                            padding: 2px 6px; 
+                            border-radius: 4px; 
+                            font-size: 0.8em; 
+                        }
+                        @media print {
+                            body { margin: 10px; }
+                            table { font-size: 11px; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Lake Illawong Residents Directory</h1>
+                    <p class="subtitle">${stageName} - Generated ${new Date().toLocaleDateString()}</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Unit</th>
+                                <th>Name</th>
+                                <th>Phone</th>
+                                <th>Email</th>
+                                <th>Address</th>
+                                <th>Stage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            filteredResidents.forEach(resident => {
+                html += `
+                    <tr>
+                        <td>${resident.unit || ''}</td>
+                        <td>${resident.name || ''}</td>
+                        <td>${resident.phone || ''}</td>
+                        <td>${resident.email || ''}</td>
+                        <td>${resident.address || ''}</td>
+                        <td><span class="stage-badge">${resident.stage || 'Stage 1'}</span></td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                    <p style="margin-top: 20px; font-size: 0.9em; color: #64748b;">
+                        Total: ${filteredResidents.length} residents
+                    </p>
+                </body>
+                </html>
+            `;
+
+            return html;
+        }
+
+        async function copyToClipboard() {
+            const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                            currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+            
+            let text = `Lake Illawong Residents Directory - ${stageName}\n`;
+            text += `Generated: ${new Date().toLocaleDateString()}\n\n`;
+            
+            filteredResidents.forEach(resident => {
+                text += `${resident.unit || 'No Unit'} - ${resident.name || 'Unknown'}\n`;
+                text += `  Phone: ${resident.phone || 'Not provided'}\n`;
+                text += `  Email: ${resident.email || 'Not provided'}\n`;
+                text += `  Address: ${resident.address || 'Not available'}\n`;
+                text += `  Stage: ${resident.stage || 'Stage 1'}\n\n`;
+            });
+            
+            text += `Total: ${filteredResidents.length} residents`;
+            
+            try {
+                await navigator.clipboard.writeText(text);
+                alert('Directory copied to clipboard!');
+            } catch (err) {
+                console.error('Copy failed:', err);
+                // Fallback for older browsers
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                alert('Directory copied to clipboard!');
+            }
+        }
+
+        function downloadCSV() {
+            const stageName = currentStageFilter === 'all' ? 'All_Stages' : 
+                            currentStageFilter === 'stage1' ? 'Stage_1' : 'Stage_2';
+            
+            let csv = 'Unit,Name,Phone,Email,Address,Stage\n';
+            
+            filteredResidents.forEach(resident => {
+                const row = [
+                    resident.unit || '',
+                    resident.name || '',
+                    resident.phone || '',
+                    resident.email || '',
+                    resident.address || '',
+                    resident.stage || 'Stage 1'
+                ].map(field => `"${field.replace(/"/g, '""')}"`).join(',');
+                
+                csv += row + '\n';
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `Lake_Illawong_Directory_${stageName}_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+function downloadPDF() {
+            const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                            currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+            
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Header
+            doc.setFontSize(16);
+            doc.setFont(undefined, 'bold');
+            doc.text('Lake Illawong Residents Directory', 20, 20);
+            
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'normal');
+            doc.text(`${stageName} - Generated ${new Date().toLocaleDateString()}`, 20, 30);
+            
+            // Table headers
+            const headers = [['Unit', 'Name', 'Phone', 'Email']];
+            
+            // Table data
+            const data = filteredResidents.map(resident => [
+                resident.unit || '',
+                resident.name || '',
+                resident.phone || '',
+                resident.email || ''
+            ]);
+            
+            // Add table
+            doc.autoTable({
+                head: headers,
+                body: data,
+                startY: 40,
+                styles: {
+                    fontSize: 10,
+                    cellPadding: 4
+                },
+                headStyles: {
+                    fillColor: [59, 130, 246],
+                    textColor: 255,
+                    fontStyle: 'bold'
+                },
+                columnStyles: {
+                    0: { cellWidth: 25 },  // Unit
+                    1: { cellWidth: 55 },  // Name
+                    2: { cellWidth: 35 },  // Phone
+                    3: { cellWidth: 75 }   // Email
+                },
+                tableWidth: 'auto',
+                margin: { left: 15, right: 15 }
+            });
+            
+            // Footer
+            const pageCount = doc.internal.getNumberOfPages();
+            doc.setFontSize(8);
+            doc.text(`Total: ${filteredResidents.length} residents`, 20, doc.internal.pageSize.height - 10);
+            
+            // Save
+            const fileName = `Lake_Illawong_Directory_${stageName.replace(' ', '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+            doc.save(fileName);
+        }
+
+        // Hide loading state
+        function hideLoading() {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('resultsGrid').style.display = 'grid';
+        }
+
+        // Show error state
+        function showError(message) {
+            const loadingState = document.getElementById('loadingState');
+            loadingState.innerHTML = `
+                <div style="color: #ef4444; font-weight: 600;">❌ Error</div>
+                <p>${escapeHtml(message)}</p>
+            `;
+        }
+
+        // Make API call with JSONP
+        function makeApiCall(url) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'callback_' + Date.now();
+                const script = document.createElement('script');
+                
+                window[callbackName] = function(data) {
+                    resolve(data);
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                };
+                
+                script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
+                script.onerror = () => {
+                    reject(new Error('Network error'));
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                };
+                
+                document.head.appendChild(script);
+                
+                // Timeout after 15 seconds
+                setTimeout(() => {
+                    if (window[callbackName]) {
+                        reject(new Error('Request timeout'));
+                        document.head.removeChild(script);
+                        delete window[callbackName];
+                    }
+                }, 15000);
+            });
+        }
+
+        // Utility function to escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+// Display results in list view
+        function displayListResults() {
+            const tableBody = document.getElementById('listTableBody');
+            
+            if (filteredResidents.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b; padding: 40px;">No residents found</td></tr>';
+                return;
+            }
+            
+            tableBody.innerHTML = filteredResidents.map((resident, index) => createListRow(resident, index)).join('');
+        }
+
+        // Create list row HTML
+        function createListRow(resident, index) {
+            const hasPhone = resident.phone && resident.phone.trim();
+            const hasEmail = resident.email && resident.email.trim();
+            const roleTags = resident.roleTags || 'Resident';
+            const displayRoles = roleTags.split(',').map(role => role.trim()).join(', ');
+            
+            // Check if this unit was already shown in previous row
+            const showUnit = index === 0 || filteredResidents[index - 1].unit !== resident.unit;
+            
+            return `
+                <tr>
+                    <td><strong>${showUnit ? escapeHtml(resident.unit || 'No Unit') : ''}</strong></td>
+                    <td>${escapeHtml(resident.name || 'Unknown')}</td>
+                    <td>${escapeHtml(resident.phone || 'Not provided')}</td>
+                    <td>${escapeHtml(resident.email || 'Not provided')}</td>
+                    <td>
+                        <div class="list-actions">
+                            <a href="${hasPhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
+                               class="list-action-btn call ${!hasPhone ? 'disabled' : ''}"
+                               ${!hasPhone ? 'onclick="return false;"' : ''}>
+                                📞
+                            </a>
+                            <a href="${hasEmail ? `mailto:${resident.email}` : '#'}" 
+                               class="list-action-btn email ${!hasEmail ? 'disabled' : ''}"
+                               ${!hasEmail ? 'onclick="return false;"' : ''}>
+                                📧
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+
+        // Performance monitoring
+        window.addEventListener('load', function() {
+            const loadTime = (performance.now() / 1000).toFixed(2);
+            console.log(`⚡ Directory loaded in ${loadTime} seconds`);
+        });
+    </script>
+</body>
+</html>
