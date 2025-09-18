@@ -114,7 +114,7 @@ data export capabilities, and detailed problem visualization for supervisory ana
 <head> 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Holden Problem Data Explorer</title>
+    <title>Desktop Explorer</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -185,13 +185,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .dataset-btn { 
     background: transparent; 
     color: white; 
-    padding: 6px 12px; 
+    padding: 6px 10px; /* Slightly smaller padding */
     border: none; 
     border-radius: 6px; 
-    font-size: 0.85rem; 
+    font-size: 0.8rem; /* Slightly smaller font */
     cursor: pointer; 
     transition: all 0.2s; 
+    white-space: nowrap; /* Prevent text wrapping */
 }
+
 .dataset-btn.active { 
     background: rgba(255,255,255,0.3); 
     font-weight: 600; 
@@ -420,17 +422,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 
 <div class="header">
-    <h1>Problem Data Explorer</h1>
+    <h1>Desktop Explorer</h1>
     <p>ILLAWONG RESIDENTIAL CLUB</p>
 <div class="header-divider"></div>
 </div>
 
 <div class="header-actions">
     <div class="dataset-toggle">
-        <button class="dataset-btn active" id="currentBtn">📊 Current Data</button>
-        <button class="dataset-btn" id="legacyBtn">📚 Legacy Data</button>
-    </div>
-    <div class="access-badge">Live Data</div>
+    <button class="dataset-btn active" id="allBtn">🔄 All Data</button>
+    <button class="dataset-btn" id="currentBtn">📊 Current</button>
+    <button class="dataset-btn" id="legacyBtn">📚 Legacy</button>
+</div>
+
+    <div class="access-badge">Combined Data</div>
 </div>
 
         <div class="filters-sidebar">
@@ -623,7 +627,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
-        let allProblems = [], filteredProblems = [], currentProblem = null, currentDataset = 'current';
+
+        let allProblems = [], filteredProblems = [], currentProblem = null, currentDataset = 'all';
         let currentDateFilter = null;
         let customDateRange = null;
         let sortDirection = 'desc'; // NEW: Track sort direction
@@ -634,8 +639,11 @@ const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100, 'All']; // Available options
         
         document.addEventListener('DOMContentLoaded', function() {
     console.log('🖥️ Problem Data Explorer - Starting...');
-    document.getElementById('currentBtn').addEventListener('click', () => switchDataset('current'));
-    document.getElementById('legacyBtn').addEventListener('click', () => switchDataset('legacy'));
+    document.getElementById('allBtn').addEventListener('click', () => switchDataset('all'));
+document.getElementById('currentBtn').addEventListener('click', () => switchDataset('current'));
+document.getElementById('legacyBtn').addEventListener('click', () => switchDataset('legacy'));
+
+
     document.getElementById('searchInput').addEventListener('input', () => setTimeout(applyFilters, 300));
     document.getElementById('closeProblemModal').addEventListener('click', closeModal);
     document.getElementById('closeReportModal').addEventListener('click', closeModal);
@@ -652,7 +660,7 @@ const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100, 'All']; // Available options
         changeItemsPerPage(); // Apply the saved preference
     }
     
-    loadProblemsData();
+    loadAllData();
     loadDynamicDropdowns(); // NEW: Load dynamic dropdown data
 });
 
@@ -684,21 +692,71 @@ const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100, 'All']; // Available options
         }
         
         async function switchDataset(dataset) {
-            console.log(`🔄 Switching to ${dataset} dataset...`);
-            currentDataset = dataset;
-            document.getElementById('currentBtn').classList.toggle('active', dataset === 'current');
-            document.getElementById('legacyBtn').classList.toggle('active', dataset === 'legacy');
-            document.querySelector('.access-badge').textContent = dataset === 'current' ? 'Live Data' : 'Legacy Data';
-            
-            // Reset pagination when switching datasets
-            currentPage = 1;
-            
-            if (dataset === 'current') { 
-                await loadProblemsData(); 
-            } else { 
-                await loadLegacyData(); 
-            }
+    console.log(`🔄 Switching to ${dataset} dataset...`);
+    currentDataset = dataset;
+    
+    // Update button states
+    document.getElementById('allBtn').classList.toggle('active', dataset === 'all');
+    document.getElementById('currentBtn').classList.toggle('active', dataset === 'current');
+    document.getElementById('legacyBtn').classList.toggle('active', dataset === 'legacy');
+    
+    // Update access badge
+    const badgeText = dataset === 'current' ? 'Live Data' : 
+                     dataset === 'legacy' ? 'Legacy Data' : 
+                     'Combined Data';
+    document.querySelector('.access-badge').textContent = badgeText;
+    
+    // Reset pagination when switching datasets
+    currentPage = 1;
+    
+    if (dataset === 'all') {
+        await loadAllData();
+    } else if (dataset === 'current') { 
+        await loadProblemsData(); 
+    } else { 
+        await loadLegacyData(); 
+    }
+}
+async function loadAllData() {
+    try {
+        console.log('🔄 Loading combined data...');
+        
+        let allData = [];
+        
+        // Load current data
+        const currentResponse = await makeRequest('getFaultLogData');
+        if (currentResponse && currentResponse.success) {
+            allData = currentResponse.data || [];
+            console.log(`✅ Loaded ${allData.length} current problems`);
         }
+        
+        // Load legacy data
+        const legacyResponse = await makeRequest('getLegacyLogData');
+        if (legacyResponse && legacyResponse.success) {
+            const legacyData = legacyResponse.data || [];
+            allData = [...allData, ...legacyData];
+            console.log(`✅ Loaded ${legacyData.length} legacy problems`);
+        }
+        
+        console.log(`✅ Combined total: ${allData.length} problems`);
+        
+        allProblems = allData;
+        
+        // Clear date filters when switching to all data
+        currentDateFilter = null;
+        customDateRange = null;
+        clearCustomDateInputs();
+        updateDateRangeDisplay('all');
+        
+        buildFilters(); 
+        applyFilters();
+        
+    } catch (error) {
+        console.error('Error loading combined data:', error);
+        showError('Failed to load combined data');
+    }
+}
+
         
         async function loadLegacyData() {
             try {
@@ -726,22 +784,22 @@ const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100, 'All']; // Available options
         }
         
         async function loadProblemsData() {
-            try {
-                console.log('Loading current data...');
-                const response = await makeRequest('getFaultLogData');
-                if (response && response.success) {
-                    allProblems = response.data || [];
-                    console.log('Loaded', allProblems.length, 'problems');
-                    buildFilters(); 
-                    applyFilters();
-                } else { 
-                    throw new Error('Failed to load data'); 
-                }
-            } catch (error) {
-                console.error('Error loading data:', error);
-                showError('Failed to load data');
-            }
+    try {
+        console.log('Loading current data...');
+        const response = await makeRequest('getFaultLogData');
+        if (response && response.success) {
+            allProblems = response.data || [];
+            console.log('Loaded', allProblems.length, 'problems');
+            buildFilters(); 
+            applyFilters();
+        } else { 
+            throw new Error('Failed to load data'); 
         }
+    } catch (error) {
+        console.error('Error loading data:', error);
+        showError('Failed to load data');
+    }
+}
         
         function buildFilters() {
     // Units - correct (extracted from problem data)
@@ -1607,6 +1665,16 @@ function updateStatsDisplay() {
     document.getElementById('thisWeekSub').textContent = thisWeek > 0 ? 'Recent activity' : 'No new reports';
     
     console.log('📊 Stats updated:', { total, active, urgent, completionRate, avgDays, thisWeek });
+}
+
+function showError(message) {
+    const problemsGrid = document.getElementById('problemsGrid');
+    problemsGrid.innerHTML = `
+        <div class="loading">
+            <div style="color: #ef4444; font-weight: 600;">❌ ${message}</div>
+            <div style="color: #64748b; font-size: 0.9rem;">Please try again</div>
+        </div>
+    `;
 }
 function changeItemsPerPage() {
     const select = document.getElementById('itemsPerPageSelect');
