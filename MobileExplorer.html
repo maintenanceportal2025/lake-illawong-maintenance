@@ -168,6 +168,13 @@ and basic analytics optimized for mobile devices and touch interaction.
             font-size: 1.4rem;
             font-weight: 700;
         }
+.header p { 
+    opacity: 0.9; 
+    font-size: 1rem; 
+    margin-bottom: 12px; 
+    color: #eeeeee;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
         
         .dataset-toggle {
             background: rgba(255,255,255,0.2);
@@ -178,20 +185,23 @@ and basic analytics optimized for mobile devices and touch interaction.
         }
         
         .dataset-btn {
-            background: transparent;
-            color: white;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            min-height: 44px;
-        }
-        
-        .dataset-btn.active {
-            background: rgba(255,255,255,0.3);
-            font-weight: 600;
-        }
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 8px 12px; /* Slightly smaller padding */
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    font-size: 0.85rem; /* Slightly smaller font */
+    cursor: pointer;
+    min-height: 44px;
+    transition: all 0.2s ease;
+    flex: 1; /* Equal width distribution */
+}
+
+.dataset-btn.active {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    font-weight: 600;
+}
         
         /* Stats Section */
         .stats-section {
@@ -770,14 +780,18 @@ background: #f5f5f5;
 <!-- WHITE ROUNDED HEADER BOX -->
 <!-- TRANSPARENT HEADER -->
 <div style="padding: 16px; margin-bottom: 16px; text-align: center;">
-    <h1 style="color: white; font-size: 3rem; font-weight: 700; margin-bottom: 8px; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);">📱 Mobile Explorer</h1>
+    <h1 style="color: white; font-size: 3rem; font-weight: 700; margin-bottom: 8px; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);">Mobile Explorer</h1>
+
+ <p style="color: white; font-size: 1rem; font-weight: 700; margin-bottom: 12px; text-shadow:1px 1px 2px rgba(0, 0, 0, 0.3);">ILLAWONG RESIDENTIAL CLUB</p>
 </div>
 
 
 <!-- Dataset Toggle (moved outside header) -->
+<!-- Dataset Toggle (moved outside header) -->
 <div style="padding: 0 16px; margin-bottom: 16px;">
     <div class="dataset-toggle">
-        <button class="dataset-btn active" id="currentBtn">Current</button>
+        <button class="dataset-btn active" id="allBtn">All</button>
+        <button class="dataset-btn" id="currentBtn">Current</button>
         <button class="dataset-btn" id="legacyBtn">Legacy</button>
     </div>
 </div>
@@ -957,7 +971,7 @@ background: #f5f5f5;
         let allProblems = [];
         let filteredProblems = [];
         let currentProblem = null;
-        let currentDataset = 'current';
+        let currentDataset = 'all';
         let sortDirection = 'asc'; // 'asc' = oldest first, 'desc' = newest first
         let currentPage = 1;
         let itemsPerPage = 25;
@@ -974,14 +988,15 @@ background: #f5f5f5;
             console.log('📱 Mobile Problem Explorer - Starting...');
             setupEventListeners();
             loadDynamicDropdowns().then(() => {
-                loadProblemsData();
+                loadAllData();
             });
         });
         
         function setupEventListeners() {
             // Dataset toggle
-            document.getElementById('currentBtn').addEventListener('click', () => switchDataset('current'));
-            document.getElementById('legacyBtn').addEventListener('click', () => switchDataset('legacy'));
+            document.getElementById('allBtn').addEventListener('click', () => switchDataset('all'));
+document.getElementById('currentBtn').addEventListener('click', () => switchDataset('current'));
+document.getElementById('legacyBtn').addEventListener('click', () => switchDataset('legacy'));
             
             // Filters
             document.getElementById('applyDateBtn').addEventListener('click', function() {
@@ -1069,20 +1084,65 @@ background: #f5f5f5;
         }
         
         async function switchDataset(dataset) {
-            console.log(`🔄 Switching to ${dataset} dataset...`);
-            currentDataset = dataset;
-            
-            // Update UI
-            document.getElementById('currentBtn').classList.toggle('active', dataset === 'current');
-            document.getElementById('legacyBtn').classList.toggle('active', dataset === 'legacy');
-            
-            // Load data
-            if (dataset === 'current') {
-                await loadProblemsData();
-            } else {
-                await loadLegacyData();
-            }
+    console.log(`🔄 Switching to ${dataset} dataset...`);
+    currentDataset = dataset;
+    
+    // Update UI
+    document.getElementById('allBtn').classList.toggle('active', dataset === 'all');
+    document.getElementById('currentBtn').classList.toggle('active', dataset === 'current');
+    document.getElementById('legacyBtn').classList.toggle('active', dataset === 'legacy');
+    
+    // Load data
+    if (dataset === 'all') {
+        await loadAllData();
+    } else if (dataset === 'current') {
+        await loadProblemsData();
+    } else {
+        await loadLegacyData();
+    }
+}
+
+async function loadAllData() {
+    try {
+        console.log('🔄 Loading combined data...');
+        showLoading();
+        
+        let allData = [];
+        
+        // Load current data
+        const currentResponse = await makeRequest('getFaultLogData');
+        if (currentResponse && currentResponse.success && currentResponse.data) {
+            allData = [...currentResponse.data];
+            console.log(`✅ Loaded ${currentResponse.data.length} current problems`);
         }
+        
+        // Load legacy data
+        const legacyResponse = await makeRequest('getLegacyLogData');
+        if (legacyResponse && legacyResponse.success && legacyResponse.data) {
+            allData = [...allData, ...legacyResponse.data];
+            console.log(`✅ Loaded ${legacyResponse.data.length} legacy problems`);
+        }
+        
+        console.log(`✅ Combined total: ${allData.length} problems`);
+        
+        allProblems = allData;
+        buildFilterOptions();
+        applyFilters();
+        
+    } catch (error) {
+        console.error('Error loading combined data:', error);
+        // Clear any progress bar animation
+        const progressBar = document.getElementById('progressBarLarge');
+        if (progressBar && progressBar.dataset.interval) {
+            clearInterval(progressBar.dataset.interval);
+        }
+        
+        // Hide loading overlay
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.classList.add('hidden');
+        showError('Failed to load combined data. Please try again.');
+    }
+}
         
         async function loadProblemsData() {
             try {
