@@ -42,7 +42,13 @@ INTEGRATION FEATURES:
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+
+/* Deep Lake Blues */
+background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+
+
+
             min-height: 100vh;
             color: #333;
             overflow-x: hidden;
@@ -75,11 +81,11 @@ INTEGRATION FEATURES:
         }
 
         .logo-image {
-            width: 120px;
-            height: 120px;
+            width: 110px;
+            height: 110px;
             border-radius: 50%;
             object-fit: cover;
-          
+           
            
             padding: 5px;
         }
@@ -311,12 +317,13 @@ INTEGRATION FEATURES:
             color: white;
             border-color: #3b82f6;
         }
-.zone-btn.all-units.selected {
-    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-    color: white;
-    border-color: #8b5cf6;
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
-}
+
+        .zone-btn.all-units.selected {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
 
         .zone-btn.special {
             background: #8b5cf6;
@@ -349,7 +356,7 @@ INTEGRATION FEATURES:
         /* MESSAGE COMPOSITION */
         .compose-section {
             background: rgba(255,255,255,0.95);
-            border-radius: 12px;
+            border-radius: 6px;
             padding: 20px;
             margin-bottom: 25px;
             backdrop-filter: blur(10px);
@@ -767,7 +774,7 @@ INTEGRATION FEATURES:
         // =====================================================================
         
         // Email Server V1.0.js deployment URL
-        const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbysV6QiV9-AmCjROy6dgOBxdIQLK-DW_SNrMYjJJQ2GRbqq4lHxGYEyf5_deDvZYA38/exec';
+        const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxWll0dkVYKZcy5yMFvwPPVUKOuQNTb6wBF-kTjBWdVH7CJ-dc552-fBGYda7nN5LMk/exec';
         
         // Global state
         let selectedTemplate = null;
@@ -973,7 +980,7 @@ INTEGRATION FEATURES:
         }
         
         function confirmUnitSelection() {
-             selectedUnits = Array.from(document.querySelectorAll('#unitsGrid input:checked')).map(input => `Unit ${input.value}`);
+            selectedUnits = Array.from(document.querySelectorAll('#unitsGrid input:checked')).map(input => input.value);
             
             if (selectedUnits.length > 0) {
                 // Clear zone selections
@@ -1025,13 +1032,11 @@ INTEGRATION FEATURES:
         }
         
         function getTargetText() {
-    if (selectedUnits.length > 0) {
-        if (selectedUnits.length === 1) return selectedUnits[0]; // Just return "Unit 4"
-        if (selectedUnits.length <= 3) return selectedUnits.join(', '); // "Unit 4, Unit 5"
-        return `${selectedUnits.length} units`;
-    }
-  
-
+            if (selectedUnits.length > 0) {
+                if (selectedUnits.length === 1) return `Unit ${selectedUnits[0]}`;
+                if (selectedUnits.length <= 3) return selectedUnits.map(u => `Unit ${u}`).join(', ');
+                return `${selectedUnits.length} units`;
+            }
             
             if (selectedZones.includes('all')) return 'All Units';
             
@@ -1167,9 +1172,9 @@ INTEGRATION FEATURES:
                     selectedUnits
                 });
                 
-                // Call Email Server V1.0.js with FIELD_ALERT_01 template
+                // Call Email Server V1.0.js with working template
                 const response = await callEmailAPI('sendMassNotification', {
-                    templateId: 'FIELD_ALERT_01', // Use the template you just added
+                    templateId: 'WATER01', // Use WATER01 since it works reliably
                     customData: JSON.stringify(customData),
                     recipientFilter: recipientFilter,
                     adminUser: 'FieldOperations'
@@ -1245,43 +1250,35 @@ INTEGRATION FEATURES:
         }
         
         function buildRecipientFilter() {
-    if (selectedUnits.length > 0) {
-        return selectedUnits; // Send individual units
-    }
-    
-    if (selectedZones.includes('all')) {
-        return 'all_units';
-    }
-    
-    // Single zone
-    if (selectedZones.length === 1) {
-        const zoneMap = {
-            'zone1': 'zone_1',
-            'zone2': 'zone_2', 
-            'zone3': 'zone_3',
-            'zone4': 'zone_4',
-            'zone5': 'zone_5'
-        };
-        return zoneMap[selectedZones[0]] || 'all_units';
-    }
-    
-    // FIXED: Multiple zones - convert to comma-separated string
-    if (selectedZones.length > 1) {
-        const zoneMapped = selectedZones.map(zone => {
-            const zoneMap = {
-                'zone1': 'zone1',
-                'zone2': 'zone2', 
-                'zone3': 'zone3',
-                'zone4': 'zone4',
-                'zone5': 'zone5'
-            };
-            return zoneMap[zone] || zone;
-        });
-        return zoneMapped.join(','); // "zone1,zone2"
-    }
-    
-    return 'all_units';
-}
+            if (selectedUnits.length > 0) {
+                // Send individual units with "Unit " prefix to match UnitList format
+                const unitsList = selectedUnits.map(unit => `Unit ${unit}`).join(',');
+                console.log('Individual units selected:', selectedUnits);
+                return `units:${unitsList}`;
+            }
+            
+            if (selectedZones.includes('all')) {
+                return 'all_units';
+            }
+            
+            // Map our zones to Email Server format
+            if (selectedZones.length === 1) {
+                const zoneMap = {
+                    'zone1': 'zone_1',
+                    'zone2': 'zone_2', 
+                    'zone3': 'zone_3',
+                    'zone4': 'zone_4',
+                    'zone5': 'zone_5'
+                };
+                return zoneMap[selectedZones[0]] || 'all_units';
+            }
+            
+            // Multiple zones - Email Server V1.0.js doesn't support multiple zones yet
+            // Default to all units for now
+            console.log('Multiple zones selected:', selectedZones);
+            showNotification('Multiple zone targeting coming soon. Sending to all units.', 'info');
+            return 'all_units';
+        }
         
         function calculateRecipientCount() {
             if (selectedUnits.length > 0) {
