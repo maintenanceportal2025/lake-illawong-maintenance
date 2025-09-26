@@ -119,7 +119,7 @@ data export capabilities, and detailed problem visualization for supervisory ana
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
 
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); line-height: 1.6; color: #334155; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%); line-height: 1.6; color: #334155; }
 
 
         .hidden { display: none !important; }
@@ -137,15 +137,39 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     text-align: center;
 }
 
+.header-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 25px;
+    flex-wrap: wrap;
+    margin-bottom: 0;
+}
 
-        .header h1 { 
-    font-size: 3rem; 
+.logo-container {
+    flex-shrink: 0;
+}
+
+.logo-image {
+    width: 100px;
+    height: 100px;
+    object-fit: contain;
+    background: transparent;
+}
+
+.header-text {
+    text-align: center;
+}
+
+.header-title { 
+    font-size: 2.3rem; 
     font-weight: 600; 
     margin-bottom: 4px; 
     color: white;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
 }
-.header p { 
+
+.header-subtitle { 
     opacity: 0.9; 
     font-size: 1rem; 
     margin-bottom: 12px; 
@@ -153,6 +177,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+.header-divider {
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+    margin: 25px 0 0 0;
+    border-radius: 1.5px;
+}
 
         .header-actions { 
     display: flex; 
@@ -164,13 +195,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     padding: 15px 0;
 }
 
-.header-divider {
-    width: 100%;
-    height: 3px;
-    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
-    margin: 25px 0 0 0;
-    border-radius: 1.5px;
-}
 
 
         .dataset-toggle { 
@@ -422,9 +446,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 
 <div class="header">
-    <h1>Desktop Explorer</h1>
-    <p>ILLAWONG RESIDENTIAL CLUB</p>
-<div class="header-divider"></div>
+    <div class="header-content">
+        <div class="logo-container">
+            <img src="https://maintenanceportal2025.github.io/maintenance-portal/logo.png" alt="Lake Illawong Logo" class="logo-image">
+        </div>
+        <div class="header-text">
+            <h1 class="header-title">Desktop Explorer</h1>
+            <p class="header-subtitle">Extensive Search Engine for all Problems</p>
+        </div>
+    </div>
+    <div class="header-divider"></div>
 </div>
 
 <div class="header-actions">
@@ -709,6 +740,16 @@ document.getElementById('legacyBtn').addEventListener('click', () => switchDatas
     // Reset pagination when switching datasets
     currentPage = 1;
     
+    // Show loading indicator BEFORE loading data
+    const problemsGrid = document.getElementById('problemsGrid');
+    problemsGrid.innerHTML = `
+        <div class="loading" style="grid-column: 1 / -1;">
+            <div class="loading-spinner"></div>
+            <div style="margin-top: 16px;">Loading ${badgeText}...</div>
+        </div>
+    `;
+    document.getElementById('resultsInfo').textContent = 'Loading...';
+    
     if (dataset === 'all') {
         await loadAllData();
     } else if (dataset === 'current') { 
@@ -717,9 +758,22 @@ document.getElementById('legacyBtn').addEventListener('click', () => switchDatas
         await loadLegacyData(); 
     }
 }
+
 async function loadAllData() {
     try {
-        console.log('🔄 Loading combined data...');
+        console.log('📄 Loading combined data...');
+        
+        // Show loading indicator
+        const problemsGrid = document.getElementById('problemsGrid');
+        const resultsInfo = document.getElementById('resultsInfo');
+        
+        problemsGrid.innerHTML = `
+            <div class="loading" style="grid-column: 1 / -1;">
+                <div class="loading-spinner"></div>
+                <div style="margin-top: 16px;">Loading problem data...</div>
+            </div>
+        `;
+        resultsInfo.textContent = 'Loading data...';
         
         let allData = [];
         
@@ -759,45 +813,80 @@ async function loadAllData() {
 
         
         async function loadLegacyData() {
-            try {
-                console.log('📚 Loading legacy data...');
-                const response = await makeRequest('getLegacyLogData');
-                if (response && response.success) {
-                    allProblems = response.data || [];
-                    console.log('Loaded', allProblems.length, 'legacy problems');
-                    
-                    // Clear date filters when switching to legacy data
-                    currentDateFilter = null;
-                    customDateRange = null;
-                    clearCustomDateInputs();
-                    updateDateRangeDisplay('all');
-                    
-                    buildFilters(); 
-                    applyFilters();
-                } else { 
-                    throw new Error('Failed to load legacy data'); 
-                }
-            } catch (error) {
-                console.error('Error loading legacy data:', error);
-                showError('Failed to load legacy data');
-            }
+    try {
+        console.log('📚 Loading legacy data...');
+        
+        // Show loading indicator
+        const problemsGrid = document.getElementById('problemsGrid');
+        const resultsInfo = document.getElementById('resultsInfo');
+        
+        problemsGrid.innerHTML = `
+            <div class="loading" style="grid-column: 1 / -1;">
+                <div class="loading-spinner"></div>
+                <div style="margin-top: 16px;">Loading legacy data...</div>
+            </div>
+        `;
+        resultsInfo.textContent = 'Loading data...';
+        
+        const response = await makeRequest('getLegacyLogData');
+        
+        if (response && response.success) {
+            allProblems = response.data || [];
+            console.log('Loaded', allProblems.length, 'legacy problems');
+            
+            // Clear date filters when switching to legacy data
+            currentDateFilter = null;
+            customDateRange = null;
+            clearCustomDateInputs();
+            updateDateRangeDisplay('all');
+            
+            buildFilters();
+            applyFilters();
+        } else {
+            throw new Error('Failed to load legacy data');
         }
+    } catch (error) {
+        console.error('Error loading legacy data:', error);
+        showError('Failed to load legacy data');
+    }
+}
         
         async function loadProblemsData() {
     try {
-        console.log('Loading current data...');
+        console.log('📊 Loading current problems data...');
+        
+        // Show loading indicator
+        const problemsGrid = document.getElementById('problemsGrid');
+        const resultsInfo = document.getElementById('resultsInfo');
+        
+        problemsGrid.innerHTML = `
+            <div class="loading" style="grid-column: 1 / -1;">
+                <div class="loading-spinner"></div>
+                <div style="margin-top: 16px;">Loading current data...</div>
+            </div>
+        `;
+        resultsInfo.textContent = 'Loading data...';
+        
         const response = await makeRequest('getFaultLogData');
+        
         if (response && response.success) {
             allProblems = response.data || [];
-            console.log('Loaded', allProblems.length, 'problems');
-            buildFilters(); 
+            console.log('Loaded', allProblems.length, 'current problems');
+            
+            // Clear date filters when switching to current data
+            currentDateFilter = null;
+            customDateRange = null;
+            clearCustomDateInputs();
+            updateDateRangeDisplay('all');
+            
+            buildFilters();
             applyFilters();
-        } else { 
-            throw new Error('Failed to load data'); 
+        } else {
+            throw new Error('Failed to load current data');
         }
     } catch (error) {
-        console.error('Error loading data:', error);
-        showError('Failed to load data');
+        console.error('Error loading current data:', error);
+        showError('Failed to load current problems data');
     }
 }
         
