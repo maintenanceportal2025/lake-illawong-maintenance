@@ -41,7 +41,7 @@ MANAGEMENT CENTRAL  FRONTEND V1.0
         }
 
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             min-height: 100vh;
             padding: 20px;
@@ -815,22 +815,18 @@ MANAGEMENT CENTRAL  FRONTEND V1.0
                     </div>
 
                     <!-- Sub-Categories Section -->
-                    <div class="dropdown-section">
-                        <div class="dropdown-section-header">
-                            <h3>Sub-Categories</h3>
-                            <select id="categorySelector" onchange="loadSubCategories()">
-                                <option value="">Select a category</option>
-                                <!-- Categories will be populated here -->
-                            </select>
-                        </div>
-                        <div class="dropdown-list" id="subCategoriesList">
-                            <!-- Sub-categories will be loaded here -->
-                        </div>
-                        <div class="dropdown-form">
-                            <input type="text" id="newSubCategoryInput" placeholder="New sub-category name">
-                            <button onclick="addSubCategory()">Add</button>
-                        </div>
-                    </div>
+<div class="dropdown-section">
+    <div class="dropdown-section-header">
+        <h3>Sub-Categories</h3>
+    </div>
+    <div class="dropdown-list" id="subCategoriesList">
+        <!-- Sub-categories will be loaded here -->
+    </div>
+    <div class="dropdown-form">
+        <input type="text" id="newSubCategoryInput" placeholder="New sub-category name">
+        <button onclick="addSubCategory()">Add</button>
+    </div>
+</div>
 
                     <!-- Assigned By Section -->
                     <div class="dropdown-section">
@@ -1789,93 +1785,72 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         }
 
         function displaySubCategories() {
-            const subCategoriesList = document.getElementById('subCategoriesList');
-            const selectedCategoryId = document.getElementById('categorySelector').value;
-            
-            const filteredSubCategories = selectedCategoryId 
-                ? subCategoriesData.filter(sub => sub.categoryId == selectedCategoryId)
-                : subCategoriesData;
-            
-            if (!filteredSubCategories || filteredSubCategories.length === 0) {
-                subCategoriesList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">No sub-categories found</div>';
-                return;
-            }
+    const subCategoriesList = document.getElementById('subCategoriesList');
+    
+    // FIXED: No longer references categorySelector - displays all sub-categories
+    const filteredSubCategories = subCategoriesData;
+    
+    if (!filteredSubCategories || filteredSubCategories.length === 0) {
+        subCategoriesList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">No sub-categories found</div>';
+        return;
+    }
 
-            subCategoriesList.innerHTML = filteredSubCategories.map(subCategory => `
-                <div class="dropdown-item subcategory-item">
-                    <span>${subCategory.name}</span>
-                    
+    subCategoriesList.innerHTML = filteredSubCategories.map(subCategory => `
+        <div class="dropdown-item subcategory-item">
+            <span>${subCategory.name}</span>
+            <div class="dropdown-item-actions">
+                <button style="background: var(--warning-amber); color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 4px;" onclick="editSubCategory(${subCategory.id}, '${subCategory.name.replace(/'/g, "\\'")}', ${subCategory.categoryId})">✏️ Edit</button>
+                <button style="background: var(--error-red); color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;" onclick="deleteSubCategoryFrontend(${subCategory.id})">🗑️ Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
 
-
-<!-- In the displaySubCategories function, replace the buttons code with: -->
-<div class="dropdown-item-actions">
-    <button style="background: var(--warning-amber); color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 4px;" onclick="editSubCategory(${subCategory.id}, '${subCategory.name.replace(/'/g, "\\'")}', ${subCategory.categoryId})">✏️ Edit</button>
-    <button style="background: var(--error-red); color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;" onclick="deleteSubCategoryFrontend(${subCategory.id})">🗑️ Delete</button>
-</div>
-
-
-                </div>
-            `).join('');
-        }
-
-        function populateCategorySelector() {
-            const categorySelector = document.getElementById('categorySelector');
-            
-            while (categorySelector.options.length > 1) {
-                categorySelector.remove(1);
-            }
-            
-            categoriesData.forEach(category => {
-                const option = document.createElement('option');
-                option.value = category.id;
-                option.textContent = category.name;
-                categorySelector.appendChild(option);
-            });
-        }
+        
 
         function loadSubCategories() {
             displaySubCategories();
         }
 
         async function loadDropdowns() {
-            try {
-                showToast('Loading all dropdown data...', 'info');
-                
-                // Load categories
-                const categoriesResponse = await makeAPICall('getCategories');
-                if (categoriesResponse.success) {
-                    categoriesData = categoriesResponse.categories || [];
-                    displayCategories();
-                    populateCategorySelector();
-                } else {
-                    throw new Error(categoriesResponse.error || 'Failed to load categories');
-                }
-                
-                // Load sub-categories
-                const subCategoriesResponse = await makeAPICall('getSubCategories');
-                if (subCategoriesResponse.success) {
-                    subCategoriesData = subCategoriesResponse.subCategories || [];
-                    displaySubCategories();
-                } else {
-                    throw new Error(subCategoriesResponse.error || 'Failed to load sub-categories');
-                }
-                
-                // Load assigned by
-                const assignedByResponse = await makeAPICall('getAssignedBy');
-                if (assignedByResponse.success) {
-                    assignedByData = assignedByResponse.assignedBy || [];
-                    displayAssignedBy();
-                } else {
-                    throw new Error(assignedByResponse.error || 'Failed to load assigned by');
-                }
-                
-                showToast('✅ All dropdown data loaded successfully', 'success');
-                
-            } catch (error) {
-                console.error('Load dropdowns error:', error);
-                showToast('❌ Failed to load dropdown data: ' + error.message, 'error');
-            }
+    try {
+        showToast('Loading all dropdown data...', 'info');
+        
+        // Load categories
+        const categoriesResponse = await makeAPICall('getCategories');
+        if (categoriesResponse.success) {
+            categoriesData = categoriesResponse.categories || [];
+            displayCategories();
+            // REMOVED: populateCategorySelector(); - No longer needed
+        } else {
+            throw new Error(categoriesResponse.error || 'Failed to load categories');
         }
+        
+        // Load sub-categories
+        const subCategoriesResponse = await makeAPICall('getSubCategories');
+        if (subCategoriesResponse.success) {
+            subCategoriesData = subCategoriesResponse.subCategories || [];
+            displaySubCategories();
+        } else {
+            throw new Error(subCategoriesResponse.error || 'Failed to load sub-categories');
+        }
+        
+        // Load assigned by
+        const assignedByResponse = await makeAPICall('getAssignedBy');
+        if (assignedByResponse.success) {
+            assignedByData = assignedByResponse.assignedBy || [];
+            displayAssignedBy();
+        } else {
+            throw new Error(assignedByResponse.error || 'Failed to load assigned by');
+        }
+        
+        showToast('✅ All dropdown data loaded successfully', 'success');
+        
+    } catch (error) {
+        console.error('Load dropdowns error:', error);
+        showToast('❌ Failed to load dropdown data: ' + error.message, 'error');
+    }
+}
 
         async function addCategory() {
             const categoryName = document.getElementById('newCategoryInput').value.trim();
