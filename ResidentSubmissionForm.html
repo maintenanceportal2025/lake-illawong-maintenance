@@ -543,6 +543,125 @@
         align-items: center;
     }
 }
+
+        /* Photo Upload Styles */
+.photo-upload-section {
+    margin-top: 8px;
+}
+
+.photo-upload-label {
+    display: block;
+    font-size: 14px;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+
+.photo-upload-container {
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    background: #f8fafc;
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+.photo-upload-container:hover {
+    border-color: #667eea;
+    background: #f1f5f9;
+}
+
+.photo-upload-container.drag-over {
+    border-color: #667eea;
+    background: #eef2ff;
+}
+
+.upload-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.upload-text {
+    font-size: 16px;
+    color: #475569;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.upload-hint {
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+#photoInput {
+    display: none;
+}
+
+.photo-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.photo-preview-item {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid #e2e8f0;
+}
+
+.photo-preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.photo-remove-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 1;
+    transition: background 0.2s;
+}
+
+.photo-remove-btn:hover {
+    background: rgba(220, 38, 38, 1);
+}
+
+.photo-count {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 8px;
+    text-align: center;
+}
+
+@media (max-width: 580px) {
+    .photo-upload-container {
+        padding: 20px;
+    }
+    
+    .upload-icon {
+        font-size: 40px;
+    }
+    
+    .photo-preview-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
         
     </style>
 </head>
@@ -624,6 +743,28 @@
                                   placeholder="Please provide a detailed description of the problem..." required></textarea>
                     </div>
 
+                    <div class="form-group">
+    <label class="form-label">
+        Photos (Optional)
+    </label>
+    <div class="photo-upload-section">
+        <div class="photo-upload-label">
+            Attach up to 3 photos to help describe the problem
+        </div>
+        <div class="photo-upload-container" id="photoUploadZone" onclick="document.getElementById('photoInput').click()">
+            <div class="upload-icon">📷</div>
+            <div class="upload-text">Click to select photos</div>
+            <div class="upload-hint">or drag and drop here (max 3 photos, 5MB each)</div>
+        </div>
+        <input type="file" 
+               id="photoInput" 
+               accept="image/*" 
+               multiple 
+               capture="environment">
+        <div class="photo-preview-grid" id="photoPreview"></div>
+        <div class="photo-count" id="photoCount"></div>
+    </div>
+</div>
                     <button type="submit" class="submit-btn" id="submitBtn">
                         <span>📤</span>
                         Submit Request
@@ -658,6 +799,8 @@
         // Load dropdowns on page load
         document.addEventListener('DOMContentLoaded', function() {
             loadDropdownOptions();
+            // Initialize photo upload
+initPhotoUpload();
         });
 
         async function loadDropdownOptions() {
@@ -839,12 +982,19 @@ function selectOption(elementId, value) {
             result.style.display = 'none';
             
             // Collect form data
-            const formData = {
-                action: 'submitFault',
-                unitNumber: document.getElementById('unitNumber').value,
-                reportedBy: document.getElementById('reportedBy').value,
-                problemDescription: document.getElementById('problemDescription').value
-            };
+const formData = {
+    action: 'submitFault',
+    unitNumber: document.getElementById('unitNumber').value,
+    reportedBy: document.getElementById('reportedBy').value,
+    problemDescription: document.getElementById('problemDescription').value
+};
+
+// Add photos if any selected
+if (selectedPhotos.length > 0) {
+    const photoData = await convertPhotosToBase64();
+    formData.photos = JSON.stringify(photoData);
+}
+            
             
             try {
                 // Submit to Google Apps Script
@@ -927,6 +1077,113 @@ function selectOption(elementId, value) {
                 document.head.appendChild(script);
             });
         }
+
+// Photo upload variables
+let selectedPhotos = [];
+const MAX_PHOTOS = 3;
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+function initPhotoUpload() {
+    const photoInput = document.getElementById('photoInput');
+    const uploadZone = document.getElementById('photoUploadZone');
+    
+    // File input change
+    photoInput.addEventListener('change', handlePhotoSelect);
+    
+    // Drag and drop
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.classList.add('drag-over');
+    });
+    
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('drag-over');
+    });
+    
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+        addPhotos(files);
+    });
+}
+
+function handlePhotoSelect(e) {
+    const files = Array.from(e.target.files);
+    addPhotos(files);
+    e.target.value = ''; // Reset input
+}
+
+function addPhotos(files) {
+    for (let file of files) {
+        if (selectedPhotos.length >= MAX_PHOTOS) {
+            alert(`Maximum ${MAX_PHOTOS} photos allowed`);
+            break;
+        }
+        
+        if (file.size > MAX_FILE_SIZE) {
+            alert(`${file.name} is too large. Maximum 5MB per photo.`);
+            continue;
+        }
+        
+        if (!file.type.startsWith('image/')) {
+            alert(`${file.name} is not an image file.`);
+            continue;
+        }
+        
+        selectedPhotos.push(file);
+    }
+    
+    updatePhotoPreview();
+}
+
+function updatePhotoPreview() {
+    const preview = document.getElementById('photoPreview');
+    const count = document.getElementById('photoCount');
+    
+    preview.innerHTML = '';
+    
+    selectedPhotos.forEach((file, index) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const item = document.createElement('div');
+            item.className = 'photo-preview-item';
+            item.innerHTML = `
+                <img src="${e.target.result}" class="photo-preview-img" alt="Preview ${index + 1}">
+                <button type="button" class="photo-remove-btn" onclick="removePhoto(${index})">×</button>
+            `;
+            preview.appendChild(item);
+        };
+        reader.readAsDataURL(file);
+    });
+    
+    count.textContent = selectedPhotos.length > 0 
+        ? `${selectedPhotos.length} photo${selectedPhotos.length > 1 ? 's' : ''} selected`
+        : '';
+}
+
+function removePhoto(index) {
+    selectedPhotos.splice(index, 1);
+    updatePhotoPreview();
+}
+
+function convertPhotosToBase64() {
+    return Promise.all(selectedPhotos.map(file => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                resolve({
+                    name: file.name,
+                    type: file.type,
+                    data: reader.result.split(',')[1] // Get base64 without prefix
+                });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }));
+}
+        
     </script>
 </body>
 </html>
