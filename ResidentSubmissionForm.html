@@ -792,8 +792,8 @@
 
 
         // HoldenResidentSubmission V1.0
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwb9A9ExDlWDcT5za8Ol7CHZJhlrmvug1XLEKfCdt9sswmygo2Pnj_eSUhNy83rzI6Q/exec';
-
+        // const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwb9A9ExDlWDcT5za8Ol7CHZJhlrmvug1XLEKfCdt9sswmygo2Pnj_eSUhNy83rzI6Q/exec';
+           const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwC9ZrptwnFHIZ8H5fANCPg95uy6aSd85RJfvmrQNPzb0mOEkPcgIhh03ogRaHkXc8AfQ/exec';
 
 
         // Load dropdowns on page load
@@ -967,83 +967,95 @@ function selectOption(elementId, value) {
             });
         }
 
-        // Form submit handler
-        document.getElementById('faultForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const submitBtn = document.getElementById('submitBtn');
-            const loading = document.getElementById('loading');
-            const result = document.getElementById('result');
-            const resultMessage = document.getElementById('resultMessage');
-            
-            // Show loading state
-            submitBtn.disabled = true;
-            loading.style.display = 'block';
-            result.style.display = 'none';
-            
-            // Collect form data
-const formData = {
-    action: 'submitFault',
-    unitNumber: document.getElementById('unitNumber').value,
-    reportedBy: document.getElementById('reportedBy').value,
-    problemDescription: document.getElementById('problemDescription').value
-};
 
-// Add photos if any selected
-if (selectedPhotos.length > 0) {
-    const photoData = await convertPhotosToBase64();
-    formData.photos = JSON.stringify(photoData);
-}
+
+        
+        // Form submit handler - V1.1 HYBRID APPROACH
+document.getElementById('faultForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('submitBtn');
+    const loading = document.getElementById('loading');
+    const result = document.getElementById('result');
+    const resultMessage = document.getElementById('resultMessage');
+    
+    // Show loading state
+    submitBtn.disabled = true;
+    loading.style.display = 'block';
+    result.style.display = 'none';
+    
+    try {
+        // STEP 1: Submit form WITHOUT photos (via JSONP)
+        console.log('Step 1: Submitting form data...');
+        const formData = {
+            action: 'submitFault',
+            unitNumber: document.getElementById('unitNumber').value,
+            reportedBy: document.getElementById('reportedBy').value,
+            problemDescription: document.getElementById('problemDescription').value
+        };
+        
+        const formResponse = await submitFault(formData);
+        
+        if (!formResponse.success) {
+            throw new Error(formResponse.message || 'Form submission failed');
+        }
+        
+        console.log('Form submitted successfully');
+        console.log('Problem ID:', formResponse.internalId);
+        
+        // STEP 2: Upload photos if any (via POST with CORS)
+        if (selectedPhotos.length > 0) {
+            console.log(`Step 2: Uploading ${selectedPhotos.length} photos...`);
+            loading.innerHTML = '<div class="loading-dots"><div></div><div></div><div></div></div>Uploading photos...';
             
+            const photoData = await convertPhotosToBase64();
+            const photoResponse = await uploadPhotosViaPost(formResponse.internalId, formData.unitNumber, photoData);
             
-            try {
-                // Submit to Google Apps Script
-                const response = await submitFault(formData);
-                
-                // Hide loading
-                loading.style.display = 'none';
-                
-                if (response.success) {
-                    // Success message
-                    result.className = 'result success';
-                    resultMessage.innerHTML = `
-                        <strong>✅ Request Submitted Successfully!</strong><br><br>
-                        <strong>Tracking Number:</strong> ${response.friendlyPID}<br>
-                        <strong>Unit:</strong> ${formData.unitNumber}<br><br>
-                        You will receive email confirmation shortly.<br>
-                        Our maintenance team will review and respond promptly.
-                    `;
-                    
-                    // Reset form
-                    document.getElementById('faultForm').reset();
-                    // Reload dropdowns after reset
-                    loadDropdownOptions();
-                    
-                } else {
-                    // Error message
-                    result.className = 'result error';
-                    resultMessage.innerHTML = `
-                        <strong>❌ Submission Failed</strong><br><br>
-                        ${response.message || 'Please try again or contact management.'}
-                    `;
-                }
-                
-                result.style.display = 'block';
-                
-            } catch (error) {
-                // Network error
-                loading.style.display = 'none';
-                result.className = 'result error';
-                result.style.display = 'block';
-                resultMessage.innerHTML = `
-                    <strong>❌ Network Error</strong><br><br>
-                    Please check your internet connection and try again.
-                `;
+            if (photoResponse.success) {
+                console.log(`${photoResponse.photoUrls.length} photos uploaded successfully`);
+            } else {
+                console.warn('Photo upload failed, but form was submitted:', photoResponse.message);
             }
-            
-            // Re-enable submit button
-            submitBtn.disabled = false;
-        });
+        }
+        
+        // Hide loading
+        loading.style.display = 'none';
+        
+        // Success message
+        result.className = 'result success';
+        resultMessage.innerHTML = `
+            <strong>Request Submitted Successfully!</strong><br><br>
+            <strong>Tracking Number:</strong> ${formResponse.friendlyPID}<br>
+            <strong>Unit:</strong> ${formData.unitNumber}<br><br>
+            ${selectedPhotos.length > 0 ? `<strong>Photos:</strong> ${selectedPhotos.length} uploaded<br><br>` : ''}
+            You will receive email confirmation shortly.<br>
+            Our maintenance team will review and respond promptly.
+        `;
+        
+        result.style.display = 'block';
+        
+        // Reset form
+        document.getElementById('faultForm').reset();
+        selectedPhotos = [];
+        updatePhotoPreview();
+        loadDropdownOptions();
+        
+    } catch (error) {
+        console.error('Error:', error);
+        
+        // Error handling
+        loading.style.display = 'none';
+        result.className = 'result error';
+        result.style.display = 'block';
+        resultMessage.innerHTML = `
+            <strong>Submission Error</strong><br><br>
+            ${error.message || 'Please try again or contact management.'}
+        `;
+    }
+    
+    // Re-enable submit button
+    submitBtn.disabled = false;
+});
 
         async function submitFault(formData) {
             return new Promise((resolve, reject) => {
@@ -1077,6 +1089,51 @@ if (selectedPhotos.length > 0) {
                 document.head.appendChild(script);
             });
         }
+
+
+/**
+ *  NEW V1.1: Upload photos via POST with CORS
+ * Called after form submission succeeds
+ */
+async function uploadPhotosViaPost(problemId, unitNumber, photoData) {
+    try {
+        console.log('POST photo upload starting...');
+        console.log('DEBUG: Problem ID:', problemId);
+        console.log('DEBUG: Selected photos:', photoData.length);
+        console.log('DEBUG: Sample photo data size:', photoData[0] ? photoData[0].data.length : 0, 'characters');
+        
+        const response = await fetch(WEB_APP_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'uploadPhotos',
+                problemId: problemId,
+                unitNumber: unitNumber,
+                photos: photoData
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('POST photo response:', result);
+        
+        return result;
+        
+    } catch (error) {
+        console.error('Error uploading photos via POST:', error);
+        return {
+            success: false,
+            message: error.message,
+            photoUrls: []
+        };
+    }
+}
+        
 
 // Photo upload variables
 let selectedPhotos = [];
