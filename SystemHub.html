@@ -843,7 +843,7 @@ body {
 // Load dynamic system statistics from Explorer API
 async function loadSystemStats() {
     try {
-        console.log('ðŸ"Š Loading live system statistics...');
+        console.log('📊 Loading live system statistics...'); // Fixed
         
         // Show loading state
         document.getElementById('totalProblems').textContent = '--';
@@ -862,52 +862,87 @@ async function loadSystemStats() {
             document.getElementById('activeProblems').textContent = stats.activeProblems || '0';
             document.getElementById('completedProblems').textContent = stats.completedProblems || '0';
             
-            console.log('âœ… Live statistics loaded:', stats);
+            console.log('✅ Live statistics loaded:', stats); // Fixed
         } else {
             throw new Error('Invalid response from Explorer API');
         }
         
     } catch (error) {
-        console.error('âŒ Error loading system statistics:', error);
+        console.error('❌ Error loading system statistics:', error); // Fixed
         
         // Fallback to showing zeros instead of dummy data
         document.getElementById('totalProblems').textContent = '0';
         document.getElementById('activeProblems').textContent = '0';
         document.getElementById('completedProblems').textContent = '0';
         
-        console.warn('âš ï¸ Using fallback values due to API error');
+        console.warn('⚠️ Using fallback values due to API error'); // Fixed
     }
 }
-        // Make API call with JSONP
-        function makeApiCall(url) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'callback_' + Date.now();
-                const script = document.createElement('script');
-                
-                window[callbackName] = function(data) {
-                    resolve(data);
-                    document.head.removeChild(script);
-                    delete window[callbackName];
-                };
-                
-                script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
-                script.onerror = () => {
-                    reject(new Error('Network error'));
-                    document.head.removeChild(script);
-                    delete window[callbackName];
-                };
-                
-                document.head.appendChild(script);
-                
+       
+        // Make API call with JSONP - Improved version
+function makeApiCall(url) {
+    return new Promise((resolve, reject) => {
+        const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const script = document.createElement('script');
+        let completed = false;
+        
+        window[callbackName] = function(data) {
+            if (!completed) {
+                completed = true;
+                resolve(data);
+                // Cleanup after a short delay
                 setTimeout(() => {
-                    if (window[callbackName]) {
-                        reject(new Error('Request timeout'));
-                        document.head.removeChild(script);
+                    try {
+                        if (script.parentNode) {
+                            document.head.removeChild(script);
+                        }
                         delete window[callbackName];
+                    } catch (e) {
+                        console.warn('Cleanup warning:', e);
                     }
-                }, 10000);
-            });
-        }
+                }, 100);
+            }
+        };
+        
+        script.onerror = () => {
+            if (!completed) {
+                completed = true;
+                reject(new Error('Network error'));
+                setTimeout(() => {
+                    try {
+                        if (script.parentNode) {
+                            document.head.removeChild(script);
+                        }
+                        delete window[callbackName];
+                    } catch (e) {
+                        console.warn('Cleanup warning:', e);
+                    }
+                }, 100);
+            }
+        };
+        
+        script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
+        document.head.appendChild(script);
+        
+        // Increased timeout and better cleanup
+        setTimeout(() => {
+            if (!completed) {
+                completed = true;
+                reject(new Error('Request timeout'));
+                setTimeout(() => {
+                    try {
+                        if (script.parentNode) {
+                            document.head.removeChild(script);
+                        }
+                        delete window[callbackName];
+                    } catch (e) {
+                        console.warn('Cleanup warning:', e);
+                    }
+                }, 100);
+            }
+        }, 15000); // Increased to 15 seconds
+    });
+}
 
         // Check system health
         async function checkSystemHealth() {
