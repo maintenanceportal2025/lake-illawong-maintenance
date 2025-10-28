@@ -361,53 +361,58 @@
             }
         }
 
-        function searchByUnit(unitNumber) {
-            // Debug: Show what unit numbers exist
-            const allUnits = [...new Set(currentProblems.map(p => p.unitNumber?.toString().trim()).filter(Boolean))];
-            console.log('Available units:', allUnits.sort((a, b) => parseInt(a) - parseInt(b)));
-            console.log('Searching for unit:', unitNumber);
-            
-            const unitProblems = currentProblems.filter(p => {
-                if (!p.unitNumber) return false;
-                const storedUnit = p.unitNumber.toString().trim();
-                const searchUnit = unitNumber.toString().trim();
-                
-                // Try exact match first
-                if (storedUnit === searchUnit) return true;
-                
-                // Try matching "Unit X" with "X"
-                if (storedUnit === `Unit ${searchUnit}`) return true;
-                
-                // Try matching "X" with "Unit X" 
-                if (`Unit ${storedUnit}` === searchUnit) return true;
-                
-                // Extract number from "Unit X" format and compare
-                const storedMatch = storedUnit.match(/Unit\s*(\d+)/i);
-                if (storedMatch && storedMatch[1] === searchUnit) return true;
-                
-                return false;
-            });
-            
-            if (unitProblems.length > 0) {
-                displayMultipleProblems(unitProblems, `Unit ${unitNumber}`, true);
-                return true;
-            } else {
-                // Show available units in error message - extract numbers from "Unit X" format
-                const availableUnits = allUnits
-                    .map(unit => {
-                        const match = unit.match(/Unit\s*(\d+)/i);
-                        return match ? match[1] : unit;
-                    })
-                    .sort((a, b) => parseInt(a) - parseInt(b))
-                    .slice(0, 10);
-                
-                const unitList = availableUnits.length > 10 ? 
-                    availableUnits.join(', ') + '...' : 
-                    availableUnits.join(', ');
-                showError(`No problems found for Unit ${unitNumber}. Available units with problems: ${unitList}`);
-                return false;
-            }
-        }
+        // Replace the searchByUnit function in TimelineViewer.html with this improved version
+
+function searchByUnit(unitNumber) {
+    // Debug: Show what unit numbers exist
+    const allUnits = [...new Set(currentProblems.map(p => p.unitNumber?.toString().trim()).filter(Boolean))];
+    console.log('Available units:', allUnits.sort((a, b) => parseInt(a) - parseInt(b)));
+    console.log('Searching for unit:', unitNumber);
+    
+    // Normalize the search input - remove "unit" prefix and extra spaces, case insensitive
+    const normalizeUnit = (str) => {
+        if (!str) return '';
+        return str.toString()
+            .trim()
+            .toLowerCase()
+            .replace(/^unit\s*/i, '')  // Remove "unit" prefix
+            .replace(/\s+/g, '');       // Remove all spaces
+    };
+    
+    const normalizedSearch = normalizeUnit(unitNumber);
+    
+    const unitProblems = currentProblems.filter(p => {
+        if (!p.unitNumber) return false;
+        
+        const normalizedStored = normalizeUnit(p.unitNumber);
+        
+        // Compare normalized values
+        return normalizedStored === normalizedSearch;
+    });
+    
+    if (unitProblems.length > 0) {
+        // Display with "Unit X" format for consistency
+        const displayUnit = /^\d+$/.test(normalizedSearch) ? `Unit ${normalizedSearch}` : normalizedSearch;
+        displayMultipleProblems(unitProblems, displayUnit, true);
+        return true;
+    } else {
+        // Show available units in error message - extract and normalize numbers
+        const availableUnits = allUnits
+            .map(unit => normalizeUnit(unit))
+            .filter(unit => unit && /^\d+$/.test(unit))  // Only numeric units
+            .sort((a, b) => parseInt(a) - parseInt(b))
+            .slice(0, 15);  // Show more units
+        
+        const unitList = availableUnits.length > 0 ? 
+            availableUnits.join(', ') : 
+            'None found';
+        
+        showError(`No problems found for Unit ${normalizedSearch}. Available units with problems: ${unitList}`);
+        return false;
+    }
+}
+
+
 
         function displayAllProblems() {
             if (currentProblems.length === 0) {
