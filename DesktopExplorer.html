@@ -1713,29 +1713,77 @@ function updateStatsDisplay() {
     // Calculate completion rate
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
     
-    // Calculate average resolution time for completed problems
-    const completedWithDates = filteredProblems.filter(p => 
-        p.problemStatus === 'Completed' && p.completionDate && p.timestamp
-    );
+    // DEBUG: Let's see what's happening with dates
+    const completedProblems = filteredProblems.filter(p => p.problemStatus === 'Completed');
     
-    let avgDays = '-';
-    if (completedWithDates.length > 0) {
-        const totalDays = completedWithDates.reduce((sum, problem) => {
-            const reportedDate = parseDate(problem.timestamp);
-            const completedDate = parseDate(problem.completionDate);
-            if (reportedDate && completedDate) {
-                const days = Math.ceil((completedDate - reportedDate) / (1000 * 60 * 60 * 24));
-                return sum + (days > 0 ? days : 0);
-            }
-            return sum;
-        }, 0);
-        avgDays = Math.round(totalDays / completedWithDates.length);
-    }
+    console.log('🔍 DEBUG - Completed Problems Analysis:');
+    console.log('Total completed:', completedProblems.length);
+    
+    let validCount = 0;
+    let totalDays = 0;
+    let invalidReasons = {
+        noTimestamp: 0,
+        noCompletionDate: 0,
+        cantParseTimestamp: 0,
+        cantParseCompletion: 0,
+        negativeOrZeroDays: 0
+    };
+    
+    completedProblems.forEach((problem, index) => {
+        // Check if dates exist
+        if (!problem.timestamp) {
+            invalidReasons.noTimestamp++;
+            return;
+        }
+        if (!problem.completionDate) {
+            invalidReasons.noCompletionDate++;
+            return;
+        }
+        
+        // Try to parse dates
+        const reportedDate = parseDate(problem.timestamp);
+        const completedDate = parseDate(problem.completionDate);
+        
+        if (!reportedDate) {
+            invalidReasons.cantParseTimestamp++;
+            console.log(`Problem ${index}: Can't parse timestamp "${problem.timestamp}"`);
+            return;
+        }
+        if (!completedDate) {
+            invalidReasons.cantParseCompletion++;
+            console.log(`Problem ${index}: Can't parse completion "${problem.completionDate}"`);
+            return;
+        }
+        
+        // Calculate days
+        const days = Math.ceil((completedDate - reportedDate) / (1000 * 60 * 60 * 24));
+        
+        if (days <= 0) {
+            invalidReasons.negativeOrZeroDays++;
+            console.log(`Problem ${index}: Negative/zero days (${days}): reported="${problem.timestamp}" completed="${problem.completionDate}"`);
+            return;
+        }
+        
+        // Valid calculation
+        validCount++;
+        totalDays += days;
+        
+        // Log first few valid ones
+        if (index < 3) {
+            console.log(`Problem ${index}: ${days} days (${problem.timestamp} → ${problem.completionDate})`);
+        }
+    });
+    
+    console.log('Invalid reasons:', invalidReasons);
+    console.log(`Valid problems for avg: ${validCount} of ${completedProblems.length}`);
+    console.log(`Total days: ${totalDays}, Average: ${validCount > 0 ? Math.round(totalDays / validCount) : 0}`);
+    
+    let avgDays = validCount > 0 ? Math.round(totalDays / validCount) : '-';
     
     // Last 7 days - calculate from ALL problems, not filtered
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    const last7Days = allProblems.filter(p => {  // <-- Changed from filteredProblems to allProblems
+    const last7Days = allProblems.filter(p => {
         const problemDate = parseDate(p.timestamp);
         return problemDate && problemDate >= oneWeekAgo;
     }).length;
@@ -1746,7 +1794,7 @@ function updateStatsDisplay() {
     document.getElementById('urgentProblemsCount').textContent = urgent;
     document.getElementById('completionRate').textContent = completionRate + '%';
     document.getElementById('avgResolutionDays').textContent = avgDays;
-    document.getElementById('thisWeekCount').textContent = last7Days;  // <-- Shows count from all data
+    document.getElementById('thisWeekCount').textContent = last7Days;
     
     // Enhanced sublabels with more context
     const isFiltered = filteredProblems.length < allProblems.length;
@@ -1766,11 +1814,10 @@ function updateStatsDisplay() {
     
     document.getElementById('avgResolutionSub').textContent = avgDays === '-' 
         ? 'No completed data' 
-        : `Based on ${completedWithDates.length} completed`;
+        : `Based on ${validCount} of ${completed} completed`;
     
-    // Better sublabel for Last 7 Days
     document.getElementById('thisWeekSub').textContent = last7Days > 0 
-        ? 'Recent system activity'  // <-- Changed to clarify it's overall, not filtered
+        ? 'Recent system activity'
         : 'No recent reports';
     
     console.log('📊 Stats updated:', { total, active, urgent, completionRate, avgDays, last7Days });
