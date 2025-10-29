@@ -1723,35 +1723,54 @@ function updateStatsDisplay() {
         const totalDays = completedWithDates.reduce((sum, problem) => {
             const reportedDate = parseDate(problem.timestamp);
             const completedDate = parseDate(problem.completionDate);
-            const days = Math.ceil((completedDate - reportedDate) / (1000 * 60 * 60 * 24));
-            return sum + (days > 0 ? days : 0);
+            if (reportedDate && completedDate) {
+                const days = Math.ceil((completedDate - reportedDate) / (1000 * 60 * 60 * 24));
+                return sum + (days > 0 ? days : 0);
+            }
+            return sum;
         }, 0);
         avgDays = Math.round(totalDays / completedWithDates.length);
     }
     
-    // Calculate this week's problems (last 7 days)
+    // This week's problems (last 7 days)
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     const thisWeek = filteredProblems.filter(p => {
         const problemDate = parseDate(p.timestamp);
-        return problemDate >= oneWeekAgo.getTime();
+        return problemDate && problemDate >= oneWeekAgo;
     }).length;
     
-    // Update the display
-    document.getElementById('totalProblemsCount').textContent = total.toLocaleString();
-    document.getElementById('activeProblemsCount').textContent = active.toLocaleString();
-    document.getElementById('urgentProblemsCount').textContent = urgent.toLocaleString();
-    document.getElementById('completionRate').textContent = `${completionRate}%`;
-    document.getElementById('avgResolutionDays').textContent = avgDays === '-' ? '-' : `${avgDays}d`;
-    document.getElementById('thisWeekCount').textContent = thisWeek.toLocaleString();
+    // Update numbers
+    document.getElementById('totalProblemsCount').textContent = total;
+    document.getElementById('activeProblemsCount').textContent = active;
+    document.getElementById('urgentProblemsCount').textContent = urgent;
+    document.getElementById('completionRate').textContent = completionRate + '%';
+    document.getElementById('avgResolutionDays').textContent = avgDays;
+    document.getElementById('thisWeekCount').textContent = thisWeek;
     
-    // Update sublabels with contextual info
-    document.getElementById('totalProblemsSub').textContent = currentDataset === 'current' ? 'Live data' : 'Legacy data';
-    document.getElementById('activeProblemsSub').textContent = `${total - active} completed`;
-    document.getElementById('urgentProblemsSub').textContent = urgent > 0 ? 'Need attention' : 'All normal';
-    document.getElementById('completionRateSub').textContent = `${completed}/${total} problems`;
-    document.getElementById('avgResolutionSub').textContent = avgDays === '-' ? 'No data' : 'Average days';
-    document.getElementById('thisWeekSub').textContent = thisWeek > 0 ? 'Recent activity' : 'No new reports';
+    // Enhanced sublabels with more context
+    const isFiltered = filteredProblems.length < allProblems.length;
+    document.getElementById('totalProblemsSub').textContent = isFiltered 
+        ? `Filtered (${allProblems.length} total)` 
+        : (currentDataset === 'current' ? 'Live data' : 'Legacy data');
+    
+    document.getElementById('activeProblemsSub').textContent = active > 0 
+        ? `${Math.round((active/total)*100)}% of filtered` 
+        : 'All complete';
+    
+    document.getElementById('urgentProblemsSub').textContent = urgent > 0 
+        ? `${Math.round((urgent/total)*100)}% need attention` 
+        : 'All normal';
+    
+    document.getElementById('completionRateSub').textContent = `${completed} of ${total} complete`;
+    
+    document.getElementById('avgResolutionSub').textContent = avgDays === '-' 
+        ? 'No completed data' 
+        : `Based on ${completedWithDates.length} completed`;
+    
+    document.getElementById('thisWeekSub').textContent = thisWeek > 0 
+        ? `${Math.round((thisWeek/total)*100)}% this week` 
+        : 'No recent activity';
     
     console.log('📊 Stats updated:', { total, active, urgent, completionRate, avgDays, thisWeek });
 }
@@ -1796,6 +1815,148 @@ window.scrollToTop = function() {
 window.scrollToBottom = function() {
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 };     
+
+// Add this function to DesktopExplorer.html to update the Quick Stats based on filtered results
+// This should be called whenever filters change or data is loaded
+
+function updateQuickStats(filteredProblems) {
+    // Get all problems or filtered subset
+    const problems = filteredProblems || allProblems;
+    
+    if (!problems || problems.length === 0) {
+        // Show zero state
+        document.getElementById('totalProblemsCount').textContent = '0';
+        document.getElementById('activeProblemsCount').textContent = '0';
+        document.getElementById('urgentProblemsCount').textContent = '0';
+        document.getElementById('completionRate').textContent = '0%';
+        document.getElementById('avgResolutionDays').textContent = '-';
+        document.getElementById('thisWeekCount').textContent = '0';
+        
+        // Update sublabels
+        document.getElementById('totalProblemsSub').textContent = 'No data';
+        document.getElementById('activeProblemsSub').textContent = 'Not completed';
+        document.getElementById('urgentProblemsSub').textContent = 'Priority issues';
+        document.getElementById('completionRateSub').textContent = 'Overall %';
+        document.getElementById('avgResolutionSub').textContent = 'Days to complete';
+        document.getElementById('thisWeekSub').textContent = 'New reports';
+        return;
+    }
+    
+    // Calculate statistics
+    const totalCount = problems.length;
+    
+    // Active problems (not completed or cancelled)
+    const activeProblems = problems.filter(p => 
+        p.problemStatus !== 'Completed' && 
+        p.problemStatus !== 'Cancelled'
+    );
+    const activeCount = activeProblems.length;
+    
+    // Urgent + High priority
+    const urgentCount = problems.filter(p => 
+        p.problemPriority === 'Urgent' || 
+        p.problemPriority === 'High'
+    ).length;
+    
+    // Completion rate
+    const completedCount = problems.filter(p => 
+        p.problemStatus === 'Completed'
+    ).length;
+    const completionRate = totalCount > 0 
+        ? Math.round((completedCount / totalCount) * 100) 
+        : 0;
+    
+    // Average resolution time (for completed problems)
+    const completedProblems = problems.filter(p => p.problemStatus === 'Completed');
+    let avgDays = 0;
+    
+    if (completedProblems.length > 0) {
+        let totalDays = 0;
+        let validCount = 0;
+        
+        completedProblems.forEach(problem => {
+            // Parse dates
+            const startDate = parseDate(problem.timestamp);
+            const endDate = parseDate(problem.completionDate);
+            
+            if (startDate && endDate && endDate > startDate) {
+                const days = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
+                totalDays += days;
+                validCount++;
+            }
+        });
+        
+        avgDays = validCount > 0 ? Math.round(totalDays / validCount) : 0;
+    }
+    
+    // This week's count (last 7 days)
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    const thisWeekCount = problems.filter(p => {
+        const problemDate = parseDate(p.timestamp);
+        return problemDate && problemDate >= oneWeekAgo;
+    }).length;
+    
+    // Most common category
+    const categoryCount = {};
+    problems.forEach(p => {
+        const category = p.problemCategory || 'Uncategorized';
+        categoryCount[category] = (categoryCount[category] || 0) + 1;
+    });
+    
+    let mostCommonCategory = 'N/A';
+    let maxCount = 0;
+    Object.entries(categoryCount).forEach(([cat, count]) => {
+        if (count > maxCount) {
+            maxCount = count;
+            mostCommonCategory = cat;
+        }
+    });
+    
+    const categoryPercent = totalCount > 0 
+        ? Math.round((maxCount / totalCount) * 100) 
+        : 0;
+    
+    // Update the display
+    document.getElementById('totalProblemsCount').textContent = totalCount;
+    document.getElementById('activeProblemsCount').textContent = activeCount;
+    document.getElementById('urgentProblemsCount').textContent = urgentCount;
+    document.getElementById('completionRate').textContent = completionRate + '%';
+    document.getElementById('avgResolutionDays').textContent = avgDays > 0 ? avgDays : '-';
+    document.getElementById('thisWeekCount').textContent = thisWeekCount;
+    
+    // Update sublabels with context
+    document.getElementById('totalProblemsSub').textContent = 
+        filteredProblems && filteredProblems.length < allProblems.length 
+            ? 'Filtered results' 
+            : 'All problems';
+    
+    document.getElementById('activeProblemsSub').textContent = 
+        activeCount > 0 
+            ? `${Math.round((activeCount/totalCount)*100)}% of total` 
+            : 'All complete';
+    
+    document.getElementById('urgentProblemsSub').textContent = 
+        urgentCount > 0 
+            ? `${Math.round((urgentCount/totalCount)*100)}% of total` 
+            : 'No urgent';
+    
+    document.getElementById('completionRateSub').textContent = 
+        `${completedCount} of ${totalCount}`;
+    
+    document.getElementById('avgResolutionSub').textContent = 
+        avgDays > 0 
+            ? `Based on ${completedProblems.length} completed` 
+            : 'No data';
+    
+    document.getElementById('thisWeekSub').textContent = 
+        thisWeekCount > 0 
+            ? `${Math.round((thisWeekCount/totalCount)*100)}% of total` 
+            : 'None this week';
+}
+
+
         
         
     </script>
