@@ -810,92 +810,96 @@ window.onclick = (e) => {
 
         // Load maintenance history for specific unit
         async function loadMyHistory() {
-            const unitNumber = document.getElementById('unitNumber').value.trim().toUpperCase();
-            
-            if (!unitNumber) {
-                alert('Please enter your unit number');
-                document.getElementById('unitNumber').focus();
-                return;
-            }
+    const unitInput = document.getElementById('unitNumber').value.trim();
+    
+    if (!unitInput) {
+        alert('Please enter your unit number');
+        document.getElementById('unitNumber').focus();
+        return;
+    }
 
-            currentUnit = unitNumber;
-            
-            // Show loading state
-            showLoading();
-            
-            try {
-                console.log(`Loading history for unit: ${unitNumber}, dataset: ${selectedDataset}`);
-                
-                // Load data based on selected dataset
-                let allProblemsData = [];
-                
-                if (selectedDataset === 'current') {
-                    console.log('Loading current data only...');
-                    const response = await makeAPIRequest('getFaultLogData');
-                    if (response && response.success && response.data) {
-                        allProblemsData = response.data;
-                        console.log(`Loaded ${allProblemsData.length} current problems`);
-                    }
-                } else if (selectedDataset === 'legacy') {
-                    console.log('Loading legacy data only...');
-                    const response = await makeAPIRequest('getLegacyLogData');
-                    if (response && response.success && response.data) {
-                        allProblemsData = response.data;
-                        console.log(`Loaded ${allProblemsData.length} legacy problems`);
-                    }
-                } else if (selectedDataset === 'all') {
-                    console.log('Loading both current and legacy data...');
-                    
-                    // Load both datasets
-                    const [currentResponse, legacyResponse] = await Promise.allSettled([
-                        makeAPIRequest('getFaultLogData'),
-                        makeAPIRequest('getLegacyLogData')
-                    ]);
-                    
-                    // Combine successful responses
-                    if (currentResponse.status === 'fulfilled' && currentResponse.value?.success) {
-                        allProblemsData = allProblemsData.concat(currentResponse.value.data);
-                        console.log(`Loaded ${currentResponse.value.data.length} current problems`);
-                    }
-                    
-                    if (legacyResponse.status === 'fulfilled' && legacyResponse.value?.success) {
-                        allProblemsData = allProblemsData.concat(legacyResponse.value.data);
-                        console.log(`Loaded ${legacyResponse.value.data.length} legacy problems`);
-                    }
-                    
-                    console.log(`Total combined: ${allProblemsData.length} problems`);
-                }
-                
-                // Check if we got any data
-                if (allProblemsData.length === 0) {
-                    throw new Error('No maintenance data available');
-                }
-                
-                allProblems = allProblemsData;
-                
-                // Filter for this unit
-                console.log(`Looking for unit: "${unitNumber}" in ${allProblems.length} total problems`);
-                console.log('Sample unitNumbers found:', allProblems.slice(0, 5).map(p => `"${p.unitNumber}"`));
-                
-                const unitProblems = allProblems.filter(problem => {
-                    const problemUnit = problem.unitNumber ? problem.unitNumber.toString().toUpperCase().trim() : '';
-                    const searchUnit = unitNumber.toUpperCase().trim();
-                    console.log(`Comparing: "${problemUnit}" === "${searchUnit}"`);
-                    return problemUnit === searchUnit;
-                });
-                
-                console.log(`Found ${unitProblems.length} problems for unit ${unitNumber}`);
-updateUnitStats(unitNumber);
-                
-                // Display results
-                displayResults(unitProblems, unitNumber);
-                
-            } catch (error) {
-                console.error('Error loading maintenance history:', error);
-                hideLoading();
-                showError('Unable to load your maintenance history. Please try again or contact the office.');
+    // Normalize the input - remove "unit" prefix if present
+    const normalizedUnit = unitInput
+        .toUpperCase()
+        .replace(/^UNIT\s*/i, '')  // Remove "unit" prefix (case insensitive)
+        .trim();
+
+    currentUnit = normalizedUnit;
+    
+    // Show loading state
+    showLoading();
+    
+    try {
+        console.log(`Loading history for unit: ${normalizedUnit}, dataset: ${selectedDataset}`);
+        
+        // Load data based on selected dataset
+        let allProblemsData = [];
+        
+        if (selectedDataset === 'current') {
+            console.log('Loading current data only...');
+            const response = await makeAPIRequest('getFaultLogData');
+            if (response && response.success && response.data) {
+                allProblemsData = response.data;
+                console.log(`Loaded ${allProblemsData.length} current problems`);
             }
+        } else if (selectedDataset === 'legacy') {
+            console.log('Loading legacy data only...');
+            const response = await makeAPIRequest('getLegacyLogData');
+            if (response && response.success && response.data) {
+                allProblemsData = response.data;
+                console.log(`Loaded ${allProblemsData.length} legacy problems`);
+            }
+        } else {
+            // Load both datasets
+            console.log('Loading all data...');
+            const [currentResponse, legacyResponse] = await Promise.all([
+                makeAPIRequest('getFaultLogData'),
+                makeAPIRequest('getLegacyLogData')
+            ]);
+            
+            if (currentResponse && currentResponse.success && currentResponse.data) {
+                allProblemsData = allProblemsData.concat(currentResponse.data);
+            }
+            if (legacyResponse && legacyResponse.success && legacyResponse.data) {
+                allProblemsData = allProblemsData.concat(legacyResponse.data);
+            }
+            
+            console.log(`Loaded total ${allProblemsData.length} problems`);
         }
+        
+        // Enhanced unit matching - normalize stored unit numbers too
+        const unitProblems = allProblemsData.filter(problem => {
+            if (!problem.unitNumber) return false;
+            
+            // Normalize the stored unit number
+            const storedUnit = problem.unitNumber
+                .toString()
+                .toUpperCase()
+                .replace(/^UNIT\s*/i, '')  // Remove "unit" prefix
+                .trim();
+            
+            // Compare normalized values
+            const match = storedUnit === normalizedUnit;
+            
+            if (match) {
+                console.log(`Match found: "${storedUnit}" === "${normalizedUnit}"`);
+            }
+            
+            return match;
+        });
+        
+        console.log(`Found ${unitProblems.length} problems for unit ${normalizedUnit}`);
+        updateUnitStats(normalizedUnit);
+        
+        // Display results
+        displayResults(unitProblems, normalizedUnit);
+        
+    } catch (error) {
+        console.error('Error loading maintenance history:', error);
+        hideLoading();
+        showError('Unable to load your maintenance history. Please try again or contact the office.');
+    }
+}
 
         // Make API request to Explorer backend
         async function makeAPIRequest(action) {
@@ -1267,20 +1271,23 @@ async function updateUnitStats(unitNumber) {
         
         let currentCount = 0, legacyCount = 0, activeCount = 0;
         
+        // Normalize search unit once
+        const normalizedSearch = unitNumber.toUpperCase().replace(/^UNIT\s*/i, '').trim();
+        
         // Count current problems for this unit
         if (currentResponse.status === 'fulfilled' && currentResponse.value?.success) {
             const currentData = currentResponse.value.data || [];
             currentCount = currentData.filter(problem => {
-                const problemUnit = problem.unitNumber ? problem.unitNumber.toString().toUpperCase().trim() : '';
-                const searchUnit = unitNumber.toUpperCase().trim();
-                return problemUnit === searchUnit;
+                if (!problem.unitNumber) return false;
+                const normalizedStored = problem.unitNumber.toString().toUpperCase().replace(/^UNIT\s*/i, '').trim();
+                return normalizedStored === normalizedSearch;
             }).length;
             
             // Count active issues in current data
             activeCount = currentData.filter(problem => {
-                const problemUnit = problem.unitNumber ? problem.unitNumber.toString().toUpperCase().trim() : '';
-                const searchUnit = unitNumber.toUpperCase().trim();
-                const isUnit = problemUnit === searchUnit;
+                if (!problem.unitNumber) return false;
+                const normalizedStored = problem.unitNumber.toString().toUpperCase().replace(/^UNIT\s*/i, '').trim();
+                const isUnit = normalizedStored === normalizedSearch;
                 const isActive = problem.problemStatus !== 'Completed' && problem.problemStatus !== 'Cancelled';
                 return isUnit && isActive;
             }).length;
@@ -1290,16 +1297,16 @@ async function updateUnitStats(unitNumber) {
         if (legacyResponse.status === 'fulfilled' && legacyResponse.value?.success) {
             const legacyData = legacyResponse.value.data || [];
             legacyCount = legacyData.filter(problem => {
-                const problemUnit = problem.unitNumber ? problem.unitNumber.toString().toUpperCase().trim() : '';
-                const searchUnit = unitNumber.toUpperCase().trim();
-                return problemUnit === searchUnit;
+                if (!problem.unitNumber) return false;
+                const normalizedStored = problem.unitNumber.toString().toUpperCase().replace(/^UNIT\s*/i, '').trim();
+                return normalizedStored === normalizedSearch;
             }).length;
         }
         
         const totalCount = currentCount + legacyCount;
         
         // Update display
-        document.getElementById('unitStatsTitle').textContent = `${unitNumber} Statistics`;
+        document.getElementById('unitStatsTitle').textContent = `Unit ${unitNumber} Statistics`;
         document.getElementById('unitCurrentCount').textContent = currentCount;
         document.getElementById('unitLegacyCount').textContent = legacyCount;
         document.getElementById('unitAllCount').textContent = totalCount;
