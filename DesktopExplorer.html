@@ -1730,49 +1730,47 @@ function updateStatsDisplay() {
     };
     
     completedProblems.forEach((problem, index) => {
-        // Check if dates exist
-        if (!problem.timestamp) {
-            invalidReasons.noTimestamp++;
-            return;
-        }
-        if (!problem.completionDate) {
-            invalidReasons.noCompletionDate++;
-            return;
-        }
-        
-        // Try to parse dates
-        const reportedDate = parseDate(problem.timestamp);
-        const completedDate = parseDate(problem.completionDate);
-        
-        if (!reportedDate) {
-            invalidReasons.cantParseTimestamp++;
-            console.log(`Problem ${index}: Can't parse timestamp "${problem.timestamp}"`);
-            return;
-        }
-        if (!completedDate) {
-            invalidReasons.cantParseCompletion++;
-            console.log(`Problem ${index}: Can't parse completion "${problem.completionDate}"`);
-            return;
-        }
-        
-        // Calculate days
-        const days = Math.ceil((completedDate - reportedDate) / (1000 * 60 * 60 * 24));
-        
-        if (days <= 0) {
-            invalidReasons.negativeOrZeroDays++;
-            console.log(`Problem ${index}: Negative/zero days (${days}): reported="${problem.timestamp}" completed="${problem.completionDate}"`);
-            return;
-        }
-        
-        // Valid calculation
-        validCount++;
-        totalDays += days;
-        
-        // Log first few valid ones
-        if (index < 3) {
-            console.log(`Problem ${index}: ${days} days (${problem.timestamp} → ${problem.completionDate})`);
-        }
-    });
+    // Check if dates exist
+    if (!problem.timestamp) {
+        invalidReasons.noTimestamp++;
+        return;
+    }
+    if (!problem.completionDate) {
+        invalidReasons.noCompletionDate++;
+        return;
+    }
+    
+    // Try to parse dates
+    const reportedDate = parseDate(problem.timestamp);
+    const completedDate = parseDate(problem.completionDate);
+    
+    if (!reportedDate) {
+        invalidReasons.cantParseTimestamp++;
+        return;
+    }
+    if (!completedDate) {
+        invalidReasons.cantParseCompletion++;
+        return;
+    }
+    
+    // Calculate days
+    const days = Math.ceil((completedDate - reportedDate) / (1000 * 60 * 60 * 24));
+    
+    // Only reject truly negative days (data errors)
+    if (days < 0) {
+        invalidReasons.negativeOrZeroDays++;
+        return;
+    }
+    
+    // Count same-day completion as 1 day (legacy data handling)
+    const actualDays = days === 0 ? 1 : days;
+    
+    // Valid calculation
+    validCount++;
+    totalDays += actualDays;
+});
+
+let avgDays = validCount > 0 ? Math.round(totalDays / validCount) : '-';
     
     console.log('Invalid reasons:', invalidReasons);
     console.log(`Valid problems for avg: ${validCount} of ${completedProblems.length}`);
