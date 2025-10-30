@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lake Illawong - Zone Rep Problem Submission</title>
+    <!--
+    =====================================================================
+    LAKE ILLAWONG - ZONE REP SUBMISSION FORM
+    =====================================================================
+    PURPOSE: Zone Rep problem submission with zone-filtered selection
+    VERSION: v1.0.0
+    DATE: October 30, 2025
+    BACKEND: ResidentSubmissionForm_V1.2.js (with 2 new endpoints added)
+    
+    HOW IT WORKS:
+    1. Zone Rep selects their zone
+    2. Zone Rep selects their name (radio buttons)
+    3. Units filtered by zone appear
+    4. Zone Rep name sent as "reportedBy" to backend
+    5. Backend finds Zone Rep email in UnitList (Zone Reps ARE residents)
+    6. Everything else works exactly like normal submission
+    =====================================================================
+    -->
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .header-section {
+            margin-bottom: 20px;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .logo-container {
+            flex-shrink: 0;
+        }
+
+        .logo-image {
+            width: 100px;
+            height: 100px;
+            object-fit: contain;
+            background: transparent !important;
+        }
+
+        .header-text {
+            flex: 1;
+            text-align: left;
+        }
+
+        .system-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            margin: 0 0 5px 0;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .title-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            padding: 40px 32px;
+            text-align: center;
+            margin-bottom: 20px;
+            border-top: 3px solid #0891b2;
+            max-width: 520px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .title-card h1 {
+            font-size: 26px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            letter-spacing: -0.025em;
+            color: #1e293b;
+        }
+
+        .title-card p {
+            color: #64748b;
+            font-size: 16px;
+            font-weight: 400;
+        }
+
+        .form-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
+            overflow: hidden;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        .form-container {
+            padding: 40px 32px;
+            background: white;
+        }
+
+        .info-box {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 1px solid #0891b2;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 32px;
+            color: #0c4a6e;
+        }
+
+        .info-box strong {
+            color: #0369a1;
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 28px;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #1e293b;
+            font-size: 15px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 18px 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 14px;
+            font-size: 16px;
+            transition: all 0.25s;
+            background: white;
+            font-family: inherit;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #0891b2;
+            box-shadow: 0 0 0 4px rgba(8, 145, 178, 0.1);
+        }
+
+        select.form-input {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 16px center;
+            background-repeat: no-repeat;
+            background-size: 16px;
+            padding-right: 48px;
+        }
+
+        textarea.form-input {
+            min-height: 130px;
+            resize: vertical;
+            line-height: 1.6;
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            padding: 16px 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.25s;
+            background: white;
+        }
+
+        .radio-option:hover {
+            border-color: #0891b2;
+            background: #f0f9ff;
+        }
+
+        .radio-option input[type="radio"] {
+            width: 20px;
+            height: 20px;
+            margin-right: 12px;
+            cursor: pointer;
+            accent-color: #0891b2;
+        }
+
+        .radio-option label {
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            color: #1e293b;
+            flex: 1;
+        }
+
+        .radio-option:has(input[type="radio"]:checked) {
+            border-color: #0891b2;
+            background: #f0f9ff;
+        }
+
+        .radio-option input[type="radio"]:checked + label {
+            color: #0891b2;
+            font-weight: 600;
+        }
+
+        .submit-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+            color: white;
+            border: none;
+            padding: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.25s;
+            min-height: 60px;
+        }
+
+        .submit-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #0e7490 0%, #155e75 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 25px rgba(8, 145, 178, 0.3);
+        }
+
+        .submit-btn:disabled {
+            background: #e2e8f0;
+            color: #94a3b8;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 30px;
+            background: #f8fafc;
+            border-radius: 16px;
+            margin-top: 25px;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #e2e8f0;
+            border-top-color: #0891b2;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .result {
+            display: none;
+            padding: 30px;
+            border-radius: 16px;
+            margin-top: 25px;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .result.success {
+            background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+            border: 2px solid #10b981;
+            color: #065f46;
+        }
+
+        .result.error {
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+            border: 2px solid #ef4444;
+            color: #991b1b;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 15px; }
+            .header-content { flex-direction: column; gap: 15px; }
+            .header-text { text-align: center; }
+            .system-title { font-size: 20px; }
+            .logo-image { width: 80px; height: 80px; }
+            .title-card { padding: 30px 24px; }
+            .title-card h1 { font-size: 22px; }
+            .form-container { padding: 30px 24px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-section">
+            <div class="header-content">
+                <div class="logo-container">
+                    <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+                </div>
+                <div class="header-text">
+                    <h1 class="system-title">Lake Illawong</h1>
+                </div>
+            </div>
+        </div>
+
+        <div class="title-card">
+            <h1>Zone Rep Problem Submission</h1>
+            <p>Submit problems on behalf of residents</p>
+        </div>
+
+        <div class="form-card">
+            <div class="form-container">
+                <div class="info-box">
+                    <strong>Zone Representative Submission</strong><br>
+                    Select your zone, identify yourself, choose the unit, and describe the problem.
+                </div>
+
+                <form id="faultForm">
+                    <div class="form-group">
+                        <label class="form-label" for="zoneSelect">Select Zone *</label>
+                        <select class="form-input" id="zoneSelect" required>
+                            <option value="">-- Select Zone --</option>
+                            <option value="Zone 1">Zone 1</option>
+                            <option value="Zone 2">Zone 2</option>
+                            <option value="Zone 3">Zone 3</option>
+                            <option value="Zone 4">Zone 4</option>
+                            <option value="Zone 5">Zone 5</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="zoneRepGroup" style="display: none;">
+                        <label class="form-label">Select Your Name *</label>
+                        <div class="radio-group" id="zoneRepRadios"></div>
+                    </div>
+
+                    <div class="form-group" id="unitGroup" style="display: none;">
+                        <label class="form-label" for="unitNumber">Unit Number *</label>
+                        <select class="form-input" id="unitNumber" required disabled>
+                            <option value="">-- Select Unit --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="descriptionGroup" style="display: none;">
+                        <label class="form-label" for="problemDescription">Problem Description *</label>
+                        <textarea 
+                            class="form-input" 
+                            id="problemDescription" 
+                            required
+                            disabled
+                            placeholder="Please describe the problem in detail..."></textarea>
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="submitBtn" disabled>
+                        Submit Problem Report
+                    </button>
+                </form>
+
+                <div class="loading" id="loading">
+                    <div class="loading-spinner"></div>
+                    <div style="color: #64748b;">Submitting your report...</div>
+                </div>
+
+                <div class="result" id="result">
+                    <div id="resultMessage"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Backend URL - V1.2 with new endpoints
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwlToDSTEZFNr3xJwRejUH_2AulxAVb_49mP2SrTIpGQDvhENGL-QvimGC5TYPnffpERw/exec';
+
+        let selectedZoneRepName = '';
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('zoneSelect').addEventListener('change', handleZoneChange);
+            document.getElementById('zoneRepRadios').addEventListener('change', handleZoneRepChange);
+        }
+
+        async function handleZoneChange(e) {
+            const zone = e.target.value;
+            
+            if (!zone) {
+                hideAllGroups();
+                return;
+            }
+
+            const zoneRepGroup = document.getElementById('zoneRepGroup');
+            zoneRepGroup.style.display = 'block';
+            document.getElementById('zoneRepRadios').innerHTML = '<div style="padding: 16px; text-align: center; color: #64748b;">Loading Zone Reps...</div>';
+
+            try {
+                const response = await callScript({
+                    action: 'getZoneRepDropdowns',
+                    zone: zone
+                });
+
+                if (response.success && response.zoneReps && response.zoneReps.length > 0) {
+                    populateZoneRepRadios(response.zoneReps);
+                } else {
+                    document.getElementById('zoneRepRadios').innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">No Zone Reps found</div>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('zoneRepRadios').innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">Error loading Zone Reps</div>';
+            }
+        }
+
+        function populateZoneRepRadios(zoneReps) {
+            const container = document.getElementById('zoneRepRadios');
+            container.innerHTML = '';
+
+            zoneReps.forEach((rep, index) => {
+                const radioDiv = document.createElement('div');
+                radioDiv.className = 'radio-option';
+                
+                const radioInput = document.createElement('input');
+                radioInput.type = 'radio';
+                radioInput.name = 'zoneRep';
+                radioInput.id = `zoneRep${index}`;
+                radioInput.value = rep.name;
+                
+                const label = document.createElement('label');
+                label.htmlFor = `zoneRep${index}`;
+                label.textContent = rep.name;
+                
+                radioDiv.appendChild(radioInput);
+                radioDiv.appendChild(label);
+                container.appendChild(radioDiv);
+            });
+        }
+
+        async function handleZoneRepChange(e) {
+            if (e.target.type === 'radio') {
+                selectedZoneRepName = e.target.value;
+                const zone = document.getElementById('zoneSelect').value;
+                await loadUnitsForZone(zone);
+            }
+        }
+
+        async function loadUnitsForZone(zone) {
+            const unitGroup = document.getElementById('unitGroup');
+            const unitSelect = document.getElementById('unitNumber');
+            
+            unitGroup.style.display = 'block';
+            unitSelect.disabled = true;
+            unitSelect.innerHTML = '<option value="">Loading units...</option>';
+
+            try {
+                const response = await callScript({
+                    action: 'getZoneUnits',
+                    zone: zone
+                });
+
+                if (response.success && response.units && response.units.length > 0) {
+                    populateUnitDropdown(response.units);
+                    unitSelect.disabled = false;
+                    document.getElementById('descriptionGroup').style.display = 'block';
+                    document.getElementById('problemDescription').disabled = false;
+                    document.getElementById('submitBtn').disabled = false;
+                } else {
+                    unitSelect.innerHTML = '<option value="">No units found</option>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                unitSelect.innerHTML = '<option value="">Error loading units</option>';
+            }
+        }
+
+        function populateUnitDropdown(units) {
+            const unitSelect = document.getElementById('unitNumber');
+            unitSelect.innerHTML = '<option value="">-- Select Unit --</option>';
+            
+            units.forEach(unit => {
+                const option = document.createElement('option');
+                option.value = unit;
+                option.textContent = unit;
+                unitSelect.appendChild(option);
+            });
+        }
+
+        function hideAllGroups() {
+            document.getElementById('zoneRepGroup').style.display = 'none';
+            document.getElementById('unitGroup').style.display = 'none';
+            document.getElementById('descriptionGroup').style.display = 'none';
+            document.getElementById('submitBtn').disabled = true;
+            selectedZoneRepName = '';
+        }
+
+        async function callScript(data) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+                const script = document.createElement('script');
+                const params = new URLSearchParams(data);
+                params.append('callback', callbackName);
+                
+                script.src = `${WEB_APP_URL}?${params.toString()}`;
+                
+                window[callbackName] = function(response) {
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    resolve(response);
+                };
+                
+                script.onerror = function() {
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error('Script loading failed'));
+                };
+                
+                document.head.appendChild(script);
+            });
+        }
+
+        document.getElementById('faultForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            const resultMessage = document.getElementById('resultMessage');
+            
+            submitBtn.disabled = true;
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            
+            // CRITICAL: Zone Rep name becomes "reportedBy"
+            // Backend will find Zone Rep email in UnitList (Zone Reps ARE residents)
+            const formData = {
+                action: 'submitFault',
+                unitNumber: document.getElementById('unitNumber').value,
+                reportedBy: selectedZoneRepName,  // Zone Rep name
+                problemDescription: document.getElementById('problemDescription').value
+            };
+            
+            try {
+                const response = await callScript(formData);
+                loading.style.display = 'none';
+                
+                if (response.success) {
+                    result.className = 'result success';
+                    resultMessage.innerHTML = `
+                        <strong>Problem Submitted Successfully!</strong><br><br>
+                        <strong>Tracking Number:</strong> ${response.friendlyPID}<br>
+                        <strong>Unit:</strong> ${formData.unitNumber}<br>
+                        <strong>Submitted By:</strong> ${selectedZoneRepName}<br><br>
+                        <div style="margin: 20px 0; padding: 20px; background: #f0f9ff; border: 2px solid #0891b2; border-radius: 12px;">
+                            <strong style="color: #0369a1; display: block; margin-bottom: 12px;">Want to add photos?</strong>
+                            <p style="color: #0c4a6e; margin-bottom: 16px; font-size: 14px;">
+                                Email your photos to <strong>irc.mtceteam@gmail.com</strong><br>
+                                Include tracking number <strong>${response.friendlyPID}</strong> in the subject line
+                            </p>
+                            <a href="mailto:irc.mtceteam@gmail.com?subject=Photos ${response.friendlyPID}&body=Attached are photos for request ${response.friendlyPID}" 
+                               style="display: inline-block; padding: 12px 24px; background: #0891b2; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                                Email Photos Now
+                            </a>
+                        </div>
+                        <div style="margin-top: 16px; color: #64748b; font-size: 14px;">
+                            Notifications sent to Zone Rep and unit owner.<br>
+                            Our maintenance team will review promptly.
+                        </div>
+                    `;
+                    
+                    document.getElementById('faultForm').reset();
+                    hideAllGroups();
+                } else {
+                    result.className = 'result error';
+                    resultMessage.innerHTML = `
+                        <strong>Submission Failed</strong><br><br>
+                        ${response.message || 'Please try again or contact management.'}
+                    `;
+                }
+                
+                result.style.display = 'block';
+            } catch (error) {
+                loading.style.display = 'none';
+                result.className = 'result error';
+                result.style.display = 'block';
+                resultMessage.innerHTML = `
+                    <strong>Network Error</strong><br><br>
+                    Please check your connection and try again.
+                `;
+            }
+            
+            submitBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>
