@@ -115,6 +115,7 @@ data export capabilities, and detailed problem visualization for supervisory ana
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Desktop Explorer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -435,7 +436,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     background: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}    
+}  
+
+.chart-type-btn {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 0.9rem;
+}
+
+.chart-type-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+        
     </style>
 </head>
 <body>
@@ -618,6 +637,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         </div>
         <button class="sort-btn" id="sortToggleBtn" onclick="toggleSort()">📅 Newest First</button>
         <button class="export-btn" onclick="exportToCSV()">📊 Export CSV</button>
+
+<button class="export-btn" onclick="generateChartReport()" style="background: #8b5cf6;">
+    📊 Generate Chart
+</button>
+        
     </div>
 </div>
             <div class="problems-grid" id="problemsGrid">
@@ -2001,7 +2025,200 @@ function updateQuickStats(filteredProblems) {
             : 'None this week';
 }
 
+let reportChart = null;
+let currentChartData = null;
 
+function generateChartReport() {
+    // Open modal
+    document.getElementById('chartModal').classList.remove('hidden');
+    
+    // Store current filtered data for charts
+    currentChartData = filteredProblems;
+    
+    // Auto-generate first chart (by category)
+    generateChart('category');
+}
+
+function closeChartModal() {
+    document.getElementById('chartModal').classList.add('hidden');
+    if (reportChart) {
+        reportChart.destroy();
+        reportChart = null;
+    }
+}
+
+function generateChart(type) {
+    if (!currentChartData || currentChartData.length === 0) {
+        alert('No data available for chart. Apply filters first.');
+        return;
+    }
+    
+    let chartData = {};
+    let chartTitle = '';
+    let chartColor = 'rgba(102, 126, 234, 0.8)';
+    
+    switch(type) {
+        case 'category':
+            chartTitle = 'Problems by Category';
+            currentChartData.forEach(p => {
+                const cat = p.problemCategory || 'Uncategorized';
+                chartData[cat] = (chartData[cat] || 0) + 1;
+            });
+            break;
+            
+        case 'priority':
+            chartTitle = 'Problems by Priority';
+            chartColor = 'rgba(239, 68, 68, 0.8)';
+            currentChartData.forEach(p => {
+                const pri = p.problemPriority || 'Unknown';
+                chartData[pri] = (chartData[pri] || 0) + 1;
+            });
+            break;
+            
+        case 'status':
+            chartTitle = 'Problems by Status';
+            chartColor = 'rgba(16, 185, 129, 0.8)';
+            currentChartData.forEach(p => {
+                const status = p.problemStatus || 'Unknown';
+                chartData[status] = (chartData[status] || 0) + 1;
+            });
+            break;
+            
+        case 'zone':
+            chartTitle = 'Problems by Zone';
+            chartColor = 'rgba(139, 92, 246, 0.8)';
+            currentChartData.forEach(p => {
+                const zone = p.zone || 'Unknown';
+                chartData[zone] = (chartData[zone] || 0) + 1;
+            });
+            break;
+            
+        case 'monthly':
+            chartTitle = 'Problems by Month';
+            chartColor = 'rgba(59, 130, 246, 0.8)';
+            currentChartData.forEach(p => {
+                const date = parseDate(p.timestamp);
+                if (date) {
+                    const monthYear = date.toLocaleString('default', { month: 'short', year: 'numeric' });
+                    chartData[monthYear] = (chartData[monthYear] || 0) + 1;
+                }
+            });
+            break;
+            
+        case 'unit':
+            chartTitle = 'Problems by Unit (Top 10)';
+            chartColor = 'rgba(245, 158, 11, 0.8)';
+            currentChartData.forEach(p => {
+                const unit = p.unitNumber || 'Unknown';
+                chartData[unit] = (chartData[unit] || 0) + 1;
+            });
+            // Get top 10
+            const sorted = Object.entries(chartData)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+            chartData = Object.fromEntries(sorted);
+            break;
+    }
+    
+    // Update summary stats
+    const total = currentChartData.length;
+    const categories = Object.keys(chartData).length;
+    const topItem = Object.entries(chartData).sort((a, b) => b[1] - a[1])[0];
+    
+    document.getElementById('chartTotalCount').textContent = total;
+    document.getElementById('chartCategoryCount').textContent = categories;
+    document.getElementById('chartTopItem').textContent = topItem ? `${topItem[0]} (${topItem[1]})` : '-';
+    document.getElementById('chartStats').style.display = 'block';
+    
+    // Render chart
+    renderReportChart(chartTitle, chartData, chartColor);
+}
+
+function renderReportChart(title, data, color) {
+    const labels = Object.keys(data);
+    const values = Object.values(data);
+    
+    // Destroy existing chart
+    if (reportChart) {
+        reportChart.destroy();
+    }
+    
+    // Create new chart
+    const ctx = document.getElementById('reportChart').getContext('2d');
+    reportChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Count',
+                data: values,
+                backgroundColor: color,
+                borderColor: color.replace('0.8', '1'),
+                borderWidth: 2,
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: title,
+                    font: { size: 18, weight: 'bold' },
+                    padding: 20
+                },
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 13 },
+                    callbacks: {
+                        label: function(context) {
+                            const total = values.reduce((a, b) => a + b, 0);
+                            const percent = ((context.parsed.y / total) * 100).toFixed(1);
+                            return `Count: ${context.parsed.y} (${percent}%)`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1,
+                        font: { size: 12 }
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                },
+                x: {
+                    ticks: {
+                        font: { size: 11 },
+                        maxRotation: 45,
+                        minRotation: 0
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+function downloadChartImage() {
+    if (!reportChart) return;
+    
+    const link = document.createElement('a');
+    link.download = 'chart-report.png';
+    link.href = reportChart.toDataURL();
+    link.click();
+}
         
         
     </script>
@@ -2016,6 +2233,80 @@ function updateQuickStats(filteredProblems) {
     </button>
 </div>
 
+<!-- Chart Report Modal -->
+<div class="modal hidden" id="chartModal" style="z-index: 10000;">
+    <div class="modal-content" style="max-width: 1200px; width: 95%;">
+        <div class="modal-header">
+            <div class="modal-title">📊 Chart Report - Filtered Data</div>
+            <button class="close-btn" onclick="closeChartModal()">×</button>
+        </div>
+        <div class="modal-body" style="padding: 30px;">
+            <!-- Chart Type Selector -->
+            <div style="margin-bottom: 25px; padding: 20px; background: #f8fafc; border-radius: 12px;">
+                <label style="font-weight: 600; color: #374151; margin-bottom: 12px; display: block;">
+                    Select Chart Type:
+                </label>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button onclick="generateChart('category')" class="chart-type-btn">
+                        By Category
+                    </button>
+                    <button onclick="generateChart('priority')" class="chart-type-btn">
+                        By Priority
+                    </button>
+                    <button onclick="generateChart('status')" class="chart-type-btn">
+                        By Status
+                    </button>
+                    <button onclick="generateChart('zone')" class="chart-type-btn">
+                        By Zone
+                    </button>
+                    <button onclick="generateChart('monthly')" class="chart-type-btn">
+                        By Month
+                    </button>
+                    <button onclick="generateChart('unit')" class="chart-type-btn">
+                        By Unit (Top 10)
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Summary Stats -->
+            <div id="chartStats" style="display: none; margin-bottom: 25px; padding: 20px; background: #f0fdf4; border-radius: 12px; border-left: 4px solid #10b981;">
+                <h3 style="margin-bottom: 15px; color: #065f46;">📋 Summary</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div>
+                        <div style="font-size: 0.875rem; color: #6b7280;">Total Problems</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #059669;" id="chartTotalCount">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.875rem; color: #6b7280;">Categories</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #059669;" id="chartCategoryCount">0</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.875rem; color: #6b7280;">Most Common</div>
+                        <div style="font-size: 1.25rem; font-weight: 700; color: #059669;" id="chartTopItem">-</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Chart Canvas -->
+            <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                <canvas id="reportChart" style="max-height: 500px;"></canvas>
+            </div>
+            
+            <!-- Export Options -->
+            <div style="margin-top: 25px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button onclick="downloadChartImage()" class="chart-type-btn" style="background: #059669;">
+                    💾 Download Chart
+                </button>
+                <button onclick="closeChartModal()" class="chart-type-btn" style="background: #6b7280;">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
+    
+
+    
 </body>
 </html>
