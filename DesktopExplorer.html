@@ -2094,16 +2094,35 @@ function generateChart(type) {
             break;
             
         case 'monthly':
-            chartTitle = 'Problems by Month';
-            chartColor = 'rgba(59, 130, 246, 0.8)';
-            currentChartData.forEach(p => {
-                const date = parseDate(p.timestamp);
-                if (date) {
-                    const monthYear = date.toLocaleString('default', { month: 'short', year: 'numeric' });
-                    chartData[monthYear] = (chartData[monthYear] || 0) + 1;
-                }
-            });
-            break;
+    chartTitle = 'Problems by Month';
+    chartColor = 'rgba(59, 130, 246, 0.8)';
+    
+    // Create a map to track months with proper sorting
+    const monthMap = new Map();
+    
+    currentChartData.forEach(p => {
+        const date = parseDate(p.timestamp);
+        if (date) {
+            // Create sortable key (YYYY-MM)
+            const sortKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            // Create display label
+            const displayLabel = date.toLocaleString('default', { month: 'short', year: 'numeric' });
+            
+            if (!monthMap.has(sortKey)) {
+                monthMap.set(sortKey, { label: displayLabel, count: 0 });
+            }
+            monthMap.get(sortKey).count++;
+        }
+    });
+    
+    // Sort by date and convert to chartData
+    const sortedMonths = Array.from(monthMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]));
+    
+    sortedMonths.forEach(([key, value]) => {
+        chartData[value.label] = value.count;
+    });
+    break;
             
         case 'unit':
             chartTitle = 'Problems by Unit (Top 10)';
