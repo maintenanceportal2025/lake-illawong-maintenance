@@ -6,22 +6,20 @@
     <title>Lake Illawong - Bulk Problem Submission</title>
     <!--
     =====================================================================
-    LAKE ILLAWONG - BULK PROBLEM SUBMISSION
+    LAKE ILLAWONG - BULK PROBLEM SUBMISSION - FIXED VERSION
     =====================================================================
     PURPOSE: Submit problems for multiple units at once
-    VERSION: v1.2.0
-    DATE: October 31, 2025
+    VERSION: v1.3.0 - FIXED
+    DATE: November 1, 2025
     BACKEND: ResidentSubmissionForm_V1.3.js
     
-    CHANGES IN V1.2:
-    âœ… ALL fields now use searchable dropdowns (single source of truth)
-    âœ… Reporter Name - Type="Reported By" from Dropdowns
-    âœ… Category - Type="Category" from Dropdowns  
-    âœ… Status - Type="Status" from Dropdowns
-    âœ… Priority - Type="Priority" from Dropdowns
-    âœ… Assigned To - Type="Assigned To" from Dropdowns
-    âœ… Dynamic email recipient counts
-    âœ… Fixed default checkbox states
+    FIXES IN V1.3:
+    ✅ Added "Preparing your form" loading screen
+    ✅ Fixed zone filtering with proper unit-zone mapping
+    ✅ Added proper timing delays between submissions (2.5 seconds)
+    ✅ Fixed email consolidation (one summary email)
+    ✅ Enhanced activity logging
+    ✅ Improved error handling
     
     TWO MODES:
     1. ADMIN MODE - Full control + email options
@@ -115,6 +113,52 @@
             font-weight: 600;
             color: #0369a1;
             margin-top: 8px;
+        }
+
+        /* LOADING SCREEN STYLES */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(30, 64, 175, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(5px);
+        }
+
+        .loading-content {
+            text-align: center;
+            color: white;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .loading-subtext {
+            font-size: 14px;
+            opacity: 0.8;
         }
 
         .form-card {
@@ -215,48 +259,34 @@
         .searchable-option {
             padding: 12px 16px;
             cursor: pointer;
-            transition: background 0.15s;
+            transition: background-color 0.2s;
+            border-bottom: 1px solid #f1f5f9;
         }
 
-        .searchable-option:hover {
-            background: #f0f9ff;
+        .searchable-option:last-child {
+            border-bottom: none;
+        }
+
+        .searchable-option:hover,
+        .searchable-option.highlighted {
+            background-color: #f0f9ff;
         }
 
         .searchable-option.selected {
-            background: #e0f2fe;
-            font-weight: 600;
-        }
-
-        .searchable-option.hidden {
-            display: none;
+            background-color: #0891b2;
+            color: white;
         }
 
         /* Unit Selection */
-        .unit-selection-tools {
+        .unit-controls {
             display: flex;
-            gap: 12px;
-            margin-bottom: 16px;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
             flex-wrap: wrap;
         }
 
-        .tool-button {
-            padding: 10px 18px;
-            border: 2px solid #e2e8f0;
-            background: white;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .tool-button:hover {
-            border-color: #0891b2;
-            background: #f0f9ff;
-            color: #0891b2;
-        }
-
-        .search-box {
+        .unit-search {
             flex: 1;
             min-width: 200px;
         }
@@ -265,13 +295,40 @@
             min-width: 150px;
         }
 
+        .unit-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-outline {
+            background: white;
+            color: #0891b2;
+            border: 2px solid #0891b2;
+        }
+
+        .btn-outline:hover {
+            background: #0891b2;
+            color: white;
+        }
+
         .unit-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
             gap: 12px;
-            max-height: 400px;
+            max-height: 300px;
             overflow-y: auto;
-            padding: 16px;
+            padding: 20px;
             background: #f8fafc;
             border-radius: 12px;
             border: 2px solid #e2e8f0;
@@ -280,12 +337,15 @@
         .unit-checkbox {
             display: flex;
             align-items: center;
+            gap: 8px;
             padding: 12px;
             background: white;
             border: 2px solid #e2e8f0;
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
+            font-size: 14px;
+            font-weight: 500;
         }
 
         .unit-checkbox:hover {
@@ -293,550 +353,714 @@
             background: #f0f9ff;
         }
 
-        .unit-checkbox.selected {
-            border-color: #0891b2;
-            background: #f0f9ff;
-        }
-
         .unit-checkbox input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            margin-right: 8px;
-            cursor: pointer;
-            accent-color: #0891b2;
+            margin: 0;
+            transform: scale(1.2);
         }
 
-        .unit-checkbox label {
-            cursor: pointer;
-            font-weight: 500;
-            font-size: 14px;
-            flex: 1;
+        .unit-checkbox input[type="checkbox"]:checked + span {
+            color: #0891b2;
+            font-weight: 600;
         }
 
-        .selected-count {
-            padding: 12px 20px;
-            background: #ecfdf5;
-            border: 2px solid #10b981;
-            border-radius: 8px;
+        .selected-summary {
+            margin-top: 16px;
+            padding: 16px;
+            background: #f0f9ff;
+            border: 1px solid #0891b2;
+            border-radius: 12px;
             text-align: center;
             font-weight: 600;
-            color: #065f46;
-            margin-top: 16px;
+            color: #0369a1;
         }
 
         /* Email Options */
-        .checkbox-group {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
+        .email-options {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 24px;
         }
 
-        .checkbox-item {
+        .email-option {
             display: flex;
             align-items: center;
-            padding: 14px 16px;
-            background: #f8fafc;
-            border: 2px solid #e2e8f0;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: white;
             border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
+            border: 1px solid #e2e8f0;
         }
 
-        .checkbox-item:hover {
-            border-color: #0891b2;
-            background: #f0f9ff;
+        .email-option:last-child {
+            margin-bottom: 0;
         }
 
-        .checkbox-item input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            margin-right: 12px;
-            cursor: pointer;
-            accent-color: #0891b2;
+        .email-option input[type="checkbox"] {
+            transform: scale(1.2);
         }
 
-        .checkbox-item label {
-            cursor: pointer;
-            font-size: 15px;
+        .email-option label {
             flex: 1;
+            font-weight: 500;
+            cursor: pointer;
         }
 
-        /* Confirmation Section */
+        .email-count {
+            font-size: 14px;
+            color: #64748b;
+            font-weight: 400;
+        }
+
+        /* Confirmation */
         .confirmation-box {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            border: 2px solid #f59e0b;
+            background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+            border: 1px solid #10b981;
             border-radius: 16px;
             padding: 24px;
-            margin: 24px 0;
+            margin-top: 32px;
         }
 
         .confirmation-box h3 {
-            color: #92400e;
+            color: #065f46;
             font-size: 18px;
             margin-bottom: 16px;
         }
 
-        .confirmation-item {
-            padding: 8px 0;
-            color: #78350f;
-            font-size: 15px;
+        .confirmation-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(16, 185, 129, 0.2);
         }
 
-        .confirmation-item strong {
-            color: #92400e;
+        .confirmation-row:last-child {
+            margin-bottom: 0;
+            border-bottom: none;
+        }
+
+        .confirmation-label {
+            font-weight: 600;
+            color: #065f46;
+        }
+
+        .confirmation-value {
+            color: #047857;
+            text-align: right;
+            max-width: 60%;
+            word-break: break-word;
+        }
+
+        /* Buttons */
+        .submit-section {
+            margin-top: 40px;
+            text-align: center;
         }
 
         .submit-btn {
-            width: 100%;
             background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
             color: white;
             border: none;
-            padding: 20px;
+            padding: 18px 40px;
             font-size: 16px;
             font-weight: 600;
-            border-radius: 14px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: all 0.25s;
-            min-height: 60px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(8, 145, 178, 0.3);
         }
 
         .submit-btn:hover:not(:disabled) {
-            background: linear-gradient(135deg, #0e7490 0%, #155e75 100%);
             transform: translateY(-2px);
-            box-shadow: 0 12px 25px rgba(8, 145, 178, 0.3);
+            box-shadow: 0 8px 25px rgba(8, 145, 178, 0.4);
         }
 
         .submit-btn:disabled {
-            background: #e2e8f0;
-            color: #94a3b8;
+            background: #94a3b8;
             cursor: not-allowed;
             transform: none;
+            box-shadow: none;
         }
 
+        /* Loading & Results */
         .loading {
-            display: none;
             text-align: center;
-            padding: 30px;
-            background: #f8fafc;
-            border-radius: 16px;
-            margin-top: 25px;
+            padding: 40px;
+            display: none;
         }
 
-        .loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #e2e8f0;
-            border-top-color: #0891b2;
+        .loading-spinner-small {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #0891b2;
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin: 0 auto 20px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
         }
 
         .result {
-            display: none;
-            padding: 30px;
+            margin-top: 24px;
+            padding: 24px;
             border-radius: 16px;
-            margin-top: 25px;
-            font-size: 15px;
-            line-height: 1.8;
+            font-weight: 500;
+            display: none;
         }
 
         .result.success {
-            background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-            border: 2px solid #10b981;
+            background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+            border: 1px solid #10b981;
             color: #065f46;
         }
 
         .result.error {
-            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
-            border: 2px solid #ef4444;
-            color: #991b1b;
+            background: linear-gradient(135deg, #fef2f2 0%, #fef7f7 100%);
+            border: 1px solid #ef4444;
+            color: #7f1d1d;
         }
 
-        .hidden {
-            display: none !important;
-        }
-
+        /* Mobile Responsive */
         @media (max-width: 768px) {
-            .container { padding: 15px; }
-            .form-container { padding: 24px 20px; }
-            .unit-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
-            .header-content { flex-direction: column; gap: 15px; }
-            .header-text { text-align: center; }
+            .container {
+                padding: 0 16px;
+            }
+
+            .form-container {
+                padding: 24px 20px;
+            }
+
+            .unit-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .unit-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            }
+
+            .confirmation-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
+            }
+
+            .confirmation-value {
+                max-width: 100%;
+                text-align: left;
+            }
+        }
+
+        /* Hidden state for form during loading */
+        .form-hidden {
+            display: none;
         }
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- LOADING SCREEN -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Preparing your form...</div>
+            <div class="loading-subtext">Loading dropdowns and units data</div>
+        </div>
+    </div>
+
+    <div class="container form-hidden" id="mainContent">
+        <!-- Header -->
         <div class="header-section">
             <div class="header-content">
                 <div class="logo-container">
-                    <img src="logo.png" alt="Lake Illawong Residential Club" class="logo-image">
+                    <img src="https://lake-illawong-maintenance.netlify.app/images/logo-transparent.png" 
+                         alt="Lake Illawong Logo" class="logo-image">
                 </div>
                 <div class="header-text">
-                    <h1 class="system-title">Lake Illawong</h1>
+                    <h1 class="system-title">PROBLEM REPORTING SYSTEM</h1>
                 </div>
             </div>
         </div>
 
+        <!-- Title Card -->
         <div class="title-card">
-            <h1>PROBLEM REPORTING SYSTEMn</h1>
-            <div class="role-badge" id="roleBadge">Admin Mode</div>
+            <h1>Bulk Problem Submission</h1>
+            <div class="role-badge" id="roleDisplay">Loading...</div>
         </div>
 
+        <!-- Form Card -->
         <div class="form-card">
-            <div class="form-container">
+            <form id="bulkForm" class="form-container">
+                <!-- Info Box -->
                 <div class="info-box">
-                    <strong>Bulk Submission</strong><br>
-                    Submit the same problem for multiple units at once. Useful for planned programs or batch issues affecting multiple residents.
+                    <strong>Bulk Submission:</strong> Submit the same problem for multiple units at once. 
+                    Select the units affected, describe the problem, and we'll create individual reports 
+                    for each unit with unique tracking numbers.
                 </div>
 
-                <form id="bulkForm">
-                    <!-- Section 1: Reporter -->
-                    <div class="section-header">1. Reporter Information</div>
-                    
-                    <div class="form-group searchable-container">
-                        <label class="form-label" for="reportedByInput">Your Name *</label>
-                        <input type="text" class="form-input" id="reportedByInput" 
-                               placeholder="Type to search names..." autocomplete="off" required>
-                        <input type="hidden" id="reportedBy" required>
+                <!-- Reporter -->
+                <div class="form-group">
+                    <label for="reportedBy" class="form-label">Your Name *</label>
+                    <div class="searchable-container">
+                        <input type="text" 
+                               id="reportedBy" 
+                               class="form-input" 
+                               placeholder="Start typing your name..." 
+                               autocomplete="off"
+                               required>
                         <div class="searchable-dropdown" id="reportedByDropdown"></div>
                     </div>
+                </div>
 
-                    <!-- Section 2: Problem Details -->
-                    <div class="section-header">2. Problem Details</div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="problemDescription">Problem Description *</label>
-                        <textarea class="form-input" id="problemDescription" required
-                                  placeholder="Describe the problem that affects these units..."></textarea>
-                    </div>
+                <!-- Problem Description -->
+                <div class="form-group">
+                    <label for="problemDescription" class="form-label">Problem Description *</label>
+                    <textarea id="problemDescription" 
+                              class="form-input" 
+                              placeholder="Describe the problem that affects multiple units..."
+                              required></textarea>
+                </div>
 
-                    <div class="form-group searchable-container">
-                        <label class="form-label" for="categoryInput">Category *</label>
-                        <input type="text" class="form-input" id="categoryInput" 
-                               placeholder="Type to search categories..." autocomplete="off" required>
-                        <input type="hidden" id="category" required>
+                <!-- Category -->
+                <div class="form-group">
+                    <label for="category" class="form-label">Category *</label>
+                    <div class="searchable-container">
+                        <input type="text" 
+                               id="category" 
+                               class="form-input" 
+                               placeholder="Select problem category..." 
+                               autocomplete="off"
+                               required>
                         <div class="searchable-dropdown" id="categoryDropdown"></div>
                     </div>
+                </div>
 
-                    <!-- Admin-only fields -->
-                    <div id="adminFields" class="hidden">
-                        <div class="form-group searchable-container">
-                            <label class="form-label" for="problemStatusInput">Status *</label>
-                            <input type="text" class="form-input" id="problemStatusInput" 
-                                   placeholder="Type to search status..." autocomplete="off" required>
-                            <input type="hidden" id="problemStatus" required>
+                <!-- Admin-only fields -->
+                <div id="adminFields" style="display: none;">
+                    <h2 class="section-header">Advanced Options</h2>
+                    
+                    <!-- Status -->
+                    <div class="form-group">
+                        <label for="problemStatus" class="form-label">Status</label>
+                        <div class="searchable-container">
+                            <input type="text" 
+                                   id="problemStatus" 
+                                   class="form-input" 
+                                   placeholder="Select status..." 
+                                   autocomplete="off">
                             <div class="searchable-dropdown" id="problemStatusDropdown"></div>
                         </div>
-
-                        <div class="form-group searchable-container">
-                            <label class="form-label" for="problemPriorityInput">Priority *</label>
-                            <input type="text" class="form-input" id="problemPriorityInput" 
-                                   placeholder="Type to search priority..." autocomplete="off" required>
-                            <input type="hidden" id="problemPriority" required>
+                    </div>
+                    
+                    <!-- Priority -->
+                    <div class="form-group">
+                        <label for="problemPriority" class="form-label">Priority</label>
+                        <div class="searchable-container">
+                            <input type="text" 
+                                   id="problemPriority" 
+                                   class="form-input" 
+                                   placeholder="Select priority..." 
+                                   autocomplete="off">
                             <div class="searchable-dropdown" id="problemPriorityDropdown"></div>
                         </div>
-
-                        <div class="form-group searchable-container">
-                            <label class="form-label" for="assignedToInput">Assigned To</label>
-                            <input type="text" class="form-input" id="assignedToInput" 
-                                   placeholder="Type to search assigned to..." autocomplete="off">
-                            <input type="hidden" id="assignedTo">
+                    </div>
+                    
+                    <!-- Assigned To -->
+                    <div class="form-group">
+                        <label for="assignedTo" class="form-label">Assigned To</label>
+                        <div class="searchable-container">
+                            <input type="text" 
+                                   id="assignedTo" 
+                                   class="form-input" 
+                                   placeholder="Assign to someone..." 
+                                   autocomplete="off">
                             <div class="searchable-dropdown" id="assignedToDropdown"></div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Section 3: Unit Selection -->
-                    <div class="section-header">3. Select Units</div>
+                <!-- Unit Selection -->
+                <h2 class="section-header">Select Affected Units</h2>
+                
+                <div class="unit-controls">
+                    <div class="form-group unit-search">
+                        <input type="text" 
+                               id="unitSearch" 
+                               class="form-input" 
+                               placeholder="Search units..." 
+                               autocomplete="off">
+                    </div>
                     
-                    <div class="unit-selection-tools">
-                        <input type="text" class="form-input search-box" id="unitSearch" 
-                               placeholder="Search units...">
-                        <select class="form-input zone-filter" id="zoneFilter">
+                    <div class="form-group zone-filter">
+                        <select id="zoneFilter" class="form-input">
                             <option value="">All Zones</option>
-                            <option value="Zone 1">Zone 1</option>
-                            <option value="Zone 2">Zone 2</option>
-                            <option value="Zone 3">Zone 3</option>
-                            <option value="Zone 4">Zone 4</option>
-                            <option value="Zone 5">Zone 5</option>
                         </select>
-                        <button type="button" class="tool-button" onclick="selectAllUnits()">Select All</button>
-                        <button type="button" class="tool-button" onclick="deselectAllUnits()">Deselect All</button>
                     </div>
-
-                    <div class="unit-grid" id="unitGrid">
-                        <!-- Units populated by JavaScript -->
-                    </div>
-
-                    <div class="selected-count" id="selectedCount">
-                        0 units selected
-                    </div>
-
-                    <!-- Section 4: Email Options (Admin only) -->
-                    <div id="emailOptions" class="hidden">
-                        <div class="section-header">4. Email Notifications</div>
-                        
-                        <div class="checkbox-group">
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="emailUnits">
-                                <label for="emailUnits">Send to all unit owners (<span id="unitEmailCount">0</span> emails)</label>
-                            </div>
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="emailReporter" checked>
-                                <label for="emailReporter">Send to reporter (1 email)</label>
-                            </div>
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="emailMaintenance" checked>
-                                <label for="emailMaintenance">Send to maintenance team (1 summary email)</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Section 5: Confirmation -->
-                    <div class="section-header">5. Review & Submit</div>
                     
-                    <div class="confirmation-box" id="confirmationBox">
-                        <h3>Review Before Submitting:</h3>
-                        <div class="confirmation-item"><strong>Units:</strong> <span id="confirmUnits">0</span></div>
-                        <div class="confirmation-item"><strong>Description:</strong> <span id="confirmDesc">-</span></div>
-                        <div class="confirmation-item"><strong>Category:</strong> <span id="confirmCat">-</span></div>
-                        <div id="confirmAdminFields" class="hidden">
-                            <div class="confirmation-item"><strong>Status:</strong> <span id="confirmStatus">-</span></div>
-                            <div class="confirmation-item"><strong>Priority:</strong> <span id="confirmPriority">-</span></div>
-                            <div class="confirmation-item"><strong>Assigned To:</strong> <span id="confirmAssigned">-</span></div>
+                    <div class="unit-actions">
+                        <button type="button" class="btn-small btn-outline" onclick="selectAllUnits()">
+                            Select All
+                        </button>
+                        <button type="button" class="btn-small btn-outline" onclick="deselectAllUnits()">
+                            Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div class="unit-grid" id="unitGrid">
+                    <!-- Units will be populated here -->
+                </div>
+
+                <div class="selected-summary">
+                    <span id="selectedCount">0 units selected</span>
+                </div>
+
+                <!-- Email Options (Admin only) -->
+                <div id="emailOptions" class="email-options" style="display: none;">
+                    <h3 class="section-header" style="margin-top: 0;">Email Notifications</h3>
+                    
+                    <div class="email-option">
+                        <input type="checkbox" id="emailUnits" checked>
+                        <label for="emailUnits">
+                            Email unit owners 
+                            <span class="email-count">(<span id="unitEmailCount">0</span> recipients)</span>
+                        </label>
+                    </div>
+                    
+                    <div class="email-option">
+                        <input type="checkbox" id="emailReporter">
+                        <label for="emailReporter">
+                            Email reporter (you) 
+                            <span class="email-count">(1 recipient)</span>
+                        </label>
+                    </div>
+                    
+                    <div class="email-option">
+                        <input type="checkbox" id="emailMaintenance" checked>
+                        <label for="emailMaintenance">
+                            Email maintenance team 
+                            <span class="email-count">(1 summary email)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Confirmation -->
+                <div class="confirmation-box">
+                    <h3>Submission Summary</h3>
+                    
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Units:</span>
+                        <span class="confirmation-value" id="confirmUnits">0</span>
+                    </div>
+                    
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Category:</span>
+                        <span class="confirmation-value" id="confirmCat">-</span>
+                    </div>
+                    
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Description:</span>
+                        <span class="confirmation-value" id="confirmDesc">-</span>
+                    </div>
+                    
+                    <div id="adminConfirm" style="display: none;">
+                        <div class="confirmation-row">
+                            <span class="confirmation-label">Status:</span>
+                            <span class="confirmation-value" id="confirmStatus">-</span>
                         </div>
-                        <div id="confirmEmailOptions" class="hidden">
-                            <div class="confirmation-item"><strong>Email Notifications:</strong> <span id="confirmEmails">-</span></div>
+                        
+                        <div class="confirmation-row">
+                            <span class="confirmation-label">Priority:</span>
+                            <span class="confirmation-value" id="confirmPriority">-</span>
+                        </div>
+                        
+                        <div class="confirmation-row">
+                            <span class="confirmation-label">Assigned To:</span>
+                            <span class="confirmation-value" id="confirmAssigned">-</span>
+                        </div>
+                        
+                        <div class="confirmation-row">
+                            <span class="confirmation-label">Email To:</span>
+                            <span class="confirmation-value" id="confirmEmails">-</span>
                         </div>
                     </div>
+                </div>
 
-                    <button type="submit" class="submit-btn" id="submitBtn" disabled>
+                <!-- Submit -->
+                <div class="submit-section">
+                    <button type="submit" id="submitBtn" class="submit-btn" disabled>
                         Create 0 Problem Reports
                     </button>
-                </form>
-
-                <div class="loading" id="loading">
-                    <div class="loading-spinner"></div>
-                    <div style="color: #64748b;">Creating problem reports...</div>
                 </div>
 
-                <div class="result" id="result">
-                    <div id="resultMessage"></div>
+                <!-- Loading -->
+                <div id="loading" class="loading">
+                    <div class="loading-spinner-small"></div>
+                    <div>Creating problem reports...</div>
+                    <div style="font-size: 14px; color: #64748b; margin-top: 8px;">
+                        Processing each unit with proper delays...
+                    </div>
                 </div>
-            </div>
+
+                <!-- Result -->
+                <div id="result" class="result"></div>
+            </form>
         </div>
     </div>
 
     <script>
-        // Backend URL - UPDATE THIS AFTER DEPLOYMENT
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwlToDSTEZFNr3xJwRejUH_2AulxAVb_49mP2SrTIpGQDvhENGL-QvimGC5TYPnffpERw/exec';
+        // Backend URL - UPDATE THIS AFTER DEPLOYMENT (V1.3)
 
-        // Detect mode from URL parameter
-        const urlParams = new URLSearchParams(window.location.search);
-        const isZoneRep = urlParams.get('role') === 'zonerep';
+        // const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzXQCZA9KCY_4_xVD8Ht1-HW8Pb1fNPxWI4XwN2QLRhT-_P-LN6RVgNZN_VZEHwZlOG/exec';
 
-        // State
+	const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwlToDSTEZFNr3xJwRejUH_2AulxAVb_49mP2SrTIpGQDvhENGL-QvimGC5TYPnffpERw/exec';
+        
+        // Global variables
         let allUnits = [];
-        let dropdownData = {
-            reportedBy: [],
-            categories: [],
-            statuses: [],
-            priorities: [],
-            assignedTo: []
-        };
+        let unitZoneMap = {}; // Map unit numbers to zones
+        let dropdownData = {};
+        let isZoneRep = false;
+        let isLoading = false;
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            setupMode();
-            loadData();
-            setupEventListeners();
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('🚀 Bulk Submission Form Loading...');
+            
+            try {
+                await initializeForm();
+            } catch (error) {
+                console.error('❌ Initialization failed:', error);
+                hideLoadingScreen();
+                showError('Failed to load form data. Please refresh the page.');
+            }
         });
 
-        function setupMode() {
-            const roleBadge = document.getElementById('roleBadge');
-            const adminFields = document.getElementById('adminFields');
-            const emailOptions = document.getElementById('emailOptions');
-            const confirmAdminFields = document.getElementById('confirmAdminFields');
-            const confirmEmailOptions = document.getElementById('confirmEmailOptions');
-
-            if (isZoneRep) {
-                roleBadge.textContent = 'Zone Rep Mode';
-                roleBadge.style.background = '#fef3c7';
-                roleBadge.style.borderColor = '#f59e0b';
-                roleBadge.style.color = '#92400e';
-                adminFields.classList.add('hidden');
-                emailOptions.classList.add('hidden');
-                confirmAdminFields.classList.add('hidden');
-                confirmEmailOptions.classList.add('hidden');
-            } else {
-                adminFields.classList.remove('hidden');
-                emailOptions.classList.remove('hidden');
-                confirmAdminFields.classList.remove('hidden');
-                confirmEmailOptions.classList.remove('hidden');
+        async function initializeForm() {
+            // Detect user role from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            isZoneRep = urlParams.get('mode') === 'zonerep';
+            
+            console.log('👤 User mode:', isZoneRep ? 'Zone Rep' : 'Admin');
+            
+            // Update role display
+            document.getElementById('roleDisplay').textContent = isZoneRep ? 'Zone Representative' : 'Administrator';
+            
+            // Show/hide admin fields
+            if (!isZoneRep) {
+                document.getElementById('adminFields').style.display = 'block';
+                document.getElementById('emailOptions').style.display = 'block';
+                document.getElementById('adminConfirm').style.display = 'block';
             }
+
+            // Load all data in parallel
+            const [unitsResult, dropdownsResult] = await Promise.all([
+                callScript({ action: 'getAllUnits' }),
+                callScript({ action: isZoneRep ? 'getZoneRepDropdowns' : 'getAdminBulkDropdowns' })
+            ]);
+
+            if (!unitsResult.success) {
+                throw new Error('Failed to load units: ' + unitsResult.message);
+            }
+
+            if (!dropdownsResult.success) {
+                throw new Error('Failed to load dropdowns: ' + dropdownsResult.message);
+            }
+
+            // Store data
+            allUnits = unitsResult.units || [];
+            dropdownData = dropdownsResult;
+
+            console.log('📊 Loaded:', allUnits.length, 'units');
+            console.log('📋 Loaded dropdown data');
+
+            // Initialize UI
+            populateUnits();
+            setupDropdowns();
+            setupEventListeners();
+            
+            // Hide loading screen
+            hideLoadingScreen();
+            
+            console.log('✅ Form initialized successfully');
         }
 
-        async function loadData() {
-            try {
-                // Load ALL dropdowns and units from Dropdowns sheet
-                const dropdownsResponse = await callScript({ action: 'getAdminBulkDropdowns' });
-                if (dropdownsResponse.success) {
-                    // Store dropdown data
-                    dropdownData.reportedBy = dropdownsResponse.reportedBy || [];
-                    dropdownData.categories = dropdownsResponse.categories || [];
-                    dropdownData.statuses = dropdownsResponse.statuses || [];
-                    dropdownData.priorities = dropdownsResponse.priorities || [];
-                    dropdownData.assignedTo = dropdownsResponse.assignedTo || [];
-                    
-                    // Store and populate units
-                    allUnits = dropdownsResponse.units || [];
-                    populateUnitGrid(allUnits);
-                    
-                    // Populate searchable dropdowns
-                    populateSearchableDropdown('reportedBy', dropdownData.reportedBy || []);
-                    populateSearchableDropdown('category', dropdownData.categories || []);
-                    
-                    if (!isZoneRep) {
-                        populateSearchableDropdown('problemStatus', dropdownData.statuses || []);
-                        populateSearchableDropdown('problemPriority', dropdownData.priorities || []);
-                        populateSearchableDropdown('assignedTo', dropdownData.assignedTo || []);
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading data:', error);
-            }
+        function hideLoadingScreen() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            document.getElementById('mainContent').classList.remove('form-hidden');
         }
 
-        function populateUnitGrid(units) {
-            const grid = document.getElementById('unitGrid');
-            grid.innerHTML = '';
+        function showError(message) {
+            const result = document.getElementById('result');
+            result.className = 'result error';
+            result.innerHTML = `<strong>Error</strong><br>${message}`;
+            result.style.display = 'block';
+        }
 
-            units.forEach(unit => {
-                const div = document.createElement('div');
-                div.className = 'unit-checkbox';
-                
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.value = unit;
-                checkbox.id = `unit_${unit.replace(/\s/g, '_')}`;
-                checkbox.addEventListener('change', updateSelectedCount);
-                
-                const label = document.createElement('label');
-                label.htmlFor = `unit_${unit.replace(/\s/g, '_')}`;
-                label.textContent = unit;
-                
-                div.appendChild(checkbox);
-                div.appendChild(label);
-                grid.appendChild(div);
+        function populateUnits() {
+            const unitGrid = document.getElementById('unitGrid');
+            const zoneFilter = document.getElementById('zoneFilter');
+            const zones = new Set();
 
-                div.addEventListener('click', (e) => {
-                    if (e.target !== checkbox) {
+            unitGrid.innerHTML = '';
+
+            allUnits.forEach(unit => {
+                // Create unit checkbox
+                const unitDiv = document.createElement('div');
+                unitDiv.className = 'unit-checkbox';
+                unitDiv.innerHTML = `
+                    <input type="checkbox" value="${unit}" id="unit_${unit}">
+                    <span>${unit}</span>
+                `;
+                
+                unitDiv.addEventListener('click', function(e) {
+                    if (e.target.type !== 'checkbox') {
+                        const checkbox = this.querySelector('input[type="checkbox"]');
                         checkbox.checked = !checkbox.checked;
                         updateSelectedCount();
                     }
                 });
+
+                unitDiv.querySelector('input').addEventListener('change', updateSelectedCount);
+                unitGrid.appendChild(unitDiv);
+
+                // Extract zone for filtering (assumes zone is in unit number)
+                const zoneMatch = unit.match(/^([A-Z]+)/);
+                if (zoneMatch) {
+                    zones.add(zoneMatch[1]);
+                    unitZoneMap[unit] = zoneMatch[1];
+                }
+            });
+
+            // Populate zone filter
+            zones.forEach(zone => {
+                const option = document.createElement('option');
+                option.value = zone;
+                option.textContent = `Zone ${zone}`;
+                zoneFilter.appendChild(option);
+            });
+
+            console.log('🏘️ Populated', allUnits.length, 'units with', zones.size, 'zones');
+        }
+
+        function setupDropdowns() {
+            // Setup each dropdown based on user role
+            const dropdowns = [
+                { id: 'reportedBy', key: 'reportedBy' },
+                { id: 'category', key: 'category' }
+            ];
+
+            if (!isZoneRep) {
+                dropdowns.push(
+                    { id: 'problemStatus', key: 'status' },
+                    { id: 'problemPriority', key: 'priority' }, 
+                    { id: 'assignedTo', key: 'assignedTo' }
+                );
+            }
+
+            dropdowns.forEach(({ id, key }) => {
+                const options = dropdownData[key] || [];
+                setupSearchableDropdown(id, options);
             });
         }
 
-        function populateSearchableDropdown(fieldId, options) {
-            const inputField = document.getElementById(fieldId + 'Input');
-            const dropdown = document.getElementById(fieldId + 'Dropdown');
-            const hiddenField = document.getElementById(fieldId);
+        function setupSearchableDropdown(inputId, options) {
+            const input = document.getElementById(inputId);
+            const dropdown = document.getElementById(inputId + 'Dropdown');
             
-            if (!inputField || !dropdown) return;
-            
-            // Clear previous options
-            dropdown.innerHTML = '';
-            
-            // Create option elements
-            options.forEach(option => {
-                const div = document.createElement('div');
-                div.className = 'searchable-option';
-                div.textContent = option;
-                div.dataset.value = option;
-                
-                div.addEventListener('click', function() {
-                    selectOption(fieldId, option);
-                });
-                
-                dropdown.appendChild(div);
-            });
-            
-            // Setup input handlers
-            setupSearchableInput(fieldId, options);
-        }
+            if (!input || !dropdown) return;
 
-        function setupSearchableInput(fieldId, options) {
-            const inputField = document.getElementById(fieldId + 'Input');
-            const dropdown = document.getElementById(fieldId + 'Dropdown');
-            const hiddenField = document.getElementById(fieldId);
-            
-            if (!inputField || !dropdown) return;
-            
-            // Show dropdown on focus
-            inputField.addEventListener('focus', function() {
-                dropdown.classList.add('active');
-                filterDropdownOptions(fieldId, '');
+            let highlightedIndex = -1;
+
+            // Focus event - show all options
+            input.addEventListener('focus', function() {
+                showDropdownOptions(dropdown, options, '');
+                highlightedIndex = -1;
             });
-            
-            // Filter on input
-            inputField.addEventListener('input', function() {
-                const searchTerm = this.value;
-                filterDropdownOptions(fieldId, searchTerm);
-                hiddenField.value = ''; // Clear selection when typing
-                updateConfirmation();
+
+            // Input event - filter options
+            input.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                const filtered = options.filter(opt => 
+                    opt.toLowerCase().includes(searchTerm)
+                );
+                showDropdownOptions(dropdown, filtered, searchTerm);
+                highlightedIndex = -1;
             });
-            
-            // Hide dropdown when clicking outside
+
+            // Keyboard navigation
+            input.addEventListener('keydown', function(e) {
+                const visibleOptions = dropdown.querySelectorAll('.searchable-option');
+                
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    highlightedIndex = Math.min(highlightedIndex + 1, visibleOptions.length - 1);
+                    updateHighlight(visibleOptions);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    highlightedIndex = Math.max(highlightedIndex - 1, -1);
+                    updateHighlight(visibleOptions);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (highlightedIndex >= 0 && visibleOptions[highlightedIndex]) {
+                        selectOption(visibleOptions[highlightedIndex], input, dropdown);
+                    }
+                } else if (e.key === 'Escape') {
+                    dropdown.classList.remove('active');
+                    highlightedIndex = -1;
+                }
+            });
+
+            // Click outside to close
             document.addEventListener('click', function(e) {
-                if (!e.target.closest(`#${fieldId}Input`) && !e.target.closest(`#${fieldId}Dropdown`)) {
+                if (!input.contains(e.target) && !dropdown.contains(e.target)) {
                     dropdown.classList.remove('active');
                 }
             });
         }
 
-        function filterDropdownOptions(fieldId, searchTerm) {
-            const dropdown = document.getElementById(fieldId + 'Dropdown');
-            const options = dropdown.querySelectorAll('.searchable-option');
-            const term = searchTerm.toLowerCase();
+        function showDropdownOptions(dropdown, options, searchTerm) {
+            dropdown.innerHTML = '';
             
-            let visibleCount = 0;
-            options.forEach(option => {
-                const text = option.textContent.toLowerCase();
-                const matches = text.includes(term);
-                option.classList.toggle('hidden', !matches);
-                if (matches) visibleCount++;
+            if (options.length === 0) {
+                dropdown.innerHTML = '<div class="searchable-option" style="color: #94a3b8;">No options found</div>';
+            } else {
+                options.forEach(option => {
+                    const div = document.createElement('div');
+                    div.className = 'searchable-option';
+                    div.textContent = option;
+                    div.addEventListener('click', function() {
+                        selectOption(this, dropdown.previousElementSibling, dropdown);
+                    });
+                    dropdown.appendChild(div);
+                });
+            }
+            
+            dropdown.classList.add('active');
+        }
+
+        function updateHighlight(visibleOptions) {
+            visibleOptions.forEach((option, index) => {
+                option.classList.toggle('highlighted', index === highlightedIndex);
             });
-            
-            // Show/hide dropdown based on visible options
-            if (visibleCount === 0) {
+        }
+
+        function selectOption(optionElement, input, dropdown) {
+            if (optionElement.textContent !== 'No options found') {
+                input.value = optionElement.textContent;
                 dropdown.classList.remove('active');
+                updateConfirmation();
             }
         }
 
-        function selectOption(fieldId, value) {
-            const inputField = document.getElementById(fieldId + 'Input');
-            const hiddenField = document.getElementById(fieldId);
-            const dropdown = document.getElementById(fieldId + 'Dropdown');
-            
-            inputField.value = value;
-            hiddenField.value = value;
-            dropdown.classList.remove('active');
-            
-            updateConfirmation();
-        }
-
         function setupEventListeners() {
-            // Unit search and filter
+            // Unit search
             document.getElementById('unitSearch').addEventListener('input', filterUnits);
+            
+            // Zone filter
             document.getElementById('zoneFilter').addEventListener('change', filterUnits);
-
-            // Form change listeners
+            
+            // Problem description
             document.getElementById('problemDescription').addEventListener('input', updateConfirmation);
             
             if (!isZoneRep) {
@@ -858,9 +1082,9 @@
             checkboxes.forEach(checkbox => {
                 const unitNumber = checkbox.querySelector('input').value;
                 const matchesSearch = unitNumber.toLowerCase().includes(searchTerm);
-                // Zone filtering would need unit-zone mapping
+                const matchesZone = !zoneFilter || unitZoneMap[unitNumber] === zoneFilter;
                 
-                checkbox.style.display = matchesSearch ? 'flex' : 'none';
+                checkbox.style.display = (matchesSearch && matchesZone) ? 'flex' : 'none';
             });
         }
 
@@ -899,8 +1123,8 @@
             document.getElementById('confirmCat').textContent = cat;
             
             if (!isZoneRep) {
-                document.getElementById('confirmStatus').textContent = document.getElementById('problemStatus').value || '-';
-                document.getElementById('confirmPriority').textContent = document.getElementById('problemPriority').value || '-';
+                document.getElementById('confirmStatus').textContent = document.getElementById('problemStatus').value || 'Reported';
+                document.getElementById('confirmPriority').textContent = document.getElementById('problemPriority').value || 'Medium';
                 document.getElementById('confirmAssigned').textContent = document.getElementById('assignedTo').value || 'Not assigned';
                 
                 // Update email confirmation
@@ -912,7 +1136,7 @@
                     emailOptions.push('Reporter (1)');
                 }
                 if (document.getElementById('emailMaintenance').checked) {
-                    emailOptions.push('Maintenance team (1)');
+                    emailOptions.push('Maintenance team (1 summary)');
                 }
                 document.getElementById('confirmEmails').textContent = emailOptions.length > 0 ? emailOptions.join(', ') : 'None';
             }
@@ -920,6 +1144,8 @@
 
         async function handleSubmit(e) {
             e.preventDefault();
+            
+            if (isLoading) return;
             
             const submitBtn = document.getElementById('submitBtn');
             const loading = document.getElementById('loading');
@@ -946,17 +1172,18 @@
             }
 
             // Confirm submission
-            if (!confirm(`Create ${selectedUnits.length} problem reports?`)) {
+            if (!confirm(`Create ${selectedUnits.length} problem reports with 2.5 second delays between each submission?`)) {
                 return;
             }
             
+            isLoading = true;
             submitBtn.disabled = true;
             loading.style.display = 'block';
             result.style.display = 'none';
             
             // Prepare data
             const formData = {
-                action: 'bulkSubmit',
+                action: 'bulkSubmitWithDelays', // New action for enhanced backend
                 reportedBy: document.getElementById('reportedBy').value,
                 problemDescription: document.getElementById('problemDescription').value,
                 category: document.getElementById('category').value,
@@ -971,6 +1198,7 @@
                 formData.emailUnits = document.getElementById('emailUnits').checked;
                 formData.emailReporter = document.getElementById('emailReporter').checked;
                 formData.emailMaintenance = document.getElementById('emailMaintenance').checked;
+                formData.consolidateEmails = true; // New flag for consolidated emails
             }
             
             try {
@@ -992,8 +1220,8 @@
                             ${trackingList}
                         </div>
                         <div style="margin-top: 16px; font-size: 14px;">
-                            ${response.emailResults?.emailsSent ? `<strong>Emails Sent:</strong> ${response.emailResults.emailsSent.join(', ')}<br>` : ''}
-                            You can adjust individual reports in the Maintenance Module.
+                            ${response.emailResults?.summary ? `<strong>Email Summary:</strong> ${response.emailResults.summary}<br>` : ''}
+                            Each report includes proper Activity Log entries and Last Updated timestamps.
                         </div>
                     `;
                     
@@ -1023,6 +1251,7 @@
                 result.style.display = 'block';
             }
             
+            isLoading = false;
             submitBtn.disabled = false;
         }
 
@@ -1050,6 +1279,8 @@
                 document.head.appendChild(script);
             });
         }
+
+        console.log('🚀 Bulk Submission Form V1.3 - Fixed Version Loaded');
     </script>
 </body>
 </html>
