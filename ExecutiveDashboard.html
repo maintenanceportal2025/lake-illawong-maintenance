@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lake Illawong - Executive Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard-container {
+            max-width: 1800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        /* Header */
+        .dashboard-header {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            color: white;
+            padding: 30px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left h1 {
+            font-size: 2rem;
+            margin-bottom: 5px;
+        }
+
+        .header-left p {
+            opacity: 0.9;
+            font-size: 1rem;
+        }
+
+        .header-right {
+            text-align: right;
+        }
+
+        .last-updated {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .refresh-btn {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid white;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: white;
+            color: #1e3a8a;
+        }
+
+        .dataset-btn {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.4);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .dataset-btn:hover {
+            background: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.6);
+        }
+
+        .dataset-btn.active {
+            background: white;
+            color: #1e3a8a;
+            border-color: white;
+        }
+
+        #datasetBadge {
+            padding: 4px 12px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 6px;
+            font-weight: 600;
+        }
+
+        /* Main Layout */
+        .dashboard-main {
+            display: flex;
+            min-height: calc(100vh - 140px);
+        }
+
+        /* Slicer Panel */
+        .slicer-panel {
+            width: 280px;
+            background: #f8fafc;
+            border-right: 1px solid #e2e8f0;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .slicer-section {
+            margin-bottom: 25px;
+        }
+
+        .slicer-header {
+            font-weight: 700;
+            color: #1e293b;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #3b82f6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .slicer-header:hover {
+            color: #3b82f6;
+        }
+
+        .slicer-header .expand-icon {
+            font-size: 0.8rem;
+            transition: transform 0.3s;
+        }
+
+        .slicer-header.collapsed .expand-icon {
+            transform: rotate(-90deg);
+        }
+
+        .slicer-content {
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: max-height 0.3s ease-out;
+}
+
+        .slicer-content.collapsed {
+            max-height: 0;
+        }
+
+        .clear-filter {
+            font-size: 0.75rem;
+            color: #3b82f6;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .clear-filter:hover {
+            text-decoration: underline;
+        }
+
+        .slicer-item {
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .slicer-item:hover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+
+        .slicer-item.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .slicer-badge {
+            background: rgba(0,0,0,0.1);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .slicer-item.active .slicer-badge {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .date-picker-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .date-input {
+            padding: 8px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            width: 100%;
+        }
+
+        .date-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .apply-date-btn {
+            padding: 8px 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .apply-date-btn:hover {
+            background: #2563eb;
+        }
+
+        .clear-all-btn {
+            width: 100%;
+            padding: 12px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+
+        .clear-all-btn:hover {
+            background: #dc2626;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(239,68,68,0.4);
+        }
+
+        /* Content Area */
+        .content-area {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .kpi-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-left: 4px solid #3b82f6;
+            transition: all 0.3s;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+
+        .kpi-card.danger {
+            border-left-color: #ef4444;
+        }
+
+        .kpi-card.warning {
+            border-left-color: #f59e0b;
+        }
+
+        .kpi-card.success {
+            border-left-color: #10b981;
+        }
+
+        .kpi-label {
+            font-size: 0.85rem;
+            color: #64748b;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .kpi-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 5px;
+        }
+
+        .kpi-sublabel {
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+
+        .kpi-trend {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.85rem;
+            margin-top: 10px;
+            padding: 5px 10px;
+            border-radius: 6px;
+        }
+
+        .kpi-trend.up {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .kpi-trend.down {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        /* Chart Grid */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .chart-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .chart-header {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        /* Full Width Charts */
+        .full-width-chart {
+            grid-column: 1 / -1;
+        }
+
+        /* Loading State */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Filter Summary */
+        .filter-summary {
+            background: #eff6ff;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .filter-summary-title {
+            font-weight: 700;
+            color: #1e40af;
+            margin-bottom: 8px;
+        }
+
+        .filter-tag {
+            display: inline-block;
+            background: #3b82f6;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            margin: 3px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .dashboard-main {
+                flex-direction: column;
+            }
+
+            .slicer-panel {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #e2e8f0;
+            }
+
+            .chart-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+<!-- HEADER WITH LOGO -->
+        <div class="header-section" style="background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%); color: white; padding: 30px 0;">
+            <div class="container">
+                <!-- Centered Logo and Title -->
+                <div style="display: flex; align-items: center; justify-content: center; gap: 25px; margin-bottom: 25px;">
+                    <!-- Logo -->
+                    <div style="flex-shrink: 0;">
+                        <img src="logo.png" 
+                             alt="Lake Illawong Logo" 
+                             style="width: 120px; height: 120px; object-fit: contain; background: transparent;">
+                    </div>
+                    <!-- Title -->
+                    <div style="text-align: left;">
+                        <h1 style="display: block; font-size: 2em; margin-block-start: 0.67em; margin-block-end: 0.67em; margin-inline-start: 0px; font-weight: bold; color: white; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);">Executive Dashboard</h1>
+                        <p style="color: white; font-size: 1rem; margin: 0; font-weight: 600; letter-spacing: 2px; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3); ">Real-Time Analytics</p>
+                    </div>
+                </div>
+                
+                <!-- Last Updated - Centered -->
+                <div style="text-align: center; margin-bottom: 25px;">
+                    <div class="last-updated" id="lastUpdated" style="font-size: 0.9rem; opacity: 0.9;">Last updated: Loading...</div>
+                </div>
+                
+                <!-- Data Source Selection Row -->
+                <div style="display: flex; align-items: end; justify-content: space-between;">
+                    <!-- Left: Data Source Selection with Badge -->
+                    <div>
+                        <div style="font-size: 0.75rem; opacity: 0.9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
+                            📊 Data Source Selection
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <div style="background: rgba(255,255,255,0.15); padding: 8px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.3); display: inline-flex; gap: 10px;">
+                                <button class="dataset-btn active" id="allDataBtn" onclick="switchDataset('all')">🔄 All Data</button>
+                                <button class="dataset-btn" id="currentDataBtn" onclick="switchDataset('current')">📊 Current</button>
+                                <button class="dataset-btn" id="legacyDataBtn" onclick="switchDataset('legacy')">📚 Legacy</button>
+                            </div>
+                            <span id="datasetBadge" style="background: rgba(255,255,255,0.2); padding: 6px 16px; border-radius: 8px; font-weight: 600; font-size: 0.85rem;">Combined Dataset</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Right: Refresh Button -->
+                    <div>
+                        <button class="refresh-btn" onclick="loadData()" style="padding: 8px 20px; font-size: 0.9rem;">🔄 Refresh Data</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+
+    <div class="dashboard-container">
+
+
+        <!-- Main Content -->
+        <div class="dashboard-main">
+            <!-- Slicer Panel -->
+            <div class="slicer-panel">
+                <div class="slicer-section" style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 15px;">
+                    <div class="slicer-header" style="border-bottom-color: #f59e0b;">
+                        🔧 PROGRAMMED STATUS
+                    </div>
+                    <div style="font-size: 0.75rem; color: #92400e; margin-bottom: 10px; line-height: 1.4;">
+                        Long-term maintenance programs (e.g., dormer windows). Click to view ONLY programmed items.
+                    </div>
+                    <div class="slicer-item" id="programmedSlicer" onclick="toggleProgrammedOnlyFilter()" style="cursor: pointer;">
+                        <span>View Programmed Only</span>
+                        <span class="slicer-badge" id="programmedCount">0</span>
+                    </div>
+                </div>
+
+                <div class="slicer-section">
+                    <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
+                        <span>📅 TIME PERIOD</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                    <div class="slicer-content collapsed">
+                        <div id="dateSlicers"></div>
+                        <div class="date-picker-container">
+                            <label style="font-size: 0.8rem; color: #64748b; font-weight: 600;">Custom Date Range:</label>
+                            <input type="date" id="customStartDate" class="date-input" placeholder="Start Date">
+                            <input type="date" id="customEndDate" class="date-input" placeholder="End Date">
+                            <button class="apply-date-btn" onclick="applyCustomDateRange()">Apply Custom Range</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="slicer-section">
+                    <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
+                        <span>🚨 PRIORITY</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                    <div class="slicer-content collapsed">
+                        <div id="prioritySlicers"></div>
+                    </div>
+                </div>
+
+                <div class="slicer-section">
+                    <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
+                        <span>📊 STATUS</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                    <div class="slicer-content collapsed">
+                        <div id="statusSlicers"></div>
+                    </div>
+                </div>
+
+                <div class="slicer-section">
+                    <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
+                        <span>🗺️ ZONES</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                    <div class="slicer-content collapsed">
+                        <div id="zoneSlicers"></div>
+                    </div>
+                </div>
+
+                <div class="slicer-section">
+                    <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
+                        <span>📁 CATEGORIES</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                    <div class="slicer-content collapsed">
+                        <div id="categorySlicers"></div>
+                    </div>
+                </div>
+
+                <div class="slicer-section">
+                    <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
+                        <span>📂 SUB-CATEGORIES</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                    <div class="slicer-content collapsed">
+                        <div id="subCategorySlicers"></div>
+                    </div>
+                </div>
+
+                <div class="slicer-section">
+                    <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
+                        <span>👷 ASSIGNED TO</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                    <div class="slicer-content collapsed">
+                        <div id="assignedToSlicers"></div>
+                    </div>
+                </div>
+
+                <button class="clear-all-btn" onclick="toggleAllFilters()" id="toggleAllBtn">🗑️ CLEAR ALL FILTERS</button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Filter Summary -->
+                <div id="filterSummary" class="filter-summary hidden">
+                    <div class="filter-summary-title">Active Filters:</div>
+                    <div id="filterTags"></div>
+                </div>
+
+                <!-- KPI Cards -->
+                <div class="kpi-grid" id="kpiGrid"></div>
+
+                <!-- Charts -->
+                <div class="chart-grid">
+                    <div class="chart-card">
+                        <div class="chart-header">Priority Distribution</div>
+                        <div class="chart-container">
+                            <canvas id="priorityChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-header">Status Pipeline</div>
+                        <div class="chart-container">
+                            <canvas id="statusChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-header">Top 10 Categories</div>
+                        <div class="chart-container">
+                            <canvas id="categoryChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-header">Zone Heatmap</div>
+                        <div class="chart-container">
+                            <canvas id="zoneChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-card full-width-chart">
+                        <div class="chart-header">6-Month Trend Analysis</div>
+                        <div class="chart-container" style="height: 350px;">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global Data
+        let allProblems = [];
+        let filteredProblems = [];
+        let currentDataset = 'all'; // 'all', 'current', or 'legacy'
+        let activeFilters = {
+            date: null,
+            customDateRange: null,  // NEW: Custom date range {start, end}
+            priorities: [],
+            statuses: [],
+            zones: [],
+            categories: [],
+            subCategories: [],
+            assignedTo: [],  // NEW: Assigned to filter
+            programmedOnly: false  // NEW: View ONLY programmed items
+        };
+
+        // Chart instances
+        let charts = {};
+
+        // API Configuration
+        const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            loadData();
+        });
+
+        // Toggle Slicer Section Collapse/Expand
+        function toggleSlicerSection(header) {
+            const content = header.nextElementSibling;
+            const icon = header.querySelector('.expand-icon');
+            
+            if (content.classList.contains('collapsed')) {
+                content.classList.remove('collapsed');
+                header.classList.remove('collapsed');
+            } else {
+                content.classList.add('collapsed');
+                header.classList.add('collapsed');
+            }
+        }
+
+        // API Request Function
+        async function makeRequest(action) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'callback_' + Math.random().toString(36).substr(2, 9);
+                const script = document.createElement('script');
+                const timeout = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('Request timeout'));
+                }, 30000);
+
+                window[callbackName] = (data) => {
+                    clearTimeout(timeout);
+                    cleanup();
+                    resolve(data);
+                };
+
+                function cleanup() {
+                    delete window[callbackName];
+                    if (script.parentNode) {
+                        script.parentNode.removeChild(script);
+                    }
+                }
+
+                script.src = `${API_URL}?action=${action}&callback=${callbackName}`;
+                document.body.appendChild(script);
+            });
+        }
+
+        // Load Data
+        async function loadData() {
+            try {
+                document.getElementById('loadingOverlay').classList.remove('hidden');
+                
+                allProblems = [];
+                
+                // Load based on selected dataset
+                if (currentDataset === 'current') {
+                    const response = await makeRequest('getFaultLogData');
+                    if (response && response.success) {
+                        allProblems = response.data || [];
+                    }
+                } else if (currentDataset === 'legacy') {
+                    const response = await makeRequest('getLegacyLogData');
+                    if (response && response.success) {
+                        allProblems = response.data || [];
+                    }
+                } else { // 'all' - load both
+                    const [currentResponse, legacyResponse] = await Promise.all([
+                        makeRequest('getFaultLogData'),
+                        makeRequest('getLegacyLogData')
+                    ]);
+                    
+                    if (currentResponse && currentResponse.success) {
+                        allProblems = allProblems.concat(currentResponse.data || []);
+                    }
+                    if (legacyResponse && legacyResponse.success) {
+                        allProblems = allProblems.concat(legacyResponse.data || []);
+                    }
+                }
+                
+                if (allProblems.length === 0) {
+                    throw new Error('No data loaded');
+                }
+                
+                filteredProblems = [...allProblems];
+                
+                console.log(`✅ Loaded ${allProblems.length} problems from ${currentDataset} dataset`);
+                
+                buildSlicers();
+                updateDashboard();
+                
+                // Update badge
+                const badgeText = currentDataset === 'current' ? '📊 Live Data Only' : 
+                                 currentDataset === 'legacy' ? '📚 Historical Data (2023-2025)' : 
+                                 '🔄 Combined Dataset (All Years)';
+                document.getElementById('datasetBadge').textContent = badgeText;
+                
+                document.getElementById('lastUpdated').textContent = 
+                    `Last updated: ${new Date().toLocaleString('en-AU')}`;
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Failed to load dashboard data. Please refresh the page.');
+            } finally {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+            }
+        }
+
+        // Switch Dataset
+        function switchDataset(dataset) {
+            currentDataset = dataset;
+            
+            // Update button states
+            document.getElementById('allDataBtn').classList.toggle('active', dataset === 'all');
+            document.getElementById('currentDataBtn').classList.toggle('active', dataset === 'current');
+            document.getElementById('legacyDataBtn').classList.toggle('active', dataset === 'legacy');
+            
+            // Reload data
+            loadData();
+        }
+
+        // Parse Date Function
+        function parseDate(dateString) {
+            if (!dateString) return 0;
+            try {
+                if (dateString instanceof Date) return dateString.getTime();
+                if (typeof dateString === 'string' && dateString.includes('/')) {
+                    const parts = dateString.trim().split('/');
+                    if (parts.length === 3) {
+                        const month = parseInt(parts[0]) - 1;
+                        const day = parseInt(parts[1]);
+                        const year = parseInt(parts[2]);
+                        if (day >= 1 && day <= 31 && month >= 0 && month <= 11 && year >= 1900) {
+                            return new Date(year, month, day).getTime();
+                        }
+                    }
+                }
+                return new Date(dateString).getTime();
+            } catch (error) { 
+                return 0; 
+            }
+        }
+
+        // Build Slicers
+        function buildSlicers() {
+            // Update Programmed count and appearance
+            const programmedCount = allProblems.filter(p => 
+                p.problemStatus === 'Programmed'
+            ).length;
+            document.getElementById('programmedCount').textContent = programmedCount;
+            
+            const programmedSlicer = document.getElementById('programmedSlicer');
+            if (activeFilters.programmedOnly) {
+                programmedSlicer.classList.add('active');
+            } else {
+                programmedSlicer.classList.remove('active');
+            }
+
+            // Date Range Slicers
+            const dateRanges = [
+                { label: 'Last 7 Days', value: '7d' },
+                { label: 'Last 30 Days', value: '30d' },
+                { label: 'Last 90 Days', value: '90d' },
+                { label: 'Last 6 Months', value: '6m' },
+                { label: 'This Year (2025)', value: 'year' },
+                { label: 'All Time', value: 'all' }
+            ];
+            
+            const dateHTML = dateRanges.map(range => 
+                `<div class="slicer-item ${activeFilters.date === range.value ? 'active' : ''}" 
+                      onclick="toggleDateFilter('${range.value}')">
+                    ${range.label}
+                </div>`
+            ).join('');
+            
+            // Add year dropdown
+            const years = [];
+            for (let year = 2035; year >= 2020; year--) {
+                years.push(year);
+            }
+            
+            const yearDropdownHTML = `
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
+                    <label style="font-size: 0.8rem; color: #64748b; font-weight: 600; margin-bottom: 6px; display: block;">Select Specific Year:</label>
+                    <select id="yearDropdown" onchange="selectYear(this.value)" style="width: 100%; padding: 8px; border: 2px solid #e2e8f0; border-radius: 6px; font-size: 0.85rem; cursor: pointer;">
+                        <option value="">Choose a year...</option>
+                        ${years.map(year => `<option value="${year}">${year}</option>`).join('')}
+                    </select>
+                </div>
+            `;
+            
+            document.getElementById('dateSlicers').innerHTML = dateHTML + yearDropdownHTML;
+
+            // Priority Slicers - exclude empty/Not Set
+            const priorities = {};
+            allProblems.forEach(p => {
+                const pri = p.problemPriority;
+                if (pri && pri.trim() !== '' && pri !== 'Not Set') {
+                    priorities[pri] = (priorities[pri] || 0) + 1;
+                }
+            });
+            const priorityHTML = Object.entries(priorities).map(([priority, count]) => 
+                `<div class="slicer-item ${activeFilters.priorities.includes(priority) ? 'active' : ''}" 
+                      onclick="togglePriorityFilter('${priority}')">
+                    <span>${priority}</span>
+                    <span class="slicer-badge">${count}</span>
+                </div>`
+            ).join('');
+            document.getElementById('prioritySlicers').innerHTML = priorityHTML;
+
+            // Status Slicers - exclude empty/Not Set
+            const statuses = {};
+            allProblems.forEach(p => {
+                const status = p.problemStatus;
+                if (status && status.trim() !== '' && status !== 'Not Set') {
+                    statuses[status] = (statuses[status] || 0) + 1;
+                }
+            });
+            const statusHTML = Object.entries(statuses).map(([status, count]) => 
+                `<div class="slicer-item ${activeFilters.statuses.includes(status) ? 'active' : ''}" 
+                      onclick="toggleStatusFilter('${status}')">
+                    <span>${status}</span>
+                    <span class="slicer-badge">${count}</span>
+                </div>`
+            ).join('');
+            document.getElementById('statusSlicers').innerHTML = statusHTML;
+
+            // Zone Slicers - exclude empty/Not Set
+            const zones = {};
+            allProblems.forEach(p => {
+                const zone = p.zone;
+                if (zone && zone.trim() !== '' && zone !== 'Not Set') {
+                    zones[zone] = (zones[zone] || 0) + 1;
+                }
+            });
+            const zoneHTML = Object.entries(zones).map(([zone, count]) => 
+                `<div class="slicer-item ${activeFilters.zones.includes(zone) ? 'active' : ''}" 
+                      onclick="toggleZoneFilter('${zone}')">
+                    <span>${zone}</span>
+                    <span class="slicer-badge">${count}</span>
+                </div>`
+            ).join('');
+            document.getElementById('zoneSlicers').innerHTML = zoneHTML;
+
+            // Category Slicers - ALL categories, sorted alphabetically, exclude empty/Not Set
+            const categories = {};
+            allProblems.forEach(p => {
+                const cat = p.category;
+                // Only count if category exists and is not empty
+                if (cat && cat.trim() !== '' && cat !== 'Not Set') {
+                    categories[cat] = (categories[cat] || 0) + 1;
+                }
+            });
+            
+            const sortedCategories = Object.entries(categories)
+                .sort((a, b) => a[0].localeCompare(b[0])); // Alphabetical order
+            
+            const categoryHTML = sortedCategories.map(([category, count]) => 
+                `<div class="slicer-item ${activeFilters.categories.includes(category) ? 'active' : ''}" 
+                      onclick="toggleCategoryFilter('${category.replace(/'/g, "\\'")}')">
+                    <span>${category}</span>
+                    <span class="slicer-badge">${count}</span>
+                </div>`
+            ).join('');
+            document.getElementById('categorySlicers').innerHTML = categoryHTML || '<div style="padding: 10px; color: #94a3b8; font-size: 0.85rem;">No categories available</div>';
+
+            // Sub-Category Slicers - ALL sub-categories, sorted alphabetically, exclude empty/Not Set
+            const subCategories = {};
+            allProblems.forEach(p => {
+                const subCat = p.subCategory;
+                // Only count if sub-category exists and is not empty
+                if (subCat && subCat.trim() !== '' && subCat !== 'Not Set') {
+                    subCategories[subCat] = (subCategories[subCat] || 0) + 1;
+                }
+            });
+            
+            const sortedSubCategories = Object.entries(subCategories)
+                .sort((a, b) => a[0].localeCompare(b[0])); // Alphabetical order
+            
+            const subCategoryHTML = sortedSubCategories.map(([subCategory, count]) => 
+                `<div class="slicer-item ${activeFilters.subCategories.includes(subCategory) ? 'active' : ''}" 
+                      onclick="toggleSubCategoryFilter('${subCategory.replace(/'/g, "\\'")}')">
+                    <span>${subCategory}</span>
+                    <span class="slicer-badge">${count}</span>
+                </div>`
+            ).join('');
+            document.getElementById('subCategorySlicers').innerHTML = subCategoryHTML || '<div style="padding: 10px; color: #94a3b8; font-size: 0.85rem;">No sub-categories available</div>';
+
+            // Assigned To Slicers - exclude empty/Not Set
+            const assignedTos = {};
+            allProblems.forEach(p => {
+                const assigned = p.assignedTo;
+                if (assigned && assigned.trim() !== '' && assigned !== 'Not Set') {
+                    assignedTos[assigned] = (assignedTos[assigned] || 0) + 1;
+                }
+            });
+            
+            const sortedAssignedTos = Object.entries(assignedTos)
+                .sort((a, b) => a[0].localeCompare(b[0])); // Alphabetical order
+            
+            const assignedToHTML = sortedAssignedTos.map(([assigned, count]) => 
+                `<div class="slicer-item ${activeFilters.assignedTo.includes(assigned) ? 'active' : ''}" 
+                      onclick="toggleAssignedToFilter('${assigned.replace(/'/g, "\\'")}')">
+                    <span>${assigned}</span>
+                    <span class="slicer-badge">${count}</span>
+                </div>`
+            ).join('');
+            document.getElementById('assignedToSlicers').innerHTML = assignedToHTML || '<div style="padding: 10px; color: #94a3b8; font-size: 0.85rem;">No assignments available</div>';
+        }
+
+        // Count by Field
+        function countByField(field) {
+            const counts = {};
+            allProblems.forEach(p => {
+                const value = p[field] || 'Not Set';
+                counts[value] = (counts[value] || 0) + 1;
+            });
+            return counts;
+        }
+
+        // Toggle Filters
+        function toggleDateFilter(value) {
+            activeFilters.date = activeFilters.date === value ? null : value;
+            // Clear year dropdown when using quick filters
+            document.getElementById('yearDropdown').value = '';
+            applyFilters();
+        }
+
+        function selectYear(year) {
+            if (year) {
+                activeFilters.date = year;
+                applyFilters();
+            }
+        }
+
+        function togglePriorityFilter(priority) {
+            const index = activeFilters.priorities.indexOf(priority);
+            if (index > -1) {
+                activeFilters.priorities.splice(index, 1);
+            } else {
+                activeFilters.priorities.push(priority);
+            }
+            applyFilters();
+        }
+
+        function toggleStatusFilter(status) {
+            const index = activeFilters.statuses.indexOf(status);
+            if (index > -1) {
+                activeFilters.statuses.splice(index, 1);
+            } else {
+                activeFilters.statuses.push(status);
+            }
+            applyFilters();
+        }
+
+        function toggleZoneFilter(zone) {
+            const index = activeFilters.zones.indexOf(zone);
+            if (index > -1) {
+                activeFilters.zones.splice(index, 1);
+            } else {
+                activeFilters.zones.push(zone);
+            }
+            applyFilters();
+        }
+
+        function toggleCategoryFilter(category) {
+            const index = activeFilters.categories.indexOf(category);
+            if (index > -1) {
+                activeFilters.categories.splice(index, 1);
+            } else {
+                activeFilters.categories.push(category);
+            }
+            applyFilters();
+        }
+
+        function toggleSubCategoryFilter(subCategory) {
+            const index = activeFilters.subCategories.indexOf(subCategory);
+            if (index > -1) {
+                activeFilters.subCategories.splice(index, 1);
+            } else {
+                activeFilters.subCategories.push(subCategory);
+            }
+            applyFilters();
+        }
+
+        function toggleProgrammedOnlyFilter() {
+            activeFilters.programmedOnly = !activeFilters.programmedOnly;
+            applyFilters();
+        }
+
+        function toggleAssignedToFilter(assigned) {
+            const index = activeFilters.assignedTo.indexOf(assigned);
+            if (index > -1) {
+                activeFilters.assignedTo.splice(index, 1);
+            } else {
+                activeFilters.assignedTo.push(assigned);
+            }
+            applyFilters();
+        }
+
+        function applyCustomDateRange() {
+            const startInput = document.getElementById('customStartDate');
+            const endInput = document.getElementById('customEndDate');
+            
+            if (!startInput.value || !endInput.value) {
+                alert('Please select both start and end dates');
+                return;
+            }
+            
+            const startDate = new Date(startInput.value);
+            const endDate = new Date(endInput.value);
+            
+            if (startDate > endDate) {
+                alert('Start date must be before end date');
+                return;
+            }
+            
+            // Set custom date range
+            activeFilters.customDateRange = { start: startDate, end: endDate };
+            activeFilters.date = 'custom';  // Mark as custom
+            
+            applyFilters();
+        }
+
+        // Clear Filters
+        function clearDateFilter() {
+            activeFilters.date = null;
+            applyFilters();
+        }
+
+        function clearPriorityFilter() {
+            activeFilters.priorities = [];
+            applyFilters();
+        }
+
+        function clearStatusFilter() {
+            activeFilters.statuses = [];
+            applyFilters();
+        }
+
+        function clearZoneFilter() {
+            activeFilters.zones = [];
+            applyFilters();
+        }
+
+        function clearCategoryFilter() {
+            activeFilters.categories = [];
+            applyFilters();
+        }
+
+        function clearSubCategoryFilter() {
+            activeFilters.subCategories = [];
+            applyFilters();
+        }
+
+        function clearAssignedToFilter() {
+            activeFilters.assignedTo = [];
+            applyFilters();
+        }
+
+        function clearDateFilter() {
+            activeFilters.date = null;
+            activeFilters.customDateRange = null;
+            document.getElementById('customStartDate').value = '';
+            document.getElementById('customEndDate').value = '';
+            document.getElementById('yearDropdown').value = '';
+            applyFilters();
+        }
+
+        function toggleAllFilters() {
+            // Check if any filters are active
+            const hasActiveFilters = activeFilters.date || 
+                                    activeFilters.customDateRange ||
+                                    activeFilters.priorities.length > 0 || 
+                                    activeFilters.statuses.length > 0 || 
+                                    activeFilters.zones.length > 0 || 
+                                    activeFilters.categories.length > 0 ||
+                                    activeFilters.subCategories.length > 0 ||
+                                    activeFilters.assignedTo.length > 0 ||
+                                    activeFilters.programmedOnly;
+            
+            const btn = document.getElementById('toggleAllBtn');
+            
+            if (hasActiveFilters) {
+                // CLEAR ALL
+                activeFilters = {
+                    date: null,
+                    customDateRange: null,
+                    priorities: [],
+                    statuses: [],
+                    zones: [],
+                    categories: [],
+                    subCategories: [],
+                    assignedTo: [],
+                    programmedOnly: false
+                };
+                document.getElementById('customStartDate').value = '';
+                document.getElementById('customEndDate').value = '';
+                btn.innerHTML = '✅ SELECT ALL FILTERS';
+                btn.style.background = '#10b981';
+            } else {
+                // SELECT ALL
+                activeFilters.date = 'all';
+                
+                // Select all priorities - exclude empty/Not Set
+                const priorities = {};
+                allProblems.forEach(p => {
+                    const pri = p.problemPriority;
+                    if (pri && pri.trim() !== '' && pri !== 'Not Set') {
+                        priorities[pri] = true;
+                    }
+                });
+                activeFilters.priorities = Object.keys(priorities);
+                
+                // Select all statuses - exclude empty/Not Set
+                const statuses = {};
+                allProblems.forEach(p => {
+                    const status = p.problemStatus;
+                    if (status && status.trim() !== '' && status !== 'Not Set') {
+                        statuses[status] = true;
+                    }
+                });
+                activeFilters.statuses = Object.keys(statuses);
+                
+                // Select all zones - exclude empty/Not Set
+                const zones = {};
+                allProblems.forEach(p => {
+                    const zone = p.zone;
+                    if (zone && zone.trim() !== '' && zone !== 'Not Set') {
+                        zones[zone] = true;
+                    }
+                });
+                activeFilters.zones = Object.keys(zones);
+                
+                // Select all categories (ALL, not top 10)
+                const categories = {};
+                allProblems.forEach(p => {
+                    const cat = p.category;
+                    if (cat && cat.trim() !== '' && cat !== 'Not Set') {
+                        categories[cat] = true;
+                    }
+                });
+                activeFilters.categories = Object.keys(categories);
+                
+                // Select all sub-categories (ALL, not top 10)
+                const subCategories = {};
+                allProblems.forEach(p => {
+                    const subCat = p.subCategory;
+                    if (subCat && subCat.trim() !== '' && subCat !== 'Not Set') {
+                        subCategories[subCat] = true;
+                    }
+                });
+                activeFilters.subCategories = Object.keys(subCategories);
+                
+                // Select all assigned to - exclude empty/Not Set
+                const assignedTos = {};
+                allProblems.forEach(p => {
+                    const assigned = p.assignedTo;
+                    if (assigned && assigned.trim() !== '' && assigned !== 'Not Set') {
+                        assignedTos[assigned] = true;
+                    }
+                });
+                activeFilters.assignedTo = Object.keys(assignedTos);
+                
+                btn.innerHTML = '🗑️ CLEAR ALL FILTERS';
+                btn.style.background = '#ef4444';
+            }
+            
+            applyFilters();
+        }
+
+        // Apply Filters
+        function applyFilters() {
+            filteredProblems = [...allProblems];
+
+            // Programmed-only filter - FIRST, takes precedence
+            if (activeFilters.programmedOnly) {
+                filteredProblems = filteredProblems.filter(p => 
+                    p.problemStatus === 'Programmed'
+                );
+            }
+
+            // Date filter
+            if (activeFilters.customDateRange) {
+                // Custom date range takes priority
+                const startTime = activeFilters.customDateRange.start.getTime();
+                const endTime = activeFilters.customDateRange.end.getTime();
+                
+                filteredProblems = filteredProblems.filter(p => {
+                    const problemDate = parseDate(p.timestamp);
+                    return problemDate >= startTime && problemDate <= endTime;
+                });
+            } else if (activeFilters.date) {
+                const now = new Date();
+                let startDate, endDate;
+
+                switch(activeFilters.date) {
+                    case '7d':
+                        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+                        endDate = now;
+                        break;
+                    case '30d':
+                        startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                        endDate = now;
+                        break;
+                    case '90d':
+                        startDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+                        endDate = now;
+                        break;
+                    case '6m':
+                        startDate = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+                        endDate = now;
+                        break;
+                    case 'year':
+                        startDate = new Date(now.getFullYear(), 0, 1);
+                        endDate = now;
+                        break;
+                    case '2020':
+                    case '2021':
+                    case '2022':
+                    case '2023':
+                    case '2024':
+                    case '2025':
+                    case '2026':
+                    case '2027':
+                    case '2028':
+                    case '2029':
+                    case '2030':
+                    case '2031':
+                    case '2032':
+                    case '2033':
+                    case '2034':
+                    case '2035':
+                        const year = parseInt(activeFilters.date);
+                        startDate = new Date(year, 0, 1);
+                        endDate = new Date(year, 11, 31);
+                        break;
+                    case 'all':
+                    default:
+                        startDate = null;
+                        endDate = null;
+                }
+
+                if (startDate && endDate) {
+                    filteredProblems = filteredProblems.filter(p => {
+                        const problemDate = parseDate(p.timestamp);
+                        return problemDate >= startDate.getTime() && problemDate <= endDate.getTime();
+                    });
+                }
+            }
+
+            // Priority filter - exclude empty/Not Set
+            if (activeFilters.priorities.length > 0) {
+                filteredProblems = filteredProblems.filter(p => {
+                    const pri = p.problemPriority;
+                    return pri && pri.trim() !== '' && pri !== 'Not Set' && 
+                           activeFilters.priorities.includes(pri);
+                });
+            }
+
+            // Status filter - exclude empty/Not Set
+            if (activeFilters.statuses.length > 0) {
+                filteredProblems = filteredProblems.filter(p => {
+                    const status = p.problemStatus;
+                    return status && status.trim() !== '' && status !== 'Not Set' && 
+                           activeFilters.statuses.includes(status);
+                });
+            }
+
+            // Zone filter - exclude empty/Not Set
+            if (activeFilters.zones.length > 0) {
+                filteredProblems = filteredProblems.filter(p => {
+                    const zone = p.zone;
+                    return zone && zone.trim() !== '' && zone !== 'Not Set' && 
+                           activeFilters.zones.includes(zone);
+                });
+            }
+
+            // Category filter - exclude empty/Not Set values
+            if (activeFilters.categories.length > 0) {
+                filteredProblems = filteredProblems.filter(p => {
+                    const cat = p.category;
+                    // Match if category exists, is not empty, and is in the filter list
+                    return cat && cat.trim() !== '' && cat !== 'Not Set' && 
+                           activeFilters.categories.includes(cat);
+                });
+            }
+
+            // Sub-Category filter - exclude empty/Not Set values  
+            if (activeFilters.subCategories.length > 0) {
+                filteredProblems = filteredProblems.filter(p => {
+                    const subCat = p.subCategory;
+                    // Match if sub-category exists, is not empty, and is in the filter list
+                    return subCat && subCat.trim() !== '' && subCat !== 'Not Set' && 
+                           activeFilters.subCategories.includes(subCat);
+                });
+            }
+
+            // Assigned To filter - exclude empty/Not Set
+            if (activeFilters.assignedTo.length > 0) {
+                filteredProblems = filteredProblems.filter(p => {
+                    const assigned = p.assignedTo;
+                    return assigned && assigned.trim() !== '' && assigned !== 'Not Set' && 
+                           activeFilters.assignedTo.includes(assigned);
+                });
+            }
+
+            buildSlicers();
+            updateDashboard();
+            updateFilterSummary();
+        }
+
+        // Update Filter Summary
+        function updateFilterSummary() {
+            const hasFilters = activeFilters.date || 
+                               activeFilters.customDateRange ||
+                               activeFilters.priorities.length > 0 || 
+                               activeFilters.statuses.length > 0 || 
+                               activeFilters.zones.length > 0 || 
+                               activeFilters.categories.length > 0 ||
+                               activeFilters.subCategories.length > 0 ||
+                               activeFilters.assignedTo.length > 0 ||
+                               activeFilters.programmedOnly;
+
+            const summaryDiv = document.getElementById('filterSummary');
+            
+            if (!hasFilters) {
+                summaryDiv.classList.add('hidden');
+                return;
+            }
+
+            summaryDiv.classList.remove('hidden');
+            
+            let tags = [];
+            
+            if (activeFilters.programmedOnly) {
+                tags.push('🔧 Programmed Only');
+            }
+            
+            if (activeFilters.customDateRange) {
+                const start = activeFilters.customDateRange.start.toLocaleDateString('en-AU');
+                const end = activeFilters.customDateRange.end.toLocaleDateString('en-AU');
+                tags.push(`📅 ${start} to ${end}`);
+            } else if (activeFilters.date) {
+                const dateLabels = {
+                    '7d': 'Last 7 Days',
+                    '30d': 'Last 30 Days',
+                    '90d': 'Last 90 Days',
+                    '6m': 'Last 6 Months',
+                    'year': 'This Year',
+                    'all': 'All Time',
+                    '2020': 'Year 2020',
+                    '2021': 'Year 2021',
+                    '2022': 'Year 2022',
+                    '2023': 'Year 2023',
+                    '2024': 'Year 2024',
+                    '2025': 'Year 2025',
+                    '2026': 'Year 2026',
+                    '2027': 'Year 2027',
+                    '2028': 'Year 2028',
+                    '2029': 'Year 2029',
+                    '2030': 'Year 2030',
+                    '2031': 'Year 2031',
+                    '2032': 'Year 2032',
+                    '2033': 'Year 2033',
+                    '2034': 'Year 2034',
+                    '2035': 'Year 2035'
+                };
+                tags.push(`📅 ${dateLabels[activeFilters.date] || activeFilters.date}`);
+            }
+
+            activeFilters.priorities.forEach(p => tags.push(`🚨 ${p}`));
+            activeFilters.statuses.forEach(s => tags.push(`📊 ${s}`));
+            activeFilters.zones.forEach(z => tags.push(`🗺️ ${z}`));
+            activeFilters.categories.forEach(c => tags.push(`📁 ${c}`));
+            activeFilters.subCategories.forEach(sc => tags.push(`📂 ${sc}`));
+            activeFilters.assignedTo.forEach(a => tags.push(`👷 ${a}`));
+
+            document.getElementById('filterTags').innerHTML = tags
+                .map(tag => `<span class="filter-tag">${tag}</span>`)
+                .join('');
+        }
+
+        // Update Dashboard
+        function updateDashboard() {
+            updateKPIs();
+            updateCharts();
+        }
+
+        // Update KPIs
+        function updateKPIs() {
+            const total = filteredProblems.length;
+            const active = filteredProblems.filter(p => 
+                !['Completed', 'Cancelled'].includes(p.problemStatus)
+            ).length;
+            const urgent = filteredProblems.filter(p => 
+                ['Urgent', 'High'].includes(p.problemPriority)
+            ).length;
+            const completed = filteredProblems.filter(p => 
+                p.problemStatus === 'Completed'
+            ).length;
+            const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+            // Calculate average resolution time
+            const completedProblems = filteredProblems.filter(p => 
+                p.problemStatus === 'Completed' && p.completionDate && p.timestamp
+            );
+            
+            let avgDays = 0;
+            if (completedProblems.length > 0) {
+                let totalDays = 0;
+                let validCount = 0;
+                
+                completedProblems.forEach(p => {
+                    const start = parseDate(p.timestamp);
+                    const end = parseDate(p.completionDate);
+                    if (start && end && end > start) {
+                        const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
+                        if (days >= 0) {
+                            totalDays += days === 0 ? 1 : days;
+                            validCount++;
+                        }
+                    }
+                });
+                
+                avgDays = validCount > 0 ? Math.round(totalDays / validCount) : 0;
+            }
+
+            // This week
+            const oneWeekAgo = new Date().getTime() - (7 * 24 * 60 * 60 * 1000);
+            const thisWeek = filteredProblems.filter(p => {
+                const problemDate = parseDate(p.timestamp);
+                return problemDate >= oneWeekAgo;
+            }).length;
+
+            // KPI HTML
+            const kpis = [
+                {
+                    label: 'Total Problems',
+                    value: total,
+                    sublabel: filteredProblems.length < allProblems.length ? 
+                        `Filtered from ${allProblems.length}` : 'All problems',
+                    class: 'default'
+                },
+                {
+                    label: 'Active Issues',
+                    value: active,
+                    sublabel: `${Math.round((active/total)*100)}% of total`,
+                    class: active > total * 0.5 ? 'warning' : 'success'
+                },
+                {
+                    label: 'Urgent/High Priority',
+                    value: urgent,
+                    sublabel: `${Math.round((urgent/total)*100)}% need attention`,
+                    class: urgent > 0 ? 'danger' : 'success'
+                },
+                {
+                    label: 'Completion Rate',
+                    value: completionRate + '%',
+                    sublabel: `${completed} of ${total} complete`,
+                    class: completionRate >= 75 ? 'success' : completionRate >= 50 ? 'warning' : 'danger'
+                },
+                {
+                    label: 'Avg Resolution Time',
+                    value: avgDays > 0 ? avgDays : '-',
+                    sublabel: avgDays > 0 ? `${avgDays} days average` : 'No data',
+                    class: avgDays <= 7 ? 'success' : avgDays <= 14 ? 'warning' : 'danger'
+                },
+                {
+                    label: 'This Week',
+                    value: thisWeek,
+                    sublabel: `${Math.round((thisWeek/total)*100)}% of total`,
+                    class: 'default'
+                }
+            ];
+
+            const kpiHTML = kpis.map(kpi => `
+                <div class="kpi-card ${kpi.class}">
+                    <div class="kpi-label">${kpi.label}</div>
+                    <div class="kpi-value">${kpi.value}</div>
+                    <div class="kpi-sublabel">${kpi.sublabel}</div>
+                </div>
+            `).join('');
+
+            document.getElementById('kpiGrid').innerHTML = kpiHTML;
+        }
+
+        // Update Charts
+        function updateCharts() {
+            updatePriorityChart();
+            updateStatusChart();
+            updateCategoryChart();
+            updateZoneChart();
+            updateTrendChart();
+        }
+
+        function updatePriorityChart() {
+            const priorities = {};
+            filteredProblems.forEach(p => {
+                const priority = p.problemPriority || 'Not Set';
+                priorities[priority] = (priorities[priority] || 0) + 1;
+            });
+
+            if (charts.priority) charts.priority.destroy();
+
+            const ctx = document.getElementById('priorityChart');
+            charts.priority = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(priorities),
+                    datasets: [{
+                        data: Object.values(priorities),
+                        backgroundColor: [
+                            '#ef4444', // Urgent - Red
+                            '#f59e0b', // High - Orange
+                            '#3b82f6', // Medium - Blue
+                            '#10b981'  // Low - Green
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateStatusChart() {
+            const statuses = {};
+            filteredProblems.forEach(p => {
+                const status = p.problemStatus || 'Not Set';
+                statuses[status] = (statuses[status] || 0) + 1;
+            });
+
+            if (charts.status) charts.status.destroy();
+
+            const ctx = document.getElementById('statusChart');
+            charts.status = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(statuses),
+                    datasets: [{
+                        label: 'Problems',
+                        data: Object.values(statuses),
+                        backgroundColor: '#3b82f6'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateCategoryChart() {
+            const categories = {};
+            filteredProblems.forEach(p => {
+                const category = p.category;
+                // Only count valid categories (not empty, not "Not Set")
+                if (category && category.trim() !== '' && category !== 'Not Set') {
+                    categories[category] = (categories[category] || 0) + 1;
+                }
+            });
+
+            const sortedCategories = Object.entries(categories)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10); // Show top 10 in chart
+
+            if (charts.category) charts.category.destroy();
+
+            const ctx = document.getElementById('categoryChart');
+            charts.category = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sortedCategories.map(c => c[0]),
+                    datasets: [{
+                        label: 'Problems',
+                        data: sortedCategories.map(c => c[1]),
+                        backgroundColor: '#f59e0b'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateZoneChart() {
+            const zones = {};
+            filteredProblems.forEach(p => {
+                const zone = p.zone || 'Not Set';
+                zones[zone] = (zones[zone] || 0) + 1;
+            });
+
+            if (charts.zone) charts.zone.destroy();
+
+            const ctx = document.getElementById('zoneChart');
+            charts.zone = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(zones),
+                    datasets: [{
+                        label: 'Problems',
+                        data: Object.values(zones),
+                        backgroundColor: '#8b5cf6'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTrendChart() {
+            // Group by month
+            const monthlyData = {};
+            
+            filteredProblems.forEach(p => {
+                const timestamp = parseDate(p.timestamp);
+                if (timestamp) {
+                    const date = new Date(timestamp);
+                    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                    monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1;
+                }
+            });
+
+            // Get last 6 months
+            const now = new Date();
+            const months = [];
+            for (let i = 5; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                months.push({
+                    key: key,
+                    label: d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }),
+                    value: monthlyData[key] || 0
+                });
+            }
+
+            if (charts.trend) charts.trend.destroy();
+
+            const ctx = document.getElementById('trendChart');
+            charts.trend = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: months.map(m => m.label),
+                    datasets: [{
+                        label: 'Problems Reported',
+                        data: months.map(m => m.value),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
