@@ -1122,6 +1122,17 @@ MAJOR UPDATES V2.0.0:
                     </div>
                 </div>
 
+                <!-- Units Section -->
+                <div class="slicer-section">
+                    <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
+                        <span>🏠 UNITS</span>
+                        <span class="expand-icon">▼</span>
+                    </div>
+                    <div class="slicer-content collapsed">
+                        <div id="unitSlicers"></div>
+                    </div>
+                </div>
+
                 <!-- Priority Section -->
                 <div class="slicer-section">
                     <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
@@ -1406,6 +1417,7 @@ MAJOR UPDATES V2.0.0:
             categories: [],
             subCategories: [],
             assignedTo: [],
+            units: [],
             programmedOnly: false
         };
 
@@ -1528,6 +1540,40 @@ MAJOR UPDATES V2.0.0:
             ).join('');
             document.getElementById('zoneSlicers').innerHTML = zoneHTML;
 
+            // Units Slicers - blue if IN the selected list
+            const units = {};
+            allProblems.forEach(p => {
+                const unit = p.unitNumber;
+                if (unit && unit.toString().trim() !== '' && unit !== 'Not Set') {
+                    units[unit] = (units[unit] || 0) + 1;
+                }
+            });
+            
+            const sortedUnits = Object.entries(units)
+                .sort((a, b) => {
+                    // Extract numeric values from unit identifiers
+                    const getNumericValue = (unitStr) => {
+                        // Handle cases like "9", "Unit 9", "UNIT 9", etc.
+                        const match = unitStr.toString().match(/(\d+)/);
+                        return match ? parseInt(match[1]) : 0;
+                    };
+                    
+                    const aNum = getNumericValue(a[0]);
+                    const bNum = getNumericValue(b[0]);
+                    
+                    // Numeric sort: 1, 2, 3, 9, 10, 11, 12...
+                    return aNum - bNum;
+                });
+            
+            const unitHTML = sortedUnits.map(([unit, count]) => 
+                `<div class="slicer-item ${activeFilters.units.includes(unit) ? 'active' : ''}" 
+                      onclick="toggleUnitFilter('${unit}')">
+                    <span>${unit.toString().toLowerCase().startsWith('unit') ? unit : `Unit ${unit}`}</span>
+                    <span class="slicer-badge">${count}</span>
+                </div>`
+            ).join('');
+            document.getElementById('unitSlicers').innerHTML = unitHTML;
+
             // Category Slicers - blue if IN the selected list
             const categories = {};
             allProblems.forEach(p => {
@@ -1629,6 +1675,18 @@ MAJOR UPDATES V2.0.0:
                 activeFilters.zones.splice(index, 1);
             } else {
                 activeFilters.zones.push(zone);
+            }
+            buildSlicers();
+            applyFilters();
+            updateToggleButtonText();
+        }
+
+        function toggleUnitFilter(unit) {
+            const index = activeFilters.units.indexOf(unit);
+            if (index > -1) {
+                activeFilters.units.splice(index, 1);
+            } else {
+                activeFilters.units.push(unit);
             }
             buildSlicers();
             applyFilters();
@@ -1898,6 +1956,7 @@ MAJOR UPDATES V2.0.0:
                     const allCategories = [...new Set(allProblems.map(p => p.category).filter(c => c !== null && c !== undefined))];
                     const allSubCategories = [...new Set(allProblems.map(p => p.subCategory).filter(sc => sc !== null && sc !== undefined))];
                     const allAssignedTo = [...new Set(allProblems.map(p => p.assignedTo).filter(a => a !== null && a !== undefined))];
+                    const allUnits = [...new Set(allProblems.map(p => p.unitNumber).filter(u => u !== null && u !== undefined && u.toString().trim() !== ''))];
                     
                     activeFilters = {
                         date: null,
@@ -1908,6 +1967,7 @@ MAJOR UPDATES V2.0.0:
                         categories: allCategories,
                         subCategories: allSubCategories,
                         assignedTo: allAssignedTo,
+                        units: allUnits,
                         programmedOnly: false
                     };
                     
@@ -2064,6 +2124,7 @@ MAJOR UPDATES V2.0.0:
                                     activeFilters.categories.length > 0 || 
                                     activeFilters.subCategories.length > 0 || 
                                     activeFilters.assignedTo.length > 0 || 
+                                    activeFilters.units.length > 0 || 
                                     activeFilters.programmedOnly;
 
                 if (!hasAnyFilters) {
@@ -2094,6 +2155,14 @@ MAJOR UPDATES V2.0.0:
                 if (activeFilters.zones.length > 0) {
                     if (activeFilters.zones.includes(problem.zone)) {
                         console.log('✅ Problem matches zone filter:', problem.internalId, 'has:', problem.zone);
+                        matchesAnyFilter = true;
+                    }
+                }
+
+                // Check Units filter
+                if (activeFilters.units.length > 0) {
+                    if (activeFilters.units.includes(problem.unitNumber)) {
+                        console.log('✅ Problem matches unit filter:', problem.internalId, 'has:', problem.unitNumber);
                         matchesAnyFilter = true;
                     }
                 }
@@ -2986,6 +3055,7 @@ END OF REPORT`;
                     categories: [],
                     subCategories: [],
                     assignedTo: [],
+                    units: [],
                     programmedOnly: false
                 };
                 button.textContent = '✅ CHECK ALL FILTERS';
@@ -3000,6 +3070,7 @@ END OF REPORT`;
                     const allCategories = [...new Set(allProblems.map(p => p.category).filter(c => c && c.trim() !== '' && c !== 'Not Set'))];
                     const allSubCategories = [...new Set(allProblems.map(p => p.subCategory).filter(sc => sc && sc.trim() !== '' && sc !== 'Not Set'))];
                     const allAssignedTo = [...new Set(allProblems.map(p => p.assignedTo).filter(a => a && a.trim() !== '' && a !== 'Not Set'))];
+                    const allUnits = [...new Set(allProblems.map(p => p.unitNumber).filter(u => u && u.toString().trim() !== '' && u !== 'Not Set'))];
                     
                     activeFilters = {
                         date: null,
@@ -3010,6 +3081,7 @@ END OF REPORT`;
                         categories: allCategories,
                         subCategories: allSubCategories,
                         assignedTo: allAssignedTo,
+                        units: allUnits,
                         programmedOnly: false
                     };
                 }
