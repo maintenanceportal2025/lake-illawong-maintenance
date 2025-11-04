@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lake Illawong - Executive Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/html2canvas@latest/dist/html2canvas.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -27,6 +29,29 @@
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             overflow: hidden;
         }
+
+[data-theme="dark"] {
+    --primary-blue: #60a5fa;
+    --secondary-blue: #3b82f6;
+    --accent-blue: #93c5fd;
+    --success-green: #34d399;
+    --warning-yellow: #fbbf24;
+    --danger-red: #f87171;
+    --text-dark: #f1f5f9;
+    --text-light: #cbd5e1;
+    --background-light: #0f172a;
+    --surface-white: #1e293b;
+    --border-light: #334155;
+}
+
+body[data-theme="dark"] {
+    background: linear-gradient(90deg, #1e293b 0%, #0f172a 100%);
+}
+
+[data-theme="dark"] .dashboard-container {
+    background: var(--surface-white);
+    color: var(--text-dark);
+}
 
         /* Header */
         .dashboard-header {
@@ -499,11 +524,19 @@
                             <span id="datasetBadge" style="background: rgba(255,255,255,0.2); padding: 6px 16px; border-radius: 8px; font-weight: 600; font-size: 0.85rem;">Combined Dataset</span>
                         </div>
                     </div>
+
+
                     
                     <!-- Right: Refresh Button -->
-                    <div>
-                        <button class="refresh-btn" onclick="loadData()" style="padding: 8px 20px; font-size: 0.9rem;">🔄 Refresh Data</button>
-                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+    <button class="refresh-btn" onclick="loadData()" style="padding: 8px 20px; font-size: 0.9rem;">🔄 Refresh Data</button>
+    <button class="refresh-btn" onclick="exportPDF()" style="padding: 8px 15px; font-size: 0.9rem;">📄 PDF</button>
+    <button class="refresh-btn" onclick="exportPNG()" style="padding: 8px 15px; font-size: 0.9rem;">🖼️ PNG</button>
+    <button class="refresh-btn" onclick="exportCSV()" style="padding: 8px 15px; font-size: 0.9rem;">📊 CSV</button>
+    <button class="refresh-btn" onclick="toggleTheme()" style="padding: 8px 15px; font-size: 0.9rem;">🌓 Theme</button>
+</div>
+
+
                 </div>
             </div>
         </div>
@@ -529,6 +562,58 @@
                         <span class="slicer-badge" id="programmedCount">0</span>
                     </div>
                 </div>
+
+
+<!-- Chart Selection -->
+<div class="slicer-section" style="background: #fef3c7; border: 2px solid #f59e0b; margin-bottom: 25px;">
+    <div class="slicer-header" style="background: #f59e0b; color: white; padding: 15px; font-weight: 700;">
+        📊 CHART SELECTION
+    </div>
+    <div class="slicer-content" style="padding: 20px;">
+        <div style="display: grid; gap: 10px;">
+            <!-- Original Charts - Now Dynamic -->
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="priorityToggle" onchange="toggleChart('priority')" style="transform: scale(1.2);" checked>
+                <span>🚨 Priority Distribution</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="statusToggle" onchange="toggleChart('status')" style="transform: scale(1.2);" checked>
+                <span>📊 Status Pipeline</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="categoryToggle" onchange="toggleChart('category')" style="transform: scale(1.2);" checked>
+                <span>📁 Top 10 Categories</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="zoneToggle" onchange="toggleChart('zone')" style="transform: scale(1.2);" checked>
+                <span>🗺️ Zone Distribution</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="trendToggle" onchange="toggleChart('trend')" style="transform: scale(1.2);" checked>
+                <span>📈 6-Month Trend</span>
+            </label>
+            
+            <!-- New Dynamic Charts -->
+            <hr style="margin: 15px 0; border-color: #f59e0b;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="gaugeToggle" onchange="toggleChart('gauge')" style="transform: scale(1.2);">
+                <span>⏱️ Completion Rate Gauge</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="heatmapToggle" onchange="toggleChart('heatmap')" style="transform: scale(1.2);">
+                <span>🔥 Monthly Problem Heatmap</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="comparisonToggle" onchange="toggleChart('comparison')" style="transform: scale(1.2);">
+                <span>📊 Year-over-Year Comparison</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="unitsToggle" onchange="toggleChart('units')" style="transform: scale(1.2);">
+                <span>🏠 Top 10 Most Reported Units</span>
+            </label>
+        </div>
+    </div>
+</div>
 
                 <div class="slicer-section">
                     <div class="slicer-header collapsed" onclick="toggleSlicerSection(this)">
@@ -621,47 +706,35 @@
                 <div class="kpi-grid" id="kpiGrid"></div>
 
                 <!-- Charts -->
-                <div class="chart-grid">
-                    <div class="chart-card">
-                        <div class="chart-header">Priority Distribution</div>
-                        <div class="chart-container">
-                            <canvas id="priorityChart"></canvas>
-                        </div>
-                    </div>
 
-                    <div class="chart-card">
-                        <div class="chart-header">Status Pipeline</div>
-                        <div class="chart-container">
-                            <canvas id="statusChart"></canvas>
-                        </div>
-                    </div>
 
-                    <div class="chart-card">
-                        <div class="chart-header">Top 10 Categories</div>
-                        <div class="chart-container">
-                            <canvas id="categoryChart"></canvas>
-                        </div>
-                    </div>
-
-                    <div class="chart-card">
-                        <div class="chart-header">Zone Heatmap</div>
-                        <div class="chart-container">
-                            <canvas id="zoneChart"></canvas>
-                        </div>
-                    </div>
-
-                    <div class="chart-card full-width-chart">
-                        <div class="chart-header">6-Month Trend Analysis</div>
-                        <div class="chart-container" style="height: 350px;">
-                            <canvas id="trendChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+                <!-- Dynamic Charts Container -->
+<div class="chart-grid" id="chartGrid">
+    <!-- Charts will be created dynamically here -->
+</div>
 
     <script>
+
+// NEW CHART TRACKING - INITIALIZE ONCE
+if (typeof activeCharts === 'undefined') {
+    var activeCharts = {
+    priority: true,    // Default charts on
+    status: true,
+    category: true,
+    zone: true,
+    trend: true,
+    gauge: false,      // New charts off by default
+    heatmap: false,
+    comparison: false,
+    units: false
+};
+}
+
+function toggleChart(chartType) {
+    activeCharts[chartType] = !activeCharts[chartType];
+    updateCharts();
+}
+
         // Global Data
         let allProblems = [];
         let filteredProblems = [];
@@ -726,7 +799,7 @@
                     }
                 }
 
-                script.src = `${API_URL}?action=${action}&callback=${callbackName}`;
+                script.src = API_URL + '?action=' + action + '&callback=' + callbackName;
                 document.body.appendChild(script);
             });
         }
@@ -1569,243 +1642,1022 @@
             document.getElementById('kpiGrid').innerHTML = kpiHTML;
         }
 
-        // Update Charts
-        function updateCharts() {
-            updatePriorityChart();
-            updateStatusChart();
-            updateCategoryChart();
-            updateZoneChart();
-            updateTrendChart();
+
+
+
+// GAUGE CHART
+function createGaugeChart() {
+    if (!activeCharts.gauge) return;
+    
+    const total = filteredProblems.length;
+    const completed = filteredProblems.filter(p => p.problemStatus === 'Completed').length;
+    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    const chartCard = document.createElement('div');
+    chartCard.className = 'chart-card';
+    chartCard.innerHTML = `
+        <div class="chart-header">
+            <h3>⏱️ Completion Rate Gauge</h3>
+            <button onclick="exportChart('gaugeChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="gaugeChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(chartCard);
+
+    const ctx = document.getElementById('gaugeChart');
+    charts.gauge = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [rate, 100 - rate],
+                backgroundColor: [
+                    rate >= 75 ? '#10b981' : rate >= 50 ? '#f59e0b' : '#ef4444',
+                    document.body.getAttribute('data-theme') === 'dark' ? '#374151' : '#e5e7eb'
+                ],
+                borderWidth: 0,
+                circumference: 180,
+                rotation: 270,
+                cutout: '75%'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } }
+        },
+        plugins: [{
+            afterDraw: function(chart) {
+                const ctx = chart.ctx;
+                const centerX = chart.width / 2;
+                const centerY = chart.height / 2 + 30;
+                
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = document.body.getAttribute('data-theme') === 'dark' ? '#f1f5f9' : '#1e293b';
+                ctx.font = 'bold 3rem sans-serif';
+                ctx.fillText(`${rate}%`, centerX, centerY);
+                
+                ctx.font = 'bold 1.2rem sans-serif';
+                ctx.fillStyle = document.body.getAttribute('data-theme') === 'dark' ? '#cbd5e1' : '#64748b';
+                ctx.fillText('Completion Rate', centerX, centerY + 40);
+                ctx.restore();
+            }
+        }]
+    });
+}
+
+// HEATMAP CHART
+function createHeatmapChart() {
+    if (!activeCharts.heatmap) return;
+    
+    const chartCard = document.createElement('div');
+    chartCard.className = 'chart-card full-width';
+    chartCard.innerHTML = `
+        <div class="chart-header">
+            <h3>🔥 Monthly Problem Heatmap</h3>
+            <button onclick="exportChart('heatmapChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="heatmapChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(chartCard);
+
+    const heatmapData = {};
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const priorities = ['Low', 'Medium', 'High', 'Urgent'];
+    
+    months.forEach(month => {
+        heatmapData[month] = {};
+        priorities.forEach(priority => {
+            heatmapData[month][priority] = 0;
+        });
+    });
+    
+    filteredProblems.forEach(p => {
+        const date = parseDate(p.timestamp);
+        if (date) {
+            const month = new Date(date).toLocaleDateString('en-US', { month: 'short' });
+            const priority = p.problemPriority || 'Low';
+            if (heatmapData[month] && heatmapData[month][priority] !== undefined) {
+                heatmapData[month][priority]++;
+            }
         }
+    });
+
+    const datasets = priorities.map((priority, index) => ({
+        label: priority,
+        data: months.map(month => heatmapData[month][priority]),
+        backgroundColor: ['rgba(16, 185, 129, 0.8)', 'rgba(245, 158, 11, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(220, 38, 38, 0.9)'][index],
+        borderWidth: 2,
+        borderRadius: 6
+    }));
+
+    const ctx = document.getElementById('heatmapChart');
+    charts.heatmap = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: months, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } }
+            },
+            plugins: { legend: { position: 'top' } }
+        }
+    });
+}
+
+// COMPARISON CHART  
+function createComparisonChart() {
+    if (!activeCharts.comparison) return;
+    
+    const chartCard = document.createElement('div');
+    chartCard.className = 'chart-card full-width';
+    chartCard.innerHTML = `
+        <div class="chart-header">
+            <h3>📊 Year-over-Year Comparison</h3>
+            <button onclick="exportChart('comparisonChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="comparisonChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(chartCard);
+
+    const currentYear = new Date().getFullYear();
+    const lastYear = currentYear - 1;
+    
+    const yearData = {
+        [currentYear]: { total: 0, completed: 0, urgent: 0 },
+        [lastYear]: { total: 0, completed: 0, urgent: 0 }
+    };
+    
+    filteredProblems.forEach(p => {
+        const date = parseDate(p.timestamp);
+        if (date) {
+            const year = new Date(date).getFullYear();
+            if (yearData[year]) {
+                yearData[year].total++;
+                if (p.problemStatus === 'Completed') yearData[year].completed++;
+                if (['Urgent', 'High'].includes(p.problemPriority)) yearData[year].urgent++;
+            }
+        }
+    });
+
+    const ctx = document.getElementById('comparisonChart');
+    charts.comparison = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Total Problems', 'Completed', 'Urgent/High'],
+            datasets: [
+                {
+                    label: `${lastYear}`,
+                    data: [yearData[lastYear].total, yearData[lastYear].completed, yearData[lastYear].urgent],
+                    backgroundColor: 'rgba(107, 114, 128, 0.8)',
+                    borderRadius: 6
+                },
+                {
+                    label: `${currentYear}`,
+                    data: [yearData[currentYear].total, yearData[currentYear].completed, yearData[currentYear].urgent],
+                    backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                    borderRadius: 6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+
+        // Update Charts
+
+   function updateCharts() {
+    // Clear all existing chart containers
+    const chartGrid = document.getElementById('chartGrid');
+    chartGrid.innerHTML = '';
+    
+    // Destroy all existing charts
+    Object.values(charts).forEach(chart => {
+        if (chart && chart.destroy) chart.destroy();
+    });
+    charts = {};
+    
+    // Create only active charts
+    if (activeCharts.priority) updatePriorityChart();
+    if (activeCharts.status) updateStatusChart();
+    if (activeCharts.category) updateCategoryChart();
+    if (activeCharts.zone) updateZoneChart();
+    if (activeCharts.trend) updateTrendChart();
+    if (activeCharts.gauge) updateGaugeChart();
+    if (activeCharts.heatmap) updateHeatmapChart();
+    if (activeCharts.comparison) updateComparisonChart();
+    if (activeCharts.units) updateTop10UnitsChart();
+}
+
 
         function updatePriorityChart() {
-            const priorities = {};
-            filteredProblems.forEach(p => {
-                const priority = p.problemPriority || 'Not Set';
-                priorities[priority] = (priorities[priority] || 0) + 1;
-            });
+    const container = document.createElement('div');
+    container.className = 'chart-card';
+    container.id = 'priorityChartContainer';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>🚨 Priority Distribution</h3>
+            <button onclick="exportChart('priorityChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="priorityChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(container);
 
-            if (charts.priority) charts.priority.destroy();
+    const priorities = {};
+    filteredProblems.forEach(p => {
+        const priority = p.problemPriority || 'Not Set';
+        priorities[priority] = (priorities[priority] || 0) + 1;
+    });
 
-            const ctx = document.getElementById('priorityChart');
-            charts.priority = new Chart(ctx, {
-                type: 'doughnut',
-               data: {
-                    labels: Object.keys(priorities),
-                    datasets: [{
-                        data: Object.values(priorities),
-                        backgroundColor: Object.keys(priorities).map(priority => {
-                            switch(priority.toLowerCase()) {
-                                case 'urgent': return '#fecaca';
-                                case 'high': return '#fed7aa';
-                                case 'medium': return '#fde68a';
-                                case 'low': return '#d1fae5';
-                                default: return '#e5e7eb';
-                            }
-                        })
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        }
+    const ctx = document.getElementById('priorityChart');
+    charts.priority = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(priorities),
+            datasets: [{
+                data: Object.values(priorities),
+                backgroundColor: Object.keys(priorities).map(priority => {
+                    switch(priority.toLowerCase()) {
+                        case 'urgent': return '#fecaca';
+                        case 'high': return '#fed7aa';
+                        case 'medium': return '#fde68a';
+                        case 'low': return '#d1fae5';
+                        default: return '#e5e7eb';
                     }
-                }
-            });
+                })
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: { display: true, text: `${filteredProblems.length} problems analyzed` }
+            }
         }
+    });
+}
 
         function updateStatusChart() {
-            const statuses = {};
-            filteredProblems.forEach(p => {
-                const status = p.problemStatus || 'Not Set';
-                statuses[status] = (statuses[status] || 0) + 1;
-            });
+    const container = document.createElement('div');
+    container.className = 'chart-card';
+    container.id = 'statusChartContainer';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>📊 Status Pipeline</h3>
+            <button onclick="exportChart('statusChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="statusChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(container);
 
-            if (charts.status) charts.status.destroy();
+    const statuses = {};
+    filteredProblems.forEach(p => {
+        const status = p.problemStatus || 'Not Set';
+        statuses[status] = (statuses[status] || 0) + 1;
+    });
 
-            const ctx = document.getElementById('statusChart');
-            charts.status = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: Object.keys(statuses),
-                    datasets: [{
-                        label: 'Problems',
-                        data: Object.values(statuses),
-                        backgroundColor: '#3b82f6'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                stepSize: 1
-                            }
-                        }
-                    }
-                }
-            });
+    const ctx = document.getElementById('statusChart');
+    charts.status = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Object.keys(statuses),
+            datasets: [{
+                label: 'Problems',
+                data: Object.values(statuses),
+                backgroundColor: '#3b82f6',
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: { display: true, text: `${filteredProblems.length} problems by status` }
+            },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
         }
+    });
+}
 
         function updateCategoryChart() {
-            const categories = {};
-            filteredProblems.forEach(p => {
-                const category = p.category;
-                // Only count valid categories (not empty, not "Not Set")
-                if (category && category.trim() !== '' && category !== 'Not Set') {
-                    categories[category] = (categories[category] || 0) + 1;
-                }
-            });
+    const container = document.createElement('div');
+    container.className = 'chart-card';
+    container.id = 'categoryChartContainer';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>📁 Top 10 Categories</h3>
+            <button onclick="exportChart('categoryChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="categoryChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(container);
 
-            const sortedCategories = Object.entries(categories)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10); // Show top 10 in chart
-
-            if (charts.category) charts.category.destroy();
-
-            const ctx = document.getElementById('categoryChart');
-            charts.category = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: sortedCategories.map(c => c[0]),
-                    datasets: [{
-                        label: 'Problems',
-                        data: sortedCategories.map(c => c[1]),
-                        backgroundColor: '#f59e0b'
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            ticks: {
-                                stepSize: 1
-                            }
-                        }
-                    }
-                }
-            });
+    const categories = {};
+    filteredProblems.forEach(p => {
+        const category = p.category;
+        if (category && category.trim() !== '' && category !== 'Not Set') {
+            categories[category] = (categories[category] || 0) + 1;
         }
+    });
+
+    const sortedCategories = Object.entries(categories)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+
+    const ctx = document.getElementById('categoryChart');
+    charts.category = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sortedCategories.map(c => c[0]),
+            datasets: [{
+                label: 'Problems',
+                data: sortedCategories.map(c => c[1]),
+                backgroundColor: '#f59e0b',
+                borderRadius: 6
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: { display: true, text: `Top categories from ${filteredProblems.length} problems` }
+            },
+            scales: {
+                x: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+}
 
         function updateZoneChart() {
-            const zones = {};
-            filteredProblems.forEach(p => {
-                const zone = p.zone || 'Not Set';
-                zones[zone] = (zones[zone] || 0) + 1;
-            });
+    const container = document.createElement('div');
+    container.className = 'chart-card';
+    container.id = 'zoneChartContainer';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>🗺️ Zone Distribution</h3>
+            <button onclick="exportChart('zoneChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="zoneChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(container);
 
-            if (charts.zone) charts.zone.destroy();
+    const zones = {};
+    filteredProblems.forEach(p => {
+        const zone = p.zone || 'Not Set';
+        zones[zone] = (zones[zone] || 0) + 1;
+    });
 
-            const ctx = document.getElementById('zoneChart');
-            charts.zone = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: Object.keys(zones),
-                    datasets: [{
-                        label: 'Problems',
-                        data: Object.values(zones),
-                        backgroundColor: '#8b5cf6'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                stepSize: 1
-                            }
-                        }
-                    }
-                }
-            });
+    const ctx = document.getElementById('zoneChart');
+    charts.zone = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Object.keys(zones),
+            datasets: [{
+                label: 'Problems',
+                data: Object.values(zones),
+                backgroundColor: '#8b5cf6',
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: { display: true, text: `${filteredProblems.length} problems by zone` }
+            },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
         }
+    });
+}
 
         function updateTrendChart() {
-            // Group by month
-            const monthlyData = {};
-            
-            filteredProblems.forEach(p => {
-                const timestamp = parseDate(p.timestamp);
-                if (timestamp) {
-                    const date = new Date(timestamp);
-                    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-                    monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1;
-                }
-            });
+    const container = document.createElement('div');
+    container.className = 'chart-card full-width';
+    container.id = 'trendChartContainer';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>📈 6-Month Trend Analysis</h3>
+            <button onclick="exportChart('trendChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container" style="height: 350px;">
+            <canvas id="trendChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(container);
 
-            // Get last 6 months
-            const now = new Date();
-            const months = [];
-            for (let i = 5; i >= 0; i--) {
-                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                months.push({
-                    key: key,
-                    label: d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }),
-                    value: monthlyData[key] || 0
-                });
+    const monthlyData = {};
+    const now = new Date();
+    const months = [];
+    
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        months.push({
+            key: key,
+            label: d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }),
+            value: 0
+        });
+        monthlyData[key] = 0;
+    }
+    
+    filteredProblems.forEach(p => {
+        const timestamp = parseDate(p.timestamp);
+        if (timestamp) {
+            const date = new Date(timestamp);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            if (monthlyData.hasOwnProperty(monthKey)) {
+                monthlyData[monthKey]++;
             }
-
-            if (charts.trend) charts.trend.destroy();
-
-            const ctx = document.getElementById('trendChart');
-            charts.trend = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: months.map(m => m.label),
-                    datasets: [{
-                        label: 'Problems Reported',
-                        data: months.map(m => m.value),
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        tension: 0.4,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                stepSize: 1
-                            }
-                        }
-                    }
-                }
-            });
         }
+    });
+
+    months.forEach(month => {
+        month.value = monthlyData[month.key];
+    });
+
+    const ctx = document.getElementById('trendChart');
+    charts.trend = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: months.map(m => m.label),
+            datasets: [{
+                label: 'Problems Reported',
+                data: months.map(m => m.value),
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true,
+                borderWidth: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: { display: true, text: `${filteredProblems.length} problems over 6 months` }
+            },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+}
+
+function updateGaugeChart() {
+    const total = filteredProblems.length;
+    const completed = filteredProblems.filter(p => p.problemStatus === 'Completed').length;
+    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    // Remove existing container if it exists
+    let container = document.getElementById('gaugeChartContainer');
+    if (container) container.remove();
+
+    // Create new container
+    container = document.createElement('div');
+    container.id = 'gaugeChartContainer';
+    container.className = 'chart-card';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>⏱️ Completion Rate Gauge</h3>
+            <button onclick="exportChart('gaugeChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="gaugeChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(container);
+
+    if (charts.gauge) charts.gauge.destroy();
+
+    const ctx = document.getElementById('gaugeChart');
+    charts.gauge = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [rate, 100 - rate],
+                backgroundColor: [
+                    rate >= 75 ? '#10b981' : rate >= 50 ? '#f59e0b' : '#ef4444',
+                    '#e5e7eb'
+                ],
+                borderWidth: 0,
+                circumference: 180,
+                rotation: 270,
+                cutout: '75%'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } }
+        },
+        plugins: [{
+            afterDraw: function(chart) {
+                const ctx = chart.ctx;
+                const centerX = chart.width / 2;
+                const centerY = chart.height / 2 + 30;
+                
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#1e293b';
+                ctx.font = 'bold 3rem sans-serif';
+                ctx.fillText(`${rate}%`, centerX, centerY);
+                
+                ctx.font = 'bold 1.2rem sans-serif';
+                ctx.fillStyle = '#64748b';
+                ctx.fillText('Completion Rate', centerX, centerY + 40);
+                ctx.restore();
+            }
+        }]
+    });
+}
+
+function updateHeatmapChart() {
+    if (!activeCharts.heatmap) return;
+    
+    // Remove existing container
+    let container = document.getElementById('heatmapChartContainer');
+    if (container) container.remove();
+
+    // Get the active year from filters or default to current year
+    let targetYear = new Date().getFullYear();
+    
+    // Check if a specific year is selected in filters
+    if (activeFilters.date && activeFilters.date.match(/^\d{4}$/)) {
+        targetYear = parseInt(activeFilters.date);
+    }
+
+    container = document.createElement('div');
+    container.id = 'heatmapChartContainer';
+    container.className = 'chart-card full-width';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>🔥 ${targetYear} Monthly Problem Heatmap</h3>
+            <button onclick="exportChart('heatmapChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="heatmapChart"></canvas>
+        </div>
+    `;
+    document.querySelector('.chart-grid').appendChild(container);
+
+    const heatmapData = {};
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const priorities = ['Low', 'Medium', 'High', 'Urgent'];
+    
+    // Initialize data structure
+    months.forEach(month => {
+        heatmapData[month] = {};
+        priorities.forEach(priority => {
+            heatmapData[month][priority] = 0;
+        });
+    });
+    
+    // Filter problems for the specific year
+    const yearProblems = filteredProblems.filter(p => {
+        const date = parseDate(p.timestamp);
+        if (date) {
+            const year = new Date(date).getFullYear();
+            return year === targetYear;
+        }
+        return false;
+    });
+    
+    // Count problems by month and priority for the target year
+    yearProblems.forEach(p => {
+        const date = parseDate(p.timestamp);
+        if (date) {
+            const month = new Date(date).toLocaleDateString('en-US', { month: 'short' });
+            const priority = p.problemPriority || 'Low';
+            if (heatmapData[month] && heatmapData[month][priority] !== undefined) {
+                heatmapData[month][priority]++;
+            }
+        }
+    });
+
+    const datasets = priorities.map((priority, index) => ({
+        label: priority,
+        data: months.map(month => heatmapData[month][priority]),
+        backgroundColor: ['rgba(16, 185, 129, 0.8)', 'rgba(245, 158, 11, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(220, 38, 38, 0.9)'][index],
+        borderWidth: 2,
+        borderRadius: 6
+    }));
+
+    if (charts.heatmap) charts.heatmap.destroy();
+
+    const ctx = document.getElementById('heatmapChart');
+    charts.heatmap = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: months, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { stacked: true },
+                y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } }
+            },
+            plugins: { 
+                legend: { position: 'top' },
+                title: { 
+                    display: true, 
+                    text: `${yearProblems.length} problems reported in ${targetYear}` 
+                }
+            }
+        }
+    });
+}
+
+function updateComparisonChart() {
+    if (!activeCharts.comparison) return;
+    
+    let container = document.getElementById('comparisonChartContainer');
+    if (container) container.remove();
+
+    // Determine which years to compare based on available data
+    const yearCounts = {};
+    filteredProblems.forEach(p => {
+        const date = parseDate(p.timestamp);
+        if (date) {
+            const year = new Date(date).getFullYear();
+            yearCounts[year] = (yearCounts[year] || 0) + 1;
+        }
+    });
+
+    // Get the two most recent years with data
+    const availableYears = Object.keys(yearCounts).map(y => parseInt(y)).sort((a, b) => b - a);
+    const year1 = availableYears[0] || new Date().getFullYear();
+    const year2 = availableYears[1] || year1 - 1;
+
+    container = document.createElement('div');
+    container.id = 'comparisonChartContainer';
+    container.className = 'chart-card full-width';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>📊 ${year2} vs ${year1} Comparison</h3>
+            <button onclick="exportChart('comparisonChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="comparisonChart"></canvas>
+        </div>
+    `;
+    document.querySelector('.chart-grid').appendChild(container);
+
+    const yearData = {
+        [year1]: { total: 0, completed: 0, urgent: 0 },
+        [year2]: { total: 0, completed: 0, urgent: 0 }
+    };
+    
+    filteredProblems.forEach(p => {
+        const date = parseDate(p.timestamp);
+        if (date) {
+            const year = new Date(date).getFullYear();
+            if (yearData[year]) {
+                yearData[year].total++;
+                if (p.problemStatus === 'Completed') yearData[year].completed++;
+                if (['Urgent', 'High'].includes(p.problemPriority)) yearData[year].urgent++;
+            }
+        }
+    });
+
+    if (charts.comparison) charts.comparison.destroy();
+
+    const ctx = document.getElementById('comparisonChart');
+    charts.comparison = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Total Problems', 'Completed', 'Urgent/High Priority'],
+            datasets: [
+                {
+                    label: `${year2}`,
+                    data: [yearData[year2].total, yearData[year2].completed, yearData[year2].urgent],
+                    backgroundColor: 'rgba(107, 114, 128, 0.8)',
+                    borderRadius: 6
+                },
+                {
+                    label: `${year1}`,
+                    data: [yearData[year1].total, yearData[year1].completed, yearData[year1].urgent],
+                    backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                    borderRadius: 6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { position: 'top' },
+                title: { 
+                    display: true, 
+                    text: `Available years: ${availableYears.join(', ')}` 
+                }
+            },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+function updateTop10UnitsChart() {
+    if (!activeCharts.units) return;
+    
+    let container = document.getElementById('unitsChartContainer');
+    if (container) container.remove();
+
+    // Count problems by unitNumber (the correct field name)
+    const unitCounts = {};
+    filteredProblems.forEach(p => {
+        const unit = p.unitNumber;  // Using the correct field name
+        if (unit && unit.toString().trim() !== '' && unit !== 'Not Set') {
+            const unitKey = unit.toString();
+            unitCounts[unitKey] = (unitCounts[unitKey] || 0) + 1;
+        }
+    });
+
+    // Get top 10 units
+    const sortedUnits = Object.entries(unitCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+
+    container = document.createElement('div');
+    container.id = 'unitsChartContainer';
+    container.className = 'chart-card';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>🏠 Top 10 Most Reported Units</h3>
+            <button onclick="exportChart('unitsChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="unitsChart"></canvas>
+        </div>
+    `;
+    document.querySelector('.chart-grid').appendChild(container);
+
+    if (charts.units) charts.units.destroy();
+
+    const ctx = document.getElementById('unitsChart');
+    charts.units = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sortedUnits.map(u => u[0]),
+            datasets: [{
+                label: 'Problems Reported',
+                data: sortedUnits.map(u => u[1]),
+                backgroundColor: '#e11d48',
+                borderRadius: 6
+            }]
+        },
+        options: {
+            indexAxis: 'y', // Horizontal bars
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { display: false },
+                title: { 
+                    display: true, 
+                    text: `Based on ${filteredProblems.length} problems` 
+                }
+            },
+            scales: {
+                x: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+}
+
+
+
+// EXPORT FUNCTIONS
+
+async function exportPDF() {
+    try {
+        if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
+            alert('PDF libraries not loaded. Please refresh and try again.');
+            return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('l', 'mm', 'a4');
+        
+        // Add header
+        pdf.setFontSize(18);
+        pdf.text('Lake Illawong Executive Dashboard', 20, 20);
+        pdf.setFontSize(10);
+        pdf.text(`Generated: ${new Date().toLocaleString('en-AU')}`, 20, 30);
+        pdf.text(`Total Problems: ${filteredProblems.length}`, 20, 36);
+        
+        // Scroll to top and wait
+        window.scrollTo(0, 0);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Get the chart grid specifically
+        const chartGrid = document.querySelector('.chart-grid');
+        
+        // Temporarily modify the chart grid to ensure full visibility
+        const originalHeight = chartGrid.style.height;
+        const originalOverflow = chartGrid.style.overflow;
+        const originalMaxHeight = chartGrid.style.maxHeight;
+        
+        chartGrid.style.height = 'auto';
+        chartGrid.style.overflow = 'visible';
+        chartGrid.style.maxHeight = 'none';
+        
+        // Wait for layout adjustment
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Capture with specific dimensions
+        const canvas = await html2canvas(chartGrid, {
+            scale: 0.5,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            width: chartGrid.scrollWidth,
+            height: chartGrid.scrollHeight,
+            windowWidth: 1400,
+            windowHeight: 1200
+        });
+        
+        // Restore original styles
+        chartGrid.style.height = originalHeight;
+        chartGrid.style.overflow = originalOverflow;
+        chartGrid.style.maxHeight = originalMaxHeight;
+        
+        const imgData = canvas.toDataURL('image/png', 0.9);
+        
+        // Calculate dimensions for landscape A4
+        const pageWidth = 297;
+        const pageHeight = 210;
+        const margin = 15;
+        const availableWidth = pageWidth - (margin * 2);
+        const availableHeight = pageHeight - 50;
+        
+        const imgWidth = availableWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        if (imgHeight > availableHeight) {
+            // Split across multiple pages
+            const pagesNeeded = Math.ceil(imgHeight / availableHeight);
+            
+            for (let i = 0; i < pagesNeeded; i++) {
+                if (i > 0) pdf.addPage();
+                
+                const yOffset = i * availableHeight;
+                const pageImgHeight = Math.min(availableHeight, imgHeight - yOffset);
+                
+                // Create cropped image for this page
+                const croppedCanvas = document.createElement('canvas');
+                const ctx = croppedCanvas.getContext('2d');
+                
+                const cropHeight = (pageImgHeight * canvas.width) / imgWidth;
+                const cropY = (yOffset * canvas.width) / imgWidth;
+                
+                croppedCanvas.width = canvas.width;
+                croppedCanvas.height = cropHeight;
+                
+                ctx.drawImage(canvas, 0, cropY, canvas.width, cropHeight, 0, 0, canvas.width, cropHeight);
+                
+                const croppedData = croppedCanvas.toDataURL('image/png', 0.9);
+                pdf.addImage(croppedData, 'PNG', margin, 45, imgWidth, pageImgHeight);
+                
+                // Page number
+                pdf.setFontSize(8);
+                pdf.text(`Page ${i + 1} of ${pagesNeeded} - All Charts`, margin, pageHeight - 5);
+            }
+        } else {
+            pdf.addImage(imgData, 'PNG', margin, 45, imgWidth, imgHeight);
+            pdf.setFontSize(8);
+            pdf.text('Page 1 of 1 - All Charts', margin, pageHeight - 5);
+        }
+        
+        pdf.save(`lake-illawong-all-charts-${Date.now()}.pdf`);
+        alert('✅ PDF with all 5 charts exported!');
+        
+    } catch (error) {
+        console.error('PDF error:', error);
+        alert(`Error: ${error.message}`);
+    }
+}
+
+async function exportPNG() {
+    try {
+        const dashboard = document.querySelector('.dashboard-container');
+        const canvas = await html2canvas(dashboard, {
+            scale: 1.2,
+            useCORS: true,
+            backgroundColor: document.body.getAttribute('data-theme') === 'dark' ? '#0f172a' : '#ffffff'
+        });
+        
+        const link = document.createElement('a');
+        link.download = `lake-illawong-dashboard-${new Date().toISOString().split('T')[0]}.png`;
+        link.href = canvas.toDataURL();
+        link.click();
+        
+        alert('✅ PNG exported successfully!');
+        
+    } catch (error) {
+        console.error('PNG export error:', error);
+        alert('Error exporting PNG. Please try again.');
+    }
+}
+
+function exportCSV() {
+    const csvData = filteredProblems.map(p => ({
+        'Problem ID': p.problemId || '',
+        'Timestamp': p.timestamp || '',
+        'Unit': p.unit || '',
+        'Zone': p.zone || '',
+        'Category': p.category || '',
+        'Priority': p.problemPriority || '',
+        'Status': p.problemStatus || '',
+        'Description': (p.description || '').replace(/"/g, '""'),
+        'Assigned To': p.assignedTo || '',
+        'Source': p.source || ''
+    }));
+    
+    if (csvData.length === 0) {
+        alert('No data to export');
+        return;
+    }
+    
+    const headers = Object.keys(csvData[0]);
+    const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => 
+            headers.map(header => `"${row[header]}"`).join(',')
+        )
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `lake-illawong-data-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    
+    alert('✅ CSV exported successfully!');
+}
+
+function exportChart(chartId) {
+    const canvas = document.getElementById(chartId);
+    if (canvas) {
+        const link = document.createElement('a');
+        link.download = `${chartId}-${new Date().toISOString().split('T')[0]}.png`;
+        link.href = canvas.toDataURL();
+        link.click();
+    }
+}
+
+// THEME TOGGLE
+function toggleTheme() {
+    const currentTheme = document.body.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.body.setAttribute('data-theme', newTheme);
+    localStorage.setItem('dashboardTheme', newTheme);
+    
+    // Update all charts with new theme
+    updateCharts();
+    
+    alert(`✅ Switched to ${newTheme} theme`);
+}
+
+// Load saved theme on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const savedTheme = localStorage.getItem('dashboardTheme') || 'light';
+    document.body.setAttribute('data-theme', savedTheme);
+});
+
+
     </script>
 </body>
 </html>
