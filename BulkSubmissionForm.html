@@ -6,24 +6,12 @@
     <title>Lake Illawong - Bulk Problem Submission</title>
     <!--
     =====================================================================
-    LAKE ILLAWONG - BULK PROBLEM SUBMISSION - FIXED VERSION
+    LAKE ILLAWONG - BULK PROBLEM SUBMISSION - CLEANED VERSION
     =====================================================================
-    PURPOSE: Submit problems for multiple units at once
-    VERSION: v1.3.0 - FIXED
-    DATE: November 1, 2025
-    BACKEND: ResidentSubmissionForm_V1.3.js
-    
-    FIXES IN V1.3:
-    ✅ Added "Preparing your form" loading screen
-    ✅ Fixed zone filtering with proper unit-zone mapping
-    ✅ Added proper timing delays between submissions (2.5 seconds)
-    ✅ Fixed email consolidation (one summary email)
-    ✅ Enhanced activity logging
-    ✅ Improved error handling
-    
-    TWO MODES:
-    1. ADMIN MODE - Full control + email options
-    2. ZONE REP MODE - Simplified with defaults
+    PURPOSE: Submit problems for multiple units at once (Admin/Maintenance only)
+    VERSION: v1.3.0 - CLEANED
+    DATE: November 6, 2025
+    CLEANUP: Removed all Zone Rep logic, simplified for Admin use only
     =====================================================================
     -->
     
@@ -291,10 +279,6 @@
             min-width: 200px;
         }
 
-        .zone-filter {
-            min-width: 150px;
-        }
-
         .unit-actions {
             display: flex;
             gap: 12px;
@@ -411,6 +395,41 @@
             font-size: 14px;
             color: #64748b;
             font-weight: 400;
+        }
+
+        /* Email Quota Info */
+        .email-quota-info {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 1px solid #0891b2;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 32px;
+            color: #0c4a6e;
+        }
+
+        .email-quota-info h4 {
+            margin: 0 0 12px 0;
+            color: #0369a1;
+        }
+
+        .quota-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            font-size: 14px;
+        }
+
+        .quota-warning {
+            margin-top: 12px;
+            padding: 8px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .quota-estimate {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #64748b;
         }
 
         /* Confirmation */
@@ -551,6 +570,11 @@
                 max-width: 100%;
                 text-align: left;
             }
+
+            .quota-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
         }
 
         /* Hidden state for form during loading */
@@ -574,11 +598,11 @@
         <div class="header-section">
             <div class="header-content">
                 <div class="logo-container">
-                    <img src="https://lake-illawong-maintenance.netlify.app/images/logo.png" 
+                    <img src="https://lake-illawong-maintenance.netlify.app/images/logo-transparent.png" 
                          alt="Lake Illawong Logo" class="logo-image">
                 </div>
                 <div class="header-text">
-                    <h1 class="system-title">Lake Illawong Estate<br>Maintenance Management</h1>
+                    <h1 class="system-title">PROBLEM REPORTING SYSTEM</h1>
                 </div>
             </div>
         </div>
@@ -586,7 +610,7 @@
         <!-- Title Card -->
         <div class="title-card">
             <h1>Bulk Problem Submission</h1>
-            <div class="role-badge" id="roleDisplay">Loading...</div>
+            <div class="role-badge">Administrator</div>
         </div>
 
         <!-- Form Card -->
@@ -597,6 +621,25 @@
                     <strong>Bulk Submission:</strong> Submit the same problem for multiple units at once. 
                     Select the units affected, describe the problem, and we'll create individual reports 
                     for each unit with unique tracking numbers.
+                </div>
+
+                <!-- Email Quota Info -->
+                <div id="emailQuotaInfo" class="email-quota-info">
+                    <h4>📧 Email Quota Usage</h4>
+                    <div class="quota-grid">
+                        <div>
+                            <strong>Last 24 Hours:</strong><br>
+                            <span id="emailUsageCount">0</span> / 300 emails sent
+                        </div>
+                        <div>
+                            <strong>Remaining:</strong><br>
+                            <span id="emailRemainingCount">300</span> emails available
+                        </div>
+                    </div>
+                    <div id="emailQuotaWarning" class="quota-warning"></div>
+                    <div class="quota-estimate">
+                        This submission will send approximately <span id="estimatedEmails">0</span> emails
+                    </div>
                 </div>
 
                 <!-- Reporter -->
@@ -636,47 +679,96 @@
                     </div>
                 </div>
 
-                <!-- Admin-only fields -->
-                <div id="adminFields" style="display: none;">
-                    <h2 class="section-header">Advanced Options</h2>
-                    
-                    <!-- Status -->
-                    <div class="form-group">
-                        <label for="problemStatus" class="form-label">Status</label>
-                        <div class="searchable-container">
-                            <input type="text" 
-                                   id="problemStatus" 
-                                   class="form-input" 
-                                   placeholder="Select status..." 
-                                   autocomplete="off">
-                            <div class="searchable-dropdown" id="problemStatusDropdown"></div>
-                        </div>
+                <!-- Sub Category -->
+                <div class="form-group">
+                    <label for="subCategory" class="form-label">Sub Category</label>
+                    <div class="searchable-container">
+                        <input type="text" 
+                               id="subCategory" 
+                               class="form-input" 
+                               placeholder="Select sub category (optional)..." 
+                               autocomplete="off">
+                        <div class="searchable-dropdown" id="subCategoryDropdown"></div>
+                    </div>
+                </div>
+
+                <!-- Submission Type -->
+                <div class="form-group">
+                    <label class="form-label">Submission Type</label>
+                    <div style="display: flex; gap: 20px; margin-top: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="submissionType" value="problem" checked>
+                            <span>Problem (Same for all units)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="submissionType" value="program">
+                            <span>Program (Set priorities per unit)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Program Mode Editor -->
+                <div id="programModeEditor" style="display: none; margin-top: 16px;">
+                    <div class="info-box">
+                        <strong>Program Mode:</strong> Set individual priorities for each unit. All units share the same description but can have different urgency levels.
                     </div>
                     
-                    <!-- Priority -->
-                    <div class="form-group">
-                        <label for="problemPriority" class="form-label">Priority</label>
-                        <div class="searchable-container">
-                            <input type="text" 
-                                   id="problemPriority" 
-                                   class="form-input" 
-                                   placeholder="Select priority..." 
-                                   autocomplete="off">
-                            <div class="searchable-dropdown" id="problemPriorityDropdown"></div>
-                        </div>
+                    <div id="unitPriorityGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px;">
+                        <!-- Unit priorities will be populated here -->
                     </div>
                     
-                    <!-- Assigned To -->
-                    <div class="form-group">
-                        <label for="assignedTo" class="form-label">Assigned To</label>
-                        <div class="searchable-container">
-                            <input type="text" 
-                                   id="assignedTo" 
-                                   class="form-input" 
-                                   placeholder="Assign to someone..." 
-                                   autocomplete="off">
-                            <div class="searchable-dropdown" id="assignedToDropdown"></div>
-                        </div>
+                    <div style="margin-top: 16px; text-align: center;">
+                        <button type="button" class="btn-small btn-outline" onclick="applyPriorityToAll('High')">
+                            Set All to High
+                        </button>
+                        <button type="button" class="btn-small btn-outline" onclick="applyPriorityToAll('Medium')">
+                            Set All to Medium
+                        </button>
+                        <button type="button" class="btn-small btn-outline" onclick="applyPriorityToAll('Low')">
+                            Set All to Low
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Advanced Options -->
+                <h2 class="section-header">Advanced Options</h2>
+                
+                <!-- Status -->
+                <div class="form-group">
+                    <label for="problemStatus" class="form-label">Status</label>
+                    <div class="searchable-container">
+                        <input type="text" 
+                               id="problemStatus" 
+                               class="form-input" 
+                               placeholder="Select status..." 
+                               autocomplete="off">
+                        <div class="searchable-dropdown" id="problemStatusDropdown"></div>
+                    </div>
+                </div>
+                
+                <!-- Priority -->
+                <div class="form-group">
+                    <label for="problemPriority" class="form-label">Priority</label>
+                    <div class="searchable-container">
+                        <input type="text" 
+                               id="problemPriority" 
+                               class="form-input" 
+                               placeholder="Select priority..." 
+                               autocomplete="off">
+                        <div class="searchable-dropdown" id="problemPriorityDropdown"></div>
+                    </div>
+                </div>
+                
+                <!-- Assigned To -->
+                <div class="form-group">
+                    <label for="assignedTo" class="form-label">Assigned To</label>
+                    <div class="searchable-container">
+                        <input type="text" 
+                               id="assignedTo" 
+                               class="form-input" 
+                               placeholder="Assign to someone..." 
+                               autocomplete="off">
+                        <div class="searchable-dropdown" id="assignedToDropdown"></div>
                     </div>
                 </div>
 
@@ -690,12 +782,6 @@
                                class="form-input" 
                                placeholder="Search units..." 
                                autocomplete="off">
-                    </div>
-                    
-                    <div class="form-group zone-filter">
-                        <select id="zoneFilter" class="form-input">
-                            <option value="">All Zones</option>
-                        </select>
                     </div>
                     
                     <div class="unit-actions">
@@ -716,8 +802,8 @@
                     <span id="selectedCount">0 units selected</span>
                 </div>
 
-                <!-- Email Options (Admin only) -->
-                <div id="emailOptions" class="email-options" style="display: none;">
+                <!-- Email Options -->
+                <div class="email-options">
                     <h3 class="section-header" style="margin-top: 0;">Email Notifications</h3>
                     
                     <div class="email-option">
@@ -758,32 +844,40 @@
                         <span class="confirmation-label">Category:</span>
                         <span class="confirmation-value" id="confirmCat">-</span>
                     </div>
+
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Sub Category:</span>
+                        <span class="confirmation-value" id="confirmSubCat">-</span>
+                    </div>
+
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Submission Type:</span>
+                        <span class="confirmation-value" id="confirmSubmissionType">Problem</span>
+                    </div>
                     
                     <div class="confirmation-row">
                         <span class="confirmation-label">Description:</span>
                         <span class="confirmation-value" id="confirmDesc">-</span>
                     </div>
                     
-                    <div id="adminConfirm" style="display: none;">
-                        <div class="confirmation-row">
-                            <span class="confirmation-label">Status:</span>
-                            <span class="confirmation-value" id="confirmStatus">-</span>
-                        </div>
-                        
-                        <div class="confirmation-row">
-                            <span class="confirmation-label">Priority:</span>
-                            <span class="confirmation-value" id="confirmPriority">-</span>
-                        </div>
-                        
-                        <div class="confirmation-row">
-                            <span class="confirmation-label">Assigned To:</span>
-                            <span class="confirmation-value" id="confirmAssigned">-</span>
-                        </div>
-                        
-                        <div class="confirmation-row">
-                            <span class="confirmation-label">Email To:</span>
-                            <span class="confirmation-value" id="confirmEmails">-</span>
-                        </div>
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Status:</span>
+                        <span class="confirmation-value" id="confirmStatus">-</span>
+                    </div>
+                    
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Priority:</span>
+                        <span class="confirmation-value" id="confirmPriority">-</span>
+                    </div>
+                    
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Assigned To:</span>
+                        <span class="confirmation-value" id="confirmAssigned">-</span>
+                    </div>
+                    
+                    <div class="confirmation-row">
+                        <span class="confirmation-label">Email To:</span>
+                        <span class="confirmation-value" id="confirmEmails">-</span>
                     </div>
                 </div>
 
@@ -810,18 +904,12 @@
     </div>
 
     <script>
-		
-        // Backend URL - UPDATE THIS AFTER DEPLOYMENT (V1.3)
+        // Backend URL
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwJ8SgLG4oCl-RSo906cO-Vrv1gNB3VliaFcy_VPzOcZ05v3M3H1u-O_P5YCHKUdbUw/exec';
 
-        // const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzXQCZA9KCY_4_xVD8Ht1-HW8Pb1fNPxWI4XwN2QLRhT-_P-LN6RVgNZN_VZEHwZlOG/exec';
-
-	const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwlToDSTEZFNr3xJwRejUH_2AulxAVb_49mP2SrTIpGQDvhENGL-QvimGC5TYPnffpERw/exec';
-        
         // Global variables
         let allUnits = [];
-        let unitZoneMap = {}; // Map unit numbers to zones
         let dropdownData = {};
-        let isZoneRep = false;
         let isLoading = false;
 
         // Initialize on page load
@@ -838,26 +926,12 @@
         });
 
         async function initializeForm() {
-            // Detect user role from URL
-            const urlParams = new URLSearchParams(window.location.search);
-            isZoneRep = urlParams.get('mode') === 'zonerep';
+            console.log('👤 User mode: Administrator');
             
-            console.log('👤 User mode:', isZoneRep ? 'Zone Rep' : 'Admin');
-            
-            // Update role display
-            document.getElementById('roleDisplay').textContent = isZoneRep ? 'Zone Representative' : 'Administrator';
-            
-            // Show/hide admin fields
-            if (!isZoneRep) {
-                document.getElementById('adminFields').style.display = 'block';
-                document.getElementById('emailOptions').style.display = 'block';
-                document.getElementById('adminConfirm').style.display = 'block';
-            }
-
             // Load all data in parallel
             const [unitsResult, dropdownsResult] = await Promise.all([
                 callScript({ action: 'getAllUnits' }),
-                callScript({ action: isZoneRep ? 'getZoneRepDropdowns' : 'getAdminBulkDropdowns' })
+                callScript({ action: 'getAdminBulkDropdowns' })
             ]);
 
             if (!unitsResult.success) {
@@ -879,6 +953,7 @@
             populateUnits();
             setupDropdowns();
             setupEventListeners();
+            await loadEmailQuotaInfo();
             
             // Hide loading screen
             hideLoadingScreen();
@@ -900,13 +975,9 @@
 
         function populateUnits() {
             const unitGrid = document.getElementById('unitGrid');
-            const zoneFilter = document.getElementById('zoneFilter');
-            const zones = new Set();
-
             unitGrid.innerHTML = '';
 
             allUnits.forEach(unit => {
-                // Create unit checkbox
                 const unitDiv = document.createElement('div');
                 unitDiv.className = 'unit-checkbox';
                 unitDiv.innerHTML = `
@@ -924,40 +995,20 @@
 
                 unitDiv.querySelector('input').addEventListener('change', updateSelectedCount);
                 unitGrid.appendChild(unitDiv);
-
-                // Extract zone for filtering (assumes zone is in unit number)
-                const zoneMatch = unit.match(/^([A-Z]+)/);
-                if (zoneMatch) {
-                    zones.add(zoneMatch[1]);
-                    unitZoneMap[unit] = zoneMatch[1];
-                }
             });
 
-            // Populate zone filter
-            zones.forEach(zone => {
-                const option = document.createElement('option');
-                option.value = zone;
-                option.textContent = `Zone ${zone}`;
-                zoneFilter.appendChild(option);
-            });
-
-            console.log('🏘️ Populated', allUnits.length, 'units with', zones.size, 'zones');
+            console.log('🏘️ Populated', allUnits.length, 'units');
         }
 
         function setupDropdowns() {
-            // Setup each dropdown based on user role
             const dropdowns = [
                 { id: 'reportedBy', key: 'reportedBy' },
-                { id: 'category', key: 'category' }
+                { id: 'category', key: 'category' },
+                { id: 'subCategory', key: 'subCategory' },
+                { id: 'problemStatus', key: 'status' },
+                { id: 'problemPriority', key: 'priority' }, 
+                { id: 'assignedTo', key: 'assignedTo' }
             ];
-
-            if (!isZoneRep) {
-                dropdowns.push(
-                    { id: 'problemStatus', key: 'status' },
-                    { id: 'problemPriority', key: 'priority' }, 
-                    { id: 'assignedTo', key: 'assignedTo' }
-                );
-            }
 
             dropdowns.forEach(({ id, key }) => {
                 const options = dropdownData[key] || [];
@@ -1058,34 +1109,33 @@
             // Unit search
             document.getElementById('unitSearch').addEventListener('input', filterUnits);
             
-            // Zone filter
-            document.getElementById('zoneFilter').addEventListener('change', filterUnits);
-            
             // Problem description
             document.getElementById('problemDescription').addEventListener('input', updateConfirmation);
             
-            if (!isZoneRep) {
-                // Email option listeners
-                document.getElementById('emailUnits').addEventListener('change', updateConfirmation);
-                document.getElementById('emailReporter').addEventListener('change', updateConfirmation);
-                document.getElementById('emailMaintenance').addEventListener('change', updateConfirmation);
-            }
+            // Email option listeners
+            document.getElementById('emailUnits').addEventListener('change', updateEstimatedEmailCount);
+            document.getElementById('emailReporter').addEventListener('change', updateEstimatedEmailCount);
+            document.getElementById('emailMaintenance').addEventListener('change', updateEstimatedEmailCount);
 
             // Form submit
             document.getElementById('bulkForm').addEventListener('submit', handleSubmit);
+
+            // Submission type radio buttons
+            const radioButtons = document.querySelectorAll('input[name="submissionType"]');
+            radioButtons.forEach(radio => {
+                radio.addEventListener('change', toggleSubmissionType);
+            });
         }
 
         function filterUnits() {
             const searchTerm = document.getElementById('unitSearch').value.toLowerCase();
-            const zoneFilter = document.getElementById('zoneFilter').value;
             
             const checkboxes = document.querySelectorAll('.unit-checkbox');
             checkboxes.forEach(checkbox => {
                 const unitNumber = checkbox.querySelector('input').value;
                 const matchesSearch = unitNumber.toLowerCase().includes(searchTerm);
-                const matchesZone = !zoneFilter || unitZoneMap[unitNumber] === zoneFilter;
                 
-                checkbox.style.display = (matchesSearch && matchesZone) ? 'flex' : 'none';
+                checkbox.style.display = matchesSearch ? 'flex' : 'none';
             });
         }
 
@@ -1111,6 +1161,9 @@
             // Update email recipient count
             document.getElementById('unitEmailCount').textContent = count;
             
+            // Update email estimates
+            updateEstimatedEmailCount();
+            
             updateConfirmation();
         }
 
@@ -1118,29 +1171,201 @@
             const count = document.querySelectorAll('.unit-checkbox input[type="checkbox"]:checked').length;
             const desc = document.getElementById('problemDescription').value || '-';
             const cat = document.getElementById('category').value || '-';
+            const subCat = document.getElementById('subCategory').value || '-';
+            const submissionType = document.querySelector('input[name="submissionType"]:checked').value;
+            const isProgramMode = submissionType === 'program';
             
             document.getElementById('confirmUnits').textContent = count;
             document.getElementById('confirmDesc').textContent = desc.substring(0, 100) + (desc.length > 100 ? '...' : '');
             document.getElementById('confirmCat').textContent = cat;
+            document.getElementById('confirmSubCat').textContent = subCat || 'None';
+            document.getElementById('confirmSubmissionType').textContent = isProgramMode ? 'Program' : 'Problem';
             
-            if (!isZoneRep) {
-                document.getElementById('confirmStatus').textContent = document.getElementById('problemStatus').value || 'Reported';
-                document.getElementById('confirmPriority').textContent = document.getElementById('problemPriority').value || 'Medium';
-                document.getElementById('confirmAssigned').textContent = document.getElementById('assignedTo').value || 'Not assigned';
+            if (isProgramMode && window.unitPriorities) {
+                const priorityCounts = { High: 0, Medium: 0, Low: 0 };
+                Object.values(window.unitPriorities).forEach(priority => {
+                    priorityCounts[priority] = (priorityCounts[priority] || 0) + 1;
+                });
                 
-                // Update email confirmation
-                const emailOptions = [];
-                if (document.getElementById('emailUnits').checked) {
-                    emailOptions.push(`Unit owners (${count})`);
-                }
-                if (document.getElementById('emailReporter').checked) {
-                    emailOptions.push('Reporter (1)');
-                }
-                if (document.getElementById('emailMaintenance').checked) {
-                    emailOptions.push('Maintenance team (1 summary)');
-                }
-                document.getElementById('confirmEmails').textContent = emailOptions.length > 0 ? emailOptions.join(', ') : 'None';
+                const prioritySummary = [];
+                if (priorityCounts.High) prioritySummary.push(`High: ${priorityCounts.High}`);
+                if (priorityCounts.Medium) prioritySummary.push(`Medium: ${priorityCounts.Medium}`);
+                if (priorityCounts.Low) prioritySummary.push(`Low: ${priorityCounts.Low}`);
+                
+                document.getElementById('confirmPriority').textContent = prioritySummary.join(', ') || 'Not set';
+            } else {
+                document.getElementById('confirmPriority').textContent = document.getElementById('problemPriority').value || 'Medium';
             }
+            
+            document.getElementById('confirmStatus').textContent = document.getElementById('problemStatus').value || 'Reported';
+            document.getElementById('confirmAssigned').textContent = document.getElementById('assignedTo').value || 'Not assigned';
+            
+            // Update email confirmation
+            const emailOptions = [];
+            if (document.getElementById('emailUnits').checked) {
+                emailOptions.push(`Unit owners (${count})`);
+            }
+            if (document.getElementById('emailReporter').checked) {
+                emailOptions.push('Reporter (1)');
+            }
+            if (document.getElementById('emailMaintenance').checked) {
+                emailOptions.push('Maintenance team (1 summary)');
+            }
+            document.getElementById('confirmEmails').textContent = emailOptions.length > 0 ? emailOptions.join(', ') : 'None';
+        }
+
+        // Email Quota Functions
+        async function loadEmailQuotaInfo() {
+            try {
+                const usage = await callScript({ action: 'getEmailUsage' });
+                
+                document.getElementById('emailUsageCount').textContent = usage.total;
+                document.getElementById('emailRemainingCount').textContent = usage.remaining;
+                
+                const warningDiv = document.getElementById('emailQuotaWarning');
+                
+                // Show/hide warnings based on usage
+                if (usage.remaining < 50) {
+                    warningDiv.style.display = 'block';
+                    warningDiv.style.background = '#fef2f2';
+                    warningDiv.style.border = '1px solid #fecaca';
+                    warningDiv.style.color = '#dc2626';
+                    warningDiv.innerHTML = '⚠️ <strong>Low Quota:</strong> Only ' + usage.remaining + ' emails remaining in 24h period';
+                } else if (usage.remaining < 100) {
+                    warningDiv.style.display = 'block';
+                    warningDiv.style.background = '#fffbeb';
+                    warningDiv.style.border = '1px solid #fed7aa';
+                    warningDiv.style.color = '#ea580c';
+                    warningDiv.innerHTML = '⚠️ <strong>Moderate Usage:</strong> ' + usage.remaining + ' emails remaining';
+                } else {
+                    warningDiv.style.display = 'none';
+                }
+                
+            } catch (error) {
+                console.error('Error loading email quota:', error);
+            }
+        }
+
+        function updateEstimatedEmailCount() {
+            const selectedUnits = getSelectedUnits().length;
+            const emailUnits = document.getElementById('emailUnits').checked;
+            const emailReporter = document.getElementById('emailReporter').checked;
+            const emailMaintenance = document.getElementById('emailMaintenance').checked;
+            
+            let estimatedCount = 0;
+            
+            if (emailUnits) estimatedCount += selectedUnits;
+            if (emailReporter) estimatedCount += 1;
+            if (emailMaintenance) estimatedCount += 1;
+            
+            document.getElementById('estimatedEmails').textContent = estimatedCount;
+            
+            // Update confirmation with email count
+            const usage = parseInt(document.getElementById('emailRemainingCount').textContent) || 300;
+            if (estimatedCount > usage) {
+                document.getElementById('emailQuotaWarning').innerHTML = 
+                    `❌ <strong>Over Quota:</strong> This will exceed your remaining quota by ${estimatedCount - usage} emails`;
+                document.getElementById('emailQuotaWarning').style.display = 'block';
+            }
+        }
+
+        // Program Mode Functions
+        function toggleSubmissionType() {
+            const submissionType = document.querySelector('input[name="submissionType"]:checked').value;
+            const isProgramMode = submissionType === 'program';
+            
+            const programEditor = document.getElementById('programModeEditor');
+            programEditor.style.display = isProgramMode ? 'block' : 'none';
+            
+            // Hide the main priority field in Program mode
+            const priorityField = document.getElementById('problemPriority');
+            if (priorityField) {
+                const priorityContainer = priorityField.closest('.form-group');
+                if (priorityContainer) {
+                    priorityContainer.style.display = isProgramMode ? 'none' : 'block';
+                }
+            }
+            
+            if (isProgramMode) {
+                initializeProgramMode();
+            } else {
+                // Clear any stored priorities when switching back to Problem mode
+                window.unitPriorities = {};
+            }
+            
+            updateConfirmation();
+        }
+
+        function initializeProgramMode() {
+            const selectedUnits = getSelectedUnits();
+            const priorityGrid = document.getElementById('unitPriorityGrid');
+            
+            priorityGrid.innerHTML = '';
+            
+            if (selectedUnits.length === 0) {
+                priorityGrid.innerHTML = '<div style="text-align: center; color: #64748b; padding: 20px;">Select units above to set individual priorities</div>';
+                return;
+            }
+            
+            selectedUnits.forEach(unit => {
+                const unitPriorityDiv = document.createElement('div');
+                unitPriorityDiv.style.padding = '12px';
+                unitPriorityDiv.style.background = 'white';
+                unitPriorityDiv.style.border = '2px solid #e2e8f0';
+                unitPriorityDiv.style.borderRadius = '8px';
+                
+                // Get existing priority or default to Medium
+                const existingPriority = window.unitPriorities ? window.unitPriorities[unit] : 'Medium';
+                
+                unitPriorityDiv.innerHTML = `
+                    <div style="font-weight: 600; margin-bottom: 8px; color: #1e293b;">${unit}</div>
+                    <select class="unit-priority-select" data-unit="${unit}" 
+                            onchange="updateUnitPriority('${unit}', this.value)"
+                            style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white;">
+                        <option value="Low" ${existingPriority === 'Low' ? 'selected' : ''}>Low Priority</option>
+                        <option value="Medium" ${existingPriority === 'Medium' ? 'selected' : ''}>Medium Priority</option>
+                        <option value="High" ${existingPriority === 'High' ? 'selected' : ''}>High Priority</option>
+                    </select>
+                `;
+                priorityGrid.appendChild(unitPriorityDiv);
+                
+                // Initialize the priority in our storage
+                if (!window.unitPriorities) {
+                    window.unitPriorities = {};
+                }
+                window.unitPriorities[unit] = existingPriority;
+            });
+        }
+
+        function getSelectedUnits() {
+            return Array.from(document.querySelectorAll('.unit-checkbox input[type="checkbox"]:checked'))
+                .map(cb => cb.value);
+        }
+
+        function updateUnitPriority(unit, priority) {
+            if (!window.unitPriorities) {
+                window.unitPriorities = {};
+            }
+            window.unitPriorities[unit] = priority;
+            console.log(`Set ${unit} priority to: ${priority}`);
+            updateConfirmation();
+        }
+
+        function applyPriorityToAll(priority) {
+            const selects = document.querySelectorAll('.unit-priority-select');
+            selects.forEach(select => {
+                select.value = priority;
+                const unit = select.dataset.unit;
+                updateUnitPriority(unit, priority);
+            });
+            
+            // Show confirmation
+            const priorityNames = {
+                'High': 'High',
+                'Medium': 'Medium', 
+                'Low': 'Low'
+            };
+            alert(`All units set to ${priorityNames[priority]} priority`);
         }
 
         async function handleSubmit(e) {
@@ -1153,8 +1378,7 @@
             const result = document.getElementById('result');
             
             // Gather selected units
-            const selectedUnits = Array.from(document.querySelectorAll('.unit-checkbox input[type="checkbox"]:checked'))
-                .map(cb => cb.value);
+            const selectedUnits = getSelectedUnits();
             
             if (selectedUnits.length === 0) {
                 alert('Please select at least one unit');
@@ -1172,8 +1396,31 @@
                 return;
             }
 
-            // Confirm submission
-            if (!confirm(`Create ${selectedUnits.length} problem reports with 2.5 second delays between each submission?`)) {
+            // Get submission type
+            const submissionType = document.querySelector('input[name="submissionType"]:checked').value;
+            const isProgramMode = submissionType === 'program';
+            
+            // For Program mode, ensure priorities are set
+            if (isProgramMode) {
+                if (!window.unitPriorities || Object.keys(window.unitPriorities).length === 0) {
+                    alert('Please set priorities for all units in the Program');
+                    return;
+                }
+                
+                // Verify all selected units have priorities
+                const missingPriorities = selectedUnits.filter(unit => !window.unitPriorities[unit]);
+                if (missingPriorities.length > 0) {
+                    alert(`Please set priorities for: ${missingPriorities.join(', ')}`);
+                    return;
+                }
+            }
+            
+            // Confirm submission with appropriate message
+            const confirmMessage = isProgramMode 
+                ? `Create ${selectedUnits.length} program reports with individual priorities?` 
+                : `Create ${selectedUnits.length} problem reports with same settings?`;
+            
+            if (!confirm(confirmMessage)) {
                 return;
             }
             
@@ -1184,23 +1431,35 @@
             
             // Prepare data
             const formData = {
-                action: 'bulkSubmitWithDelays', // New action for enhanced backend
+                action: 'bulkSubmitWithDelays',
                 reportedBy: document.getElementById('reportedBy').value,
                 problemDescription: document.getElementById('problemDescription').value,
                 category: document.getElementById('category').value,
+                subCategory: document.getElementById('subCategory').value || '',
                 units: JSON.stringify(selectedUnits),
-                isZoneRep: isZoneRep
+                submissionType: submissionType
             };
             
-            if (!isZoneRep) {
-                formData.problemStatus = document.getElementById('problemStatus').value || 'Reported';
-                formData.problemPriority = document.getElementById('problemPriority').value || 'Medium';
-                formData.assignedTo = document.getElementById('assignedTo').value || '';
-                formData.emailUnits = document.getElementById('emailUnits').checked;
-                formData.emailReporter = document.getElementById('emailReporter').checked;
-                formData.emailMaintenance = document.getElementById('emailMaintenance').checked;
-                formData.consolidateEmails = true; // New flag for consolidated emails
+            // Add unitPriorities for Program mode
+            if (isProgramMode && window.unitPriorities) {
+                formData.unitPriorities = JSON.stringify(window.unitPriorities);
+                console.log('✅ Sending unitPriorities to backend:', window.unitPriorities);
             }
+            
+            // Admin fields
+            formData.problemStatus = document.getElementById('problemStatus').value || 'Reported';
+            if (!isProgramMode) {
+                formData.problemPriority = document.getElementById('problemPriority').value || 'Medium';
+            }
+            formData.assignedTo = document.getElementById('assignedTo').value || '';
+            formData.emailUnits = document.getElementById('emailUnits').checked;
+            formData.emailReporter = document.getElementById('emailReporter').checked;
+            formData.emailMaintenance = document.getElementById('emailMaintenance').checked;
+            formData.consolidateEmails = true;
+            
+            // DEBUG: Log what we're sending
+            console.log('=== FINAL FORM DATA SENT TO BACKEND ===');
+            console.log('FormData:', formData);
             
             try {
                 const response = await callScript(formData);
@@ -1214,7 +1473,7 @@
                         .join('<br>');
                     
                     result.innerHTML = `
-                        <strong>Success! ${response.count} problem reports created</strong><br><br>
+                        <strong>Success! ${response.count} ${isProgramMode ? 'program' : 'problem'} reports created</strong><br><br>
                         ${response.message}<br><br>
                         <div style="margin-top: 16px; font-size: 14px;">
                             <strong>Tracking Numbers:</strong><br>
@@ -1222,13 +1481,15 @@
                         </div>
                         <div style="margin-top: 16px; font-size: 14px;">
                             ${response.emailResults?.summary ? `<strong>Email Summary:</strong> ${response.emailResults.summary}<br>` : ''}
-                            Each report includes proper Activity Log entries and Last Updated timestamps.
+                            All reports include complete timeline history.
                         </div>
                     `;
                     
-                    // Reset form
+                    // Reset form and clear program data
                     document.getElementById('bulkForm').reset();
                     deselectAllUnits();
+                    window.unitPriorities = {};
+                    
                 } else {
                     result.className = 'result error';
                     result.innerHTML = `
@@ -1281,7 +1542,8 @@
             });
         }
 
-        console.log('🚀 Bulk Submission Form V1.3 - Fixed Version Loaded');
+        console.log('🚀 Bulk Submission Form V1.3 - Cleaned version loaded');
+
     </script>
 </body>
 </html>
