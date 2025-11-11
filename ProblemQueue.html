@@ -344,6 +344,152 @@ QUEUE LOGIC:
             opacity: 0.5;
         }
 
+        /* QUEUE CARDS - MOBILE FIRST */
+        .queue-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .queue-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .queue-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .queue-card.in-progress {
+            background: #f1f5f9;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .queue-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .queue-position-badge {
+            background: #1e40af;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .queue-card-title {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .queue-pid {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e293b;
+            font-family: monospace;
+        }
+
+        .queue-unit {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .queue-card-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .queue-days-large {
+            background: #f1f5f9;
+            color: #475569;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 20px;
+            font-weight: 700;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        .queue-days-label {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+
+        /* BADGES */
+        .priority-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .priority-urgent {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .priority-high {
+            background: #ffedd5;
+            color: #ea580c;
+        }
+
+        .priority-medium {
+            background: #cffafe;
+            color: #0891b2;
+        }
+
+        .priority-low {
+            background: #d9f99d;
+            color: #65a30d;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-waiting {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-active {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-in-progress {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
         /* INFO BOX */
         .info-box {
             background: #dbeafe;
@@ -624,23 +770,11 @@ QUEUE LOGIC:
                 <p>All problems have been completed or there are no active problems matching your filter.</p>
             </div>
 
-            <!-- QUEUE TABLE -->
-            <div id="queueTableContainer" style="display: none;">
-                <table class="queue-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 50px;">Pos</th>
-                            <th style="width: 100px;">PID</th>
-                            <th style="width: 120px;">Priority</th>
-                            <th style="width: 80px;">Days</th>
-                            <th style="width: 100px;">Status</th>
-                            <th style="width: 80px;">Unit</th>
-                        </tr>
-                    </thead>
-                    <tbody id="queueTableBody">
-                        <!-- Populated by JavaScript -->
-                    </tbody>
-                </table>
+            <!-- QUEUE DISPLAY -->
+            <div id="queueCardsContainer" style="display: none;">
+                <div id="queueCards" class="queue-cards">
+                    <!-- Populated by JavaScript -->
+                </div>
             </div>
         </div>
     </div>
@@ -871,8 +1005,8 @@ QUEUE LOGIC:
                 filteredProblems = problems.filter(p => p.problemPriority === 'High');
             }
             
-            const tbody = document.getElementById('queueTableBody');
-            tbody.innerHTML = '';
+            const container = document.getElementById('queueCards');
+            container.innerHTML = '';
             
             if (filteredProblems.length === 0) {
                 showEmpty();
@@ -880,63 +1014,48 @@ QUEUE LOGIC:
             }
             
             filteredProblems.forEach(problem => {
-                const row = createQueueRow(problem);
-                tbody.appendChild(row);
+                const card = createQueueCard(problem);
+                container.appendChild(card);
             });
             
-            showTable();
+            showCards();
         }
 
-        function createQueueRow(problem) {
-            const row = document.createElement('tr');
-            row.onclick = () => showProblemModal(problem);
+        function createQueueCard(problem) {
+            const card = document.createElement('div');
+            card.className = 'queue-card';
+            card.onclick = () => showProblemModal(problem);
             
-            // Make In Progress problems more visually distinct (multi-visit work)
+            // Mark In Progress cards
             const isInProgress = (problem.problemStatus || '').toLowerCase().includes('progress') || 
                                 (problem.problemStatus || '').toLowerCase().includes('active');
             if (isInProgress) {
-                row.style.background = '#f1f5f9';
-                row.style.borderLeft = '4px solid #3b82f6';
+                card.classList.add('in-progress');
             }
             
-            // Position
-            const posCell = document.createElement('td');
-            posCell.innerHTML = `<div class="queue-position">${problem.queuePosition}</div>`;
-            row.appendChild(posCell);
-            
-            // PID
-            const pidCell = document.createElement('td');
-            const friendlyPID = getFriendlyPID(problem.internalId || problem.problemId);
-            pidCell.innerHTML = `<strong>${friendlyPID}</strong>`;
-            pidCell.style.fontFamily = 'monospace';
-            row.appendChild(pidCell);
-            
-            // Priority
-            const priorityCell = document.createElement('td');
             const priorityClass = getPriorityClass(problem.problemPriority);
-            priorityCell.innerHTML = `<span class="priority-badge ${priorityClass}">${problem.problemPriority || 'Not Set'}</span>`;
-            row.appendChild(priorityCell);
-            
-            // Days in Queue
-            const daysCell = document.createElement('td');
-            daysCell.innerHTML = `<span class="days-badge">${problem.daysInQueue}</span>`;
-            daysCell.style.textAlign = 'center';
-            row.appendChild(daysCell);
-            
-            // Status
-            const statusCell = document.createElement('td');
             const statusClass = getStatusClass(problem.problemStatus);
-            statusCell.innerHTML = `<span class="status-badge ${statusClass}">${problem.problemStatus || 'Reported'}</span>`;
-            row.appendChild(statusCell);
+            const friendlyPID = getFriendlyPID(problem.internalId || problem.problemId);
             
-            // Unit
-            const unitCell = document.createElement('td');
-            unitCell.textContent = problem.unitNumber || '-';
-            unitCell.style.fontWeight = '600';
-            unitCell.style.textAlign = 'center';
-            row.appendChild(unitCell);
+            card.innerHTML = `
+                <div class="queue-card-header">
+                    <div class="queue-position-badge">${problem.queuePosition}</div>
+                    <div class="queue-card-title">
+                        <div class="queue-pid">${friendlyPID}</div>
+                        <div class="queue-unit">Unit ${problem.unitNumber || '-'}</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div class="queue-days-large">${problem.daysInQueue}</div>
+                        <div class="queue-days-label">days</div>
+                    </div>
+                </div>
+                <div class="queue-card-badges">
+                    <span class="priority-badge ${priorityClass}">${problem.problemPriority || 'Not Set'}</span>
+                    <span class="status-badge ${statusClass}">${problem.problemStatus || 'Reported'}</span>
+                </div>
+            `;
             
-            return row;
+            return card;
         }
 
         function getFriendlyPID(internalId) {
@@ -1023,14 +1142,14 @@ QUEUE LOGIC:
             document.getElementById('loadingState').style.display = 'block';
             document.getElementById('errorState').style.display = 'none';
             document.getElementById('emptyState').style.display = 'none';
-            document.getElementById('queueTableContainer').style.display = 'none';
+            document.getElementById('queueCardsContainer').style.display = 'none';
         }
 
         function showError(message) {
             document.getElementById('loadingState').style.display = 'none';
             document.getElementById('errorState').style.display = 'block';
             document.getElementById('emptyState').style.display = 'none';
-            document.getElementById('queueTableContainer').style.display = 'none';
+            document.getElementById('queueCardsContainer').style.display = 'none';
             document.getElementById('errorMessage').textContent = message;
         }
 
@@ -1038,14 +1157,14 @@ QUEUE LOGIC:
             document.getElementById('loadingState').style.display = 'none';
             document.getElementById('errorState').style.display = 'none';
             document.getElementById('emptyState').style.display = 'block';
-            document.getElementById('queueTableContainer').style.display = 'none';
+            document.getElementById('queueCardsContainer').style.display = 'none';
         }
 
-        function showTable() {
+        function showCards() {
             document.getElementById('loadingState').style.display = 'none';
             document.getElementById('errorState').style.display = 'none';
             document.getElementById('emptyState').style.display = 'none';
-            document.getElementById('queueTableContainer').style.display = 'block';
+            document.getElementById('queueCardsContainer').style.display = 'block';
         }
 
         // =====================================================================
