@@ -648,6 +648,76 @@
     }
 }
 
+.queue-info-banner {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.queue-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.queue-stat-label {
+    font-size: 0.8rem;
+    opacity: 0.9;
+    font-weight: 500;
+}
+
+.queue-stat-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.queue-link {
+    background: white;
+    color: #059669;
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.queue-link:hover {
+    background: #f0fdf4;
+    transform: translateX(3px);
+}
+
+@media (max-width: 768px) {
+    .queue-info-banner {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .queue-stat {
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 5px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.2);
+    }
+    
+    .queue-stat:last-of-type {
+        border-bottom: none;
+    }
+    
+    .queue-link {
+        text-align: center;
+        margin-top: 5px;
+    }
+}
+
     </style>
 </head>
 <body>
@@ -940,8 +1010,10 @@ window.onclick = (e) => {
         }
 
         // Display results
-        function displayResults(problems, unitNumber) {
+        async function displayResults(problems, unitNumber) {
             hideLoading();
+	// Enrich with queue positions
+           problems = await enrichWithQueuePosition(problems);
             
             const resultsSection = document.getElementById('resultsSection');
             const resultsCount = document.getElementById('resultsCount');
@@ -986,8 +1058,9 @@ window.onclick = (e) => {
             resultsSection.scrollIntoView({ behavior: 'smooth' });
         }
 
+       
         // Create request card
-        // Create request card
+
 function createRequestCard(problem) {
     const card = document.createElement('div');
     card.className = 'request-card';
@@ -1017,6 +1090,33 @@ function createRequestCard(problem) {
                 ${problem.problemPriority ? `<span class="priority-badge ${priorityClass}">${problem.problemPriority}</span>` : ''}
             </div>
         </div>
+
+${(() => {
+            const isActive = problem.problemStatus !== 'Completed' && 
+                           problem.problemStatus !== 'Cancelled' && 
+                           problem.problemStatus !== 'Closed';
+            const hasQueueInfo = problem.queueInfo && isActive;
+            
+            if (hasQueueInfo) {
+                return `
+                <div class="queue-info-banner">
+                    <div class="queue-stat">
+                        <span class="queue-stat-label">📊 Queue Position</span>
+                        <span class="queue-stat-value">#${problem.queueInfo.position} of ${problem.queueInfo.totalInQueue}</span>
+                    </div>
+                    <div class="queue-stat">
+                        <span class="queue-stat-label">📅 Days Waiting</span>
+                        <span class="queue-stat-value">${problem.queueInfo.daysInQueue} days</span>
+                    </div>
+                    <a href="ProblemQueue.html?unit=${problem.unitNumber}" class="queue-link" onclick="event.stopPropagation();">
+                        View Full Queue →
+                    </a>
+                </div>`;
+            }
+            return '';
+        })()}
+
+
         
         <div class="request-description">
             ${problem.problemDescription || 'No description provided'}
@@ -1124,6 +1224,90 @@ function createRequestCard(problem) {
                 return 'status-reported';
             }
         }
+
+
+async function enrichWithQueuePosition(problems) {
+    try {
+        // Fetch all problems to calculate queue positions
+        const response = await makeAPIRequest('getFaultLogData');
+        
+        if (!response.success || !response.data) {
+            console.warn('Could not fetch queue data for position calculation');
+            return problems;
+        }
+        
+        const allProblems = response.data;
+        
+        // Filter active problems only (same logic as ProblemQueue)
+        const activeProblems = allProblems.filter(problem => {
+            const status = (problem.problemStatus || '').toLowerCase();
+            return status !== 'completed' && 
+                   status !== 'cancelled' && 
+                   status !== 'closed' &&
+                   !status.includes('program') &&
+                   !status.includes('project') &&
+                   status !== '';
+        });
+        
+        // Calculate days in queue
+        activeProblems.forEach(problem => {
+            const dateReported = problem.dateReported || problem.timestamp;
+            if (dateReported) {
+                const reported = new Date(dateReported);
+                const today = new Date();
+                problem.daysInQueue = Math.floor((today - reported) / (1000 * 60 * 60 * 24));
+            } else {
+                problem.daysInQueue = 0;
+            }
+        });
+        
+        // Sort by priority then date (same as ProblemQueue)
+        const PRIORITY_ORDER = { 'Urgent': 1, 'High': 2, 'Medium': 3, 'Low': 4, 'Not Set': 5 };
+        
+        activeProblems.sort((a, b) => {
+            const priorityA = PRIORITY_ORDER[a.problemPriority] || 999;
+            const priorityB = PRIORITY_ORDER[b.problemPriority] || 999;
+            
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+            
+            const dateA = new Date(a.dateReported || a.timestamp);
+            const dateB = new Date(b.dateReported || b.timestamp);
+            return dateA - dateB;
+        });
+        
+        // Create queue position map
+        const queueMap = {};
+        activeProblems.forEach((problem, index) => {
+            const pid = problem.internalId || problem.problemId;
+            if (pid) {
+                queueMap[pid] = {
+                    position: index + 1,
+                    totalInQueue: activeProblems.length,
+                    daysInQueue: problem.daysInQueue
+                };
+            }
+        });
+        
+        // Enrich resident's problems with queue info
+        problems.forEach(problem => {
+            const pid = problem.internalId || problem.problemId;
+            if (pid && queueMap[pid]) {
+                problem.queueInfo = queueMap[pid];
+            }
+        });
+        
+        return problems;
+        
+    } catch (error) {
+        console.error('Error enriching with queue positions:', error);
+        return problems;
+    }
+}
+
+
+
 
         function getPriorityClass(priority) {
             if (!priority) return 'priority-medium';
