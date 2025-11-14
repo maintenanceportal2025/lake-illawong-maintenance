@@ -2595,7 +2595,10 @@ console.log('🚀 loadProblems() FUNCTION STARTED'); // ADD THIS LINE
 function populateContactDetails(problem) {
 
 console.log('🔍 DEBUG: Full problem object:', problem);
-    
+    console.log('🔍 DEBUG: photoUrls value:', problem.photoUrls);
+    console.log('🔍 DEBUG: photoUrls type:', typeof problem.photoUrls);
+    console.log('🔍 DEBUG: photoUrls exists?', problem.photoUrls ? 'YES' : 'NO');
+    console.log('🔍 DEBUG: photoUrls trimmed:', problem.photoUrls ? problem.photoUrls.trim() : 'N/A');
     
     const container = document.getElementById('contactDetailsContent');
     const reportedBy = problem.reportedBy || '';
@@ -2716,60 +2719,67 @@ async function saveDetailsFromPage(e) {
         };
         
         // ============================================================
-        // 🆕 SOFT VALIDATION: Prompt for closing comments on completion
-        // ============================================================
-        if (updateData.problemStatus === 'Completed') {
-            const commentsField = document.getElementById('detailComments');
-            const comments = commentsField.value.trim();
-            const existingComments = currentProblem.comments || '';
-            
-            // Check if new closing comments were added
-            const hasNewComments = comments.length > existingComments.length;
-            const hasMinimumComments = comments.length >= 15;
-            
-            if (!hasNewComments || !hasMinimumComments) {
-                // Highlight the comments field
-                commentsField.style.border = '3px solid #f59e0b';
-                commentsField.style.backgroundColor = '#fffbeb';
-                
-                const shouldAddComments = confirm(
-                    '⚠️ CLOSING NOTES RECOMMENDED\n\n' +
-                    'You\'re marking this problem as Completed.\n\n' +
-                    'Best Practice - Add brief closing notes:\n' +
-                    '• What was done to fix the problem\n' +
-                    '• Parts or materials used\n' +
-                    '• Time spent or follow-up needed\n\n' +
-                    'This helps with:\n' +
-                    '✓ Future reference and warranty tracking\n' +
-                    '✓ Team knowledge sharing\n' +
-                    '✓ Complete audit trail\n\n' +
-                    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-                    'Click OK to add notes (recommended)\n' +
-                    'Click Cancel to complete without notes'
-                );
-                
-                if (shouldAddComments) {
-                    // User chose to add comments - stop save and focus field
-                    commentsField.style.border = '';
-                    commentsField.style.backgroundColor = '';
-                    commentsField.focus();
-                    commentsField.setSelectionRange(comments.length, comments.length);
-                    
-                    // Re-enable save button
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = originalText;
-                    return; // Stop the save process
-                }
-                
-                // User chose to proceed without comments - reset styling
-                commentsField.style.border = '';
-                commentsField.style.backgroundColor = '';
-            }
-        }
-        // ============================================================
-        // END SOFT VALIDATION
-        // ============================================================
+// 🆕 IMPROVED SOFT VALIDATION: Prompt for closing comments on completion
+// ============================================================
+if (updateData.problemStatus === 'Completed') {
+    const commentsField = document.getElementById('detailComments');
+    const comments = commentsField.value.trim();
+    const existingComments = currentProblem.comments || '';
+    
+    // Improved logic: Check if user already added meaningful comments
+    const hasMeaningfulComments = comments.length > 0 && comments !== existingComments;
+    
+    if (!hasMeaningfulComments) {
+        // Highlight the comments field to draw attention
+        commentsField.style.border = '3px solid #f59e0b';
+        commentsField.style.backgroundColor = '#fffbeb';
         
+        const shouldAddComments = confirm(
+            '⚠️ CLOSING NOTES RECOMMENDED\n\n' +
+            'You\'re marking this problem as Completed.\n\n' +
+            'Best Practice - Add brief closing notes:\n' +
+            '• What was done to fix the problem\n' +
+            '• Parts or materials used\n' +
+            '• Time spent or follow-up needed\n' +
+            '\n' +
+            'This helps with:\n' +
+            '✓ Future reference and warranty tracking\n' +
+            '✓ Team knowledge sharing\n' +
+            '✓ Complete audit trail\n' +
+            '\n' +
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
+            'Click OK to add notes (recommended)\n' +
+            'Click Cancel to complete without notes'
+        );
+        
+        if (shouldAddComments) {
+            // User chose to add comments - stop save, focus field, but don't validate length
+            commentsField.style.border = '2px solid #2563eb';
+            commentsField.style.backgroundColor = '#f0f9ff';
+            commentsField.focus();
+            commentsField.setSelectionRange(comments.length, comments.length);
+            
+            // Re-enable save button but don't block future saves
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalText;
+            
+            // Show helpful message
+            updateDataStatus('💡 Please add your closing notes, then save again', 'loading');
+            return; // Stop THIS save attempt, allow user to add comments
+        } else {
+            // User chose to proceed without comments - reset styling and continue with save
+            commentsField.style.border = '';
+            commentsField.style.backgroundColor = '';
+            console.log('✅ User opted to complete without additional comments');
+        }
+    } else {
+        // User already added meaningful comments - proceed with save
+        console.log('✅ Closing notes provided, proceeding with completion');
+    }
+}
+// ============================================================
+// END IMPROVED SOFT VALIDATION
+// ============================================================
         const response = await makeRequest('updateProblem', updateData);
         
         if (response.success) {
@@ -2865,22 +2875,34 @@ async function saveDetailsFromPage(e) {
             const parts = internalId.split('-');
             return parts.length === 2 ? `PID ${parts[1]}` : `PID ${internalId}`;
         }
+
+
+
         
         function formatDate(dateString) {
-            if (!dateString) return 'No Date';
-            try {
-                const date = new Date(dateString);
-                if (isNaN(date.getTime())) return 'Invalid Date';
-                return date.toLocaleDateString('en-AU', {
-                    day: '2-digit',
-                    month: '2-digit', 
-                    year: 'numeric'
-                });
-            } catch (error) {
-                console.error('Date formatting error:', error);
-                return 'Date Error';
-            }
-        }
+    if (!dateString) return 'No Date';
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'Invalid Date';
+        
+        // Handle Zulu time (UTC) and convert to local Australian time
+        const options = {
+            timeZone: 'Australia/Sydney',
+            day: '2-digit',
+            month: '2-digit', 
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        };
+        
+        return date.toLocaleString('en-AU', options);
+    } catch (error) {
+        console.error('Date formatting error:', error);
+        // Fallback: basic date format without timezone
+        return new Date(dateString).toLocaleDateString('en-AU');
+    }
+}
         
         async function handleLogin(e) {
             e.preventDefault();
@@ -3080,8 +3102,11 @@ const timelineItem = createTimelineItem(activity, index === 0);
 
         
 function createTimelineItem(activity, isLatest = false) {
+    // FIX: Move timestamp creation to the top
     const timestamp = new Date(activity.timestamp);
     const timeAgo = getTimeAgo(timestamp);
+    
+    // Keep the original format for now - just ensure timestamp is defined first
     const formattedTime = timestamp.toLocaleString('en-AU', {
         day: '2-digit',
         month: '2-digit', 
