@@ -1746,32 +1746,35 @@ async function getMaintenancePassword() {
         }
         
         async function initializeSystem() {
-            try {
-                updateLoadingPhase('Loading dropdown options...', 20, 'Fetching categories, priorities, and assignments');
-                await loadDropdownOptions();
-                
-                updateLoadingPhase('Loading problems data...', 60, 'Retrieving maintenance requests from database');
-                await loadProblems();
-                
-                updateLoadingPhase('Finalizing display...', 90, 'Preparing user interface');
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                updateLoadingPhase('Complete!', 100, 'System ready for use');
-                updateDataStatus(`${problems.length} problems loaded`, 'success');
-                console.log('✅ System initialization complete');
-                
-                // TRIGGER PENDING SEARCH APPLICATION AFTER FULL INITIALIZATION
-                if (pendingSearchParam && isAuthenticated) {
-                    console.log('🔍 System ready - applying pending search:', pendingSearchParam);
-                    applyPendingSearch();
-                }
-                
-            } catch (error) {
-                console.error('❌ Error initializing system:', error);
-                updateDataStatus('Error loading problems', 'error');
-                showEmptyState('Failed to load problems. Please check your connection.');
-            }
+    try {
+        updateDataStatus('Starting system initialization...', 'loading');
+        
+        // Sequential loading to avoid rate limits
+        updateLoadingPhase('Loading dropdown options...', 20, 'Fetching categories and assignments');
+        await loadDropdownOptions();
+        
+        updateLoadingPhase('Loading problems data...', 60, 'Retrieving maintenance requests');
+        await loadProblems();
+        
+        updateLoadingPhase('Finalizing display...', 90, 'Preparing user interface');
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Brief pause
+        
+        updateLoadingPhase('Complete!', 100, 'System ready for use');
+        updateDataStatus(`${problems.length} problems loaded successfully`, 'success');
+        console.log('✅ System initialization complete');
+        
+        // Apply pending search after full initialization
+        if (pendingSearchParam && isAuthenticated) {
+            console.log('🔍 System ready - applying pending search:', pendingSearchParam);
+            applyPendingSearch();
         }
+        
+    } catch (error) {
+        console.error('❌ Error initializing system:', error);
+        updateDataStatus(`Initialization failed: ${error.message}`, 'error');
+        showEmptyState('Failed to load system data. Please refresh the page.');
+    }
+}
         
         function updateLoadingPhase(phase, progress, detail) {
             const phaseElement = document.getElementById('loadingPhase');
@@ -1917,28 +1920,30 @@ if (activityReportBtn) {
         }
         
         async function loadDropdownOptions() {
-            try {
-                console.log('🎛️ Loading dropdown options from Categories TAB...');
-                
-                const response = await makeRequest('getDropdownOptions');
-                
-                if (response.success) {
-                    dynamicDropdownData = response.data;
-                    console.log('✅ Dropdown data loaded:', dynamicDropdownData);
-                    updateAllDropdowns();
-                    return response.data;
-                } else {
-                    console.error('❌ Failed to load dropdown data:', response.error);
-                    throw new Error(response.error || 'Failed to load dropdown options');
-                }
-                
-            } catch (error) {
-                console.error('❌ Error loading dropdown options:', error);
-                console.log('⚠️ Using fallback dropdown values');
-                updateAllDropdowns();
-                throw error;
-            }
+    try {
+        updateConnectionStatus('Loading dropdown options...', 'loading');
+        console.log('🎛️ Loading dropdown options from Categories TAB...');
+        
+        const response = await makeRequest('getDropdownOptions');
+        
+        if (response.success) {
+            dynamicDropdownData = response.data;
+            console.log('✅ Dropdown data loaded:', dynamicDropdownData);
+            updateAllDropdowns();
+            updateConnectionStatus('Dropdowns loaded', 'success');
+            return response.data;
+        } else {
+            throw new Error(response.error || 'Failed to load dropdown options');
         }
+        
+    } catch (error) {
+        console.error('❌ Error loading dropdown options:', error);
+        updateConnectionStatus('Using fallback dropdown values', 'loading');
+        console.log('⚠️ Using fallback dropdown values');
+        updateAllDropdowns();
+        throw error;
+    }
+}
         
         function updateAllDropdowns() {
             updateStatusDropdowns();
@@ -2084,33 +2089,30 @@ if (activityReportBtn) {
         }
         
         async function loadProblems() {
-console.log('🚀 loadProblems() FUNCTION STARTED'); // ADD THIS LINE
+    console.log('🚀 loadProblems() FUNCTION STARTED');
+    
+    try {
+        updateConnectionStatus('Loading problems data...', 'loading');
+        
+        const response = await makeRequest('getFaultLogData');
+        
+        if (response.success) {
+            problems = response.data || [];
+            console.log('📊 Problems loaded:', problems.length);
             
-            try {
-                const response = await makeRequest('getFaultLogData');
-                
-                if (response.success) {
-                    
-            console.log('🔍 FULL BACKEND RESPONSE:', response);
-            console.log('🔍 FIRST PROBLEM RAW:', response.data[0]);
-            console.log('🔍 TIMESTAMP FIELD VALUE:', `"${response.data[0].timestamp}"`);
-            console.log('🔍 TYPEOF TIMESTAMP:', typeof response.data[0].timestamp);
-                    
-                    problems = response.data || [];
-                    console.log('📊 Problems loaded:', problems.length);
-                    console.log('🔍 First problem data:', problems[0]);
-                    
-                    // Apply filters and render
-                    applyFilters();
-                    updatePriorityCounts();
-                } else {
-                    throw new Error(response.message || 'Failed to load problems');
-                }
-            } catch (error) {
-                console.error('❌ Error loading problems:', error);
-                throw error;
-            }
+            // Apply filters and render
+            applyFilters();
+            updatePriorityCounts();
+            updateConnectionStatus(`${problems.length} problems loaded`, 'success');
+        } else {
+            throw new Error(response.message || 'Failed to load problems');
         }
+    } catch (error) {
+        console.error('❌ Error loading problems:', error);
+        updateConnectionStatus(`Load failed: ${error.message}`, 'error');
+        throw error;
+    }
+}
         
         function handleSearchInput() {
             const value = document.getElementById('searchInput').value.trim();
@@ -2816,51 +2818,74 @@ if (updateData.problemStatus === 'Completed') {
     }
 }
         
-        async function makeRequest(action, additionalData = {}) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-                
-                console.log('🔍 Making request:', action, 'with callback:', callbackName);
-                
-                const script = document.createElement('script');
-                const params = new URLSearchParams({
-                    action: action,
-                    callback: callbackName,
-                    ...additionalData
-                });
-                
-                script.src = `${WEB_APP_URL}?${params.toString()}`;
-                console.log('🌐 Request URL:', script.src);
-                
-                window[callbackName] = function(response) {
-                    console.log('✅ Received JSONP response:', response);
-                    document.head.removeChild(script);
-                    delete window[callbackName];
-                    resolve(response);
-                };
-                
-                script.onerror = function(error) {
-                    console.error('❌ Script loading error:', error);
-                    console.error('❌ Failed URL:', script.src);
-                    document.head.removeChild(script);
-                    delete window[callbackName];
-                    reject(new Error('Network request failed'));
-                };
-                
-                // Add timeout to detect JSONP issues
+        async function makeRequest(action, additionalData = {}, retryCount = 0) {
+    const MAX_RETRIES = 2;
+    const TIMEOUT_DURATION = 30000; // 30 seconds
+
+    return new Promise((resolve, reject) => {
+        const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+        
+        console.log(`🔍 Making request (attempt ${retryCount + 1}):`, action);
+        
+        const script = document.createElement('script');
+        const params = new URLSearchParams({
+            action: action,
+            callback: callbackName,
+            ...additionalData
+        });
+        
+        script.src = `${WEB_APP_URL}?${params.toString()}`;
+        console.log('🌐 Request URL:', script.src);
+        
+        // Success handler
+        window[callbackName] = function(response) {
+            console.log('✅ Received JSONP response:', response);
+            cleanup();
+            resolve(response);
+        };
+        
+        // Error handler
+        script.onerror = function(error) {
+            console.error(`❌ Script loading error (attempt ${retryCount + 1}):`, error);
+            cleanup();
+            
+            if (retryCount < MAX_RETRIES) {
+                console.log(`🔄 Retrying request (${retryCount + 1}/${MAX_RETRIES})...`);
                 setTimeout(() => {
-                    if (window[callbackName]) {
-                        console.error('⏰ JSONP timeout - callback never fired');
-                        console.error('🔍 This usually means the backend is returning JSON instead of JSONP');
-                        document.head.removeChild(script);
-                        delete window[callbackName];
-                        reject(new Error('JSONP callback timeout - check backend response format'));
-                    }
-                }, 10000);
-                
-                document.head.appendChild(script);
-            });
+                    resolve(makeRequest(action, additionalData, retryCount + 1));
+                }, 2000 * (retryCount + 1)); // Progressive backoff
+            } else {
+                reject(new Error(`Network request failed after ${MAX_RETRIES + 1} attempts`));
+            }
+        };
+        
+        // Timeout handler
+        const timeoutId = setTimeout(() => {
+            console.error(`⏰ Request timeout (${TIMEOUT_DURATION}ms) on attempt ${retryCount + 1}`);
+            cleanup();
+            
+            if (retryCount < MAX_RETRIES) {
+                console.log(`🔄 Retrying after timeout (${retryCount + 1}/${MAX_RETRIES})...`);
+                setTimeout(() => {
+                    resolve(makeRequest(action, additionalData, retryCount + 1));
+                }, 2000 * (retryCount + 1));
+            } else {
+                reject(new Error(`Request timeout after ${MAX_RETRIES + 1} attempts`));
+            }
+        }, TIMEOUT_DURATION);
+        
+        // Cleanup function
+        function cleanup() {
+            clearTimeout(timeoutId);
+            if (script.parentNode) {
+                document.head.removeChild(script);
+            }
+            delete window[callbackName];
         }
+        
+        document.head.appendChild(script);
+    });
+}
         
         function updateDataStatus(message, type) {
             const indicator = document.getElementById('dataStatus');
@@ -2877,7 +2902,24 @@ if (updateData.problemStatus === 'Completed') {
         }
 
 
+// ==================== NEW HELPER FUNCTIONS ====================
+// Add these right after updateDataStatus function
 
+function updateConnectionStatus(message, type = 'loading') {
+    const status = document.getElementById('dataStatus');
+    if (status) {
+        status.textContent = message;
+        status.className = `data-indicator ${type}`;
+    }
+}
+
+function showRetryNotification(attempt, maxAttempts) {
+    const status = document.getElementById('dataStatus');
+    if (status) {
+        status.textContent = `🔄 Connection slow, retrying... (${attempt}/${maxAttempts})`;
+        status.className = 'data-indicator loading';
+    }
+}
         
         function formatDate(dateString) {
     if (!dateString) return 'No Date';
