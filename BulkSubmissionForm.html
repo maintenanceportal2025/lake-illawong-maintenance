@@ -598,7 +598,7 @@
         <div class="header-section">
             <div class="header-content">
                 <div class="logo-container">
-                    <img src="https://lake-illawong-maintenance.netlify.app/images/logo-transparent.png" 
+                    <img src="https://lake-illawong-maintenance.netlify.app/logo.png" 
                          alt="Lake Illawong Logo" class="logo-image">
                 </div>
                 <div class="header-text">
@@ -629,11 +629,11 @@
                     <div class="quota-grid">
                         <div>
                             <strong>Last 24 Hours:</strong><br>
-                            <span id="emailUsageCount">0</span> / 300 emails sent
+                            <span id="emailUsageCount">0</span> / 2000 emails sent
                         </div>
                         <div>
                             <strong>Remaining:</strong><br>
-                            <span id="emailRemainingCount">300</span> emails available
+                            <span id="emailRemainingCount">2000</span> emails available
                         </div>
                     </div>
                     <div id="emailQuotaWarning" class="quota-warning"></div>
@@ -904,8 +904,15 @@
     </div>
 
     <script>
-        // Backend URL
-        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwJ8SgLG4oCl-RSo906cO-Vrv1gNB3VliaFcy_VPzOcZ05v3M3H1u-O_P5YCHKUdbUw/exec';
+        // Backend V1.0 URL
+        // const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwJ8SgLG4oCl-RSo906cO-Vrv1gNB3VliaFcy_VPzOcZ05v3M3H1u-O_P5YCHKUdbUw/exec';
+
+
+// Backend V2.0 URL
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8Fam73v_UXXZCmhshmLxi6DF7BPf4nYb2GFI-g-xVjQjhz3bVnIg/exec';
+
+
+
 
         // Global variables
         let allUnits = [];
@@ -1216,35 +1223,58 @@
 
         // Email Quota Functions
         async function loadEmailQuotaInfo() {
-            try {
-                const usage = await callScript({ action: 'getEmailUsage' });
-                
-                document.getElementById('emailUsageCount').textContent = usage.total;
-                document.getElementById('emailRemainingCount').textContent = usage.remaining;
-                
-                const warningDiv = document.getElementById('emailQuotaWarning');
-                
-                // Show/hide warnings based on usage
-                if (usage.remaining < 50) {
-                    warningDiv.style.display = 'block';
-                    warningDiv.style.background = '#fef2f2';
-                    warningDiv.style.border = '1px solid #fecaca';
-                    warningDiv.style.color = '#dc2626';
-                    warningDiv.innerHTML = '⚠️ <strong>Low Quota:</strong> Only ' + usage.remaining + ' emails remaining in 24h period';
-                } else if (usage.remaining < 100) {
-                    warningDiv.style.display = 'block';
-                    warningDiv.style.background = '#fffbeb';
-                    warningDiv.style.border = '1px solid #fed7aa';
-                    warningDiv.style.color = '#ea580c';
-                    warningDiv.innerHTML = '⚠️ <strong>Moderate Usage:</strong> ' + usage.remaining + ' emails remaining';
-                } else {
-                    warningDiv.style.display = 'none';
-                }
-                
-            } catch (error) {
-                console.error('Error loading email quota:', error);
+    try {
+        console.log('🔍 Frontend: Calling getEmailUsage...');
+        
+        const response = await callScript({ action: 'getEmailUsage' });
+        
+        console.log('📊 Frontend: Received response:', response);
+        
+        // Check if response is successful
+        if (response.success) {
+            const total = response.total || 0;
+            const remaining = response.remaining || 2000;
+            
+            console.log('  - total:', total);
+            console.log('  - remaining:', remaining);
+            
+            document.getElementById('emailUsageCount').textContent = total;
+            document.getElementById('emailRemainingCount').textContent = remaining;
+            
+            const warningDiv = document.getElementById('emailQuotaWarning');
+            
+            if (remaining < 100) {
+                warningDiv.style.display = 'block';
+                warningDiv.style.background = '#fef2f2';
+                warningDiv.style.border = '1px solid #fecaca';
+                warningDiv.style.color = '#dc2626';
+                warningDiv.innerHTML = '⚠️ <strong>Low Quota:</strong> Only ' + remaining + ' emails remaining in 24h period';
+            } else if (remaining < 500) {
+                warningDiv.style.display = 'block';
+                warningDiv.style.background = '#fffbeb';
+                warningDiv.style.border = '1px solid #fed7aa';
+                warningDiv.style.color = '#ea580c';
+                warningDiv.innerHTML = '⚠️ <strong>Moderate Usage:</strong> ' + remaining + ' emails remaining';
+            } else {
+                warningDiv.style.display = 'none';
             }
+            
+            console.log('✅ Frontend: Email quota updated successfully');
+        } else {
+            console.error('❌ Backend returned error:', response.error);
+            // Set default values on error
+            document.getElementById('emailUsageCount').textContent = 0;
+            document.getElementById('emailRemainingCount').textContent = 2000;
         }
+        
+    } catch (error) {
+        console.error('❌ Frontend: Error loading email quota:', error);
+        // Set default values on error
+        document.getElementById('emailUsageCount').textContent = 0;
+        document.getElementById('emailRemainingCount').textContent = 2000;
+    }
+}
+        
 
         function updateEstimatedEmailCount() {
             const selectedUnits = getSelectedUnits().length;
