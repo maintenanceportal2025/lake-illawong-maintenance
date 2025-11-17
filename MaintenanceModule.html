@@ -1309,6 +1309,10 @@ Padding: 10px;
 <button id="viewCompletedBtn" class="btn" style="background: #6b7280; color: white;">
     📊 View Completed in Explorer
 </button>
+<!-- Add with the other header buttons -->
+<button id="sortToggleBtn" class="btn" style="background: #059669; color: white;">
+    📅 Oldest First
+</button>
             </div>
             
             
@@ -1581,6 +1585,8 @@ async function getMaintenancePassword() {
         let searchTerm = '';
         let currentProblem = null;
         let isAuthenticated = false;
+
+let sortNewestFirst = false; // Default: Oldest first (current behavior)
         
         // URL SEARCH PARAMETER ENHANCEMENT
         let pendingSearchParam = null;
@@ -1848,6 +1854,10 @@ const viewCompletedBtn = document.getElementById('viewCompletedBtn');
 if (refreshBtn) {
     refreshBtn.addEventListener('click', refreshData);
 }
+
+
+
+
 
 // ADD THIS NEW LISTENER BLOCK
 if (viewCompletedBtn) {
@@ -2177,77 +2187,81 @@ if (activityReportBtn) {
         
         // SINGLE CLEAN FILTERING FUNCTION
         function applyFilters() {
-            let filtered = [...problems];
+    let filtered = [...problems];
+    
+    console.log('🔄 Starting with', filtered.length, 'problems');
+    
+    // Step 1: ALWAYS exclude completed and cancelled
+    filtered = filtered.filter(problem => 
+        problem.problemStatus !== 'Completed' && 
+        problem.problemStatus !== 'Cancelled'
+    );
+    console.log('📊 After excluding completed/cancelled:', filtered.length);
+    
+    // Step 2: Apply priority filter
+    if (activePriorityFilter !== 'all') {
+        const targetPriority = activePriorityFilter.charAt(0).toUpperCase() + activePriorityFilter.slice(1);
+        filtered = filtered.filter(problem => 
+            (problem.problemPriority || 'Medium') === targetPriority
+        );
+        console.log('🎯 After priority filter (' + targetPriority + '):', filtered.length);
+    }
+    
+    // Step 3: Apply search filter
+    if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        filtered = filtered.filter(problem => {
+            const friendlyPID = getFriendlyPID(problem.internalId);
+            const unitNumber = String(problem.unitNumber || '');
+            const description = String(problem.problemDescription || '');
+            const reporter = String(problem.reportedBy || '');
+            const zone = String(problem.zone || '');
             
-            console.log('🔄 Starting with', filtered.length, 'problems');
-            
-            // Step 1: ALWAYS exclude completed and cancelled
-            filtered = filtered.filter(problem => 
-                problem.problemStatus !== 'Completed' && 
-                problem.problemStatus !== 'Cancelled'
-            );
-            console.log('📊 After excluding completed/cancelled:', filtered.length);
-            
-            // Step 2: Apply priority filter
-            if (activePriorityFilter !== 'all') {
-                const targetPriority = activePriorityFilter.charAt(0).toUpperCase() + activePriorityFilter.slice(1);
-                filtered = filtered.filter(problem => 
-                    (problem.problemPriority || 'Medium') === targetPriority
-                );
-                console.log('🎯 After priority filter (' + targetPriority + '):', filtered.length);
+            return friendlyPID.toLowerCase().includes(searchLower) ||
+                   unitNumber.toLowerCase().includes(searchLower) ||
+                   description.toLowerCase().includes(searchLower) ||
+                   reporter.toLowerCase().includes(searchLower) ||
+                   zone.toLowerCase().includes(searchLower);
+        });
+        console.log('🔍 After search filter (' + searchTerm + '):', filtered.length);
+    }
+    
+    // Step 4: SORTING - Oldest vs Newest
+    
+
+    filtered.sort((a, b) => {
+        const getTimestamp = (problem) => {
+            const timestamp = problem.timestamp;
+            if (!timestamp) return 0;
+            const date = new Date(timestamp);
+            return isNaN(date.getTime()) ? 0 : date.getTime();
+        };
+        
+        const aTime = getTimestamp(a);
+        const bTime = getTimestamp(b);
+        
+        // Primary sort: by timestamp
+        if (aTime !== bTime) {
+            if (sortNewestFirst) {
+                return bTime - aTime; // Newest first
+            } else {
+                return aTime - bTime; // Oldest first
             }
-            
-            // Step 3: Apply search filter
-            if (searchTerm) {
-                const searchLower = searchTerm.toLowerCase();
-                filtered = filtered.filter(problem => {
-                    const friendlyPID = getFriendlyPID(problem.internalId);
-                    const unitNumber = String(problem.unitNumber || '');
-                    const description = String(problem.problemDescription || '');
-                    const reporter = String(problem.reportedBy || '');
-                    const zone = String(problem.zone || '');
-                    
-                    return friendlyPID.toLowerCase().includes(searchLower) ||
-                           unitNumber.toLowerCase().includes(searchLower) ||
-                           description.toLowerCase().includes(searchLower) ||
-                           reporter.toLowerCase().includes(searchLower) ||
-                           zone.toLowerCase().includes(searchLower);
-                });
-                console.log('🔍 After search filter (' + searchTerm + '):', filtered.length);
-            }
-            
-            // Step 4: CHRONOLOGICAL SORTING (Oldest to Newest)
-            // Sort by timestamp (oldest first) - oldest problems at top
-            filtered.sort((a, b) => {
-                const getTimestamp = (problem) => {
-                    const timestamp = problem.timestamp;
-                    if (!timestamp) return 0;
-                    const date = new Date(timestamp);
-                    return isNaN(date.getTime()) ? 0 : date.getTime();
-                };
-                
-                const aTime = getTimestamp(a);
-                const bTime = getTimestamp(b);
-                
-                // Sort by date (oldest first)
-                if (aTime !== bTime) {
-                    return aTime - bTime; // Oldest first
-                }
-                
-                // Secondary sort: Internal ID (oldest first)
-                return (a.internalId || '').localeCompare(b.internalId || '');
-            });
-            
-            // Debug the sort result
-            console.log('🎯 FINAL SORT ORDER (Oldest to Newest):');
-            filtered.slice(0, 5).forEach((problem, index) => {
-                const date = problem.timestamp ? new Date(problem.timestamp).toLocaleDateString() : 'No date';
-                console.log(`  ${index + 1}. ${getFriendlyPID(problem.internalId)} - ${date} - ${problem.problemPriority} - ${problem.problemStatus}`);
-            });
-            
-            filteredProblems = filtered;
-            renderProblemsList();
         }
+        
+        // Secondary sort: Internal ID
+        return (a.internalId || '').localeCompare(b.internalId || '');
+    });
+
+ 
+    filtered.slice(0, 5).forEach((problem, index) => {
+        const date = problem.timestamp ? new Date(problem.timestamp).toLocaleDateString() : 'No date';
+        console.log(`  ${index + 1}. ${getFriendlyPID(problem.internalId)} - ${date}`);
+    });
+    
+    filteredProblems = filtered;
+    renderProblemsList();
+}
         
         function updatePriorityCounts() {
             // Count only active problems (excluding completed/cancelled)
@@ -2366,6 +2380,34 @@ if (activityReportBtn) {
             return report;
         }
         
+function toggleSortOrder() {
+
+    sortNewestFirst = !sortNewestFirst;
+    
+    // Update button text
+    const sortBtn = document.getElementById('sortToggleBtn');
+    if (sortBtn) {
+        sortBtn.textContent = sortNewestFirst ? '📅 Newest First' : '📅 Oldest First';
+    }
+    
+    // Re-apply filters (which will use the new sort order)
+    applyFilters();
+    
+    console.log('🔄 Sort order changed to:', sortNewestFirst ? 'Newest First' : 'Oldest First');
+}
+
+// Add with other header button listeners
+const sortToggleBtn = document.getElementById('sortToggleBtn');
+if (sortToggleBtn) {
+    sortToggleBtn.addEventListener('click', function() {
+        
+        
+       
+        toggleSortOrder();
+    });
+}
+
+
         function generateProblemReport() {
             if (!currentProblem) {
                 return 'No problem selected for report generation.';
