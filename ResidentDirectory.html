@@ -155,14 +155,14 @@ RELATED FILES: residents-portal.html
     .results-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: 20px;
+        gap: 10px;
     }
 
     .resident-card {
         background: #f8fafc;
         border: 2px solid #e2e8f0;
         border-radius: 6px;
-        padding: 20px;
+        padding: 10px;
         transition: all 0.3s ease;
         cursor: pointer;
         display: flex;
@@ -1144,12 +1144,14 @@ function applyFilters() {
 
 
 
-        // Display search results
+// In the displayResults function, add this line to get the search term:
 function displayResults() {
     const resultsGrid = document.getElementById('resultsGrid');
     const resultsList = document.getElementById('resultsList');
     const emptyState = document.getElementById('emptyState');
     const activeView = document.querySelector('.view-btn.active').dataset.view;
+    const searchInput = document.getElementById('searchInput');
+    const searchTerm = searchInput.value.toLowerCase().trim(); // Add this line
     
     if (filteredResidents.length === 0) {
         resultsGrid.style.display = 'none';
@@ -1160,11 +1162,11 @@ function displayResults() {
     
     emptyState.style.display = 'none';
     
-    // Update card view WITH stage separators
-    resultsGrid.innerHTML = createResidentCardsWithSeparators();
+    // Update card view WITH search term
+    resultsGrid.innerHTML = createResidentCardsWithSeparators(searchTerm); // Pass searchTerm here
     
     // Update list view  
-    displayListResults();
+    displayListResults(searchTerm); // Pass searchTerm here
     
     // Show correct view
     if (activeView === 'list') {
@@ -1177,19 +1179,18 @@ function displayResults() {
 }
 
       // Create resident card HTML
-function createResidentCard(resident) {
+function createResidentCard(resident, searchTerm = '') {
     const hasPhone = resident.phone && resident.phone.trim();
     const hasEmail = resident.email && resident.email.trim();
-    const stage = resident.stage || 'Stage 1';
-    const stageClass = stage.toLowerCase().includes('2') ? 'stage2' : 'stage1';
     const roleTags = resident.roleTags || '';
     
-    // Filter out "Resident" from the roles list
-    const displayRoles = roleTags ? 
-        roleTags.split(',')
-               .map(role => role.trim())
-               .filter(role => role.toLowerCase() !== 'resident')
-               .join(', ') : '';
+    // Determine if we should show roles
+    let displayRoles = '';
+    const shouldShowRoles = shouldDisplayRoles(resident, searchTerm);
+    
+    if (shouldShowRoles) {
+        displayRoles = getRelevantRoles(resident, searchTerm);
+    }
     
     return `
         <div class="resident-card">
@@ -1220,7 +1221,7 @@ function createResidentCard(resident) {
                 ${displayRoles ? `
                     <div class="detail-item">
                         <span class="detail-icon">👤</span>
-                        <span class="detail-value">${escapeHtml(displayRoles)}</span>
+                        <span class="detail-value role-tags">${escapeHtml(displayRoles)}</span>
                     </div>
                 ` : ''}
             </div>
@@ -1240,8 +1241,11 @@ function createResidentCard(resident) {
         </div>
     `;
 }
+
+
 // Create resident cards with section separators
-function createResidentCardsWithSeparators() {
+// Find this function and update it to accept searchTerm:
+function createResidentCardsWithSeparators(searchTerm = '') {
     let html = '';
     let previousSection = null;
     
@@ -1257,18 +1261,75 @@ function createResidentCardsWithSeparators() {
                 html += `<div class="stage-divider" data-section="${currentSection}"></div>`;
             }
             
-            html += createResidentCard(resident);
+            html += createResidentCard(resident, searchTerm);
             previousSection = currentSection;
         });
     } else {
         // No separators needed when filtering by specific stage
         filteredResidents.forEach(resident => {
-            html += createResidentCard(resident);
+            html += createResidentCard(resident, searchTerm);
         });
     }
     
     return html;
 }
+
+function getRelevantRoles(resident, searchTerm) {
+    if (!resident.roleTags) return '';
+    
+    const searchLower = searchTerm.toLowerCase();
+    const roles = resident.roleTags.split(',').map(role => role.trim());
+    
+    // If searching for a specific person, show all their roles (except "resident")
+    const isNameSearch = resident.name && resident.name.toLowerCase().includes(searchLower);
+    if (isNameSearch) {
+        return roles.filter(role => role.toLowerCase() !== 'resident').join(', ');
+    }
+    
+    // If role search, only show matching roles
+    const matchingRoles = roles.filter(role => {
+        const roleLower = role.toLowerCase();
+        
+        // Filter out "resident" role
+        if (roleLower === 'resident') return false;
+        
+        // Check if this role matches the search
+        return roleLower.includes(searchLower) || 
+               searchLower.includes(roleLower.replace(/[-\s]/g, ''));
+    });
+    
+    return matchingRoles.join(', ');
+}
+
+
+// Replace the shouldDisplayRoles function with this cleaner version:
+function shouldDisplayRoles(resident, searchTerm) {
+    if (!searchTerm) return false; // No search = no roles
+    
+    const searchLower = searchTerm.toLowerCase();
+    const roleTags = (resident.roleTags || '').toLowerCase();
+    
+    // Show roles if searching for this specific person by name
+    const isNameSearch = resident.name && resident.name.toLowerCase().includes(searchLower);
+    if (isNameSearch) return true;
+    
+    // Show roles if the search term matches any part of their actual roles
+    // This dynamically checks against whatever roles they actually have
+    const roles = roleTags.split(',').map(role => role.trim());
+    const hasMatchingRole = roles.some(role => {
+        // Remove spaces/dashes for more flexible matching
+        const normalizedRole = role.replace(/[-\s]/g, '');
+        const normalizedSearch = searchLower.replace(/[-\s]/g, '');
+        
+        return role.includes(searchLower) || 
+               searchLower.includes(role) ||
+               normalizedRole.includes(normalizedSearch) ||
+               normalizedSearch.includes(normalizedRole);
+    });
+    
+    return hasMatchingRole;
+}
+
         // Update results count display
         function updateResultsCount() {
             const resultsCount = document.getElementById('resultsCount');
@@ -1556,51 +1617,64 @@ function downloadPDF() {
             return div.innerHTML;
         }
 // Display results in list view
-        function displayListResults() {
-            const tableBody = document.getElementById('listTableBody');
-            
-            if (filteredResidents.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b; padding: 40px;">No residents found</td></tr>';
-                return;
-            }
-            
-            tableBody.innerHTML = filteredResidents.map((resident, index) => createListRow(resident, index)).join('');
-        }
+        // Display results in list view
+function displayListResults(searchTerm = '') {
+    const tableBody = document.getElementById('listTableBody');
+    
+    if (filteredResidents.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b; padding: 40px;">No residents found</td></tr>';
+        return;
+    }
+    
+    tableBody.innerHTML = filteredResidents.map((resident, index) => createListRow(resident, index, searchTerm)).join('');
+}
 
         // Create list row HTML
-        function createListRow(resident, index) {
-            const hasPhone = resident.phone && resident.phone.trim();
-            const hasEmail = resident.email && resident.email.trim();
-            const roleTags = resident.roleTags || 'Resident';
-            const displayRoles = roleTags.split(',').map(role => role.trim()).join(', ');
-            
-            // Check if this unit was already shown in previous row
-            const showUnit = index === 0 || filteredResidents[index - 1].unit !== resident.unit;
-            
-            return `
-                <tr>
-                    <td><strong>${showUnit ? escapeHtml(resident.unit || 'No Unit') : ''}</strong></td>
-                    <td>${escapeHtml(resident.name || 'Unknown')}</td>
-                    <td>${escapeHtml(resident.phone || 'Not provided')}</td>
-                    <td>${escapeHtml(resident.email || 'Not provided')}</td>
-                    <td>
-                        <div class="list-actions">
-                            <a href="${hasPhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
-                               class="list-action-btn call ${!hasPhone ? 'disabled' : ''}"
-                               ${!hasPhone ? 'onclick="return false;"' : ''}>
-                                📞
-                            </a>
-                            <a href="${hasEmail ? `mailto:${resident.email}` : '#'}" 
-                               class="list-action-btn email ${!hasEmail ? 'disabled' : ''}"
-                               ${!hasEmail ? 'onclick="return false;"' : ''}>
-                                📧
-                            </a>
-                        </div>
-                    </td>
-                </tr>
-            `;
+        // Create list row HTML
+function createListRow(resident, index, searchTerm = '') {
+    const hasPhone = resident.phone && resident.phone.trim();
+    const hasEmail = resident.email && resident.email.trim();
+    
+    // Determine if we should show roles in list view
+    let roleDisplay = '';
+    const shouldShowRoles = shouldDisplayRoles(resident, searchTerm);
+    
+    if (shouldShowRoles) {
+        const relevantRoles = getRelevantRoles(resident, searchTerm);
+        if (relevantRoles) {
+            roleDisplay = `<br><small style="color: #666; font-size: 0.8em;">${escapeHtml(relevantRoles)}</small>`;
         }
-
+    }
+    
+    // Check if this unit was already shown in previous row
+    const showUnit = index === 0 || filteredResidents[index - 1].unit !== resident.unit;
+    
+    return `
+        <tr>
+            <td><strong>${showUnit ? escapeHtml(resident.unit || 'No Unit') : ''}</strong></td>
+            <td>
+                ${escapeHtml(resident.name || 'Unknown')}
+                ${roleDisplay}
+            </td>
+            <td>${escapeHtml(resident.phone || 'Not provided')}</td>
+            <td>${escapeHtml(resident.email || 'Not provided')}</td>
+            <td>
+                <div class="list-actions">
+                    <a href="${hasPhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
+                       class="list-action-btn call ${!hasPhone ? 'disabled' : ''}"
+                       ${!hasPhone ? 'onclick="return false;"' : ''}>
+                        📞
+                    </a>
+                    <a href="${hasEmail ? `mailto:${resident.email}` : '#'}" 
+                       class="list-action-btn email ${!hasEmail ? 'disabled' : ''}"
+                       ${!hasEmail ? 'onclick="return false;"' : ''}>
+                        📧
+                    </a>
+                </div>
+            </td>
+        </tr>
+    `;
+}
 
         // Performance monitoring
         window.addEventListener('load', function() {
