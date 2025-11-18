@@ -1,28 +1,35 @@
 <!--
 =====================================================================
-🔢 FIELD NOTIFICATIONS - INTEGRATED COMMUNICATION SYSTEM
+FIELD NOTIFICATIONS - INTEGRATED COMMUNICATION SYSTEM
 =====================================================================
-PURPOSE: Complete notification system with Email Server V1.0.js integration
+PURPOSE: Complete notification system with Email Server V2.2.js integration
 PORTAL: Field Operations Portal Module
-VERSION: v2.2.0 - EMAIL SERVER INTEGRATION
-LAST UPDATED: September 21, 2025
+VERSION: v2.3.0 - NO-EMAIL RESIDENT REMINDER
+LAST UPDATED: November 17, 2025
 DESIGN SYSTEM: Lake Illawong Unified v1.2 - PORTAL CONSISTENCY STANDARD
 - Logo positioned horizontally next to header text
 - Smart button state management with color coding
 - Individual unit selection modal
 - Active email counter tracking
 - Template filtering system
-- Real Email Server V1.0.js integration
+- Real Email Server V2.2.js integration
 AUTHENTICATION: None (Public Access)
-DEPENDENCIES: Email Server V1.0.js (sendMassNotification endpoint)
-SINGLE SOURCE OF TRUTH: Hardcoded templates (Phase 1)
+DEPENDENCIES: Email Server V2.2.js (sendMassNotification, getNoEmailResidents endpoints)
+SINGLE SOURCE OF TRUTH: Hardcoded templates (Phase 1), UnitList for no-email check
 INTEGRATION FEATURES:
-• Real email sending via Email Server V1.0.js
-• JSONP API calls for cross-origin support
-• Proper zone mapping to Email Server format
-• Error handling and timeout management
-• Actual recipient count tracking
-• Service status monitoring
+- Real email sending via Email Server V2.2.js
+- JSONP API calls for cross-origin support
+- Proper zone mapping to Email Server format
+- Error handling and timeout management
+- No-email resident reminder popup (V2.3 NEW)
+- Dynamic list from UnitList single source of truth
+
+VERSION 2.3 CHANGES:
+- Added getNoEmailResidents endpoint call
+- Dynamic popup showing Stage 1 residents without email
+- Simple "I'll Contact Them" / "Cancel" workflow
+- If no residents without email, proceeds directly to send
+- Single source of truth: UnitList Column B (email check)
 =====================================================================
 -->
 
@@ -31,7 +38,7 @@ INTEGRATION FEATURES:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>🔢 Field Notifications</title>
+    <title> Field Notifications</title>
     <style>
         * {
             margin: 0;
@@ -637,6 +644,126 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         .hidden {
             display: none !important;
         }
+
+        /* NO-EMAIL RESIDENTS MODAL */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .modal-container {
+            background: white;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            background: #fef2f2;
+            border-bottom: 2px solid #fecaca;
+            padding: 20px;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #991b1b;
+            font-size: 1.3rem;
+        }
+
+        .modal-body {
+            padding: 25px;
+        }
+
+        .no-email-list {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .no-email-item {
+            padding: 12px;
+            background: white;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border-left: 4px solid #dc2626;
+        }
+
+        .no-email-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .no-email-item strong {
+            display: block;
+            color: #111827;
+            font-size: 1.05rem;
+            margin-bottom: 4px;
+        }
+
+        .no-email-item span {
+            color: #6b7280;
+            font-size: 0.95rem;
+        }
+
+        .no-email-warning {
+            margin-top: 15px;
+            padding: 12px;
+            background: #fef2f2;
+            border-left: 4px solid #dc2626;
+            border-radius: 4px;
+            color: #991b1b;
+            font-weight: 600;
+        }
+
+        .modal-actions {
+            padding: 20px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .modal-btn-cancel {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .modal-btn-cancel:hover {
+            background: #e5e7eb;
+        }
+
+        .modal-btn-confirm {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+        }
+
+        .modal-btn-confirm:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -648,7 +775,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
         </div>
                 <div class="header-text">
-                    <h1 class="header-title">🔢 Field Notifications</h1>
+                    <h1 class="header-title"> 🔢 Field Notifications</h1>
                     <p class="header-subtitle">Enhanced communication system</p>
                 </div>
             </div>
@@ -669,7 +796,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         <div class="template-filters">
             <button class="filter-btn active" data-filter="all">All Templates</button>
             <button class="filter-btn" data-filter="general">General Purpose</button>
-            <button class="filter-btn" data-filter="emergency">🚨 Emergency</button>
+            <button class="filter-btn" data-filter="emergency"> 🚨 Emergency</button>
         </div>
 
         <!-- Template Selection -->
@@ -697,7 +824,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                     <div class="template-desc">General notices</div>
                 </div>
                 <div class="template-card" data-template="general" data-category="general">
-                    <div class="template-emoji">📝</div>
+                    <div class="template-emoji"><div class="template-emoji">📝</div></div>
                     <div class="template-title">General</div>
                     <div class="template-desc">Custom message</div>
                 </div>
@@ -714,13 +841,13 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 <button class="zone-btn" data-zone="zone3">Zone 3 (21-28)</button>
                 <button class="zone-btn" data-zone="zone4">Zone 4 (29-36)</button>
                 <button class="zone-btn" data-zone="zone5">Zone 5 (37-44)</button>
-                <button class="zone-btn special" onclick="openUnitSelector()">📋 Select Individual Units</button>
+                <button class="zone-btn special" onclick="openUnitSelector()"> Select Individual Units</button>
             </div>
             
             <!-- Clear Selections Button -->
             <div style="text-align: center; margin-top: 15px;">
                 <button class="clear-btn" onclick="clearAllSelections()">
-                    🗑️ Clear Selections
+                     🗑️ Clear Selections 
                 </button>
             </div>
         </div>
@@ -732,8 +859,8 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 class="message-input" 
                 id="messageText" 
                 placeholder="Select a template or enter your custom message here..."
-                maxlength="500"></textarea>
-            <div class="char-count" id="charCount">0/500 characters</div>
+                maxlength="1000"></textarea>
+            <div class="char-count" id="charCount">0/1000 characters</div>
         </div>
 
         <!-- Smart Send Button -->
@@ -772,7 +899,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         // Email Server V1.0.js deployment URL
         // const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxWll0dkVYKZcy5yMFvwPPVUKOuQNTb6wBF-kTjBWdVH7CJ-dc552-fBGYda7nN5LMk/exec';
 
-// Email Server V2.0.js deployment URL
+// Email Server V2.2.js deployment URL
         const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxY6l7p9syqTYlYEER1kMwQXXND8o-34QQ4dlEQwTqxuke3j0TaXrnMw5rB3_ro0WJf/exec';
         
         // Global state
@@ -790,7 +917,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             setupEventListeners();
             generateUnitsGrid();
             
-            updateEmailCounter();
+            // updateEmailCounter(); // Function doesn't exist - commented out
             checkServiceStatus();
         });
         
@@ -877,11 +1004,11 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         
         function loadTemplate(type) {
             const templates = {
-                emergency: "🚨 EMERGENCY ALERT 🚨\n\nImmediate action required. Please follow safety protocols and contact management if needed.\n\nTime: [TIME]\nLake Illawong Management",
-                maintenance: "🔧 MAINTENANCE NOTICE\n\nScheduled maintenance work will be performed.\n\nDetails: [DETAILS]\nDuration: [TIME]\nAffected areas: [AREAS]\n\nLake Illawong Maintenance",
-                outage: "⚡ SERVICE OUTAGE\n\nWe are experiencing a service disruption.\n\nAffected service: [SERVICE]\nEstimated restoration: [TIME]\n\nWe apologize for any inconvenience.\nLake Illawong Management",
-                announcement: "📢 COMMUNITY ANNOUNCEMENT\n\n[YOUR MESSAGE HERE]\n\nThank you,\nLake Illawong Management",
-                general: "📝 GENERAL NOTICE\n\n[YOUR MESSAGE HERE]\n\nPlease contact management if you have any questions.\n\nRegards,\nLake Illawong Management"
+                emergency: " EMERGENCY ALERT \n\nImmediate action required. Please follow safety protocols and contact management if needed.\n\nTime: [TIME]\nLake Illawong Management",
+                maintenance: " MAINTENANCE NOTICE\n\nScheduled maintenance work will be performed.\n\nDetails: [DETAILS]\nDuration: [TIME]\nAffected areas: [AREAS]\n\nLake Illawong Maintenance",
+                outage: " SERVICE OUTAGE\n\nWe are experiencing a service disruption.\n\nAffected service: [SERVICE]\nEstimated restoration: [TIME]\n\nWe apologize for any inconvenience.\nLake Illawong Management",
+                announcement: " COMMUNITY ANNOUNCEMENT\n\n[YOUR MESSAGE HERE]\n\nThank you,\nLake Illawong Management",
+                general: " GENERAL NOTICE\n\n[YOUR MESSAGE HERE]\n\nPlease contact management if you have any questions.\n\nRegards,\nLake Illawong Management"
             };
             
             if (templates[type]) {
@@ -1097,8 +1224,73 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 return;
             }
             
+            // FIRST: Check for residents without email
+            try {
+                console.log('Checking for residents without email...');
+                const noEmailResponse = await callEmailAPI('getNoEmailResidents', {});
+                
+                console.log('getNoEmailResidents response:', noEmailResponse);
+                
+                if (noEmailResponse.success && noEmailResponse.count > 0) {
+                    // There are residents without email - show modal
+                    console.log('Found ' + noEmailResponse.count + ' residents without email');
+                    console.log('Residents array:', noEmailResponse.residents);
+                    showNoEmailModal(noEmailResponse.residents);
+                    // Wait for user to click "I'll Contact Them" or "Cancel"
+                    // executeSend() will be called from confirmAndSend()
+                } else {
+                    // No residents without email - proceed directly to send
+                    console.log('No residents without email - proceeding to send');
+                    await executeSend();
+                }
+            } catch (error) {
+                console.error('Error checking no-email residents:', error);
+                // If check fails, proceed anyway (don't block sending)
+                showNotification('Warning: Could not check no-email residents. Proceeding to send.', 'info');
+                await executeSend();
+            }
+        }
+        
+        function showNoEmailModal(residents) {
+            console.log('showNoEmailModal called with:', residents);
+            console.log('Number of residents:', residents ? residents.length : 'undefined');
+            
+            const modal = document.getElementById('noEmailModal');
+            const listContainer = document.getElementById('noEmailList');
+            
+            // Build list HTML
+            listContainer.innerHTML = residents.map(function(resident) {
+                console.log('Processing resident:', resident);
+                return '<div class="no-email-item">' +
+                    '<strong>' + resident.name + '</strong>' +
+                    '<span>' + resident.unit + ' - ' + resident.phone + '</span>' +
+                    '</div>';
+            }).join('');
+            
+            console.log('List HTML:', listContainer.innerHTML);
+            
+            // Show modal
+            modal.classList.remove('hidden');
+        }
+        
+        function cancelSend() {
+            const modal = document.getElementById('noEmailModal');
+            modal.classList.add('hidden');
+            showNotification('Send cancelled', 'info');
+        }
+        
+        async function confirmAndSend() {
+            const modal = document.getElementById('noEmailModal');
+            modal.classList.add('hidden');
+            
+            // User confirmed they'll contact residents - proceed with send
+            await executeSend();
+        }
+        
+        async function executeSend() {
             const sendBtn = document.getElementById('sendBtn');
             const originalText = sendBtn.innerHTML;
+            const message = document.getElementById('messageText').value.trim();
             
             // Show loading state
             sendBtn.disabled = true;
@@ -1111,7 +1303,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 // Prepare API call parameters - override template with custom message
                 const customData = {
                     message: message,
-                    subject: `Field Notification - ${getTemplateName(selectedTemplate)}`,
+                    subject: 'Field Notification - ' + getTemplateName(selectedTemplate),
                     body: message, // Override template body with our custom message
                     timestamp: new Date().toLocaleString(),
                     templateType: selectedTemplate,
@@ -1119,11 +1311,11 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 };
                 
                 console.log('Sending notification with params:', {
-                    recipientFilter,
-                    customData,
-                    selectedTemplate,
-                    selectedZones,
-                    selectedUnits
+                    recipientFilter: recipientFilter,
+                    customData: customData,
+                    selectedTemplate: selectedTemplate,
+                    selectedZones: selectedZones,
+                    selectedUnits: selectedUnits
                 });
                 
                 // Call Email Server V1.0.js with working template
@@ -1140,9 +1332,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                     // Success
                     const targetText = getTargetText();
                     const recipientCount = response.recipientCount || calculateRecipientCount();
-                    showNotification(`${getTemplateName(selectedTemplate)} sent to ${targetText}! (${recipientCount} recipients)`, 'success');
-                    
-                  
+                    showNotification(getTemplateName(selectedTemplate) + ' sent to ' + targetText + '! (' + recipientCount + ' recipients)', 'success');
                     
                     // Reset form
                     resetForm();
@@ -1159,6 +1349,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 sendBtn.innerHTML = originalText;
             }
         }
+        
         
         function callEmailAPI(action, params) {
             return new Promise((resolve, reject) => {
@@ -1393,5 +1584,32 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         // Update timestamp every 30 seconds
         setInterval(updateLastUpdateTime, 30000);
     </script>
+
+    <!-- NO-EMAIL RESIDENTS REMINDER MODAL -->
+    <div id="noEmailModal" class="modal-overlay hidden">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>WARNING: Residents Without Email</h2>
+            </div>
+            <div class="modal-body">
+                <p style="font-weight: 600; margin-bottom: 10px;">
+                    The following residents do NOT have email and will NOT receive this alert:
+                </p>
+                
+                <div id="noEmailList" class="no-email-list">
+                    <!-- Populated dynamically from backend -->
+                </div>
+                
+                <div class="no-email-warning">
+                    WARNING: You must contact these residents separately by phone.
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="cancelSend()">Cancel</button>
+                <button class="modal-btn modal-btn-confirm" onclick="confirmAndSend()">I'll Contact Them</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
