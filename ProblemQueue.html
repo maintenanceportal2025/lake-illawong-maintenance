@@ -1,11 +1,11 @@
 <!--
 =====================================================================
-🔧 PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
+PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
 PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: v1.0.0 - INITIAL QUEUE DISPLAY
-LAST UPDATED: November 12, 2025
+VERSION: v1.1.0 - QUEUE TYPE TOGGLE (CURRENT/PROGRAMMED)
+LAST UPDATED: November 20, 2025
 DESIGN SYSTEM: Lake Illawong Unified v1.4
 - Terminology: "Problem" standard (V1.4 update)
 - Header: Transparent with logo
@@ -20,9 +20,18 @@ HIERARCHICAL POSITION: system_problem_queue
 QUEUE LOGIC:
 - Primary Sort: Priority (Urgent → High → Medium → Low)
 - Secondary Sort: Date Reported (Oldest first)
-- Filters: Active problems only (excludes Completed/Cancelled)
+- NEW V1.1: Queue Type Toggle (Current/Programmed)
+  - Current Queue: Active problems (excludes Completed/Cancelled/Programmed/Project)
+  - Programmed Queue: Problems with Programmed status
 - Display: Days in queue, current status, problem details
 - Purpose: Eliminate perceived favoritism through transparent ordering
+
+CHANGELOG V1.1:
+ -  Added Queue Type toggle button (Current/Programmed)
+ -  Separate queue for Programmed items
+ -  Updated info box with dynamic queue descriptions
+ -  Maintained all existing filters for both queue types
+ - Follows Unified Design System v1.4 exactly
 =====================================================================
 -->
 <!DOCTYPE html>
@@ -30,7 +39,7 @@ QUEUE LOGIC:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔧 Problem Queue - Lake Illawong</title>
+    <title>Problem Queue - Lake Illawong</title>
     <style>
         * {
             margin: 0;
@@ -98,22 +107,96 @@ QUEUE LOGIC:
         .header-subtitle {
             font-size: 16px;
             opacity: 0.9;
-            margin-top: 5px;
+            margin: 0;
         }
 
-        /* CONTENT CARD */
+        @media (max-width: 480px) {
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .header-text {
+                align-items: center;
+                text-align: center;
+            }
+
+            .header-title {
+                font-size: 24px;
+            }
+
+            .logo-image {
+                width: 70px;
+                height: 70px;
+            }
+        }
+
+        /* UNIFIED DESIGN SYSTEM - Content Card */
         .content-card {
             background: white;
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            margin-bottom: 16px;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
         }
 
-        /* STATS SECTION */
+        @media (max-width: 768px) {
+            .content-card {
+                padding: 16px;
+                border-radius: 12px;
+            }
+        }
+
+        /* QUEUE TYPE TOGGLE - NEW V1.1 */
+        .queue-type-toggle {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 10px;
+        }
+
+        .queue-type-btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: transparent;
+            color: #64748b;
+        }
+
+        .queue-type-btn.active {
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(30, 64, 175, 0.3);
+        }
+
+        .queue-type-btn:hover:not(.active) {
+            background: #e2e8f0;
+            color: #475569;
+        }
+
+        /* INFO BOX */
+        .info-box {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border: 1px solid #93c5fd;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+            color: #1e40af;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* STATS GRID */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 12px;
             margin-bottom: 20px;
         }
@@ -121,103 +204,82 @@ QUEUE LOGIC:
         .stat-card {
             background: #f8fafc;
             border: 1px solid #e2e8f0;
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 16px;
             text-align: center;
         }
 
         .stat-value {
-            font-size: 36px;
+            font-size: 32px;
             font-weight: 700;
-            margin-bottom: 5px;
+            color: #1e293b;
+            margin-bottom: 4px;
+        }
+
+        .stat-value.urgent {
+            color: #dc2626;
+        }
+
+        .stat-value.high {
+            color: #ea580c;
+        }
+
+        .stat-value.medium {
+            color: #f59e0b;
         }
 
         .stat-label {
-            font-size: 14px;
+            font-size: 12px;
             color: #64748b;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
 
-        .stat-value.urgent { color: #dc2626; }
-        .stat-value.high { color: #ea580c; }
-        .stat-value.medium { color: #0891b2; }
-        .stat-value.low { color: #65a30d; }
-
         /* FILTERS */
         .filters {
             display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
             flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 20px;
         }
 
         .filter-btn {
-            padding: 8px 16px;
+            padding: 10px 18px;
             border: 2px solid #e2e8f0;
-            background: white;
-            color: #475569;
             border-radius: 8px;
+            background: white;
+            color: #64748b;
+            font-weight: 600;
+            font-size: 13px;
             cursor: pointer;
-            font-weight: 500;
-            font-size: 14px;
             transition: all 0.2s;
+            white-space: nowrap;
         }
 
         .filter-btn:hover {
             border-color: #1e40af;
             color: #1e40af;
+            background: #f8fafc;
         }
 
         .filter-btn.active {
-            background: #1e40af;
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             color: white;
             border-color: #1e40af;
+            box-shadow: 0 2px 8px rgba(30, 64, 175, 0.3);
         }
 
-        /* QUEUE TABLE */
-        .queue-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
+        @media (max-width: 640px) {
+            .filters {
+                flex-direction: column;
+            }
+
+            .filter-btn {
+                width: 100%;
+            }
         }
 
-        .queue-table thead {
-            background: #f8fafc;
-            border-bottom: 2px solid #e2e8f0;
-        }
-
-        .queue-table th {
-            padding: 15px;
-            text-align: left;
-            font-weight: 600;
-            color: #475569;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .queue-table td {
-            padding: 15px;
-            border-bottom: 1px solid #e2e8f0;
-            vertical-align: top;
-        }
-
-        .queue-table tbody tr {
-            transition: background 0.2s;
-            cursor: pointer;
-        }
-
-        .queue-table tbody tr:hover {
-            background: #f8fafc;
-        }
-
-        .queue-position {
-            font-size: 20px;
-            font-weight: 700;
-            color: #1e40af;
-        }
-
+        /* BADGES */
         .priority-badge {
             display: inline-block;
             padding: 6px 12px;
@@ -229,76 +291,73 @@ QUEUE LOGIC:
         }
 
         .priority-urgent {
-            background: #fee2e2;
+            background: #fecaca;
             color: #dc2626;
         }
 
         .priority-high {
-            background: #ffedd5;
+            background: #fed7aa;
             color: #ea580c;
         }
 
         .priority-medium {
-            background: #cffafe;
-            color: #0891b2;
+            background: #fef3c7;
+            color: #d97706;
         }
 
         .priority-low {
-            background: #d9f99d;
-            color: #65a30d;
+            background: #bbf7d0;
+            color: #16a34a;
         }
 
         .status-badge {
             display: inline-block;
             padding: 6px 12px;
             border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .status-waiting {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .status-active {
+        .status-reported {
             background: #dbeafe;
-            color: #1e40af;
+            color: #1d4ed8;
         }
 
         .status-in-progress {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
-        .days-badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: 700;
-            background: #f1f5f9;
-            color: #475569;
-            min-width: 40px;
-            text-align: center;
-        }
-
-        .days-warning {
             background: #fef3c7;
-            color: #92400e;
+            color: #d97706;
         }
 
-        .days-critical {
-            background: #fee2e2;
-            color: #dc2626;
+        .status-completed {
+            background: #d1fae5;
+            color: #047857;
         }
 
-        .problem-description {
-            color: #475569;
-            max-width: 400px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+        .status-on-hold {
+            background: #fde2e8;
+            color: #be185d;
+        }
+
+        .status-cancelled {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+
+        .status-scheduled {
+            background: #ede9fe;
+            color: #7c3aed;
+        }
+
+        .status-programmed {
+            background: #e9d5ff;
+            color: #9333ea;
+        }
+
+        .status-project {
+            background: #fef3c7;
+            color: #d97706;
         }
 
         /* LOADING STATE */
@@ -437,112 +496,22 @@ QUEUE LOGIC:
             margin-top: 2px;
         }
 
-        /* BADGES */
-        .priority-badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 6px;
+        .queue-card-body {
+            padding-left: 48px;
+        }
+
+        .queue-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
             font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            color: #64748b;
         }
 
-        .priority-urgent {
-            background: #fee2e2;
-            color: #dc2626;
-        }
-
-        .priority-high {
-            background: #ffedd5;
-            color: #ea580c;
-        }
-
-        .priority-medium {
-            background: #cffafe;
-            color: #0891b2;
-        }
-
-        .priority-low {
-            background: #d9f99d;
-            color: #65a30d;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .status-waiting {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .status-active {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
-        .status-in-progress {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
-        /* INFO BOX */
-        .info-box {
-            background: #dbeafe;
-            border: 1px solid #bfdbfe;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 16px;
-            color: #1e40af;
-            font-size: 14px;
-        }
-
-        .info-box strong {
-            display: block;
-            margin-bottom: 5px;
-        }
-
-        /* RESPONSIVE */
-        @media (max-width: 768px) {
-            .header-content {
-                flex-direction: column;
-                gap: 15px;
-            }
-
-            .header-text {
-                align-items: center;
-                text-align: center;
-            }
-
-            .header-title {
-                font-size: 24px;
-            }
-
-            .header-subtitle {
-                font-size: 14px;
-            }
-
-            .queue-table {
-                font-size: 14px;
-            }
-
-            .queue-table th,
-            .queue-table td {
-                padding: 10px 8px;
-            }
-
-            .problem-description {
-                max-width: 200px;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
+        .queue-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
 
         /* MODAL */
@@ -551,9 +520,9 @@ QUEUE LOGIC:
             position: fixed;
             top: 0;
             left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
             z-index: 1000;
             padding: 20px;
             overflow-y: auto;
@@ -567,13 +536,13 @@ QUEUE LOGIC:
 
         .modal-content {
             background: white;
-            border-radius: 12px;
+            border-radius: 16px;
             padding: 30px;
             max-width: 800px;
             width: 100%;
             max-height: 90vh;
             overflow-y: auto;
-            position: relative;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
 
         .modal-header {
@@ -690,35 +659,6 @@ QUEUE LOGIC:
                 grid-column: span 1 !important;
             }
         }
-
-/* UNIT FILTER BANNER */
-.unit-filter-banner {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 20px;
-    border-radius: 12px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
-
-/* HIGHLIGHTED UNIT CARD */
-.highlighted-unit {
-    border: 3px solid #10b981 !important;
-    background: linear-gradient(to right, #f0fdf4, white) !important;
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3) !important;
-    animation: highlight-pulse 2s ease-in-out infinite;
-}
-
-@keyframes highlight-pulse {
-    0%, 100% {
-        box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
-    }
-    50% {
-        box-shadow: 0 0 30px rgba(16, 185, 129, 0.5);
-    }
-}
-
-
     </style>
 </head>
 <body>
@@ -733,7 +673,7 @@ QUEUE LOGIC:
                          onerror="this.style.display='none'">
                 </div>
                 <div class="header-text">
-                    <h1 class="header-title">🔧 Problem Queue</h1>
+                    <h1 class="header-title">Problem Queue</h1>
                     <p class="header-subtitle">Priority & Date Ordered</p>
                 </div>
             </div>
@@ -741,16 +681,19 @@ QUEUE LOGIC:
 
         <!-- CONTENT CARD -->
         <div class="content-card">
-            <!-- INFO BOX -->
-            <div class="info-box">
-                <strong>📋 Queue Logic</strong>
-                Problems are sorted by Priority (Urgent → High → Medium → Low), then by Date Reported (oldest first). 
-                This ensures transparent, fair allocation of work.
-                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
-                    <strong>Visual Indicators:</strong><br>
-                    <span style="display: inline-block; width: 4px; height: 12px; background: #3b82f6; vertical-align: middle; margin-right: 8px;"></span>
-                    <span style="background: #f1f5f9; padding: 2px 8px; border-radius: 4px;">Blue bar + gray background</span> = Work In Progress (multi-visit job)
-                </div>
+            <!-- QUEUE TYPE TOGGLE - NEW V1.1 -->
+            <div class="queue-type-toggle">
+                <button class="queue-type-btn active" onclick="setQueueType('current')">
+                    Current Queue
+                </button>
+                <button class="queue-type-btn" onclick="setQueueType('programmed')">
+                    Programmed Queue
+                </button>
+            </div>
+
+            <!-- INFO BOX (DYNAMIC) -->
+            <div class="info-box" id="infoBox">
+                <!-- Populated by JavaScript based on queue type -->
             </div>
 
             <!-- STATS -->
@@ -790,15 +733,14 @@ QUEUE LOGIC:
 
             <!-- ERROR STATE -->
             <div id="errorState" class="error-message" style="display: none;">
-                <strong>⚠️ Error Loading Queue</strong>
+                <strong>Error Loading Queue</strong>
                 <p id="errorMessage"></p>
             </div>
 
             <!-- EMPTY STATE -->
             <div id="emptyState" class="empty-state" style="display: none;">
-                <div class="empty-state-icon">✅</div>
                 <h3>No Problems in Queue</h3>
-                <p>All problems have been completed or there are no active problems matching your filter.</p>
+                <p id="emptyStateMessage">All problems have been completed or there are no problems matching your filter.</p>
             </div>
 
             <!-- QUEUE DISPLAY -->
@@ -833,169 +775,169 @@ QUEUE LOGIC:
 
     <script>
         // =====================================================================
-        // CONFIGURATION
+        // GLOBAL STATE
         // =====================================================================
         
-        const EXPLORER_API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
+        const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
         
         let allProblems = [];
+        let currentQueueType = 'current'; // NEW V1.1: Track queue type
         let currentFilter = 'all';
-	let highlightUnit = null; // Track which unit to highlight
-	
+        let selectedProblem = null;
         
-        // Priority order for sorting
         const PRIORITY_ORDER = {
             'Urgent': 1,
             'High': 2,
             'Medium': 3,
-            'Low': 4,
-            'Not Set': 5
+            'Low': 4
         };
 
         // =====================================================================
         // INITIALIZATION
         // =====================================================================
-
-
-
-
         
-        document.addEventListener('DOMContentLoaded', function() {
-    // Check for unit parameter in URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const unitParam = urlParams.get('unit');
-    
-    if (unitParam) {
-        highlightUnit = unitParam;
-        console.log('Highlighting unit:', highlightUnit);
-        showUnitFilterBanner(unitParam);
-    }
-    
-    loadQueueData();
-});
+        document.addEventListener('DOMContentLoaded', () => {
+            loadQueue();
+            updateInfoBox(); // NEW V1.1: Set initial info box
+        });
 
-
-function showUnitFilterBanner(unitNumber) {
-    const banner = document.createElement('div');
-    banner.className = 'unit-filter-banner';
-    banner.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-            <div>
-                <strong>🏠 Viewing Queue for ${unitNumber}</strong>
-                <p style="margin: 5px 0 0 0; font-size: 0.9rem;">Your problems are highlighted below</p>
-            </div>
-            <button onclick="clearUnitFilter()" style="padding: 8px 16px; background: white; border: 2px solid #3b82f6; color: #3b82f6; border-radius: 6px; font-weight: 600; cursor: pointer;">
-                View All Units
-            </button>
-        </div>
-    `;
-    
-    const container = document.querySelector('.container');
-    const contentCard = document.querySelector('.content-card');
-    container.insertBefore(banner, contentCard);
-}
-
-function clearUnitFilter() {
-    highlightUnit = null;
-    window.location.href = 'ProblemQueue.html';
-}
-
-
-
-
-
-
-        // =====================================================================
-        // DATA LOADING
-        // =====================================================================
-        
-        async function loadQueueData() {
+        async function loadQueue() {
+            showLoading();
+            
             try {
-                showLoading();
-                
-                const response = await callExplorerAPI('getFaultLogData');
-                
-                if (!response.success) {
-                    throw new Error(response.error || 'Failed to load queue data');
-                }
-                
-                allProblems = response.data || [];
-                
-                // Debug: Log first problem to see field names
-                if (allProblems.length > 0) {
-                    console.log('First problem data sample:', allProblems[0]);
-                    console.log('Available fields:', Object.keys(allProblems[0]));
-                }
-                
+                const problems = await fetchAllProblems();
+                allProblems = problems;
                 processQueue();
-                
             } catch (error) {
                 console.error('Error loading queue:', error);
-                showError('Failed to load problem queue: ' + error.message);
+                showError('Failed to load problem queue. Please refresh the page to try again.');
             }
         }
 
-        function callExplorerAPI(action, params = {}) {
+        // =====================================================================
+        // API COMMUNICATION (JSONP)
+        // =====================================================================
+        
+        function fetchAllProblems() {
             return new Promise((resolve, reject) => {
-                const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                
-                window[callbackName] = function(response) {
-                    delete window[callbackName];
-                    const script = document.getElementById(callbackName);
-                    if (script) script.remove();
-                    resolve(response);
-                };
-                
-                const queryParams = new URLSearchParams({
-                    action: action,
-                    callback: callbackName,
-                    ...params
-                });
-                
+                const callbackName = 'jsonpCallback_' + Math.random().toString(36).substring(7);
                 const script = document.createElement('script');
-                script.id = callbackName;
-                script.src = `${EXPLORER_API_URL}?${queryParams}`;
-                script.onerror = () => {
+                const timeout = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('Request timeout'));
+                }, 30000);
+
+                window[callbackName] = (data) => {
+                    cleanup();
+                    if (data.success) {
+                        resolve(data.data || []);
+                    } else {
+                        reject(new Error(data.error || 'Unknown error'));
+                    }
+                };
+
+                function cleanup() {
+                    clearTimeout(timeout);
                     delete window[callbackName];
-                    reject(new Error('Failed to load data from server'));
+                    if (script.parentNode) {
+                        script.parentNode.removeChild(script);
+                    }
+                }
+
+                script.src = `${API_URL}?action=getFaultLogData&callback=${callbackName}`;
+                script.onerror = () => {
+                    cleanup();
+                    reject(new Error('Network error'));
                 };
                 
                 document.head.appendChild(script);
-                
-                setTimeout(() => {
-                    if (window[callbackName]) {
-                        delete window[callbackName];
-                        const script = document.getElementById(callbackName);
-                        if (script) script.remove();
-                        reject(new Error('Request timeout'));
-                    }
-                }, 30000);
             });
         }
 
         // =====================================================================
-        // QUEUE PROCESSING
+        // QUEUE TYPE MANAGEMENT - NEW V1.1
+        // =====================================================================
+        
+        function setQueueType(type) {
+            currentQueueType = type;
+            
+            // Update button states
+            document.querySelectorAll('.queue-type-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Reset filter to 'all' when switching queue types
+            currentFilter = 'all';
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector('.filter-btn[onclick*="all"]').classList.add('active');
+            
+            // Update info box and reprocess queue
+            updateInfoBox();
+            processQueue();
+        }
+
+        function updateInfoBox() {
+            const infoBox = document.getElementById('infoBox');
+            
+            if (currentQueueType === 'current') {
+                infoBox.innerHTML = `
+                    <strong>Current Queue Logic</strong><br>
+                    Problems are sorted by Priority (Urgent → High → Medium → Low), then by Date Reported (oldest first). 
+                    This ensures transparent, fair allocation of work. Excludes completed, cancelled, programmed, and project items.
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
+                        <strong>Visual Indicators:</strong><br>
+                        <span style="display: inline-block; width: 4px; height: 12px; background: #3b82f6; vertical-align: middle; margin-right: 8px;"></span>
+                        <span style="background: #f1f5f9; padding: 2px 8px; border-radius: 4px;">Blue bar + gray background</span> = Work In Progress (multi-visit job)
+                    </div>
+                `;
+            } else {
+                infoBox.innerHTML = `
+                    <strong>Programmed Queue Logic</strong><br>
+                    Problems marked as "Programmed" - scheduled for future work or part of a planned maintenance program. 
+                    These are sorted by Priority (Urgent → High → Medium → Low), then by Date Reported (oldest first).
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
+                        <strong>Note:</strong> Programmed problems are not yet in the active work queue but are scheduled for completion.
+                    </div>
+                `;
+            }
+        }
+
+        // =====================================================================
+        // QUEUE PROCESSING - UPDATED V1.1
         // =====================================================================
         
         function processQueue() {
-            // Filter active problems only (exclude Completed, Cancelled, Programmed, Project)
-            const activeProblems = allProblems.filter(problem => {
-                const status = (problem.problemStatus || '').toLowerCase();
-                return status !== 'completed' && 
-                       status !== 'cancelled' && 
-                       status !== 'closed' &&
-                       status !== 'programmed' &&
-                       status !== 'project' &&
-                       status !== '';
-            });
+            let queueProblems;
+            
+            if (currentQueueType === 'current') {
+                // Current Queue: Filter active problems only (exclude Completed, Cancelled, Programmed, Project)
+                queueProblems = allProblems.filter(problem => {
+                    const status = (problem.problemStatus || '').toLowerCase();
+                    return status !== 'completed' && 
+                           status !== 'cancelled' && 
+                           status !== 'closed' &&
+                           status !== 'programmed' &&
+                           status !== 'project' &&
+                           status !== '';
+                });
+            } else {
+                // Programmed Queue: Show only Programmed problems
+                queueProblems = allProblems.filter(problem => {
+                    const status = (problem.problemStatus || '').toLowerCase();
+                    return status === 'programmed';
+                });
+            }
             
             // Calculate days in queue for each problem
-            activeProblems.forEach(problem => {
+            queueProblems.forEach(problem => {
                 problem.daysInQueue = calculateDaysInQueue(problem);
             });
             
             // Sort by priority first, then by date (oldest first)
-            activeProblems.sort((a, b) => {
+            queueProblems.sort((a, b) => {
                 const priorityA = PRIORITY_ORDER[a.problemPriority] || 999;
                 const priorityB = PRIORITY_ORDER[b.problemPriority] || 999;
                 
@@ -1004,24 +946,24 @@ function clearUnitFilter() {
                 }
                 
                 // Same priority - sort by date (oldest first)
-                const dateA = new Date(a.dateReported);
-                const dateB = new Date(b.dateReported);
+                const dateA = new Date(a.timestamp || a.dateReported);
+                const dateB = new Date(b.timestamp || b.dateReported);
                 return dateA - dateB;
             });
             
             // Assign queue positions
-            activeProblems.forEach((problem, index) => {
+            queueProblems.forEach((problem, index) => {
                 problem.queuePosition = index + 1;
             });
             
-            displayQueue(activeProblems);
-            updateStats(activeProblems);
+            displayQueue(queueProblems);
+            updateStats(queueProblems);
         }
 
         function calculateDaysInQueue(problem) {
             // Try multiple possible date field names
-            const dateReported = problem.dateReported || 
-                               problem.timestamp || 
+            const dateReported = problem.timestamp || 
+                               problem.dateReported || 
                                problem.reportedDate || 
                                problem.date;
             
@@ -1107,23 +1049,9 @@ function clearUnitFilter() {
             // Mark In Progress cards
             const isInProgress = (problem.problemStatus || '').toLowerCase().includes('progress') || 
                                 (problem.problemStatus || '').toLowerCase().includes('active');
-           
-
-
-		if (isInProgress) {
+            if (isInProgress) {
                 card.classList.add('in-progress');
             }
-
-	// Highlight if this is the resident's unit
-const problemUnit = (problem.unitNumber || '').toString().replace(/\D/g, '');
-const filterUnit = (highlightUnit || '').toString().replace(/\D/g, '');
-
-if (highlightUnit && problemUnit === filterUnit) {
-    card.classList.add('highlighted-unit');
-}
-
-
-
             
             const priorityClass = getPriorityClass(problem.problemPriority);
             const statusClass = getStatusClass(problem.problemStatus);
@@ -1138,63 +1066,18 @@ if (highlightUnit && problemUnit === filterUnit) {
                     </div>
                     <div style="text-align: center;">
                         <div class="queue-days-large">${problem.daysInQueue}</div>
-                        <div class="queue-days-label">days</div>
+                        <div class="queue-days-label">Days</div>
                     </div>
                 </div>
-                <div class="queue-card-badges">
-                    <span class="priority-badge ${priorityClass}">${problem.problemPriority || 'Not Set'}</span>
-                    <span class="status-badge ${statusClass}">${problem.problemStatus || 'Reported'}</span>
+                <div class="queue-card-body">
+                    <div class="queue-card-badges">
+                        <span class="priority-badge ${priorityClass}">${problem.problemPriority || 'None'}</span>
+                        <span class="status-badge ${statusClass}">${problem.problemStatus || 'Reported'}</span>
+                    </div>
                 </div>
             `;
             
             return card;
-        }
-
-        function getFriendlyPID(internalId) {
-            if (!internalId) return '-';
-            const parts = internalId.toString().split('-');
-            return parts.length === 2 ? `PID ${parts[1]}` : internalId;
-        }
-
-        function formatDate(dateValue) {
-            try {
-                let date;
-                if (dateValue instanceof Date) {
-                    date = dateValue;
-                } else if (typeof dateValue === 'string') {
-                    date = new Date(dateValue);
-                } else if (typeof dateValue === 'number') {
-                    date = new Date(dateValue);
-                } else {
-                    return '-';
-                }
-                
-                if (isNaN(date.getTime())) return '-';
-                
-                const day = date.getDate().toString().padStart(2, '0');
-                const month = (date.getMonth() + 1).toString().padStart(2, '0');
-                const year = date.getFullYear();
-                return `${day}/${month}/${year}`;
-            } catch (error) {
-                console.warn('Error formatting date:', dateValue, error);
-                return '-';
-            }
-        }
-
-        function getPriorityClass(priority) {
-            if (!priority) return 'priority-low';
-            const p = priority.toLowerCase();
-            if (p.includes('urgent')) return 'priority-urgent';
-            if (p.includes('high')) return 'priority-high';
-            if (p.includes('medium')) return 'priority-medium';
-            return 'priority-low';
-        }
-
-        function getStatusClass(status) {
-            if (!status) return 'status-waiting';
-            const s = status.toLowerCase();
-            if (s.includes('progress') || s.includes('active')) return 'status-in-progress';
-            return 'status-waiting';
         }
 
         function updateStats(problems) {
@@ -1227,6 +1110,110 @@ if (highlightUnit && problemUnit === filterUnit) {
         }
 
         // =====================================================================
+        // MODAL MANAGEMENT
+        // =====================================================================
+        
+        function showProblemModal(problem) {
+            selectedProblem = problem;
+            const modal = document.getElementById('problemModal');
+            const modalBody = document.getElementById('modalBody');
+            
+            const friendlyPID = getFriendlyPID(problem.internalId || problem.problemId);
+            document.getElementById('modalTitle').textContent = `Problem ${friendlyPID}`;
+            
+            const priorityClass = getPriorityClass(problem.problemPriority);
+            const statusClass = getStatusClass(problem.problemStatus);
+            
+            modalBody.innerHTML = `
+                <div class="modal-field">
+                    <div class="modal-label">Queue Position</div>
+                    <div class="modal-value">#${problem.queuePosition}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Problem ID</div>
+                    <div class="modal-value">${friendlyPID}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Unit Number</div>
+                    <div class="modal-value">${problem.unitNumber || '-'}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Zone</div>
+                    <div class="modal-value">${problem.zone || '-'}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Priority</div>
+                    <div class="modal-value">
+                        <span class="priority-badge ${priorityClass}">${problem.problemPriority || 'None'}</span>
+                    </div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Status</div>
+                    <div class="modal-value">
+                        <span class="status-badge ${statusClass}">${problem.problemStatus || 'Reported'}</span>
+                    </div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Date Reported</div>
+                    <div class="modal-value">${formatDate(problem.timestamp)}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Days in Queue</div>
+                    <div class="modal-value">${problem.daysInQueue} days</div>
+                </div>
+                <div class="modal-field full-width">
+                    <div class="modal-label">Problem Description</div>
+                    <div class="modal-value">${problem.problemDescription || 'No description'}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Category</div>
+                    <div class="modal-value">${problem.category || '-'}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Sub-Category</div>
+                    <div class="modal-value">${problem.subCategory || '-'}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Assigned To</div>
+                    <div class="modal-value">${problem.assignedTo || '-'}</div>
+                </div>
+                <div class="modal-field">
+                    <div class="modal-label">Reported By</div>
+                    <div class="modal-value">${problem.reportedBy || '-'}</div>
+                </div>
+                ${problem.comments ? `
+                    <div class="modal-field full-width">
+                        <div class="modal-label">Work Notes</div>
+                        <div class="modal-value">${problem.comments}</div>
+                    </div>
+                ` : ''}
+            `;
+            
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('problemModal');
+            modal.classList.remove('active');
+            selectedProblem = null;
+        }
+
+        function openInMaintenanceModule() {
+            if (!selectedProblem) return;
+            
+            const friendlyPID = getFriendlyPID(selectedProblem.internalId || selectedProblem.problemId);
+            const url = `MaintenanceModule.html?pid=${encodeURIComponent(friendlyPID)}`;
+            window.location.href = url;
+        }
+
+        // Close modal on background click
+        document.getElementById('problemModal').addEventListener('click', (e) => {
+            if (e.target.id === 'problemModal') {
+                closeModal();
+            }
+        });
+
+        // =====================================================================
         // UI STATES
         // =====================================================================
         
@@ -1250,6 +1237,14 @@ if (highlightUnit && problemUnit === filterUnit) {
             document.getElementById('errorState').style.display = 'none';
             document.getElementById('emptyState').style.display = 'block';
             document.getElementById('queueCardsContainer').style.display = 'none';
+            
+            // Update empty state message based on queue type
+            const emptyMessage = document.getElementById('emptyStateMessage');
+            if (currentQueueType === 'current') {
+                emptyMessage.textContent = 'All problems have been completed or there are no active problems matching your filter.';
+            } else {
+                emptyMessage.textContent = 'There are no programmed problems or no programmed problems matching your filter.';
+            }
         }
 
         function showCards() {
@@ -1260,134 +1255,60 @@ if (highlightUnit && problemUnit === filterUnit) {
         }
 
         // =====================================================================
-        // MODAL
+        // UTILITY FUNCTIONS
         // =====================================================================
         
-        let selectedProblem = null;
-
-        function showProblemModal(problem) {
-            selectedProblem = problem;
-            
-            const modal = document.getElementById('problemModal');
-            const modalBody = document.getElementById('modalBody');
-            const modalTitle = document.getElementById('modalTitle');
-            
-            const friendlyPID = getFriendlyPID(problem.internalId || problem.problemId);
-            modalTitle.textContent = `${friendlyPID} - ${problem.unitNumber || 'Unknown Unit'}`;
-            
-            // Get date reported
-            const dateReported = problem.dateReported || problem.timestamp || problem.reportedDate || problem.date;
-            const formattedDate = dateReported ? formatDate(dateReported) : '-';
-            
-            // Build modal content
-            modalBody.innerHTML = `
-                <div class="modal-field">
-                    <div class="modal-label">Queue Position</div>
-                    <div class="modal-value"><strong style="font-size: 24px; color: #1e40af;">#${problem.queuePosition}</strong></div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Problem ID</div>
-                    <div class="modal-value" style="font-family: monospace;">${friendlyPID}</div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Unit Number</div>
-                    <div class="modal-value">${problem.unitNumber || '-'}</div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Zone</div>
-                    <div class="modal-value">${problem.zone || '-'}</div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Priority</div>
-                    <div class="modal-value">
-                        <span class="priority-badge ${getPriorityClass(problem.problemPriority)}">
-                            ${problem.problemPriority || 'Not Set'}
-                        </span>
-                    </div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Status</div>
-                    <div class="modal-value">
-                        <span class="status-badge ${getStatusClass(problem.problemStatus)}">
-                            ${problem.problemStatus || 'Reported'}
-                        </span>
-                    </div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Date Reported</div>
-                    <div class="modal-value">${formattedDate}</div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Days in Queue</div>
-                    <div class="modal-value">
-                        <span class="days-badge">
-                            ${problem.daysInQueue} days
-                        </span>
-                    </div>
-                </div>
-                <div class="modal-field full-width">
-                    <div class="modal-label">Problem Description</div>
-                    <div class="modal-value">${problem.problemDescription || '-'}</div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Category</div>
-                    <div class="modal-value">${problem.category || problem.problemCategory || '-'}</div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Sub-Category</div>
-                    <div class="modal-value">${problem.subCategory || problem.problemSubCategory || '-'}</div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Assigned To</div>
-                    <div class="modal-value">${problem.assignedTo || 'Unassigned'}</div>
-                </div>
-                <div class="modal-field">
-                    <div class="modal-label">Reported By</div>
-                    <div class="modal-value">${problem.reportedBy || '-'}</div>
-                </div>
-                ${problem.comments ? `
-                <div class="modal-field full-width">
-                    <div class="modal-label">Internal Comments</div>
-                    <div class="modal-value" style="white-space: pre-line;">${problem.comments}</div>
-                </div>
-                ` : ''}
-            `;
-            
-            modal.classList.add('active');
-            document.body.style.overflow = 'hidden';
+        function getPriorityClass(priority) {
+            if (!priority) return 'priority-low';
+            const p = priority.toLowerCase();
+            if (p === 'urgent') return 'priority-urgent';
+            if (p === 'high') return 'priority-high';
+            if (p === 'medium') return 'priority-medium';
+            return 'priority-low';
         }
 
-        function closeModal() {
-            const modal = document.getElementById('problemModal');
-            modal.classList.remove('active');
-            document.body.style.overflow = '';
-            selectedProblem = null;
+        function getStatusClass(status) {
+            if (!status) return 'status-reported';
+            const s = status.toLowerCase();
+            
+            if (s.includes('completed') || s.includes('closed')) return 'status-completed';
+            if (s.includes('progress') || s.includes('active')) return 'status-in-progress';
+            if (s.includes('hold') || s.includes('pending')) return 'status-on-hold';
+            if (s.includes('cancelled')) return 'status-cancelled';
+            if (s.includes('scheduled')) return 'status-scheduled';
+            if (s.includes('programmed')) return 'status-programmed';
+            if (s.includes('project')) return 'status-project';
+            
+            return 'status-reported';
         }
 
-        function openInMaintenanceModule() {
-            if (selectedProblem) {
-                const pid = selectedProblem.internalId || selectedProblem.problemId;
-                if (pid) {
-                    const maintenanceModuleUrl = 'MaintenanceModule.html?pid=' + encodeURIComponent(pid);
-                    window.open(maintenanceModuleUrl, '_blank');
-                }
+        function getFriendlyPID(internalId) {
+            if (!internalId) return 'Unknown';
+            
+            // If already in PID format, return as-is
+            if (internalId.toString().startsWith('PID')) {
+                return internalId;
             }
+            
+            // Extract numeric part from formats like "FAULT-LOG-123"
+            const parts = internalId.toString().split('-');
+            return parts.length > 1 ? 'PID ' + parts[parts.length - 1] : internalId;
         }
 
-        // Close modal when clicking outside
-        document.addEventListener('click', function(event) {
-            const modal = document.getElementById('problemModal');
-            if (event.target === modal) {
-                closeModal();
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('en-AU', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                });
+            } catch (error) {
+                return dateString;
             }
-        });
-
-        // Close modal with Escape key
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeModal();
-            }
-        });
+        }
     </script>
 </body>
 </html>
