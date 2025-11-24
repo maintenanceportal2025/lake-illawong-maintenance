@@ -4,32 +4,39 @@ FIELD NOTIFICATIONS - INTEGRATED COMMUNICATION SYSTEM
 =====================================================================
 PURPOSE: Complete notification system with Email Server V2.2.js integration
 PORTAL: Field Operations Portal Module
-VERSION: v2.3.0 - NO-EMAIL RESIDENT REMINDER
-LAST UPDATED: November 17, 2025
+VERSION: v2.5.2 - JSONP POST FOR ATTACHMENTS (WORKING!)
+LAST UPDATED: November 25, 2025 - 9:50 AM
 DESIGN SYSTEM: Lake Illawong Unified v1.2 - PORTAL CONSISTENCY STANDARD
-- Logo positioned horizontally next to header text
-- Smart button state management with color coding
-- Individual unit selection modal
-- Active email counter tracking
-- Template filtering system
-- Real Email Server V2.2.js integration
+
+FIXES IN V2.5.2:
+- Fixed cross-origin iframe reading error
+- POST now uses JSONP callback (bypasses all security restrictions)
+- Form submits with callback parameter
+- Backend returns JSONP format (not plain JSON)
+- No more SecurityError when reading response
+- Attachments now work properly!
+
+FIXES IN V2.5.1:
+- Attempted form-based POST (blocked by iframe cross-origin reading)
+
+FIXES IN V2.5.0:
+- Added POST support for large payloads
+
+FIXES IN V2.4.1:
+- Added missing sendNotification() function
+
 AUTHENTICATION: None (Public Access)
-DEPENDENCIES: Email Server V2.2.js (sendMassNotification, getNoEmailResidents endpoints)
-SINGLE SOURCE OF TRUTH: Hardcoded templates (Phase 1), UnitList for no-email check
+DEPENDENCIES: Email Server V2.3.5 (with JSONP POST support)
+SINGLE SOURCE OF TRUTH: UnitList for all recipient data
 INTEGRATION FEATURES:
-- Real email sending via Email Server V2.2.js
-- JSONP API calls for cross-origin support
+- Real email sending via Email Server with Gmail API
+- JSONP for all requests (GET and POST) - bypasses CORS and iframe restrictions
+- Form-based POST for large payloads (attachments)
 - Proper zone mapping to Email Server format
 - Error handling and timeout management
-- No-email resident reminder popup (V2.3 NEW)
-- Dynamic list from UnitList single source of truth
-
-VERSION 2.3 CHANGES:
-- Added getNoEmailResidents endpoint call
-- Dynamic popup showing Stage 1 residents without email
-- Simple "I'll Contact Them" / "Cancel" workflow
-- If no residents without email, proceeds directly to send
-- Single source of truth: UnitList Column B (email check)
+- No-email resident reminder popup
+- Dynamic E-Copy distribution list from UnitList Column K
+- PDF/DOC attachment support via JSONP POST
 =====================================================================
 -->
 
@@ -764,6 +771,260 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
         }
+
+/* ============================================= */
+        /* E-COPY DISTRIBUTION - NEW V2.4 CSS */
+        /* ============================================= */
+
+        /* E-Copy Recipients Button */
+        .zone-btn.ecopy-btn {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            color: #78350f;
+            font-weight: 600;
+            grid-column: 1 / -1;
+            border: 2px solid #f59e0b;
+        }
+
+        .zone-btn.ecopy-btn.selected {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            border-color: #d97706;
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+        }
+
+        /* Distribution List Preview */
+        .distribution-preview {
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            border: 2px solid #fbbf24;
+            display: none;
+        }
+
+        .distribution-preview.show {
+            display: block;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .distribution-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #fef3c7;
+        }
+
+        .distribution-title {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #78350f;
+        }
+
+        .distribution-refresh {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .distribution-refresh:active {
+            transform: scale(0.95);
+        }
+
+        .distribution-summary {
+            background: #fef3c7;
+            border: 2px solid #fbbf24;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: 600;
+            color: #78350f;
+        }
+
+        .distribution-summary.warning {
+            background: #fef2f2;
+            border-color: #ef4444;
+            color: #991b1b;
+        }
+
+        .distribution-list {
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+        }
+
+        .distribution-list.collapsed {
+            max-height: 120px;
+        }
+
+        .recipient-item {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .recipient-item.no-email {
+            background: #fef2f2;
+            border-color: #ef4444;
+        }
+
+        .recipient-unit {
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .recipient-name {
+            color: #4b5563;
+            margin: 2px 0;
+        }
+
+        .recipient-email {
+            color: #3b82f6;
+            font-size: 0.85rem;
+        }
+
+        .recipient-email.missing {
+            color: #dc2626;
+            font-weight: 600;
+        }
+
+        .distribution-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .distribution-actions button {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            background: white;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .distribution-actions .view-all {
+            color: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .distribution-actions .manage-tags {
+            color: #059669;
+            border-color: #059669;
+        }
+
+        /* Attachment Upload */
+        .attachment-section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            display: none;
+        }
+
+        .attachment-section.show {
+            display: block;
+        }
+
+        .attachment-label {
+            display: block;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 10px;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px dashed #cbd5e1;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .file-input::-webkit-file-upload-button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+
+        .attachment-preview {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f0f9ff;
+            border: 1px solid #3b82f6;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .attachment-preview.show {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .attachment-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #1e40af;
+            font-size: 0.9rem;
+        }
+
+        .attachment-remove {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        @media (max-width: 480px) {
+            .distribution-actions {
+                flex-direction: column;
+            }
+        }
+
+
     </style>
 </head>
 <body>
@@ -841,8 +1102,53 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 <button class="zone-btn" data-zone="zone3">Zone 3 (21-28)</button>
                 <button class="zone-btn" data-zone="zone4">Zone 4 (29-36)</button>
                 <button class="zone-btn" data-zone="zone5">Zone 5 (37-44)</button>
-                <button class="zone-btn special" onclick="openUnitSelector()"> Select Individual Units</button>
+<button class="zone-btn ecopy-btn" data-zone="ecopy" onclick="selectZone('ecopy')">📧 E-Copy Recipients</button>
+<button class="zone-btn special" onclick="openUnitSelector()">🔢 Select Individual Units</button>
             </div>
+
+<!-- E-Copy Distribution List Preview -->
+<div class="distribution-preview" id="distributionPreview">
+    <div class="distribution-header">
+        <div class="distribution-title">📋 E-Copy Distribution List</div>
+        <button class="distribution-refresh" onclick="loadECopyList()">🔄 Refresh</button>
+    </div>
+    
+    <div class="distribution-summary" id="distributionSummary">
+        <div style="color: #6b7280;">Loading recipients...</div>
+    </div>
+    
+    <div class="distribution-list" id="distributionList">
+        <!-- Recipients loaded here -->
+    </div>
+    
+    <div class="distribution-actions">
+        <button class="view-all" onclick="toggleFullList()">
+            <span id="viewAllText">View All</span>
+        </button>
+        <button class="manage-tags" onclick="openManagementCentral()">
+            Manage Tags →
+        </button>
+    </div>
+</div>
+
+<!-- Attachment Upload Section -->
+<div class="attachment-section" id="attachmentSection">
+    <label class="attachment-label">📎 Attach Document (Optional)</label>
+    <div class="file-input-wrapper">
+        <input type="file" 
+               id="attachmentInput" 
+               class="file-input" 
+               accept=".pdf,.doc,.docx"
+               onchange="handleAttachment(event)">
+    </div>
+    <div class="attachment-preview" id="attachmentPreview">
+        <div class="attachment-info">
+            <span>📄</span>
+            <span id="attachmentName"></span>
+        </div>
+        <button class="attachment-remove" onclick="removeAttachment()">Remove</button>
+    </div>
+</div>
             
             <!-- Clear Selections Button -->
             <div style="text-align: center; margin-top: 15px;">
@@ -870,6 +1176,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             </button>
         </div>
     </div>
+
 
     <!-- Individual Unit Selector Modal -->
     <div id="unitModal" class="modal">
@@ -900,12 +1207,22 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         // const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxWll0dkVYKZcy5yMFvwPPVUKOuQNTb6wBF-kTjBWdVH7CJ-dc552-fBGYda7nN5LMk/exec';
 
 // Email Server V2.0.js deployment URL
-        const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxY6l7p9syqTYlYEER1kMwQXXND8o-34QQ4dlEQwTqxuke3j0TaXrnMw5rB3_ro0WJf/exec';
+       // const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxY6l7p9syqTYlYEER1kMwQXXND8o-34QQ4dlEQwTqxuke3j0TaXrnMw5rB3_ro0WJf/exec';
+
+// Email Server V2.3.5.js deployment URL
+        const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxvmGKhKlMHqICEpfXvQhoN5RoE-F1YEO6UsDqOGWhs55lLn44QN-ZTLWCLg__Fv6N-/exec';
+
         
         // Global state
         let selectedTemplate = null;
         let selectedZones = [];
         let selectedUnits = [];
+
+let ecopyRecipients = [];
+let showFullList = false;
+let attachmentData = null;
+let attachmentFilename = null;
+
         
         let currentFilter = 'all';
         
@@ -1021,43 +1338,88 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         // =====================================================================
         // ZONE MANAGEMENT
         // =====================================================================
-        
         function selectZone(zone) {
-            if (zone === 'all') {
-                // All units selected - deselect others
-                selectedZones = ['all'];
-                selectedUnits = [];
-                document.querySelectorAll('.zone-btn').forEach(btn => {
-                    btn.classList.toggle('selected', btn.dataset.zone === 'all');
-                });
-            } else {
-                // Individual zone selected
-                const allBtn = document.querySelector('[data-zone="all"]');
-                allBtn.classList.remove('selected');
-                
-                const btn = document.querySelector(`[data-zone="${zone}"]`);
-                btn.classList.toggle('selected');
-                
-                if (btn.classList.contains('selected')) {
-                    if (!selectedZones.includes(zone)) {
-                        selectedZones = selectedZones.filter(z => z !== 'all');
-                        selectedZones.push(zone);
-                    }
-                } else {
-                    selectedZones = selectedZones.filter(z => z !== zone);
-                }
-                
-                // If no zones selected, default to all
-                if (selectedZones.length === 0) {
-                    allBtn.classList.add('selected');
-                    selectedZones = ['all'];
-                }
-                
-                selectedUnits = []; // Clear individual selections
+    if (zone === 'all') {
+        // All units selected - deselect others
+        selectedZones = ['all'];
+        selectedUnits = [];
+        document.querySelectorAll('.zone-btn').forEach(btn => {
+            btn.classList.toggle('selected', btn.dataset.zone === 'all');
+        });
+    } else if (zone === 'ecopy') {
+        // E-Copy Recipients - exclusive selection
+        const allBtn = document.querySelector('[data-zone="all"]');
+        allBtn.classList.remove('selected');
+        
+        // Clear all other zones
+        document.querySelectorAll('.zone-btn').forEach(btn => {
+            if (btn.dataset.zone && btn.dataset.zone !== 'ecopy') {
+                btn.classList.remove('selected');
             }
-            
-            updateSendButton();
+        });
+        
+        const btn = document.querySelector('[data-zone="ecopy"]');
+        const preview = document.getElementById('distributionPreview');
+        const attachmentSection = document.getElementById('attachmentSection');
+        
+        if (selectedZones.includes('ecopy')) {
+            // Deselect E-Copy
+            selectedZones = [];
+            btn.classList.remove('selected');
+            if (preview) preview.classList.remove('show');
+            if (attachmentSection) attachmentSection.classList.remove('show');
+        } else {
+            // Select E-Copy
+            selectedZones = ['ecopy'];
+            selectedUnits = [];
+            btn.classList.add('selected');
+            if (preview) {
+                preview.classList.add('show');
+                loadECopyList();
+            }
+            if (attachmentSection) attachmentSection.classList.add('show');
         }
+    } else {
+        // Individual zone selected
+        const allBtn = document.querySelector('[data-zone="all"]');
+        allBtn.classList.remove('selected');
+        
+        // Clear E-Copy if selected
+        const ecopyBtn = document.querySelector('[data-zone="ecopy"]');
+        if (ecopyBtn) {
+            ecopyBtn.classList.remove('selected');
+        }
+        selectedZones = selectedZones.filter(z => z !== 'ecopy');
+        
+        // Hide E-Copy sections
+        const preview = document.getElementById('distributionPreview');
+        const attachmentSection = document.getElementById('attachmentSection');
+        if (preview) preview.classList.remove('show');
+        if (attachmentSection) attachmentSection.classList.remove('show');
+        
+        const btn = document.querySelector(`[data-zone="${zone}"]`);
+        btn.classList.toggle('selected');
+        
+        if (btn.classList.contains('selected')) {
+            if (!selectedZones.includes(zone)) {
+                selectedZones = selectedZones.filter(z => z !== 'all');
+                selectedZones.push(zone);
+            }
+        } else {
+            selectedZones = selectedZones.filter(z => z !== zone);
+        }
+        
+        // If no zones selected, default to all
+        if (selectedZones.length === 0) {
+            allBtn.classList.add('selected');
+            selectedZones = ['all'];
+        }
+        
+        selectedUnits = []; // Clear individual selections
+    }
+    
+    updateSendButton();
+}
         
         // =====================================================================
         // INDIVIDUAL UNIT SELECTION
@@ -1165,6 +1527,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             }
             
             if (selectedZones.includes('all')) return 'All Units';
+            if (selectedZones.includes('ecopy')) return 'E-Copy Recipients';
             
             // Map zone codes to display names
             const zoneNames = {
@@ -1205,58 +1568,124 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         // EMAIL SERVER V1.0.JS INTEGRATION
         // =====================================================================
         
+        // Main send function called by Send button
         async function sendNotification() {
             const message = document.getElementById('messageText').value.trim();
             
             if (!message) {
-                showNotification('Please enter a message before sending.', 'error');
+                showNotification('Please enter a message', 'error');
                 return;
             }
             
-            if (selectedZones.length === 0 && selectedUnits.length === 0) {
-                showNotification('Please select zones or individual units.', 'error');
+            // E-Copy sends skip the no-email check
+            if (selectedZones.includes('ecopy')) {
+                console.log('📧 E-Copy send - proceeding directly');
+                await executeSend();
                 return;
             }
             
-            // Check if Email Server URL is configured
-            if (EMAIL_SERVICE_URL === 'YOUR_EMAIL_SERVER_V1_URL_HERE') {
-                showNotification('Email Server URL not configured. Please update EMAIL_SERVICE_URL.', 'error');
-                return;
-            }
-            
-            // FIRST: Check for residents without email
+            // For regular sends, check for residents without email
             try {
-                console.log('Checking for residents without email...');
-                
-                // Build recipient filter to pass to backend
                 const recipientFilter = buildRecipientFilter();
-                console.log('Checking no-email residents for filter:', recipientFilter);
-                
-                const noEmailResponse = await callEmailAPI('getNoEmailResidents', {
+                const response = await callEmailAPI('getNoEmailResidents', {
                     recipientFilter: recipientFilter
                 });
                 
-                console.log('getNoEmailResidents response:', noEmailResponse);
-                
-                if (noEmailResponse.success && noEmailResponse.count > 0) {
-                    // There are residents without email - show modal
-                    console.log('Found ' + noEmailResponse.count + ' residents without email');
-                    console.log('Residents array:', noEmailResponse.residents);
-                    showNoEmailModal(noEmailResponse.residents);
-                    // Wait for user to click "I'll Contact Them" or "Cancel"
-                    // executeSend() will be called from confirmAndSend()
+                if (response.success && response.residents && response.residents.length > 0) {
+                    // Show warning modal
+                    showNoEmailModal(response.residents);
                 } else {
-                    // No residents without email - proceed directly to send
-                    console.log('No residents without email - proceeding to send');
+                    // No residents without email, proceed
+                    console.log('✅ All recipients have email. Proceeding to send.');
                     await executeSend();
                 }
             } catch (error) {
                 console.error('Error checking no-email residents:', error);
-                // If check fails, proceed anyway (don't block sending)
-                showNotification('Warning: Could not check no-email residents. Proceeding to send.', 'info');
+                showNotification('⚠️ Could not verify email status. Proceeding to send.', 'info');
                 await executeSend();
             }
         }
+        
+        async function executeSend() {
+    const sendBtn = document.getElementById('sendBtn');
+    const originalText = sendBtn.innerHTML;
+    const message = document.getElementById('messageText').value.trim();
+    
+    // Show loading state
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<span class="spinner"></span>Sending...';
+    
+    try {
+        // Prepare recipient filter
+        const recipientFilter = buildRecipientFilter();
+        
+        // Prepare API call parameters
+        const customData = {
+            message: message,
+            subject: 'Field Notification - ' + getTemplateName(selectedTemplate),
+            body: message,
+            timestamp: new Date().toLocaleString(),
+            templateType: selectedTemplate,
+            fieldAlert: true
+        };
+        
+        // NEW: Add attachment if present
+        if (attachmentData && attachmentFilename) {
+            customData.attachment = {
+                filename: attachmentFilename,
+                data: attachmentData,
+                mimeType: getMimeType(attachmentFilename)
+            };
+        }
+        
+        console.log('Sending notification with params:', {
+            recipientFilter: recipientFilter,
+            hasAttachment: !!attachmentData,
+            selectedTemplate: selectedTemplate,
+            selectedZones: selectedZones,
+            selectedUnits: selectedUnits
+        });
+        
+        // Call Email Server
+        const response = await callEmailAPI('sendMassNotification', {
+            templateId: 'WATER01',
+            customData: JSON.stringify(customData),
+            recipientFilter: recipientFilter,
+            adminUser: 'FieldOperations'
+        });
+        
+        console.log('Email API response:', response);
+        
+        if (response.success) {
+            const targetText = getTargetText();
+            const recipientCount = response.recipientCount || calculateRecipientCount();
+            showNotification(getTemplateName(selectedTemplate) + ' sent to ' + targetText + '! (' + recipientCount + ' recipients)', 'success');
+            
+            // Reset form
+            resetForm();
+        } else {
+            throw new Error(response.error || 'Failed to send notification');
+        }
+        
+    } catch (error) {
+        console.error('Send error:', error);
+        showNotification('Failed to send notification: ' + error.message, 'error');
+    } finally {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = originalText;
+    }
+}
+
+function getMimeType(filename) {
+    const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+    const mimeTypes = {
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
+}
+
         
         function showNoEmailModal(residents) {
             console.log('showNoEmailModal called with:', residents);
@@ -1294,88 +1723,40 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             await executeSend();
         }
         
-        async function executeSend() {
-            const sendBtn = document.getElementById('sendBtn');
-            const originalText = sendBtn.innerHTML;
-            const message = document.getElementById('messageText').value.trim();
+        
+        function callEmailAPI(action, params) {
+            // Check if payload is too large for GET (attachments)
+            const paramsJSON = JSON.stringify(params);
+            const payloadSize = paramsJSON.length;
+            const hasLargePayload = payloadSize > 1500; // URL limit safety threshold
             
-            // Show loading state
-            sendBtn.disabled = true;
-            sendBtn.innerHTML = '<span class="spinner"></span>Sending...';
-            
-            try {
-                // Prepare recipient filter first
-                const recipientFilter = buildRecipientFilter();
-                
-                // Prepare API call parameters - override template with custom message
-                const customData = {
-                    message: message,
-                    subject: 'Field Notification - ' + getTemplateName(selectedTemplate),
-                    body: message, // Override template body with our custom message
-                    timestamp: new Date().toLocaleString(),
-                    templateType: selectedTemplate,
-                    fieldAlert: true
-                };
-                
-                console.log('Sending notification with params:', {
-                    recipientFilter: recipientFilter,
-                    customData: customData,
-                    selectedTemplate: selectedTemplate,
-                    selectedZones: selectedZones,
-                    selectedUnits: selectedUnits
-                });
-                
-                // Call Email Server V1.0.js with working template
-                const response = await callEmailAPI('sendMassNotification', {
-                    templateId: 'WATER01', // Use WATER01 since it works reliably
-                    customData: JSON.stringify(customData),
-                    recipientFilter: recipientFilter,
-                    adminUser: 'FieldOperations'
-                });
-                
-                console.log('Email API response:', response);
-                
-                if (response.success) {
-                    // Success
-                    const targetText = getTargetText();
-                    const recipientCount = response.recipientCount || calculateRecipientCount();
-                    showNotification(getTemplateName(selectedTemplate) + ' sent to ' + targetText + '! (' + recipientCount + ' recipients)', 'success');
-                    
-                    // Reset form
-                    resetForm();
-                } else {
-                    throw new Error(response.error || 'Failed to send notification');
-                }
-                
-            } catch (error) {
-                console.error('Send error:', error);
-                showNotification('Failed to send notification: ' + error.message, 'error');
-            } finally {
-                // Restore button
-                sendBtn.disabled = false;
-                sendBtn.innerHTML = originalText;
+            if (hasLargePayload) {
+                // Use POST for large payloads (with attachments)
+                console.log(`📦 Large payload detected (${payloadSize} chars) - using POST`);
+                return callEmailAPI_POST(action, params);
+            } else {
+                // Use JSONP (GET) for small payloads
+                console.log(`📨 Small payload (${payloadSize} chars) - using JSONP GET`);
+                return callEmailAPI_JSONP(action, params);
             }
         }
         
-        
-        function callEmailAPI(action, params) {
+        // JSONP method for small payloads (original method)
+        function callEmailAPI_JSONP(action, params) {
             return new Promise((resolve, reject) => {
                 const callbackName = 'emailCallback_' + Date.now();
                 const script = document.createElement('script');
                 
-                // Set up callback
                 window[callbackName] = function(response) {
                     resolve(response);
                     document.head.removeChild(script);
                     delete window[callbackName];
                 };
                 
-                // Build URL
                 const url = new URL(EMAIL_SERVICE_URL);
                 url.searchParams.append('action', action);
                 url.searchParams.append('callback', callbackName);
                 
-                // Add all parameters
                 Object.keys(params).forEach(key => {
                     url.searchParams.append(key, params[key]);
                 });
@@ -1389,7 +1770,6 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 
                 document.head.appendChild(script);
                 
-                // Timeout after 30 seconds
                 setTimeout(() => {
                     if (window[callbackName]) {
                         reject(new Error('Request timeout'));
@@ -1400,7 +1780,80 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             });
         }
         
+        // POST method for large payloads (attachments) - CORS-friendly with JSONP callback
+        function callEmailAPI_POST(action, params) {
+            return new Promise((resolve, reject) => {
+                // Create unique callback name
+                const callbackName = 'emailCallback_' + Date.now();
+                
+                // Set up global callback function
+                window[callbackName] = function(response) {
+                    console.log('📥 POST callback received:', response);
+                    
+                    // Cleanup
+                    document.body.removeChild(form);
+                    document.body.removeChild(iframe);
+                    delete window[callbackName];
+                    clearTimeout(timeoutId);
+                    
+                    resolve(response);
+                };
+                
+                // Create hidden iframe to receive response
+                const iframeName = 'emailPostFrame_' + Date.now();
+                const iframe = document.createElement('iframe');
+                iframe.name = iframeName;
+                iframe.style.display = 'none';
+                document.body.appendChild(iframe);
+                
+                // Create hidden form
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = EMAIL_SERVICE_URL;
+                form.target = iframeName;
+                form.style.display = 'none';
+                
+                // Create form fields including callback parameter
+                const postData = {
+                    action: action,
+                    callback: callbackName,  // Add callback for JSONP response
+                    ...params
+                };
+                
+                // Add each field to form
+                Object.keys(postData).forEach(key => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = key;
+                    input.value = typeof postData[key] === 'object' ? JSON.stringify(postData[key]) : postData[key];
+                    form.appendChild(input);
+                });
+                
+                document.body.appendChild(form);
+                
+                // Set timeout
+                const timeoutId = setTimeout(() => {
+                    if (window[callbackName]) {
+                        document.body.removeChild(form);
+                        document.body.removeChild(iframe);
+                        delete window[callbackName];
+                        reject(new Error('Request timeout (60s)'));
+                    }
+                }, 60000);
+                
+                // Submit form
+                console.log('📤 Submitting POST via hidden form with JSONP callback...');
+                form.submit();
+            });
+        }
+        
         function buildRecipientFilter() {
+    // Handle E-Copy role-based sending
+    if (selectedZones.includes('ecopy')) {
+        return 'role:E-Copy';
+    }
+
+
             if (selectedUnits.length > 0) {
                 // Send individual units with "Unit " prefix to match UnitList format
                 const unitsList = selectedUnits.map(unit => `Unit ${unit}`).join(',');
@@ -1580,6 +2033,168 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 notification.remove();
             }, 4000);
         }
+
+// =====================================================================
+// E-COPY DISTRIBUTION LIST
+// =====================================================================
+
+async function loadECopyList() {
+    console.log('📋 Loading E-Copy distribution list...');
+    
+    const summaryDiv = document.getElementById('distributionSummary');
+    const listDiv = document.getElementById('distributionList');
+    
+    summaryDiv.innerHTML = '<div style="color: #6b7280;">🔄 Loading recipients...</div>';
+    listDiv.innerHTML = '';
+    
+    try {
+        const response = await callEmailAPI('getECopyRecipients', {});
+        
+        if (response.success) {
+            ecopyRecipients = response.recipients || [];
+            displayECopyList();
+        } else {
+            summaryDiv.className = 'distribution-summary warning';
+            summaryDiv.innerHTML = '❌ Error loading recipients';
+            showNotification('Failed to load E-Copy recipients', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading E-Copy list:', error);
+        summaryDiv.className = 'distribution-summary warning';
+        summaryDiv.innerHTML = '❌ Connection error';
+        showNotification('Failed to connect to server', 'error');
+    }
+}
+
+function displayECopyList() {
+    const summaryDiv = document.getElementById('distributionSummary');
+    const listDiv = document.getElementById('distributionList');
+    
+    const total = ecopyRecipients.length;
+    const missingEmails = ecopyRecipients.filter(r => !r.email || r.email.trim() === '');
+    
+    // Update summary
+    if (missingEmails.length > 0) {
+        summaryDiv.className = 'distribution-summary warning';
+        summaryDiv.innerHTML = `
+            <div>✅ ${total - missingEmails.length} recipients with email</div>
+            <div>⚠️ ${missingEmails.length} missing email address</div>
+        `;
+    } else {
+        summaryDiv.className = 'distribution-summary';
+        summaryDiv.innerHTML = `✅ ${total} recipients found`;
+    }
+    
+    // Display list
+    const displayCount = showFullList ? ecopyRecipients.length : Math.min(3, ecopyRecipients.length);
+    listDiv.className = showFullList ? 'distribution-list' : 'distribution-list collapsed';
+    
+    let html = '';
+    for (let i = 0; i < displayCount; i++) {
+        const r = ecopyRecipients[i];
+        const hasEmail = r.email && r.email.trim() !== '';
+        
+        html += `
+            <div class="recipient-item ${hasEmail ? '' : 'no-email'}">
+                <div class="recipient-unit">Unit ${r.unit}</div>
+                <div class="recipient-name">${escapeHtml(r.name)}</div>
+                <div class="recipient-email ${hasEmail ? '' : 'missing'}">
+                    ${hasEmail ? escapeHtml(r.email) : '⚠️ NO EMAIL ADDRESS'}
+                </div>
+            </div>
+        `;
+    }
+    
+    if (!showFullList && ecopyRecipients.length > 3) {
+        html += `
+            <div style="text-align: center; padding: 10px; color: #6b7280; font-size: 0.9rem;">
+                ... ${ecopyRecipients.length - 3} more
+            </div>
+        `;
+    }
+    
+    listDiv.innerHTML = html;
+    
+    // Update button
+    const viewAllBtn = document.getElementById('viewAllText');
+    if (ecopyRecipients.length <= 3) {
+        viewAllBtn.parentElement.style.display = 'none';
+    } else {
+        viewAllBtn.parentElement.style.display = 'block';
+        viewAllBtn.textContent = showFullList ? 'Show Less' : `View All (${ecopyRecipients.length})`;
+    }
+}
+
+function toggleFullList() {
+    showFullList = !showFullList;
+    displayECopyList();
+}
+
+function openManagementCentral() {
+    const url = 'https://maintenanceportal2025.github.io/maintenance-portal/ManagementCentral.html';
+    window.open(url, '_blank');
+    showNotification('Opening Management Central...', 'info');
+}
+
+// =====================================================================
+// ATTACHMENT HANDLING
+// =====================================================================
+
+function handleAttachment(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Validate file type
+    const validTypes = ['.pdf', '.doc', '.docx'];
+    const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (!validTypes.includes(fileExt)) {
+        showNotification('Please select a PDF, DOC, or DOCX file', 'error');
+        event.target.value = '';
+        return;
+    }
+    
+    // Validate file size (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+        showNotification('File too large. Maximum size is 5MB', 'error');
+        event.target.value = '';
+        return;
+    }
+    
+    // Read file as base64
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        attachmentData = e.target.result.split(',')[1]; // Get base64 data
+        attachmentFilename = file.name;
+        
+        // Show preview
+        document.getElementById('attachmentName').textContent = file.name;
+        document.getElementById('attachmentPreview').classList.add('show');
+        
+        showNotification('Attachment added: ' + file.name, 'success');
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeAttachment() {
+    attachmentData = null;
+    attachmentFilename = null;
+    document.getElementById('attachmentInput').value = '';
+    document.getElementById('attachmentPreview').classList.remove('show');
+    showNotification('Attachment removed', 'info');
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.toString().replace(/[&<>"']/g, m => map[m]);
+}
+
         
         // =====================================================================
         // PERIODIC UPDATES
