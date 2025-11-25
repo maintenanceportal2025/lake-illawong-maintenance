@@ -2,41 +2,30 @@
 =====================================================================
 FIELD NOTIFICATIONS - INTEGRATED COMMUNICATION SYSTEM
 =====================================================================
-PURPOSE: Complete notification system with Email Server V2.2.js integration
+PURPOSE: Complete notification system with Email Server integration
 PORTAL: Field Operations Portal Module
-VERSION: v2.5.2 - JSONP POST FOR ATTACHMENTS (WORKING!)
-LAST UPDATED: November 25, 2025 - 9:50 AM
+VERSION: v2.4.1 - E-COPY DISTRIBUTION (CLEAN VERSION)
+LAST UPDATED: November 25, 2025 - 10:20 AM
 DESIGN SYSTEM: Lake Illawong Unified v1.2 - PORTAL CONSISTENCY STANDARD
 
-FIXES IN V2.5.2:
-- Fixed cross-origin iframe reading error
-- POST now uses JSONP callback (bypasses all security restrictions)
-- Form submits with callback parameter
-- Backend returns JSONP format (not plain JSON)
-- No more SecurityError when reading response
-- Attachments now work properly!
-
-FIXES IN V2.5.1:
-- Attempted form-based POST (blocked by iframe cross-origin reading)
-
-FIXES IN V2.5.0:
-- Added POST support for large payloads
-
 FIXES IN V2.4.1:
-- Added missing sendNotification() function
+- Added missing sendNotification() function (was causing ReferenceError)
+- Removed duplicate executeSend() function
+- E-Copy sends now skip no-email resident check (pre-selected recipients)
+- Added 'ecopy' handling in getTargetText() for proper button display
+- Clean version ready for Drive upload enhancement
 
 AUTHENTICATION: None (Public Access)
-DEPENDENCIES: Email Server V2.3.5 (with JSONP POST support)
+DEPENDENCIES: Email Server V2.3.5 (sendMassNotification, getNoEmailResidents, getECopyRecipients)
 SINGLE SOURCE OF TRUTH: UnitList for all recipient data
 INTEGRATION FEATURES:
 - Real email sending via Email Server with Gmail API
-- JSONP for all requests (GET and POST) - bypasses CORS and iframe restrictions
-- Form-based POST for large payloads (attachments)
+- JSONP API calls for cross-origin support (GET only)
 - Proper zone mapping to Email Server format
 - Error handling and timeout management
 - No-email resident reminder popup
 - Dynamic E-Copy distribution list from UnitList Column K
-- PDF/DOC attachment support via JSONP POST
+- Ready for attachment support via Google Drive upload
 =====================================================================
 -->
 
@@ -1125,30 +1114,11 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         <button class="view-all" onclick="toggleFullList()">
             <span id="viewAllText">View All</span>
         </button>
-        <button class="manage-tags" onclick="openManagementCentral()">
-            Manage Tags →
-        </button>
+        
     </div>
 </div>
 
-<!-- Attachment Upload Section -->
-<div class="attachment-section" id="attachmentSection">
-    <label class="attachment-label">📎 Attach Document (Optional)</label>
-    <div class="file-input-wrapper">
-        <input type="file" 
-               id="attachmentInput" 
-               class="file-input" 
-               accept=".pdf,.doc,.docx"
-               onchange="handleAttachment(event)">
-    </div>
-    <div class="attachment-preview" id="attachmentPreview">
-        <div class="attachment-info">
-            <span>📄</span>
-            <span id="attachmentName"></span>
-        </div>
-        <button class="attachment-remove" onclick="removeAttachment()">Remove</button>
-    </div>
-</div>
+
             
             <!-- Clear Selections Button -->
             <div style="text-align: center; margin-top: 15px;">
@@ -1207,11 +1177,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         // const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxWll0dkVYKZcy5yMFvwPPVUKOuQNTb6wBF-kTjBWdVH7CJ-dc552-fBGYda7nN5LMk/exec';
 
 // Email Server V2.0.js deployment URL
-       // const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxY6l7p9syqTYlYEER1kMwQXXND8o-34QQ4dlEQwTqxuke3j0TaXrnMw5rB3_ro0WJf/exec';
-
-// Email Server V2.3.5.js deployment URL
-        const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxvmGKhKlMHqICEpfXvQhoN5RoE-F1YEO6UsDqOGWhs55lLn44QN-ZTLWCLg__Fv6N-/exec';
-
+        const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxY6l7p9syqTYlYEER1kMwQXXND8o-34QQ4dlEQwTqxuke3j0TaXrnMw5rB3_ro0WJf/exec';
         
         // Global state
         let selectedTemplate = null;
@@ -1568,18 +1534,18 @@ let attachmentFilename = null;
         // EMAIL SERVER V1.0.JS INTEGRATION
         // =====================================================================
         
-        // Main send function called by Send button
+        // Main send notification function - handles both E-Copy and regular sends
         async function sendNotification() {
             const message = document.getElementById('messageText').value.trim();
             
             if (!message) {
-                showNotification('Please enter a message', 'error');
+                showNotification('Please enter a message before sending.', 'warning');
                 return;
             }
             
-            // E-Copy sends skip the no-email check
+            // E-Copy sends skip the no-email check (they're pre-selected with emails)
             if (selectedZones.includes('ecopy')) {
-                console.log('📧 E-Copy send - proceeding directly');
+                console.log('E-Copy send - proceeding directly');
                 await executeSend();
                 return;
             }
@@ -1587,21 +1553,18 @@ let attachmentFilename = null;
             // For regular sends, check for residents without email
             try {
                 const recipientFilter = buildRecipientFilter();
-                const response = await callEmailAPI('getNoEmailResidents', {
-                    recipientFilter: recipientFilter
-                });
+                const response = await callEmailAPI('getNoEmailResidents', { recipientFilter });
                 
                 if (response.success && response.residents && response.residents.length > 0) {
-                    // Show warning modal
+                    // Show warning modal with residents
                     showNoEmailModal(response.residents);
                 } else {
-                    // No residents without email, proceed
-                    console.log('✅ All recipients have email. Proceeding to send.');
+                    // No residents without email, proceed with send
                     await executeSend();
                 }
             } catch (error) {
                 console.error('Error checking no-email residents:', error);
-                showNotification('⚠️ Could not verify email status. Proceeding to send.', 'info');
+                showNotification('Error checking recipients. Proceeding with send...', 'warning');
                 await executeSend();
             }
         }
@@ -1725,38 +1688,23 @@ function getMimeType(filename) {
         
         
         function callEmailAPI(action, params) {
-            // Check if payload is too large for GET (attachments)
-            const paramsJSON = JSON.stringify(params);
-            const payloadSize = paramsJSON.length;
-            const hasLargePayload = payloadSize > 1500; // URL limit safety threshold
-            
-            if (hasLargePayload) {
-                // Use POST for large payloads (with attachments)
-                console.log(`📦 Large payload detected (${payloadSize} chars) - using POST`);
-                return callEmailAPI_POST(action, params);
-            } else {
-                // Use JSONP (GET) for small payloads
-                console.log(`📨 Small payload (${payloadSize} chars) - using JSONP GET`);
-                return callEmailAPI_JSONP(action, params);
-            }
-        }
-        
-        // JSONP method for small payloads (original method)
-        function callEmailAPI_JSONP(action, params) {
             return new Promise((resolve, reject) => {
                 const callbackName = 'emailCallback_' + Date.now();
                 const script = document.createElement('script');
                 
+                // Set up callback
                 window[callbackName] = function(response) {
                     resolve(response);
                     document.head.removeChild(script);
                     delete window[callbackName];
                 };
                 
+                // Build URL
                 const url = new URL(EMAIL_SERVICE_URL);
                 url.searchParams.append('action', action);
                 url.searchParams.append('callback', callbackName);
                 
+                // Add all parameters
                 Object.keys(params).forEach(key => {
                     url.searchParams.append(key, params[key]);
                 });
@@ -1770,6 +1718,7 @@ function getMimeType(filename) {
                 
                 document.head.appendChild(script);
                 
+                // Timeout after 30 seconds
                 setTimeout(() => {
                     if (window[callbackName]) {
                         reject(new Error('Request timeout'));
@@ -1777,73 +1726,6 @@ function getMimeType(filename) {
                         delete window[callbackName];
                     }
                 }, 30000);
-            });
-        }
-        
-        // POST method for large payloads (attachments) - CORS-friendly with JSONP callback
-        function callEmailAPI_POST(action, params) {
-            return new Promise((resolve, reject) => {
-                // Create unique callback name
-                const callbackName = 'emailCallback_' + Date.now();
-                
-                // Set up global callback function
-                window[callbackName] = function(response) {
-                    console.log('📥 POST callback received:', response);
-                    
-                    // Cleanup
-                    document.body.removeChild(form);
-                    document.body.removeChild(iframe);
-                    delete window[callbackName];
-                    clearTimeout(timeoutId);
-                    
-                    resolve(response);
-                };
-                
-                // Create hidden iframe to receive response
-                const iframeName = 'emailPostFrame_' + Date.now();
-                const iframe = document.createElement('iframe');
-                iframe.name = iframeName;
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-                
-                // Create hidden form
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = EMAIL_SERVICE_URL;
-                form.target = iframeName;
-                form.style.display = 'none';
-                
-                // Create form fields including callback parameter
-                const postData = {
-                    action: action,
-                    callback: callbackName,  // Add callback for JSONP response
-                    ...params
-                };
-                
-                // Add each field to form
-                Object.keys(postData).forEach(key => {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = key;
-                    input.value = typeof postData[key] === 'object' ? JSON.stringify(postData[key]) : postData[key];
-                    form.appendChild(input);
-                });
-                
-                document.body.appendChild(form);
-                
-                // Set timeout
-                const timeoutId = setTimeout(() => {
-                    if (window[callbackName]) {
-                        document.body.removeChild(form);
-                        document.body.removeChild(iframe);
-                        delete window[callbackName];
-                        reject(new Error('Request timeout (60s)'));
-                    }
-                }, 60000);
-                
-                // Submit form
-                console.log('📤 Submitting POST via hidden form with JSONP callback...');
-                form.submit();
             });
         }
         
