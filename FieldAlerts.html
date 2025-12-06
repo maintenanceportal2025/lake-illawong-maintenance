@@ -1,31 +1,39 @@
 <!--
 =====================================================================
-FIELD NOTIFICATIONS - INTEGRATED COMMUNICATION SYSTEM
+FIELD NOTIFICATIONS - UNIFIED EMAIL + SMS SYSTEM
 =====================================================================
-PURPOSE: Complete notification system with Email Server integration
-PORTAL: Field Operations Portal Module
-VERSION: v2.4.1 - E-COPY DISTRIBUTION (CLEAN VERSION)
-LAST UPDATED: November 25, 2025 - 10:20 AM
-DESIGN SYSTEM: Lake Illawong Unified v1.2 - PORTAL CONSISTENCY STANDARD
+PURPOSE: Complete notification system with Email + SMS via NotificationServer V3.0
+PORTAL: Field Operations Portal, Admin Portal
+VERSION: v3.0.0 - SMS INTEGRATION WITH TAG-BASED FILTERING
+LAST UPDATED: December 4, 2025
+DESIGN SYSTEM: Lake Illawong Unified v1.4
 
-FIXES IN V2.4.1:
-- Added missing sendNotification() function (was causing ReferenceError)
-- Removed duplicate executeSend() function
-- E-Copy sends now skip no-email resident check (pre-selected recipients)
-- Added 'ecopy' handling in getTargetText() for proper button display
-- Clean version ready for Drive upload enhancement
+NEW IN V3.0:
+✅ SMS notifications via NotificationServer V3.0
+✅ Tag-based SMS opt-in (SMS-Alerts tag in Column J)
+✅ Real-time SMS cost estimation
+✅ Confirmation prompt for SMS sends
+✅ Separate email/SMS recipient tracking
+✅ Email to ALL residents, SMS to opted-in only
 
-AUTHENTICATION: None (Public Access)
-DEPENDENCIES: Email Server V2.3.5 (sendMassNotification, getNoEmailResidents, getECopyRecipients)
+AUTHENTICATION: None (Accessed via authenticated portals)
+DEPENDENCIES: NotificationServer V3.0 (sendFieldAlert, getAllResidents)
 SINGLE SOURCE OF TRUTH: UnitList for all recipient data
+
+SMS FILTERING LOGIC:
+- Email: ALL selected residents (no filtering)
+- SMS: Only residents with "SMS-Alerts" tag in Column J + valid mobile
+- Cost: $0.037 AUD per SMS (CellCast API)
+- Default: SMS toggle OFF (email-only by default)
+
 INTEGRATION FEATURES:
-- Real email sending via Email Server with Gmail API
-- JSONP API calls for cross-origin support (GET only)
-- Proper zone mapping to Email Server format
+- Real email sending via NotificationServer with Gmail API
+- SMS sending via NotificationServer with CellCast API
+- JSONP API calls for cross-origin support
+- Tag-based SMS filtering for cost control
+- Real-time cost estimation before sending
+- EmailLog and SMSLog activity tracking
 - Error handling and timeout management
-- No-email resident reminder popup
-- Dynamic E-Copy distribution list from UnitList Column K
-- Ready for attachment support via Google Drive upload
 =====================================================================
 -->
 
@@ -1013,6 +1021,80 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             }
         }
 
+/* SMS Options */
+        .sms-options {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .sms-toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .sms-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .sms-toggle-label {
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .sms-help-text {
+            font-size: 13px;
+            color: #666;
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }
+
+        .sms-cost-estimate {
+            background: #f0f9ff;
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-left: 30px;
+            display: none;
+        }
+
+        .sms-cost-estimate.visible {
+            display: block;
+        }
+
+        .cost-breakdown {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .cost-item {
+            flex: 1;
+        }
+
+        .cost-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .cost-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e40af;
+        }
+
+        .cost-value.highlight {
+            font-size: 1.3rem;
+            color: #3b82f6;
+        }
 
     </style>
 </head>
@@ -1139,6 +1221,44 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             <div class="char-count" id="charCount">0/500 characters</div>
         </div>
 
+<!-- SMS Options -->
+        <div class="sms-options">
+            <div class="sms-toggle-container">
+                <input 
+                    type="checkbox" 
+                    id="smsEnabled" 
+                    class="sms-checkbox"
+                    onchange="updateSMSCostEstimate()">
+                <label for="smsEnabled" class="sms-toggle-label">
+                    📱 Include SMS Notifications
+                </label>
+            </div>
+            <div class="sms-help-text">
+                Only residents with "SMS-Alerts" tag will receive SMS
+            </div>
+            
+            <div id="smsCostEstimate" class="sms-cost-estimate">
+    <div class="cost-breakdown">
+        <div class="cost-item">
+            <div class="cost-label">SMS Recipients</div>
+            <div class="cost-value" id="smsCount">...</div>
+        </div>
+    </div>
+    
+    <!-- SMS Recipient Details List -->
+    <div id="smsRecipientList" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid #dbeafe;">
+        <div style="font-size: 12px; color: #666; margin-bottom: 8px; font-weight: 500;">
+            📱 Will receive SMS:
+        </div>
+        <div id="smsRecipientDetails" style="font-size: 13px; line-height: 1.8; max-height: 200px; overflow-y: auto;">
+            <!-- Populated by JavaScript -->
+        </div>
+    </div>
+
+</div>
+        </div>
+
+
         <!-- Smart Send Button -->
         <div class="send-section">
             <button class="send-btn" id="sendBtn" disabled>
@@ -1178,6 +1298,9 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
 
 // Email Server V2.0.js deployment URL
         const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxY6l7p9syqTYlYEER1kMwQXXND8o-34QQ4dlEQwTqxuke3j0TaXrnMw5rB3_ro0WJf/exec';
+
+// NotificationServer V3.0.1
+        const NOTIFICATION_SERVER_URL = 'https://script.google.com/macros/s/AKfycbzXdhhzLllsFMlPQ2Q3Hdv7iTzTGvDq9Zk3ttXKW_6OSmil4Pg_IA1WoL7da3UQghiL/exec'; 
         
         // Global state
         let selectedTemplate = null;
@@ -1232,12 +1355,14 @@ let attachmentFilename = null;
                 });
             });
             
-            // Character counter
-            const messageInput = document.getElementById('messageText');
-            messageInput.addEventListener('input', updateCharCount);
+         
+            // Character counter and button update
+const messageInput = document.getElementById('messageText');
+messageInput.addEventListener('input', updateCharCount);
+messageInput.addEventListener('input', updateSendButton);  // ← ADD THIS LINE
             
             // Send button
-            document.getElementById('sendBtn').addEventListener('click', sendNotification);
+            document.getElementById('sendBtn').addEventListener('click', sendFieldAlert);
             
             // Keyboard shortcuts
             document.addEventListener('keydown', function(e) {
@@ -1453,26 +1578,28 @@ let attachmentFilename = null;
         // =====================================================================
         
         function updateSendButton() {
-            const sendBtn = document.getElementById('sendBtn');
-            
-            // Reset classes
-            sendBtn.classList.remove('template-selected', 'ready-to-send');
-            
-            if (!selectedTemplate) {
-                sendBtn.textContent = 'Select Template';
-                sendBtn.disabled = true;
-            } else if (selectedZones.length === 0 && selectedUnits.length === 0) {
-                sendBtn.textContent = 'Select Zone or Units';
-                sendBtn.disabled = true;
-                sendBtn.classList.add('template-selected');
-            } else {
-                const templateName = getTemplateName(selectedTemplate);
-                const targetText = getTargetText();
-                sendBtn.textContent = `Send ${templateName} to ${targetText}`;
-                sendBtn.disabled = false;
-                sendBtn.classList.add('ready-to-send');
-            }
-        }
+    const sendBtn = document.getElementById('sendBtn');
+    const messageText = document.getElementById('messageText').value;
+    const hasMessage = messageText && messageText.trim().length > 0;
+    
+    // Reset classes
+    sendBtn.classList.remove('template-selected', 'ready-to-send');
+    
+    if (selectedZones.length === 0 && selectedUnits.length === 0) {
+        sendBtn.textContent = 'Select Zone or Units';
+        sendBtn.disabled = true;
+    } else if (!hasMessage) {
+        sendBtn.textContent = 'Enter Message';
+        sendBtn.disabled = true;
+        sendBtn.classList.add('template-selected');
+    } else {
+        const targetText = getTargetText();
+        const messageType = selectedTemplate ? getTemplateName(selectedTemplate) : 'Message';
+        sendBtn.textContent = `Send ${messageType} to ${targetText}`;
+        sendBtn.disabled = false;
+        sendBtn.classList.add('ready-to-send');
+    }
+}
         
         function getTemplateName(template) {
             const names = {
@@ -1520,15 +1647,34 @@ let attachmentFilename = null;
         // =====================================================================
         
         function updateCharCount() {
-            const messageInput = document.getElementById('messageText');
-            const charCount = document.getElementById('charCount');
-            const length = messageInput.value.length;
-            
-            charCount.textContent = `${length}/500 characters`;
+    const messageInput = document.getElementById('messageText');
+    const charCount = document.getElementById('charCount');
+    const smsCheckbox = document.getElementById('smsEnabled');
+    const smsEnabled = smsCheckbox && smsCheckbox.checked;
+    const length = messageInput.value.length;
+    
+    if (smsEnabled) {
+        // SMS mode - 160 character limit
+        const remaining = 160 - length;
+        
+        if (length > 160) {
+            charCount.textContent = `${length}/160 characters - ⚠️ TOO LONG FOR SMS`;
+            charCount.className = 'char-count error';
+        } else if (length > 140) {
+            charCount.textContent = `${length}/160 characters (${remaining} remaining)`;
+            charCount.className = 'char-count warning';
+        } else {
+            charCount.textContent = `${length}/160 characters`;
             charCount.className = 'char-count';
-            if (length > 400) charCount.classList.add('warning');
-            if (length > 450) charCount.classList.add('error');
         }
+    } else {
+        // Normal mode - 500 character limit
+        charCount.textContent = `${length}/500 characters`;
+        charCount.className = 'char-count';
+        if (length > 400) charCount.classList.add('warning');
+        if (length > 450) charCount.classList.add('error');
+    }
+}
         
         // =====================================================================
         // EMAIL SERVER V1.0.JS INTEGRATION
@@ -1679,12 +1825,12 @@ function getMimeType(filename) {
         }
         
         async function confirmAndSend() {
-            const modal = document.getElementById('noEmailModal');
-            modal.classList.add('hidden');
-            
-            // User confirmed they'll contact residents - proceed with send
-            await executeSend();
-        }
+    const modal = document.getElementById('noEmailModal');
+    modal.classList.add('hidden');
+    
+    // User confirmed - proceed with SMS-enabled send
+    await executeFieldAlertSend();
+}
         
         
         function callEmailAPI(action, params) {
@@ -2087,6 +2233,222 @@ function escapeHtml(text) {
         
         // Update timestamp every 30 seconds
         setInterval(updateLastUpdateTime, 30000);
+
+        // =====================================================================
+        // SMS FUNCTIONS
+        // =====================================================================
+        
+        async function updateSMSCostEstimate() {
+    const checkbox = document.getElementById('smsEnabled');
+    
+    // Update character counter when SMS toggled
+    updateCharCount();
+    
+    const costDiv = document.getElementById('smsCostEstimate');
+    const smsCountEl = document.getElementById('smsCount');
+    
+    if (!checkbox.checked) {
+        costDiv.classList.remove('visible');
+        // Hide recipient list when SMS disabled
+        const listDiv = document.getElementById('smsRecipientList');
+        if (listDiv) listDiv.style.display = 'none';
+        return;
+    }
+    
+    costDiv.classList.add('visible');
+    smsCountEl.textContent = 'Loading...';
+    
+    try {
+        const response = await callNotificationAPI('getAllResidents', {});
+        
+        if (response.success) {
+            const smsRecipients = response.residents.filter(r => {
+                return hasSMSAlertsTag(r.tags) && r.mobile && r.mobile.trim() !== '';
+            });
+            
+            smsCountEl.textContent = smsRecipients.length;
+            
+            // Show detailed recipient list
+            const listDiv = document.getElementById('smsRecipientList');
+            const detailsDiv = document.getElementById('smsRecipientDetails');
+            
+            if (listDiv && detailsDiv) {
+                if (smsRecipients.length > 0) {
+                    // Build list of recipients with names and numbers
+                    detailsDiv.innerHTML = smsRecipients.map(r => 
+                        `<div style="padding: 4px 0; color: #1e40af;">
+                            <strong>${r.name}</strong> (${r.unit}) - ${r.mobile}
+                        </div>`
+                    ).join('');
+                    listDiv.style.display = 'block';
+                } else {
+                    listDiv.style.display = 'none';
+                }
+            }
+        } else {
+            throw new Error('Failed to get residents');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        smsCountEl.textContent = 'Error';
+    }
+}
+        
+        function hasSMSAlertsTag(tagsString) {
+            if (!tagsString) return false;
+            const tags = tagsString.split(',').map(t => t.trim());
+            return tags.includes('SMS-Alerts');
+        }
+        
+        function callNotificationAPI(action, params) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'notifCallback_' + Date.now();
+                const script = document.createElement('script');
+                
+                window[callbackName] = function(response) {
+                    resolve(response);
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                };
+                
+                const url = new URL(NOTIFICATION_SERVER_URL);
+                url.searchParams.append('action', action);
+                url.searchParams.append('callback', callbackName);
+                
+                Object.keys(params).forEach(key => {
+                    url.searchParams.append(key, params[key]);
+                });
+                
+                script.src = url.toString();
+                script.onerror = () => {
+                    reject(new Error('Network error'));
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                };
+                
+                document.head.appendChild(script);
+                
+                setTimeout(() => {
+                    if (window[callbackName]) {
+                        reject(new Error('Timeout'));
+                        document.head.removeChild(script);
+                        delete window[callbackName];
+                    }
+                }, 30000);
+            });
+        }
+        
+       // Global variables to store send parameters
+let pendingSendParams = null;
+
+async function sendFieldAlert() {
+    const sendBtn = document.getElementById('sendBtn');
+    const messageText = document.getElementById('messageText').value;
+    const smsEnabled = document.getElementById('smsEnabled').checked;
+    
+    if (!messageText || messageText.trim() === '') {
+        showNotification('Please enter a message', 'error');
+        return;
+    }
+    
+// Check SMS character limit
+if (smsEnabled && messageText.length > 160) {
+    showNotification('⚠️ Message too long for SMS (max 160 characters)', 'error');
+    return;
+}
+
+    if (selectedZones.length === 0 && selectedUnits.length === 0) {
+        showNotification('Please select recipients', 'error');
+        return;
+    }
+    // BUILD RECIPIENT FILTER - MATCH EMAIL SERVER FORMAT
+let recipientFilter;
+
+if (selectedZones.includes('ecopy')) {
+    recipientFilter = 'role:E-Copy';
+} else if (selectedUnits.length > 0) {
+    const unitsList = selectedUnits.map(u => `Unit ${u}`).join(',');
+    recipientFilter = `units:${unitsList}`;  // ← Add "units:" prefix!
+} else if (selectedZones.includes('all')) {
+    recipientFilter = 'all_units';
+} else if (selectedZones.length === 1) {
+    const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3', 
+                      'zone4': 'zone_4', 'zone5': 'zone_5' };
+    recipientFilter = zoneMap[selectedZones[0]] || 'all_units';
+} else {
+    // Multiple zones
+    const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3', 
+                      'zone4': 'zone_4', 'zone5': 'zone_5' };
+    recipientFilter = selectedZones.map(z => zoneMap[z]).filter(Boolean).join(',');
+}
+    
+    // Store parameters for confirmAndSend
+    pendingSendParams = { recipientFilter, messageText, smsEnabled, sendBtn };
+    
+    // CHECK FOR NO-EMAIL RESIDENTS (unless E-Copy)
+    if (!selectedZones.includes('ecopy')) {
+        try {
+            const noEmailResponse = await callNotificationAPI('getNoEmailResidents', { 
+                recipientFilter: recipientFilter 
+            });
+            
+            if (noEmailResponse.success && noEmailResponse.count > 0) {
+                showNoEmailModal(noEmailResponse.residents);
+                return; // Modal's confirmAndSend button will call executeFieldAlertSend
+            }
+        } catch (error) {
+            console.error('Error checking no-email:', error);
+        }
+    }
+    
+    // No issues, proceed
+    await executeFieldAlertSend();
+}
+
+async function executeFieldAlertSend() {
+    if (!pendingSendParams) return;
+    
+    const { recipientFilter, messageText, smsEnabled, sendBtn } = pendingSendParams;
+    
+    if (smsEnabled) {
+        const smsCount = document.getElementById('smsCount').textContent;
+        if (!confirm(`Send to selected + SMS to ${smsCount} opted-in?`)) {
+            showNotification('Cancelled', 'info');
+            return;
+        }
+    }
+    
+    const originalText = sendBtn.innerHTML;
+    
+    try {
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '⏳ Sending...';
+        
+        const response = await callNotificationAPI('sendFieldAlert', {
+            message: messageText,
+            recipientFilter: recipientFilter,
+            includeSMS: smsEnabled ? 'true' : 'false'
+        });
+        
+        if (response.success) {
+            showNotification(
+                `✅ Sent! Emails: ${response.email.sent}, SMS: ${response.sms.sent}`,
+                'success'
+            );
+            resetForm();
+            pendingSendParams = null;
+        } else {
+            throw new Error(response.error || 'Failed');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Failed: ' + error.message, 'error');
+    } finally {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = originalText;
+    }
+}
+
     </script>
 
     <!-- NO-EMAIL RESIDENTS REMINDER MODAL -->
