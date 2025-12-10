@@ -1195,7 +1195,10 @@ function displayResults() {
 
       // Create resident card HTML
 function createResidentCard(resident, searchTerm = '') {
-    const hasPhone = resident.phone && resident.phone.trim();
+    // Check for Hide-Phone tag to respect privacy
+    const hasHidePhoneTag = resident.roleTags && 
+        resident.roleTags.toLowerCase().includes('hide-phone');
+    const hasPhone = resident.phone && resident.phone.trim() && !hasHidePhoneTag;
     const hasEmail = resident.email && resident.email.trim();
     const roleTags = resident.roleTags || '';
     
@@ -1383,200 +1386,221 @@ function shouldDisplayRoles(resident, searchTerm) {
         }
 
         function generatePrintHTML() {
-            const stageName = currentStageFilter === 'all' ? 'All Stages' : 
-                            currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
-            
-            let html = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Lake Illawong Residents Directory - ${stageName}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; }
-                        h1 { color: #1e293b; margin-bottom: 5px; }
-                        .subtitle { color: #64748b; margin-bottom: 20px; }
-                        table { width: 100%; border-collapse: collapse; }
-                        th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
-                        th { background: #f8fafc; font-weight: 600; }
-                        .stage-badge { 
-                            background: #f0f9ff; 
-                            color: #0284c7; 
-                            padding: 2px 6px; 
-                            border-radius: 4px; 
-                            font-size: 0.8em; 
-                        }
-                        @media print {
-                            body { margin: 10px; }
-                            table { font-size: 11px; }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <h1>Lake Illawong Residents Directory</h1>
-                    <p class="subtitle">${stageName} - Generated ${new Date().toLocaleDateString()}</p>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Unit</th>
-                                <th>Name</th>
-                                <th>Phone</th>
-                                <th>Email</th>
-                                <th>Address</th>
-                                <th>Stage</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-
-            filteredResidents.forEach(resident => {
-                html += `
+    const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                    currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+    
+    let html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Lake Illawong Residents Directory - ${stageName}</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                h1 { color: #1e293b; margin-bottom: 5px; }
+                .subtitle { color: #64748b; margin-bottom: 20px; }
+                table { width: 100%; border-collapse: collapse; }
+                th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+                th { background: #f8fafc; font-weight: 600; }
+                .stage-badge { 
+                    background: #f0f9ff; 
+                    color: #0284c7; 
+                    padding: 2px 6px; 
+                    border-radius: 4px; 
+                    font-size: 0.8em; 
+                }
+                @media print {
+                    body { margin: 10px; }
+                    table { font-size: 11px; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>Lake Illawong Residents Directory</h1>
+            <p class="subtitle">${stageName} - Generated ${new Date().toLocaleDateString()}</p>
+            <table>
+                <thead>
                     <tr>
-                        <td>${resident.unit || ''}</td>
-                        <td>${resident.name || ''}</td>
-                        <td>${resident.phone || ''}</td>
-                        <td>${resident.email || ''}</td>
-                        <td>${resident.address || ''}</td>
-                        <td><span class="stage-badge">${resident.stage || 'Stage 1'}</span></td>
+                        <th>Unit</th>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Address</th>
+                        <th>Stage</th>
                     </tr>
-                `;
-            });
+                </thead>
+                <tbody>
+    `;
 
-            html += `
-                        </tbody>
-                    </table>
-                    <p style="margin-top: 20px; font-size: 0.9em; color: #64748b;">
-                        Total: ${filteredResidents.length} residents
-                    </p>
-                </body>
-                </html>
-            `;
+    filteredResidents.forEach(resident => {
+        // Check for Hide-Phone tag to respect privacy in print view
+        const hasHidePhoneTag = resident.roleTags && 
+            resident.roleTags.toLowerCase().includes('hide-phone');
+        const displayPhone = hasHidePhoneTag ? 'Private' : (resident.phone || '');
+        
+        html += `
+            <tr>
+                <td>${resident.unit || ''}</td>
+                <td>${resident.name || ''}</td>
+                <td>${displayPhone}</td>
+                <td>${resident.email || ''}</td>
+                <td>${resident.address || ''}</td>
+                <td><span class="stage-badge">${resident.stage || 'Stage 1'}</span></td>
+            </tr>
+        `;
+    });
 
-            return html;
-        }
+    html += `
+                </tbody>
+            </table>
+            <p style="margin-top: 20px; font-size: 0.9em; color: #64748b;">
+                Total: ${filteredResidents.length} residents
+            </p>
+        </body>
+        </html>
+    `;
 
+    return html;
+}
         async function copyToClipboard() {
-            const stageName = currentStageFilter === 'all' ? 'All Stages' : 
-                            currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
-            
-            let text = `Lake Illawong Residents Directory - ${stageName}\n`;
-            text += `Generated: ${new Date().toLocaleDateString()}\n\n`;
-            
-            filteredResidents.forEach(resident => {
-                text += `${resident.unit || 'No Unit'} - ${resident.name || 'Unknown'}\n`;
-                text += `  Phone: ${resident.phone || 'Not provided'}\n`;
-                text += `  Email: ${resident.email || 'Not provided'}\n`;
-                text += `  Address: ${resident.address || 'Not available'}\n`;
-                text += `  Stage: ${resident.stage || 'Stage 1'}\n\n`;
-            });
-            
-            text += `Total: ${filteredResidents.length} residents`;
-            
-            try {
-                await navigator.clipboard.writeText(text);
-                alert('Directory copied to clipboard!');
-            } catch (err) {
-                console.error('Copy failed:', err);
-                // Fallback for older browsers
-                const textarea = document.createElement('textarea');
-                textarea.value = text;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-                alert('Directory copied to clipboard!');
-            }
-        }
+    const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                    currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+    
+    let text = `Lake Illawong Residents Directory - ${stageName}\n`;
+    text += `Generated: ${new Date().toLocaleDateString()}\n\n`;
+    
+    filteredResidents.forEach(resident => {
+        // Check for Hide-Phone tag to respect privacy in clipboard copy
+        const hasHidePhoneTag = resident.roleTags && 
+            resident.roleTags.toLowerCase().includes('hide-phone');
+        const displayPhone = hasHidePhoneTag ? 'Private' : (resident.phone || 'Not provided');
+        
+        text += `${resident.unit || 'No Unit'} - ${resident.name || 'Unknown'}\n`;
+        text += `  Phone: ${displayPhone}\n`;
+        text += `  Email: ${resident.email || 'Not provided'}\n`;
+        text += `  Address: ${resident.address || 'Not available'}\n`;
+        text += `  Stage: ${resident.stage || 'Stage 1'}\n\n`;
+    });
+    
+    text += `Total: ${filteredResidents.length} residents`;
+    
+    try {
+        await navigator.clipboard.writeText(text);
+        alert('Directory copied to clipboard!');
+    } catch (err) {
+        console.error('Copy failed:', err);
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        alert('Directory copied to clipboard!');
+    }
+}
 
         function downloadCSV() {
-            const stageName = currentStageFilter === 'all' ? 'All_Stages' : 
-                            currentStageFilter === 'stage1' ? 'Stage_1' : 'Stage_2';
-            
-            let csv = 'Unit,Name,Phone,Email,Address,Stage\n';
-            
-            filteredResidents.forEach(resident => {
-                const row = [
-                    resident.unit || '',
-                    resident.name || '',
-                    resident.phone || '',
-                    resident.email || '',
-                    resident.address || '',
-                    resident.stage || 'Stage 1'
-                ].map(field => `"${field.replace(/"/g, '""')}"`).join(',');
-                
-                csv += row + '\n';
-            });
-            
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', `Lake_Illawong_Directory_${stageName}_${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
+    const stageName = currentStageFilter === 'all' ? 'All_Stages' : 
+                    currentStageFilter === 'stage1' ? 'Stage_1' : 'Stage_2';
+    
+    let csv = 'Unit,Name,Phone,Email,Address,Stage\n';
+    
+    filteredResidents.forEach(resident => {
+        // Check for Hide-Phone tag to respect privacy in exports
+        const hasHidePhoneTag = resident.roleTags && 
+            resident.roleTags.toLowerCase().includes('hide-phone');
+        const displayPhone = hasHidePhoneTag ? 'Private' : (resident.phone || '');
+        
+        const row = [
+            resident.unit || '',
+            resident.name || '',
+            displayPhone,
+            resident.email || '',
+            resident.address || '',
+            resident.stage || 'Stage 1'
+        ].map(field => `"${field.replace(/"/g, '""')}"`).join(',');
+        
+        csv += row + '\n';
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Lake_Illawong_Directory_${stageName}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
 
 function downloadPDF() {
-            const stageName = currentStageFilter === 'all' ? 'All Stages' : 
-                            currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
-            
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            
-            // Header
-            doc.setFontSize(16);
-            doc.setFont(undefined, 'bold');
-            doc.text('Lake Illawong Residents Directory', 20, 20);
-            
-            doc.setFontSize(12);
-            doc.setFont(undefined, 'normal');
-            doc.text(`${stageName} - Generated ${new Date().toLocaleDateString()}`, 20, 30);
-            
-            // Table headers
-            const headers = [['Unit', 'Name', 'Phone', 'Email']];
-            
-            // Table data
-            const data = filteredResidents.map(resident => [
-                resident.unit || '',
-                resident.name || '',
-                resident.phone || '',
-                resident.email || ''
-            ]);
-            
-            // Add table
-            doc.autoTable({
-                head: headers,
-                body: data,
-                startY: 40,
-                styles: {
-                    fontSize: 10,
-                    cellPadding: 4
-                },
-                headStyles: {
-                    fillColor: [59, 130, 246],
-                    textColor: 255,
-                    fontStyle: 'bold'
-                },
-                columnStyles: {
-                    0: { cellWidth: 25 },  // Unit
-                    1: { cellWidth: 55 },  // Name
-                    2: { cellWidth: 35 },  // Phone
-                    3: { cellWidth: 75 }   // Email
-                },
-                tableWidth: 'auto',
-                margin: { left: 15, right: 15 }
-            });
-            
-            // Footer
-            const pageCount = doc.internal.getNumberOfPages();
-            doc.setFontSize(8);
-            doc.text(`Total: ${filteredResidents.length} residents`, 20, doc.internal.pageSize.height - 10);
-            
-            // Save
-            const fileName = `Lake_Illawong_Directory_${stageName.replace(' ', '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-            doc.save(fileName);
-        }
+    const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                    currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+    
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('Lake Illawong Residents Directory', 20, 20);
+    
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'normal');
+    doc.text(`${stageName} - Generated ${new Date().toLocaleDateString()}`, 20, 30);
+    
+    // Table headers
+    const headers = [['Unit', 'Name', 'Phone', 'Email']];
+    
+    // Table data with Hide-Phone tag check
+    const data = filteredResidents.map(resident => {
+        // Check for Hide-Phone tag to respect privacy in PDF exports
+        const hasHidePhoneTag = resident.roleTags && 
+            resident.roleTags.toLowerCase().includes('hide-phone');
+        const displayPhone = hasHidePhoneTag ? 'Private' : (resident.phone || '');
+        
+        return [
+            resident.unit || '',
+            resident.name || '',
+            displayPhone,
+            resident.email || ''
+        ];
+    });
+    
+    // Add table
+    doc.autoTable({
+        head: headers,
+        body: data,
+        startY: 40,
+        styles: {
+            fontSize: 10,
+            cellPadding: 4
+        },
+        headStyles: {
+            fillColor: [59, 130, 246],
+            textColor: 255,
+            fontStyle: 'bold'
+        },
+        columnStyles: {
+            0: { cellWidth: 25 },  // Unit
+            1: { cellWidth: 55 },  // Name
+            2: { cellWidth: 35 },  // Phone
+            3: { cellWidth: 75 }   // Email
+        },
+        tableWidth: 'auto',
+        margin: { left: 15, right: 15 }
+    });
+    
+    // Footer
+    const pageCount = doc.internal.getNumberOfPages();
+    doc.setFontSize(8);
+    doc.text(`Total: ${filteredResidents.length} residents`, 20, doc.internal.pageSize.height - 10);
+    
+    // Save
+    const fileName = `Lake_Illawong_Directory_${stageName.replace(' ', '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+}
 
         // Hide loading state
         function hideLoading() {
@@ -1645,9 +1669,11 @@ function displayListResults(searchTerm = '') {
 }
 
         // Create list row HTML
-        // Create list row HTML
-function createListRow(resident, index, searchTerm = '') {
-    const hasPhone = resident.phone && resident.phone.trim();
+        function createListRow(resident, index, searchTerm = '') {
+    // Check for Hide-Phone tag to respect privacy
+    const hasHidePhoneTag = resident.roleTags && 
+        resident.roleTags.toLowerCase().includes('hide-phone');
+    const hasPhone = resident.phone && resident.phone.trim() && !hasHidePhoneTag;
     const hasEmail = resident.email && resident.email.trim();
     
     // Determine if we should show roles in list view
@@ -1671,7 +1697,7 @@ function createListRow(resident, index, searchTerm = '') {
                 ${escapeHtml(resident.name || 'Unknown')}
                 ${roleDisplay}
             </td>
-            <td>${escapeHtml(resident.phone || 'Not provided')}</td>
+            <td>${hasPhone ? escapeHtml(resident.phone) : 'Not provided'}</td>
             <td>${escapeHtml(resident.email || 'Not provided')}</td>
             <td>
                 <div class="list-actions">
