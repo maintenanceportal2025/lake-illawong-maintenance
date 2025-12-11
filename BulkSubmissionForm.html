@@ -790,7 +790,7 @@
     <h3 class="section-header" style="margin-top: 0;">Email Notifications</h3>
     
     <div class="email-option">
-        <input type="checkbox" id="emailUnits" checked>
+        <input type="checkbox" id="emailUnits" onchange="handleEmailUnitsChange()">
         <label for="emailUnits">
             Email unit owners 
             <span class="email-count">(<span id="unitEmailCount">0</span> recipients)</span>
@@ -798,7 +798,7 @@
     </div>
     
     <div class="email-option">
-        <input type="checkbox" id="emailReporter">
+       <input type="checkbox" id="emailReporter" onchange="updateConfirmation()">
         <label for="emailReporter">
             Email reporter (you) 
             <span class="email-count">(1 recipient)</span>
@@ -806,7 +806,7 @@
     </div>
     
     <div class="email-option">
-        <input type="checkbox" id="emailMaintenance" checked>
+        <input type="checkbox" id="emailMaintenance" onchange="updateConfirmation()">
         <label for="emailMaintenance">
             Email maintenance team 
             <span class="email-count">(1 summary email)</span>
@@ -814,7 +814,7 @@
     </div>
 
     <div class="email-option">
-    <input type="checkbox" id="emailZoneReps" checked>
+    <input type="checkbox" id="emailZoneReps" onchange="updateConfirmation()">
     <label for="emailZoneReps">
         Email zone representatives
         <span class="email-count">(<span id="zoneRepEmailCount">0</span> recipients)</span>
@@ -827,13 +827,13 @@
 <div class="sms-options" style="margin-top: 20px;">
     <h3 class="section-header" style="margin-top: 0;">SMS Notifications</h3>
     
-    <div class="email-option">
-        <input type="checkbox" id="smsNotifications">
-        <label for="smsNotifications">
-            Send SMS to unit owners
-            <span class="email-count">(<span id="smsCount">0</span> recipients)</span>
-        </label>
-    </div>
+   <div class="email-option">
+    <input type="checkbox" id="smsNotifications" onchange="handleSMSCheckboxChange()">
+    <label for="smsNotifications">
+        Send SMS to unit owners
+        <span class="email-count">(<span id="smsCount">0</span> recipients)</span>
+    </label>
+   </div>
 </div>
 
                 <!-- Confirmation -->
@@ -1158,9 +1158,7 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
         }
 
         function updateSelectedCount() {
-    const checked = document.querySelectorAll('.unit-checkbox input[type="checkbox"]:checked');
-    const count = checked.length;
-    
+    const count = document.querySelectorAll('.unit-checkbox input[type="checkbox"]:checked').length;
     document.getElementById('selectedCount').textContent = `${count} unit${count !== 1 ? 's' : ''} selected`;
     document.getElementById('submitBtn').textContent = `Create ${count} Problem Report${count !== 1 ? 's' : ''}`;
     document.getElementById('submitBtn').disabled = count === 0;
@@ -1169,6 +1167,7 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
     document.getElementById('unitEmailCount').textContent = count;
     
     updateConfirmation();
+    updateSMSRecipientCount(); // ← ADD THIS LINE
 }
 
         function updateConfirmation() {
@@ -1215,10 +1214,73 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
             if (document.getElementById('emailMaintenance').checked) {
                 emailOptions.push('Maintenance team (1 summary)');
             }
+
+	    
+             if (document.getElementById('emailZoneReps').checked) {
+             emailOptions.push('Zone representatives');
+            }	    
+
             document.getElementById('confirmEmails').textContent = emailOptions.length > 0 ? emailOptions.join(', ') : 'None';
         }
 
+ async function updateSMSRecipientCount() {
+    const smsCheckbox = document.getElementById('smsNotifications');
+    const selectedUnits = getSelectedUnits();
+    const smsCountElement = document.getElementById('smsCount');
+    
+    // If SMS checkbox doesn't exist or isn't checked, show 0
+    if (!smsCheckbox || !smsCheckbox.checked || selectedUnits.length === 0) {
+        if (smsCountElement) {
+            smsCountElement.textContent = '0';
+        }
+        return;
+    }
+    
+    try {
+        const result = await callScript({
+            action: 'getSMSRecipientCount',
+            units: JSON.stringify(selectedUnits)
+        });
         
+        if (result.success && smsCountElement) {
+            const count = result.count || 0;
+            smsCountElement.textContent = count;
+        }
+    } catch (error) {
+        console.error('Error getting SMS recipient count:', error);
+        if (smsCountElement) {
+            smsCountElement.textContent = '0';
+        }
+    }
+}
+
+function handleSMSCheckboxChange() {
+        const emailUnitsCheckbox = document.getElementById('emailUnits');
+        const smsCheckbox = document.getElementById('smsNotifications');
+        
+        if (smsCheckbox.checked && !emailUnitsCheckbox.checked) {
+            smsCheckbox.checked = false;
+            alert('SMS notifications require "Email unit owners" to be checked.\n\nPlease enable email notifications first.');
+            updateSMSRecipientCount();
+            return;
+        }
+        
+        updateSMSRecipientCount();
+    }
+
+    function handleEmailUnitsChange() {
+        const emailUnitsCheckbox = document.getElementById('emailUnits');
+        const smsCheckbox = document.getElementById('smsNotifications');
+        
+        if (!emailUnitsCheckbox.checked && smsCheckbox.checked) {
+            smsCheckbox.checked = false;
+            updateSMSRecipientCount();
+        }
+        updateConfirmation();
+    }
+
+
+
 
         // Program Mode Functions
         function toggleSubmissionType() {
