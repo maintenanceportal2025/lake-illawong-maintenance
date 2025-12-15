@@ -843,38 +843,45 @@ FEATURES:
         }
 
         function renderEmailTable(data) {
-            const container = document.getElementById('email-logs-container');
-            
-            const tableHTML = `
-                <table class="log-table">
-                    <thead>
+    const container = document.getElementById('email-logs-container');
+    
+    const tableHTML = `
+        <table class="log-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Recipient</th>
+                    <th>Subject</th>
+                    <th>Status</th>
+                    <th>Service</th>
+                </tr>
+            </thead>
+            <tbody id="email-table-body">
+                ${data.map(log => {
+                    const timestamp = new Date(log.timestamp);
+                    const dateStr = formatDate(timestamp);
+                    const timeStr = formatTime(timestamp);
+                    return `
                         <tr>
-                            <th>Timestamp</th>
-                            <th>Recipient</th>
-                            <th>Subject</th>
-                            <th>Status</th>
-                            <th>Service</th>
+                            <td>${dateStr}</td>
+                            <td>${timeStr}</td>
+                            <td>
+                                <div style="font-weight: 600;">${log.name || 'Unknown'}</div>
+                                <div style="font-size: 0.75rem; color: #6b7280;">${log.email}</div>
+                            </td>
+                            <td>${truncate(log.subject, 50)}</td>
+                            <td><span class="status-badge status-${log.status.toLowerCase()}">${log.status}</span></td>
+                            <td>${log.service || 'Unknown'}</td>
                         </tr>
-                    </thead>
-                    <tbody id="email-table-body">
-                        ${data.map(log => `
-                            <tr>
-                                <td>${formatTimestamp(log.timestamp)}</td>
-                                <td>
-                                    <div style="font-weight: 600;">${log.name || 'Unknown'}</div>
-                                    <div style="font-size: 0.75rem; color: #6b7280;">${log.email}</div>
-                                </td>
-                                <td>${truncate(log.subject, 50)}</td>
-                                <td><span class="status-badge status-${log.status.toLowerCase()}">${log.status}</span></td>
-                                <td><span class="service-badge ${log.service.includes('Notification') ? 'service-notification' : 'service-email'}">${log.service}</span></td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            
-            container.innerHTML = tableHTML;
-        }
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = tableHTML;
+}
 
         function filterEmailTable() {
             const serviceFilter = document.getElementById('email-service-filter').value;
@@ -960,63 +967,67 @@ FEATURES:
         }
 
         function renderSMSView(data, totalCost) {
-            const container = document.getElementById('sms-logs-container');
-            
-            const today = new Date().toDateString();
-            const todaySMS = data.filter(log => 
-    new Date(log.timestamp).toDateString() === today && 
-    log.status === 'sent'
-);
-            const todayCost = todaySMS.reduce((sum, log) => sum + parseFloat(log.cost || 0), 0).toFixed(2);
-            
-            const html = `
-                <div class="stats-grid" style="margin-bottom: 30px;">
-                    <div class="stat-card">
-                        <div class="stat-label">SMS Today</div>
-                        <div class="stat-value">${todaySMS.length}</div>
-                        <div class="stat-subtext">Cost: $${todayCost}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Last 30 Days</div>
-                        <div class="stat-value">${data.length}</div>
-                        <div class="stat-subtext">Total messages sent</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Total Cost</div>
-                        <div class="stat-value">$${totalCost}</div>
-                        <div class="stat-subtext">Last 30 days ($0.037/SMS)</div>
-                    </div>
-                </div>
-                
-                <table class="log-table">
-                    <thead>
+    const container = document.getElementById('sms-logs-container');
+    
+    const today = new Date().toDateString();
+    const todaySMS = data.filter(log => new Date(log.timestamp).toDateString() === today);
+    const todayCost = todaySMS.reduce((sum, log) => sum + parseFloat(log.cost || 0), 0).toFixed(2);
+    
+    const html = `
+        <div class="stats-grid" style="margin-bottom: 30px;">
+            <div class="stat-card">
+                <div class="stat-label">SMS Today</div>
+                <div class="stat-value">${todaySMS.length}</div>
+                <div class="stat-subtext">Cost: $${todayCost}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Last 30 Days</div>
+                <div class="stat-value">${data.length}</div>
+                <div class="stat-subtext">Total messages sent</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Cost</div>
+                <div class="stat-value">$${totalCost}</div>
+                <div class="stat-subtext">Last 30 days ($0.037/SMS)</div>
+            </div>
+        </div>
+        
+        <table class="log-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Recipient</th>
+                    <th>Message</th>
+                    <th>Status</th>
+                    <th>Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${data.map(log => {
+                    const timestamp = new Date(log.timestamp);
+                    const dateStr = formatDate(timestamp);
+                    const timeStr = formatTime(timestamp);
+                    return `
                         <tr>
-                            <th>Timestamp</th>
-                            <th>Recipient</th>
-                            <th>Message</th>
-                            <th>Status</th>
-                            <th>Cost</th>
+                            <td>${dateStr}</td>
+                            <td>${timeStr}</td>
+                            <td>
+                                <div style="font-weight: 600;">${log.name || 'Unknown'}</div>
+                                <div style="font-size: 0.75rem; color: #6b7280;">${log.phone}</div>
+                            </td>
+                            <td>${truncate(log.message, 60)}</td>
+                            <td><span class="status-badge status-${log.status}">${log.status}</span></td>
+                            <td>$${parseFloat(log.cost || 0).toFixed(2)}</td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        ${data.map(log => `
-                            <tr>
-                                <td>${formatTimestamp(log.timestamp)}</td>
-                                <td>
-                                    <div style="font-weight: 600;">${log.name || 'Unknown'}</div>
-                                    <div style="font-size: 0.75rem; color: #6b7280;">${log.phone}</div>
-                                </td>
-                                <td>${truncate(log.message, 60)}</td>
-                                <td><span class="status-badge status-${log.status}">${log.status}</span></td>
-                                <td>$${parseFloat(log.cost || 0).toFixed(2)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            
-            container.innerHTML = html;
-        }
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = html;
+}
 
         // =====================================================================
         // LOAD SECURITY LOGS
@@ -1200,40 +1211,47 @@ FEATURES:
         }
 
         function renderContactTable(data) {
-            const container = document.getElementById('contact-logs-container');
-            
-            const tableHTML = `
-                <table class="log-table">
-                    <thead>
+    const container = document.getElementById('contact-logs-container');
+    
+    const tableHTML = `
+        <table class="log-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Unit / Resident</th>
+                    <th>Detail Type</th>
+                    <th>Old Value</th>
+                    <th>New Value</th>
+                    <th>Method</th>
+                </tr>
+            </thead>
+            <tbody id="contact-table-body">
+                ${data.map(log => {
+                    const timestamp = new Date(log.timestamp);
+                    const dateStr = formatDate(timestamp);
+                    const timeStr = formatTime(timestamp);
+                    return `
                         <tr>
-                            <th>Timestamp</th>
-                            <th>Unit / Resident</th>
-                            <th>Detail Type</th>
-                            <th>Old Value</th>
-                            <th>New Value</th>
-                            <th>Method</th>
+                            <td>${dateStr}</td>
+                            <td>${timeStr}</td>
+                            <td>
+                                <div style="font-weight: 600;">${log.unitNumber}</div>
+                                <div style="font-size: 0.75rem; color: #6b7280;">${log.residentName}${log.isPrimary === 'Yes' ? ' (Primary)' : ''}</div>
+                            </td>
+                            <td><strong>${log.detailType}</strong></td>
+                            <td style="color: #6b7280;">${truncate(log.oldValue, 30)}</td>
+                            <td style="color: #059669; font-weight: 600;">${truncate(log.newValue, 30)}</td>
+                            <td>${log.updateMethod}</td>
                         </tr>
-                    </thead>
-                    <tbody id="contact-table-body">
-                        ${data.map(log => `
-                            <tr>
-                                <td>${formatTimestamp(log.timestamp)}</td>
-                                <td>
-                                    <div style="font-weight: 600;">${log.unitNumber}</div>
-                                    <div style="font-size: 0.75rem; color: #6b7280;">${log.residentName}${log.isPrimary === 'Yes' ? ' (Primary)' : ''}</div>
-                                </td>
-                                <td><strong>${log.detailType}</strong></td>
-                                <td style="color: #6b7280;">${truncate(log.oldValue, 30)}</td>
-                                <td style="color: #059669; font-weight: 600;">${truncate(log.newValue, 30)}</td>
-                                <td>${log.updateMethod}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            
-            container.innerHTML = tableHTML;
-        }
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = tableHTML;
+}
 
         function filterContactTable() {
             const typeFilter = document.getElementById('contact-type-filter').value;
