@@ -824,6 +824,44 @@ PRIVACY FEATURES:
     }
 }
 
+.privacy-notice {
+    background: #fef3c7;
+    border: 2px solid #fbbf24;
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin: 8px 0;
+}
+
+.privacy-notice-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.privacy-notice-text {
+    flex: 1;
+}
+
+.privacy-notice-text strong {
+    display: block;
+    color: #92400e;
+    margin-bottom: 4px;
+    font-size: 0.95rem;
+}
+
+.privacy-notice-text p {
+    color: #78350f;
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.privacy-hidden {
+    color: #94a3b8;
+    font-style: italic;
+}
+
 /* ===================================================================
    PHONE VERIFICATION SCREEN - RESIDENT DIRECTORY V2.0
    =================================================================== */
@@ -1376,6 +1414,62 @@ function setupVerificationListeners() {
     });
 }
 
+function processResidentData(residents) {
+    // Check if current user has Full Access
+    const hasFullAccess = sessionStorage.getItem('directoryFullAccess') === 'true';
+    console.log('Processing ' + residents.length + ' residents. Full Access:', hasFullAccess);
+    
+    return residents.map(resident => {
+        const tags = (resident.roleTags || '').toLowerCase().split(',').map(t => t.trim());
+        
+        // Check for hide tags
+        const hasHidePhone = tags.includes('hide-phone');
+        const hasHideEmail = tags.includes('hide-email');
+        const hasHideContact = tags.includes('hide-contact');
+        
+        // Set hide flags (but DON'T blank the data!)
+        resident.hidePhone = hasHideContact || hasHidePhone;
+        resident.hideEmail = hasHideContact || hasHideEmail;
+        
+        // Debug log for first few residents
+        if (residents.indexOf(resident) < 3) {
+            console.log(`Processing ${resident.name}:`, {
+                hasHidePhone,
+                hasHideEmail,
+                hasHideContact,
+                hidePhone: resident.hidePhone,
+                hideEmail: resident.hideEmail,
+                phone: resident.phone ? '(has data)' : '(no data)',
+                email: resident.email ? '(has data)' : '(no data)'
+            });
+        }
+        
+        // CRITICAL: Apply access level rules
+        if (hasFullAccess) {
+            // Full Access: Show everything, ignore all hide tags
+            const hadHidePhone = resident.hidePhone;
+            const hadHideEmail = resident.hideEmail;
+            
+            resident.hidePhone = false;
+            resident.hideEmail = false;
+            
+            if (hadHidePhone || hadHideEmail) {
+                console.log(`Full Access override for ${resident.name}: Show all contacts`);
+            }
+        } else {
+            // General Access: ALWAYS hide emails, respect hide-phone for phones
+            resident.hideEmail = true;
+            // hidePhone stays as calculated from tags above
+        }
+        
+        return resident;
+    });
+}
+
+
+
+
+
 // Handle phone verification
 function handleVerification() {
     const phoneNumber = document.getElementById('phoneVerify').value.trim();
@@ -1400,23 +1494,33 @@ function handleVerification() {
     // Call ManagementCentral API to verify identity
     makeManagementAPICall('verifyIdentity', { phoneNumber: phoneNumber }, function(response) {
         if (response.success && response.verified) {
-            console.log('✅ Identity verified:', response.unit, response.stage);
-            
-            // Store verification data
-            isVerified = true;
-            verifiedUnit = response.unit;
-            verifiedStage = response.stage;
-            verifiedName = response.name;
-            
-            // Save to session storage
-            sessionStorage.setItem('directoryVerified', 'true');
-            sessionStorage.setItem('directoryUnit', response.unit);
-            sessionStorage.setItem('directoryStage', response.stage);
-            sessionStorage.setItem('directoryName', response.name);
-            
-            // Show success state
-            showVerificationSuccess();
-        } else {
+    console.log('✅ Identity verified:', response.unit, response.stage);
+    console.log('🔍 Full response object:', response);  // ADD THIS
+    console.log('🏷️ RoleTags value:', response.roleTags);  // ADD THIS
+
+
+    // Store verification data
+    isVerified = true;
+    verifiedUnit = response.unit;
+    verifiedStage = response.stage;
+    verifiedName = response.name;
+    
+    // NEW - Store role tags and check for full access
+    const userRoleTags = response.roleTags ? response.roleTags.split(',').map(t => t.trim()) : [];
+    const hasFullAccess = userRoleTags.includes('Directory-Full-Access');
+    
+    // Save to session storage
+    sessionStorage.setItem('directoryVerified', 'true');
+    sessionStorage.setItem('directoryUnit', response.unit);
+    sessionStorage.setItem('directoryStage', response.stage);
+    sessionStorage.setItem('directoryName', response.name);
+    sessionStorage.setItem('directoryFullAccess', hasFullAccess.toString()); // NEW
+    
+    console.log('🔐 Access level:', hasFullAccess ? 'Full Access' : 'General Access');
+    
+    // Show success state
+    showVerificationSuccess();
+} else {
             console.error('❌ Verification failed:', response.error);
             showVerificationError(response.message || 'Phone number not found in our system. Please check and try again, or contact management.');
             resetVerifyButton();
@@ -1449,9 +1553,7 @@ function showDirectory() {
     
     // Setup directory functionality (only once)
     if (!window.directoryInitialized) {
-        setupSearch();
-        setupFilters();
-        setupViewToggle();
+        
         window.directoryInitialized = true;
     }
 }
@@ -1533,16 +1635,16 @@ function makeManagementAPICall(action, params = {}, callback) {
 
         
 
-// Load all residents data
+
 async function loadResidents() {
     try {
-        console.log('📞 Loading residents from API...');
+        console.log('Loading residents from API...');
         
         const data = await makeApiCall(API_URL + '?action=getResidents');
         
         if (data && data.success) {
             // Filter to include proper units AND external entries
-            allResidents = (data.residents || []).filter(resident => {
+            let processedResidents = (data.residents || []).filter(resident => {
                 const unit = (resident.unit || '').trim();
                 const name = (resident.name || '').trim();
                 
@@ -1561,10 +1663,13 @@ async function loadResidents() {
                 return false;
             });
             
+            // Process residents to add hide flags
+            allResidents = processResidentData(processedResidents);
+            
             filteredResidents = [...allResidents];
             
-            console.log(`📞 Loaded ${allResidents.length} residents`);
-            console.log('📋 Sample resident data:', allResidents[0]); // Debug sample
+            console.log(`Loaded ${allResidents.length} residents`);
+            console.log('Sample resident data:', allResidents[0]);
             
             displayResults();
             updateResultsCount();
@@ -1574,22 +1679,11 @@ async function loadResidents() {
         }
         
     } catch (error) {
-        console.error('⚠️ Error loading residents:', error);
+        console.error('Error loading residents:', error);
         showError('Unable to load resident directory. Please try again later.');
         hideLoading();
     }
 }
-
-        // Setup search functionality
-        function setupSearch() {
-            const searchInput = document.getElementById('searchInput');
-            
-            searchInput.addEventListener('input', function() {
-                applyFilters();
-            });
-        }
-
-
        // Setup filter buttons
 function setupFilters() {
     const filterButtons = document.querySelectorAll('.filter-btn');
@@ -1786,70 +1880,54 @@ function createResidentCard(resident, searchTerm = '') {
     const hasEmail = resident.email && resident.email.trim();
     const hidePhone = resident.hidePhone || false;
     const hideEmail = resident.hideEmail || false;
-    const roleTags = resident.roleTags || '';
     
-   // Don't display roles on cards - tags are for filtering only
-let displayRoles = '';
+    let displayRoles = '';
+    const shouldShowRoles = shouldDisplayRoles(resident, searchTerm);
     
-    // Check if BOTH contacts are hidden (hide-contact)
-    const bothHidden = hidePhone && hideEmail;
+    if (shouldShowRoles) {
+        displayRoles = getRelevantRoles(resident, searchTerm);
+    }
     
-    // Contact details display logic
+    // Contact details display
     let contactDisplay = '';
     
-    if (bothHidden) {
-        // Both hidden - show single privacy notice
-        contactDisplay = `
-            <div class="privacy-notice">
-                <div class="privacy-notice-icon">🔒</div>
-                <div class="privacy-notice-text">
-                    <strong>Contact Details Withheld</strong>
-                    <p>This resident has requested their contact information remain private.</p>
-                </div>
+    // Phone display
+    let phoneDisplay = '';
+    if (hidePhone) {
+        // Show "Number Withheld" text for hidden phones
+        phoneDisplay = `
+            <div class="detail-item">
+                <span class="detail-icon">📞</span>
+                <span class="detail-value" style="color: #94a3b8; font-style: italic;">Number Withheld</span>
             </div>
         `;
-    } else {
-        // Individual contact display
-        let phoneDisplay = '';
-        if (hidePhone) {
-            phoneDisplay = `
-                <div class="detail-item">
-                    <span class="detail-icon">🔒</span>
-                    <span class="detail-value privacy-hidden">Not Listed (Resident Request)</span>
-                </div>
-            `;
-        } else if (hasPhone) {
-            phoneDisplay = `
-                <div class="detail-item">
-                    <span class="detail-icon">📞</span>
-                    <a href="tel:${resident.phone.replace(/[^\d+]/g, '')}" class="detail-value detail-link">
-                        ${escapeHtml(resident.phone)}
-                    </a>
-                </div>
-            `;
-        }
-        
-        let emailDisplay = '';
-        if (hideEmail) {
-            emailDisplay = `
-                <div class="detail-item">
-                    <span class="detail-icon">🔒</span>
-                    <span class="detail-value privacy-hidden">Not Listed (Resident Request)</span>
-                </div>
-            `;
-        } else if (hasEmail) {
-            emailDisplay = `
-                <div class="detail-item">
-                    <span class="detail-icon">📧</span>
-                    <a href="mailto:${resident.email}" class="detail-value detail-link">
-                        ${escapeHtml(resident.email)}
-                    </a>
-                </div>
-            `;
-        }
-        
-        contactDisplay = phoneDisplay + emailDisplay;
+    } else if (hasPhone) {
+        phoneDisplay = `
+            <div class="detail-item">
+                <span class="detail-icon">📞</span>
+                <a href="tel:${resident.phone.replace(/[^\d+]/g, '')}" class="detail-value detail-link">
+                    ${escapeHtml(resident.phone)}
+                </a>
+            </div>
+        `;
     }
+    
+    // Email display
+    let emailDisplay = '';
+    if (!hideEmail && hasEmail) {
+        // Only show email if NOT hidden and has data
+        emailDisplay = `
+            <div class="detail-item">
+                <span class="detail-icon">📧</span>
+                <a href="mailto:${resident.email}" class="detail-value detail-link">
+                    ${escapeHtml(resident.email)}
+                </a>
+            </div>
+        `;
+    }
+    // If hideEmail is true, emailDisplay stays empty (blank)
+    
+    contactDisplay = phoneDisplay + emailDisplay;
     
     return `
         <div class="resident-card">
@@ -1863,29 +1941,28 @@ let displayRoles = '';
                 
                 ${displayRoles ? `
                     <div class="detail-item">
-                        <span class="detail-icon">👤</span>
+                        <span class="detail-icon">[R]</span>
                         <span class="detail-value role-tags">${escapeHtml(displayRoles)}</span>
                     </div>
                 ` : ''}
             </div>
             
-            ${!bothHidden ? `
-                <div class="contact-actions">
-                    <a href="${hasPhone && !hidePhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
-                       class="action-btn call ${(!hasPhone || hidePhone) ? 'disabled' : ''}"
-                       ${(!hasPhone || hidePhone) ? 'onclick="return false;"' : ''}>
-                        📞 Call
-                    </a>
-                    <a href="${hasEmail && !hideEmail ? `mailto:${resident.email}` : '#'}" 
-                       class="action-btn email ${(!hasEmail || hideEmail) ? 'disabled' : ''}"
-                       ${(!hasEmail || hideEmail) ? 'onclick="return false;"' : ''}>
-                        📧 Email
-                    </a>
-                </div>
-            ` : ''}
+            <div class="contact-actions">
+                <a href="${hasPhone && !hidePhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
+                   class="action-btn call ${(!hasPhone || hidePhone) ? 'disabled' : ''}"
+                   ${(!hasPhone || hidePhone) ? 'onclick="return false;"' : ''}>
+                    Call
+                </a>
+                <a href="${hasEmail && !hideEmail ? `mailto:${resident.email}` : '#'}" 
+                   class="action-btn email ${(!hasEmail || hideEmail) ? 'disabled' : ''}"
+                   ${(!hasEmail || hideEmail) ? 'onclick="return false;"' : ''}>
+                    Email
+                </a>
+            </div>
         </div>
     `;
 }
+
 
 // Create resident cards with section separators
 // Find this function and update it to accept searchTerm:
@@ -2320,7 +2397,7 @@ function displayListResults(searchTerm = '') {
     // Phone display with privacy
     let phoneText = '';
     if (hidePhone) {
-        phoneText = '<span class="privacy-hidden" style="color: #94a3b8; font-style: italic;">🔒 Not Listed (Resident Request)</span>';
+        phoneText = '<span class="privacy-hidden" style="color: #94a3b8; font-style: italic;">Not Listed</span>';
     } else if (hasPhone) {
         phoneText = escapeHtml(resident.phone);
     } else {
@@ -2330,7 +2407,7 @@ function displayListResults(searchTerm = '') {
     // Email display with privacy
     let emailText = '';
     if (hideEmail) {
-        emailText = '<span class="privacy-hidden" style="color: #94a3b8; font-style: italic;">🔒 Not Listed (Resident Request)</span>';
+        emailText = '<span class="privacy-hidden" style="color: #94a3b8; font-style: italic;">Not Listed</span>';
     } else if (hasEmail) {
         emailText = escapeHtml(resident.email);
     } else {
@@ -2351,12 +2428,12 @@ function displayListResults(searchTerm = '') {
                     <a href="${hasPhone && !hidePhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
                        class="list-action-btn call ${(!hasPhone || hidePhone) ? 'disabled' : ''}"
                        ${(!hasPhone || hidePhone) ? 'onclick="return false;"' : ''}>
-                        📞
+                        &#128222;
                     </a>
                     <a href="${hasEmail && !hideEmail ? `mailto:${resident.email}` : '#'}" 
                        class="list-action-btn email ${(!hasEmail || hideEmail) ? 'disabled' : ''}"
                        ${(!hasEmail || hideEmail) ? 'onclick="return false;"' : ''}>
-                        📧
+                        &#128231;
                     </a>
                 </div>
             </td>
