@@ -1,0 +1,2391 @@
+<!--
+=====================================================================
+LAKE ILLAWONG MAINTENANCE SYSTEM - RESIDENTS DIRECTORY
+=====================================================================
+PURPOSE: Searchable contact directory for all residents
+PORTAL: Residents Portal Module
+VERSION: 2.0
+LAST UPDATED: December 12, 2025
+BACKEND API: Explorer API V1.1 (getResidents with privacy filtering)
+VERIFICATION API: ManagementCentral V1.1 (verifyIdentity function)
+DESIGN SYSTEM: Lake Illawong Unified v1.4
+AUTHENTICATION: Phone Number Verification (Individual)
+PRIVACY FEATURES:
+- Phone verification via ManagementCentral V1.1
+- Privacy filtering handled by Explorer V1.1 backend
+- Frontend displays privacy messages for hidden contacts
+- Consistent authentication with Update My Details module
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Residents Directory - Lake Illawong</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    /* UNIFIED DESIGN SYSTEM - Standard Typography */
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+       
+		
+		background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+        min-height: 100vh;
+        color: #1e293b;
+        line-height: 1.6;
+    }
+
+    /* UNIFIED DESIGN SYSTEM - Container Standards */
+    .container {
+        max-width: 1200px; /* Desktop standard */
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    /* UNIFIED DESIGN SYSTEM - Header Standards */
+    .header {
+        background: transparent;
+        text-align: center;
+        margin-bottom: 30px;
+        color: white;
+    }
+
+    .header-content {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        margin-bottom: 15px;
+    }
+
+    .logo-container {
+        flex-shrink: 0;
+    }
+
+    .logo-image {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        padding: 5px;
+       
+    }
+
+    .header-text {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+    }
+
+    .header-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .header-subtitle {
+        font-size: 1.1rem;
+        opacity: 0.9;
+        font-weight: 500;
+    }
+
+    /* Search Section */
+    .search-section {
+        background: transparent;
+    }
+
+    .search-container {
+        position: relative;
+        min-width: 300px;
+        flex: 1;
+        max-width: 400px;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 12px 16px 12px 40px;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        background: #ffffff;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #64748b;
+        font-size: 1.2rem;
+    }
+
+    .search-results-count {
+        text-align: center;
+        color: #64748b;
+        font-size: 0.9rem;
+        margin-top: 0;
+    }
+
+    /* Results Grid */
+    .results-section {
+        background: #f4f4f4;
+        border-radius: 6px;
+        padding: 30px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        min-height: 400px;
+    }
+
+    .results-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 10px;
+    }
+
+    .resident-card {
+        background: #f8fafc;
+        border: 2px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 10px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .resident-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        border-color: #667eea;
+    }
+
+    .resident-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+
+    .resident-name {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0;
+    }
+
+    .unit-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: #f0f9ff;
+        color: #0284c7;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .resident-details {
+        space-y: 8px;
+    }
+
+    .detail-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+        color: #374151;
+    }
+
+    .detail-icon {
+        width: 16px;
+        text-align: center;
+        color: #64748b;
+    }
+
+    .detail-value {
+        flex: 1;
+    }
+
+    /* Filter and Export Section */
+    .controls-section {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .controls-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+
+    .filter-buttons {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .filter-btn {
+        padding: 10px 16px;
+        border: 2px solid #e2e8f0;
+        border-radius: 2px;
+        background: #ffffff;
+        color: #374151;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        white-space: nowrap;
+    }
+
+    .filter-btn:hover {
+        border-color: #667eea;
+        color: #667eea;
+    }
+
+    .filter-btn.active {
+        background: #667eea;
+        border-color: #667eea;
+        color: white;
+    }
+
+    /* Committee filter button styles */
+    .filter-btn.committee-btn {
+        background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+        border-color: #bae6fd;
+    }
+
+    .filter-btn.committee-btn.active {
+        background: linear-gradient(135deg, #0284c7, #0369a1);
+        border-color: #0284c7;
+    }
+
+    .filter-btn.committee-btn:hover:not(.active) {
+        border-color: #0284c7;
+        background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+    }
+
+    .export-buttons {
+        display: flex;
+        gap: 8px;
+    }
+
+    .view-buttons {
+        display: flex;
+        gap: 8px;
+    }
+
+    .view-btn {
+        padding: 10px 20px;
+        border: 2px solid #e2e8f0;
+        border-radius: 2px;
+        background: #ffffff;
+        color: #374151;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .view-btn:hover {
+        border-color: #667eea;
+        color: #667eea;
+    }
+
+    .view-btn.active {
+        background: #667eea;
+        border-color: #667eea;
+        color: white;
+    }
+
+    .export-btn {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        color: white;
+        text-decoration: none;
+    }
+
+    .export-btn.print {
+        background: #059669;
+    }
+
+    .export-btn.print:hover {
+        background: #047857;
+    }
+
+    .export-btn.copy {
+        background: #0284c7;
+    }
+
+    .export-btn.copy:hover {
+        background: #0369a1;
+    }
+
+    .export-btn.csv {
+        background: #7c3aed;
+    }
+
+    .export-btn.csv:hover {
+        background: #6d28d9;
+    }
+
+    .export-btn.pdf {
+        background: #dc2626;
+    }
+
+    .export-btn.pdf:hover {
+        background: #b91c1c;
+    }
+
+    /* Contact Actions */
+    .contact-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .action-btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        min-height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        flex: 1;
+    }
+
+    .action-btn.call {
+        background: #f0fdf4;
+        color: #059669;
+        border: 1px solid #bbf7d0;
+    }
+
+    .action-btn.call:hover {
+        background: #dcfce7;
+    }
+
+    .action-btn.email {
+        background: #f0f9ff;
+        color: #0284c7;
+        border: 1px solid #bae6fd;
+    }
+
+    .action-btn.email:hover {
+        background: #e0f2fe;
+    }
+
+    .action-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background: #f1f5f9;
+        color: #94a3b8;
+    }
+
+    /* Loading States */
+    .loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 200px;
+        color: #64748b;
+    }
+
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f1f5f9;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* List View Styles */
+    .results-list {
+        overflow-x: auto;
+    }
+
+    .directory-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    .directory-table th {
+        background: #f8fafc;
+        padding: 16px 12px;
+        text-align: left;
+        font-weight: 700;
+        color: #1e293b;
+        border-bottom: 2px solid #e2e8f0;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+    }
+
+    .directory-table th:nth-child(1) { width: 90px; }    /* Unit */
+    .directory-table th:nth-child(2) { width: 250px; }   /* Name */
+    .directory-table th:nth-child(3) { width: 140px; }   /* Phone */
+    .directory-table th:nth-child(4) { width: auto; }    /* Email - takes remaining space */
+    .directory-table th:nth-child(5) { width: 90px; }    /* Actions */
+    .directory-table td {
+        padding: 12px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+        color: #374151;
+    }
+
+    .directory-table tr:hover {
+        background: #f8fafc;
+    }
+
+    .directory-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .list-actions {
+        display: flex;
+        gap: 6px;
+    }
+
+    .list-action-btn {
+        padding: 6px 12px;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+    }
+
+    .list-action-btn.call {
+        background: #f0fdf4;
+        color: #059669;
+        border: 1px solid #bbf7d0;
+    }
+
+    .list-action-btn.call:hover {
+        background: #dcfce7;
+    }
+
+    .list-action-btn.email {
+        background: #f0f9ff;
+        color: #0284c7;
+        border: 1px solid #bae6fd;
+    }
+
+    .list-action-btn.email:hover {
+        background: #e0f2fe;
+    }
+
+    .list-action-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background: #f1f5f9;
+        color: #94a3b8;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #64748b;
+    }
+
+    .empty-icon {
+        font-size: 3rem;
+        margin-bottom: 20px;
+        opacity: 0.5;
+    }
+
+    .empty-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 8px;
+    }
+
+    .empty-message {
+        font-size: 0.9rem;
+        color: #64748b;
+    }
+
+    /* Navigation */
+    .nav-section {
+        margin-bottom: 25px;
+    }
+
+    .nav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 600;
+        padding: 10px 15px;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+
+    .nav-link:hover {
+        background: rgba(102, 126, 234, 0.1);
+        transform: translateX(-2px);
+    }
+
+    /* Stage Dividers */
+    .stage-divider {
+        grid-column: 1 / -1;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #cbd5e1, transparent);
+        margin: 30px 0;
+        position: relative;
+        text-align: center;
+    }
+
+    .stage-divider::before {
+        content: "";
+        position: absolute;
+        top: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: white;
+        padding: 0 15px;
+        color: #64748b;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    /* Specific labels for each section type */
+    .stage-divider[data-section="Stage 1 Units"]::before {
+        content: "Stage 1 Units";
+    }
+
+    .stage-divider[data-section="Stage 1 External"]::before {
+        content: "Stage 1 External";
+        color: #dc2626; /* Red color for emphasis */
+    }
+
+    .stage-divider[data-section="Stage 2 Units"]::before {
+        content: "Stage 2 Units";
+    }
+
+    .stage-divider[data-section="Stage 2 External"]::before {
+        content: "Stage 2 External";
+        color: #dc2626; /* Red color for emphasis */
+    }
+
+    /* Desktop: Hide call and email buttons completely */
+    @media (min-width: 769px) {
+        .action-btn.call,
+        .action-btn.email,
+        .list-action-btn.call,
+        .list-action-btn.email {
+            display: none;
+        }
+    }
+
+    /* SINGLE MOBILE SECTION - All Mobile Rules Combined */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+
+    .header {
+        padding: 15px;
+    }
+
+    .header-content {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .logo-image {
+        width: 100px;
+        height: 100px;
+    }
+
+    .header-text {
+        align-items: center;
+        text-align: center;
+    }
+
+    .header-title {
+        font-size: 2rem;
+    }
+
+    .controls-section {
+        padding: 15px;
+    }
+
+    .controls-row {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .view-buttons {
+        display: none;
+    }
+
+    .filter-buttons {
+        width: 100%;
+        justify-content: center;
+        gap: 4px;
+    }
+
+    .filter-btn {
+        padding: 6px 8px;
+        font-size: 0.8rem;
+        min-height: 40px;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        border-radius: 0;
+        border-left: none;
+    }
+
+    .filter-btn:first-child {
+        border-top-left-radius: 2px;
+        border-bottom-left-radius: 2px;
+        border-left: 2px solid #e2e8f0;
+    }
+
+    .filter-btn:last-child {
+        border-top-right-radius: 2px;
+        border-bottom-right-radius: 2px;
+    }
+
+    /* Make committee buttons full width on mobile for better touch targets */
+    .filter-btn.committee-btn {
+        flex: 1 0 100%;
+        margin-top: 5px;
+        border-radius: 2px;
+        border-left: 2px solid #bae6fd;
+    }
+
+    .export-buttons {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .export-btn {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .search-section {
+        padding: 15px;
+    }
+
+    .search-container {
+        min-width: auto;
+        max-width: none;
+    }
+
+    .results-section {
+        padding: 10px;
+    }
+
+    /* TIGHTEN CARD LAYOUT FOR MOBILE */
+    .results-grid {
+        grid-template-columns: 1fr;
+        gap: 8px; /* Reduced from 15px */
+    }
+
+    .resident-card {
+        padding: 10px; /* Reduced from 20px */
+        margin-bottom: 0; /* Remove extra bottom margin since we have gap */
+    }
+
+    .resident-header {
+        margin-bottom: 8px; /* Reduced from 12px */
+    }
+
+    .resident-name {
+        font-size: 1rem; /* Slightly smaller */
+    }
+
+    .detail-item {
+        margin-bottom: 6px; /* Reduced from 8px */
+        font-size: 0.85rem; /* Slightly smaller text */
+    }
+
+    .problem-description {
+        margin-top: 8px; /* Reduced from 10px */
+        padding: 8px; /* Reduced from 10px */
+    }
+
+    /* Hide contact action buttons on mobile */
+    .contact-actions {
+        display: none;
+    }
+
+    /* Make phone numbers and emails clickable on mobile */
+    .detail-value {
+        color: #667eea;
+        text-decoration: underline;
+        cursor: pointer;
+    }
+
+    .detail-value:hover {
+        text-decoration: none;
+    }
+
+    .action-btn {
+        min-height: 48px; /* Larger touch target on mobile */
+    }
+
+    /* Make sure cards don't overflow */
+    .resident-card {
+        min-width: 0;
+        max-width: 100%;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+
+    .resident-card * {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        min-width: 0;
+    }
+
+    /* Tighten list view as well */
+    .directory-table {
+        font-size: 0.85rem;
+    }
+
+    .directory-table th,
+    .directory-table td {
+        padding: 8px 6px;
+    }
+
+    .list-action-btn {
+        padding: 4px 8px;
+        min-height: 28px;
+    }
+}
+
+/* ===================================================================
+   PHONE VERIFICATION SCREEN - RESIDENT DIRECTORY V2.0
+   =================================================================== */
+
+.verification-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.verification-card {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    padding: 40px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    max-width: 450px;
+    width: 100%;
+    text-align: center;
+}
+
+.verification-header {
+    margin-bottom: 30px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    padding-bottom: 20px;
+}
+
+.verification-icon {
+    font-size: 3.5rem;
+    margin-bottom: 15px;
+}
+
+.verification-title {
+    font-size: 2rem;
+    color: white;
+    margin-bottom: 8px;
+    font-weight: 600;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+.verification-subtitle {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.info-box {
+    background: #dbeafe;
+    border-left: 4px solid #3b82f6;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 25px;
+}
+
+.info-box-title {
+    font-weight: 600;
+    color: #1e40af;
+    margin-bottom: 5px;
+}
+
+.info-box-text {
+    font-size: 0.9rem;
+    color: #1e3a8a;
+    line-height: 1.5;
+}
+
+.phone-input-group {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.phone-input-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9rem;
+}
+
+.phone-input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    font-size: 0.95rem;
+    transition: border-color 0.2s ease;
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.phone-input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.phone-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.verify-btn {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+    backdrop-filter: blur(10px);
+}
+
+.verify-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.verify-btn:disabled {
+    background: rgba(255, 255, 255, 0.1);
+    cursor: not-allowed;
+    transform: none;
+}
+
+.verification-success {
+    background: rgba(16, 185, 129, 0.15);
+    border-left: 3px solid rgba(16, 185, 129, 0.6);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 12px 16px;
+    margin: 20px 0;
+    font-size: 0.9rem;
+    border-radius: 2px;
+}
+
+.verification-success-title {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    margin-bottom: 4px;
+    font-size: 1.1rem;
+}
+
+.verification-success-text {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.unit-display {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: white;
+    margin: 10px 0;
+}
+
+.continue-btn {
+    width: 100%;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+    backdrop-filter: blur(10px);
+}
+
+.continue-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.error-message {
+    background: rgba(239, 68, 68, 0.15);
+    border-left: 3px solid rgba(239, 68, 68, 0.6);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 12px 16px;
+    margin-top: 15px;
+    font-size: 0.9rem;
+    border-radius: 2px;
+}
+
+.help-link {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.help-link a {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.help-link a:hover {
+    text-decoration: underline;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Privacy message styles */
+.privacy-hidden {
+    color: #64748b;
+    font-style: italic;
+}
+
+.privacy-icon {
+    margin-right: 4px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    .verification-card {
+        padding: 30px 20px;
+    }
+    
+    .verification-title {
+        font-size: 1.5rem;
+    }
+}
+
+/* Privacy Notice for hide-contact */
+.privacy-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    background: #fef3c7;
+    border: 2px solid #fbbf24;
+    border-radius: 8px;
+    margin: 12px 0;
+}
+
+.privacy-notice-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.privacy-notice-text {
+    flex: 1;
+}
+
+.privacy-notice-text strong {
+    display: block;
+    color: #92400e;
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+}
+
+.privacy-notice-text p {
+    color: #78350f;
+    font-size: 0.85rem;
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Password input wrapper for eye toggle */
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.password-input-wrapper .phone-input {
+    flex: 1;
+    padding-right: 45px; /* Make room for the eye button inside */
+}
+
+.toggle-visibility-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 4px 8px;
+    color: rgba(255, 255, 255, 0.7);
+    transition: color 0.2s ease;
+    user-select: none;
+}
+
+.toggle-visibility-btn:hover {
+    color: rgba(255, 255, 255, 1);
+}
+
+.toggle-visibility-btn:focus {
+    outline: none;
+}
+
+
+    </style>
+</head>
+
+
+<body>
+
+<!-- ===================================================================
+     VERIFICATION VIEW - PHONE NUMBER AUTHENTICATION
+     =================================================================== -->
+<div id="verificationView" class="verification-container">
+    <div class="verification-card">
+        <!-- Initial Verification State -->
+        <div id="verificationStep">
+            <div class="verification-header">
+                <div class="verification-icon">📱</div>
+                <h1 class="verification-title">Resident Directory</h1>
+                <p class="verification-subtitle">Enter your phone number to access the directory</p>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-box-title">🔒 Secure Access</div>
+                <div class="info-box-text">
+                    We'll verify your phone number against our records. Each resident 
+                    has individual access using their registered phone number.
+                </div>
+            </div>
+            
+            <div id="verificationError" class="error-message hidden">
+                ❌ Phone number not found in our system
+            </div>
+            
+            <div class="phone-input-group">
+    <label class="phone-input-label" for="phoneVerify">Your Phone Number:</label>
+    <div class="password-input-wrapper">
+        <input type="password" 
+               id="phoneVerify" 
+               class="phone-input"
+               placeholder="e.g., 0412-345-678"
+               autocomplete="tel"
+               inputmode="numeric">
+        <button type="button" 
+                class="toggle-visibility-btn" 
+                id="togglePhoneVisibility"
+                onclick="togglePhoneVisibility()">
+            👁️
+        </button>
+    </div>
+</div>
+            
+            <button id="verifyBtn" class="verify-btn">
+                🔍 Verify & Access Directory
+            </button>
+            
+            <div class="help-link">
+                Don't remember your phone number?<br/>
+                <a href="mailto:management@lakeillawong.com">Contact management for assistance</a>
+            </div>
+        </div>
+        
+        <!-- Verification Success State -->
+        <div id="verificationSuccessStep" class="hidden">
+            <div class="verification-header">
+                <div class="verification-icon">✅</div>
+                <h1 class="verification-title">Access Granted</h1>
+            </div>
+            
+            <div class="verification-success">
+                <div class="verification-success-title" id="welcomeMessage">✓ Verification Successful</div>
+                <div class="verification-success-text">
+                    You are verified as:
+                </div>
+                <div class="unit-display" id="verifiedUnit">Unit 42 - Stage 1</div>
+            </div>
+            
+            <button id="continueBtn" class="continue-btn">
+                📖 View Directory
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================================================================
+     DIRECTORY VIEW - SHOWN AFTER VERIFICATION
+     =================================================================== -->
+<div id="directoryView" class="container hidden">
+
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+    <div class="header-content">
+        <div class="logo-container">
+            <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+        </div>
+        <div class="header-text">
+            <h1 class="header-title">Resident Directory</h1>
+            <p class="header-subtitle">Search and contact Lake Illawong residents</p>
+        </div>
+    </div>
+</header>
+
+        <!-- Filter and Export Controls -->
+        <section class="controls-section">
+    <div class="controls-row">
+        <div class="search-container">
+            <div style="position: relative;">
+                <span class="search-icon">🔍</span>
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    class="search-input" 
+                    placeholder="Search by name, unit, email, or phone..."
+                    autocomplete="off"
+                >
+            </div>
+        </div>
+        
+        <div class="filter-buttons">
+            <button class="filter-btn active" data-stage="all">All Residents</button>
+            <button class="filter-btn" data-stage="stage1">Stage 1</button>
+            <button class="filter-btn" data-stage="stage2">Stage 2</button>
+            <button class="filter-btn committee-btn" data-committee="social">Social Committee</button>
+            <button class="filter-btn committee-btn" data-committee="resident">Resident Committee</button>
+			<button class="filter-btn committee-btn" data-committee="zonerep">Zone Reps</button>
+			<button class="filter-btn committee-btn" data-committee="fireward">Fire Wardens</button>
+        </div>
+        
+        <div class="view-buttons">
+            <button class="view-btn active" data-view="cards">📇 Cards</button>
+            <button class="view-btn" data-view="list">📋 List</button>
+        </div>
+        
+        <div class="export-buttons">
+            <button class="export-btn print" onclick="printDirectory()">
+                🖨️ Print
+            </button>
+            <button class="export-btn copy" onclick="copyToClipboard()">
+                📋 Copy
+            </button>
+            <button class="export-btn download" onclick="downloadCSV()">
+                📥 CSV
+            </button>
+            <button class="export-btn pdf" onclick="downloadPDF()">
+                📄 PDF
+            </button>
+        </div>
+    </div>
+    
+    <!-- Results count -->
+    <div id="resultsCount" class="search-results-count">
+        Loading residents...
+    </div>
+</section>
+
+<!-- Results Section -->
+<section class="results-section">
+    <div id="loadingState" class="loading-state">
+        <div class="loading-spinner"></div>
+        <p>Loading resident directory...</p>
+    </div>
+    
+    <div id="resultsGrid" class="results-grid" style="display: none;">
+        <!-- Results will be populated by JavaScript -->
+    </div>
+    
+    <div id="resultsList" class="results-list" style="display: none;">
+        <table class="directory-table">
+            <thead>
+                <tr>
+                    <th>Unit</th>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="listTableBody">
+                <!-- List results will be populated by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+    
+    <div id="emptyState" class="empty-state" style="display: none;">
+        <div class="empty-icon">👥</div>
+        <h3 class="empty-title">No residents found</h3>
+        <p class="empty-message">Try adjusting your search terms</p>
+    </div>
+</section>
+    <script>
+
+// ===================================================================
+// RESIDENT DIRECTORY V2.0 - PHONE VERIFICATION SYSTEM
+// ===================================================================
+
+// Verification state
+let isVerified = false;
+let verifiedUnit = null;
+let verifiedStage = null;
+let verifiedName = null;
+
+// Configuration
+const VERIFICATION_CONFIG = {
+    managementCentralUrl: 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
+};
+
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('📱 Resident Directory V2.0 - Phone Verification System');
+    
+    // Check if already verified (session storage)
+    const verified = sessionStorage.getItem('directoryVerified');
+    const unit = sessionStorage.getItem('directoryUnit');
+    const stage = sessionStorage.getItem('directoryStage');
+    const name = sessionStorage.getItem('directoryName');
+    
+    if (verified === 'true' && unit && stage) {
+        isVerified = true;
+        verifiedUnit = unit;
+        verifiedStage = stage;
+        verifiedName = name;
+        showDirectory();
+        loadResidents(); // Load directory data
+    } else {
+        showVerification();
+    }
+    
+    setupVerificationListeners();
+});
+
+// Setup verification event listeners
+function setupVerificationListeners() {
+    // Verify button
+    document.getElementById('verifyBtn').addEventListener('click', handleVerification);
+    
+    // Enter key on phone input
+    document.getElementById('phoneVerify').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            handleVerification();
+        }
+    });
+    
+    // Continue button (after verification)
+    document.getElementById('continueBtn').addEventListener('click', function() {
+        showDirectory();
+        loadResidents(); // Load directory data
+    });
+}
+
+// Handle phone verification
+function handleVerification() {
+    const phoneNumber = document.getElementById('phoneVerify').value.trim();
+    const errorDiv = document.getElementById('verificationError');
+    const verifyBtn = document.getElementById('verifyBtn');
+    
+    // Clear previous errors
+    errorDiv.classList.add('hidden');
+    
+    // Validate input
+    if (!phoneNumber) {
+        showVerificationError('Please enter your phone number');
+        return;
+    }
+    
+    // Disable button and show loading
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = '⏳ Verifying...';
+
+
+    
+    // Call ManagementCentral API to verify identity
+    makeManagementAPICall('verifyIdentity', { phoneNumber: phoneNumber }, function(response) {
+        if (response.success && response.verified) {
+            console.log('✅ Identity verified:', response.unit, response.stage);
+            
+            // Store verification data
+            isVerified = true;
+            verifiedUnit = response.unit;
+            verifiedStage = response.stage;
+            verifiedName = response.name;
+            
+            // Save to session storage
+            sessionStorage.setItem('directoryVerified', 'true');
+            sessionStorage.setItem('directoryUnit', response.unit);
+            sessionStorage.setItem('directoryStage', response.stage);
+            sessionStorage.setItem('directoryName', response.name);
+            
+            // Show success state
+            showVerificationSuccess();
+        } else {
+            console.error('❌ Verification failed:', response.error);
+            showVerificationError(response.message || 'Phone number not found in our system. Please check and try again, or contact management.');
+            resetVerifyButton();
+        }
+    });
+}
+
+// Show verification success state
+function showVerificationSuccess() {
+    // Hide initial verification step
+    document.getElementById('verificationStep').classList.add('hidden');
+    
+    // Show success step
+    document.getElementById('verificationSuccessStep').classList.remove('hidden');
+    
+    // Display verified unit
+    document.getElementById('verifiedUnit').textContent = `${verifiedUnit} - ${verifiedStage}`;
+    
+    // PERSONALIZE THE WELCOME MESSAGE (CORRECTED)
+    if (verifiedName) {  // ✅ CORRECT VARIABLE
+        const firstName = verifiedName.split(' ')[0];
+        document.getElementById('welcomeMessage').textContent = `✓ Welcome back, ${firstName}!`;
+    }
+}
+
+// Show directory view
+function showDirectory() {
+    document.getElementById('verificationView').classList.add('hidden');
+    document.getElementById('directoryView').classList.remove('hidden');
+    
+    // Setup directory functionality (only once)
+    if (!window.directoryInitialized) {
+        setupSearch();
+        setupFilters();
+        setupViewToggle();
+        window.directoryInitialized = true;
+    }
+}
+
+// Show verification view
+function showVerification() {
+    document.getElementById('verificationView').classList.remove('hidden');
+    document.getElementById('directoryView').classList.add('hidden');
+}
+
+// Reset verify button
+function resetVerifyButton() {
+    const verifyBtn = document.getElementById('verifyBtn');
+    verifyBtn.disabled = false;
+    verifyBtn.textContent = '🔍 Verify & Access Directory';
+}
+
+// Show verification error
+function showVerificationError(message) {
+    const errorDiv = document.getElementById('verificationError');
+    errorDiv.textContent = message;
+    errorDiv.classList.remove('hidden');
+}
+
+// JSONP API call to ManagementCentral
+function makeManagementAPICall(action, params = {}, callback) {
+    const baseUrl = VERIFICATION_CONFIG.managementCentralUrl;
+    const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+    
+    // Create global callback function
+    window[callbackName] = function(data) {
+        callback(data);
+        // Clean up
+        delete window[callbackName];
+        document.head.removeChild(script);
+    };
+    
+    // Build URL with parameters
+    const urlParams = new URLSearchParams({
+        action: action,
+        callback: callbackName,
+        ...params
+    });
+    
+    // Create and execute JSONP request
+    const script = document.createElement('script');
+    script.src = `${baseUrl}?${urlParams.toString()}`;
+    script.onerror = function() {
+        console.error('ManagementCentral API connection failed');
+        callback({ 
+            success: false, 
+            error: 'Connection failed', 
+            message: 'Unable to connect to verification system. Please try again later.' 
+        });
+        delete window[callbackName];
+        document.head.removeChild(script);
+    };
+    
+    document.head.appendChild(script);
+}
+
+// ===================================================================
+// END VERIFICATION SYSTEM
+// ===================================================================
+
+
+
+        // RESIDENTS DIRECTORY - WITH STAGE FILTERING & EXPORT
+        let allResidents = [];
+        let filteredResidents = [];
+        let currentStageFilter = 'all';
+	let currentCommitteeFilter = null;
+	
+
+        // API Configuration
+         const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
+
+		
+
+        
+
+// Load all residents data
+async function loadResidents() {
+    try {
+        console.log('📞 Loading residents from API...');
+        
+        const data = await makeApiCall(API_URL + '?action=getResidents');
+        
+        if (data && data.success) {
+            // Filter to include proper units AND external entries
+            allResidents = (data.residents || []).filter(resident => {
+                const unit = (resident.unit || '').trim();
+                const name = (resident.name || '').trim();
+                
+                // Include if it's a proper unit number
+                if (/^Unit\s+\d+$/i.test(unit)) {
+                    return true;
+                }
+                
+                // Include if it has no unit (or "NO UNIT") but has a real name
+                if ((unit === '' || unit.toLowerCase() === 'no unit') && 
+                    name !== '' && 
+                    name.toLowerCase() !== 'unknown') {
+                    return true;
+                }
+                
+                return false;
+            });
+            
+            filteredResidents = [...allResidents];
+            
+            console.log(`📞 Loaded ${allResidents.length} residents`);
+            console.log('📋 Sample resident data:', allResidents[0]); // Debug sample
+            
+            displayResults();
+            updateResultsCount();
+            hideLoading();
+        } else {
+            throw new Error(data?.message || 'Failed to load residents');
+        }
+        
+    } catch (error) {
+        console.error('⚠️ Error loading residents:', error);
+        showError('Unable to load resident directory. Please try again later.');
+        hideLoading();
+    }
+}
+
+        // Setup search functionality
+        function setupSearch() {
+            const searchInput = document.getElementById('searchInput');
+            
+            searchInput.addEventListener('input', function() {
+                applyFilters();
+            });
+        }
+
+
+       // Setup filter buttons
+function setupFilters() {
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    
+    filterButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const isCommitteeBtn = this.classList.contains('committee-btn');
+            
+            // Update active states - only deactivate the same type of buttons
+            filterButtons.forEach(btn => {
+                const btnIsCommittee = btn.classList.contains('committee-btn');
+                
+                // If clicking a committee button, only deactivate other committee buttons
+                if (isCommitteeBtn && btnIsCommittee) {
+                    btn.classList.remove('active');
+                }
+                // If clicking a stage button, only deactivate other stage buttons
+                else if (!isCommitteeBtn && !btnIsCommittee) {
+                    btn.classList.remove('active');
+                }
+            });
+            
+            // Set the clicked button as active
+            this.classList.add('active');
+            
+            // Update filter variables
+            if (isCommitteeBtn) {
+                currentCommitteeFilter = this.dataset.committee;
+                currentStageFilter = 'all';
+            } else {
+                currentStageFilter = this.dataset.stage;
+                currentCommitteeFilter = null;
+            }
+            
+            applyFilters();
+        });
+    });
+}
+
+// Setup view toggle buttons
+        function setupViewToggle() {
+            const viewButtons = document.querySelectorAll('.view-btn');
+            
+            viewButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Update active button
+                    viewButtons.forEach(btn => btn.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Switch view
+                    const viewType = this.dataset.view;
+                    toggleView(viewType);
+                });
+            });
+        }
+        
+        // Toggle between card and list views
+        function toggleView(viewType) {
+            const cardsView = document.getElementById('resultsGrid');
+            const listView = document.getElementById('resultsList');
+            
+            if (viewType === 'list') {
+                cardsView.style.display = 'none';
+                listView.style.display = 'block';
+                displayListResults();
+            } else {
+                cardsView.style.display = 'grid';
+                listView.style.display = 'none';
+            }
+        }
+
+// Apply search, stage, and committee filters
+function applyFilters() {
+    const searchInput = document.getElementById('searchInput');
+    const searchTerm = searchInput.value.toLowerCase().trim();
+    
+    // Start with all residents
+    let filtered = [...allResidents];
+    
+    // Apply stage filter (only if not using committee filter)
+    if (currentStageFilter !== 'all' && !currentCommitteeFilter) {
+        const stageNumber = currentStageFilter === 'stage1' ? '1' : '2';
+        filtered = filtered.filter(resident => 
+            resident.stage && resident.stage.includes(stageNumber)
+        );
+    }
+    
+    // Apply committee filter
+    if (currentCommitteeFilter) {
+        filtered = filtered.filter(resident => {
+            if (!resident.roleTags) return false;
+            
+            const tags = resident.roleTags.toLowerCase().split(',').map(tag => tag.trim());
+            
+            if (currentCommitteeFilter === 'social') {
+                return tags.some(tag => 
+                    tag.includes('social-committee') ||
+                    tag.includes('social_committee')
+                );
+           } else if (currentCommitteeFilter === 'resident') {
+    return tags.some(tag => 
+        tag.includes('resident-committee') ||
+        tag.includes('resident_committee')
+    );
+} else if (currentCommitteeFilter === 'zonerep') {
+    return tags.some(tag => 
+        tag.includes('zone')
+    );
+} else if (currentCommitteeFilter === 'fireward') {
+    return tags.some(tag => 
+        tag.includes('fw')
+    );
+}
+            
+            return false;
+        });
+    }
+    
+    // Apply search filter
+    if (searchTerm !== '') {
+        filtered = filtered.filter(resident => {
+            const nameMatch = resident.name.toLowerCase().includes(searchTerm);
+            const unitMatch = resident.unit.toLowerCase().includes(searchTerm);
+            const emailMatch = resident.email.toLowerCase().includes(searchTerm);
+            const phoneMatch = resident.phone.toLowerCase().includes(searchTerm);
+            
+            // Handle role tags with flexible spacing
+            let roleMatch = false;
+            if (resident.roleTags) {
+                // Split tags, trim whitespace, and check each tag
+                const tags = resident.roleTags.toLowerCase().split(',').map(tag => tag.trim());
+                roleMatch = tags.some(tag => tag.includes(searchTerm));
+            }
+            
+            // Debug logging for role tags
+            if (searchTerm.includes('manage') || searchTerm.includes('social') || searchTerm.includes('director')) {
+                console.log(`🔍 Debug search "${searchTerm}" for ${resident.name}:`, {
+                    roleTags: resident.roleTags,
+                    parsedTags: resident.roleTags ? resident.roleTags.split(',').map(tag => tag.trim()) : [],
+                    roleMatch: roleMatch
+                });
+            }
+            
+            return nameMatch || unitMatch || emailMatch || phoneMatch || roleMatch;
+        });
+    }
+    
+    filteredResidents = filtered;
+    displayResults();
+    updateResultsCount();
+}
+
+
+
+// In the displayResults function, add this line to get the search term:
+
+
+function displayResults() {
+    const resultsGrid = document.getElementById('resultsGrid');
+    const resultsList = document.getElementById('resultsList');
+    const emptyState = document.getElementById('emptyState');
+    const activeView = document.querySelector('.view-btn.active').dataset.view;
+    const searchInput = document.getElementById('searchInput');
+    const searchTerm = searchInput.value.toLowerCase().trim(); // Add this line
+    
+    if (filteredResidents.length === 0) {
+        resultsGrid.style.display = 'none';
+        resultsList.style.display = 'none';
+        emptyState.style.display = 'block';
+        return;
+    }
+    
+    emptyState.style.display = 'none';
+    
+    // Update card view WITH search term
+    resultsGrid.innerHTML = createResidentCardsWithSeparators(searchTerm); // Pass searchTerm here
+    
+    // Update list view  
+    displayListResults(searchTerm); // Pass searchTerm here
+    
+    // Show correct view
+    if (activeView === 'list') {
+        resultsGrid.style.display = 'none';
+        resultsList.style.display = 'block';
+    } else {
+        resultsGrid.style.display = 'grid';
+        resultsList.style.display = 'none';
+    }
+}
+
+      // Create resident card HTML
+function createResidentCard(resident, searchTerm = '') {
+    const hasPhone = resident.phone && resident.phone.trim();
+    const hasEmail = resident.email && resident.email.trim();
+    const hidePhone = resident.hidePhone || false;
+    const hideEmail = resident.hideEmail || false;
+    const roleTags = resident.roleTags || '';
+    
+   // Don't display roles on cards - tags are for filtering only
+let displayRoles = '';
+    
+    // Check if BOTH contacts are hidden (hide-contact)
+    const bothHidden = hidePhone && hideEmail;
+    
+    // Contact details display logic
+    let contactDisplay = '';
+    
+    if (bothHidden) {
+        // Both hidden - show single privacy notice
+        contactDisplay = `
+            <div class="privacy-notice">
+                <div class="privacy-notice-icon">🔒</div>
+                <div class="privacy-notice-text">
+                    <strong>Contact Details Withheld</strong>
+                    <p>This resident has requested their contact information remain private.</p>
+                </div>
+            </div>
+        `;
+    } else {
+        // Individual contact display
+        let phoneDisplay = '';
+        if (hidePhone) {
+            phoneDisplay = `
+                <div class="detail-item">
+                    <span class="detail-icon">🔒</span>
+                    <span class="detail-value privacy-hidden">Not Listed (Resident Request)</span>
+                </div>
+            `;
+        } else if (hasPhone) {
+            phoneDisplay = `
+                <div class="detail-item">
+                    <span class="detail-icon">📞</span>
+                    <a href="tel:${resident.phone.replace(/[^\d+]/g, '')}" class="detail-value detail-link">
+                        ${escapeHtml(resident.phone)}
+                    </a>
+                </div>
+            `;
+        }
+        
+        let emailDisplay = '';
+        if (hideEmail) {
+            emailDisplay = `
+                <div class="detail-item">
+                    <span class="detail-icon">🔒</span>
+                    <span class="detail-value privacy-hidden">Not Listed (Resident Request)</span>
+                </div>
+            `;
+        } else if (hasEmail) {
+            emailDisplay = `
+                <div class="detail-item">
+                    <span class="detail-icon">📧</span>
+                    <a href="mailto:${resident.email}" class="detail-value detail-link">
+                        ${escapeHtml(resident.email)}
+                    </a>
+                </div>
+            `;
+        }
+        
+        contactDisplay = phoneDisplay + emailDisplay;
+    }
+    
+    return `
+        <div class="resident-card">
+            <div class="resident-header">
+                <h3 class="resident-name">${escapeHtml(resident.name || 'Unknown')}</h3>
+                <span class="unit-badge">${escapeHtml(resident.unit || 'No Unit')}</span>
+            </div>
+            
+            <div class="resident-details">
+                ${contactDisplay}
+                
+                ${displayRoles ? `
+                    <div class="detail-item">
+                        <span class="detail-icon">👤</span>
+                        <span class="detail-value role-tags">${escapeHtml(displayRoles)}</span>
+                    </div>
+                ` : ''}
+            </div>
+            
+            ${!bothHidden ? `
+                <div class="contact-actions">
+                    <a href="${hasPhone && !hidePhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
+                       class="action-btn call ${(!hasPhone || hidePhone) ? 'disabled' : ''}"
+                       ${(!hasPhone || hidePhone) ? 'onclick="return false;"' : ''}>
+                        📞 Call
+                    </a>
+                    <a href="${hasEmail && !hideEmail ? `mailto:${resident.email}` : '#'}" 
+                       class="action-btn email ${(!hasEmail || hideEmail) ? 'disabled' : ''}"
+                       ${(!hasEmail || hideEmail) ? 'onclick="return false;"' : ''}>
+                        📧 Email
+                    </a>
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+// Create resident cards with section separators
+// Find this function and update it to accept searchTerm:
+function createResidentCardsWithSeparators(searchTerm = '') {
+    let html = '';
+    let previousSection = null;
+    
+    // Only add separators when showing all stages
+    if (currentStageFilter === 'all') {
+        filteredResidents.forEach((resident, index) => {
+            const currentStage = resident.stage || 'Stage 1';
+            const hasUnit = resident.unit && resident.unit !== 'NO UNIT' && resident.unit !== '';
+            const currentSection = hasUnit ? `${currentStage} Units` : `${currentStage} External`;
+            
+            // Add section divider when section changes
+            if (previousSection && previousSection !== currentSection) {
+                html += `<div class="stage-divider" data-section="${currentSection}"></div>`;
+            }
+            
+            html += createResidentCard(resident, searchTerm);
+            previousSection = currentSection;
+        });
+    } else {
+        // No separators needed when filtering by specific stage
+        filteredResidents.forEach(resident => {
+            html += createResidentCard(resident, searchTerm);
+        });
+    }
+    
+    return html;
+}
+
+function getRelevantRoles(resident, searchTerm) {
+    if (!resident.roleTags) return '';
+    
+    const searchLower = searchTerm.toLowerCase();
+    const roles = resident.roleTags.split(',').map(role => role.trim());
+    
+    // If searching for a specific person, show all their roles (except "resident")
+    const isNameSearch = resident.name && resident.name.toLowerCase().includes(searchLower);
+    if (isNameSearch) {
+        return roles.filter(role => role.toLowerCase() !== 'resident').join(', ');
+    }
+    
+    // If role search, only show matching roles
+    const matchingRoles = roles.filter(role => {
+        const roleLower = role.toLowerCase();
+        
+        // Filter out "resident" role
+        if (roleLower === 'resident') return false;
+        
+        // Check if this role matches the search
+        return roleLower.includes(searchLower) || 
+               searchLower.includes(roleLower.replace(/[-\s]/g, ''));
+    });
+    
+    return matchingRoles.join(', ');
+}
+
+
+// Replace the shouldDisplayRoles function with this cleaner version:
+function shouldDisplayRoles(resident, searchTerm) {
+    if (!searchTerm) return false; // No search = no roles
+    
+    const searchLower = searchTerm.toLowerCase();
+    const roleTags = (resident.roleTags || '').toLowerCase();
+    
+    // Show roles if searching for this specific person by name
+    const isNameSearch = resident.name && resident.name.toLowerCase().includes(searchLower);
+    if (isNameSearch) return true;
+    
+    // Show roles if the search term matches any part of their actual roles
+    // This dynamically checks against whatever roles they actually have
+    const roles = roleTags.split(',').map(role => role.trim());
+    const hasMatchingRole = roles.some(role => {
+        // Remove spaces/dashes for more flexible matching
+        const normalizedRole = role.replace(/[-\s]/g, '');
+        const normalizedSearch = searchLower.replace(/[-\s]/g, '');
+        
+        return role.includes(searchLower) || 
+               searchLower.includes(role) ||
+               normalizedRole.includes(normalizedSearch) ||
+               normalizedSearch.includes(normalizedRole);
+    });
+    
+    return hasMatchingRole;
+}
+
+        // Update results count display
+        function updateResultsCount() {
+            const resultsCount = document.getElementById('resultsCount');
+            const searchInput = document.getElementById('searchInput');
+            const searchTerm = searchInput.value.trim();
+            
+            let message = '';
+            if (currentStageFilter === 'all') {
+                message = searchTerm ? 
+                    `Found ${filteredResidents.length} of ${allResidents.length} residents` :
+                    `Showing all ${allResidents.length} residents`;
+            } else {
+                const stageName = currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+                const stageTotal = allResidents.filter(r => 
+                    currentStageFilter === 'stage1' ? 
+                    (!r.stage || r.stage.includes('1')) : 
+                    (r.stage && r.stage.includes('2'))
+                ).length;
+                
+                message = searchTerm ? 
+                    `Found ${filteredResidents.length} of ${stageTotal} ${stageName} residents` :
+                    `Showing ${filteredResidents.length} ${stageName} residents`;
+            }
+            
+            resultsCount.textContent = message;
+        }
+
+        // Export Functions
+        function printDirectory() {
+            const printContent = generatePrintHTML();
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(printContent);
+            printWindow.document.close();
+            printWindow.focus();
+            printWindow.print();
+        }
+
+        function generatePrintHTML() {
+    const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                    currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+    
+    let html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Lake Illawong Residents Directory - ${stageName}</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                h1 { color: #1e293b; margin-bottom: 5px; }
+                .subtitle { color: #64748b; margin-bottom: 20px; }
+                table { width: 100%; border-collapse: collapse; }
+                th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+                th { background: #f8fafc; font-weight: 600; }
+                .stage-badge { 
+                    background: #f0f9ff; 
+                    color: #0284c7; 
+                    padding: 2px 6px; 
+                    border-radius: 4px; 
+                    font-size: 0.8em; 
+                }
+                @media print {
+                    body { margin: 10px; }
+                    table { font-size: 11px; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>Lake Illawong Residents Directory</h1>
+            <p class="subtitle">${stageName} - Generated ${new Date().toLocaleDateString()}</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Unit</th>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Address</th>
+                        <th>Stage</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    filteredResidents.forEach(resident => {
+        // Check for Hide-Phone tag to respect privacy in print view
+        const hasHidePhoneTag = resident.roleTags && 
+            resident.roleTags.toLowerCase().includes('hide-phone');
+        const displayPhone = hasHidePhoneTag ? 'Private' : (resident.phone || '');
+        
+        html += `
+            <tr>
+                <td>${resident.unit || ''}</td>
+                <td>${resident.name || ''}</td>
+                <td>${displayPhone}</td>
+                <td>${resident.email || ''}</td>
+                <td>${resident.address || ''}</td>
+                <td><span class="stage-badge">${resident.stage || 'Stage 1'}</span></td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+            <p style="margin-top: 20px; font-size: 0.9em; color: #64748b;">
+                Total: ${filteredResidents.length} residents
+            </p>
+
+
+        </body>
+        </html>
+    `;
+
+    return html;
+}
+        async function copyToClipboard() {
+    const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                    currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+    
+    let text = `Lake Illawong Residents Directory - ${stageName}\n`;
+    text += `Generated: ${new Date().toLocaleDateString()}\n\n`;
+    
+    filteredResidents.forEach(resident => {
+        // Check for Hide-Phone tag to respect privacy in clipboard copy
+        const hasHidePhoneTag = resident.roleTags && 
+            resident.roleTags.toLowerCase().includes('hide-phone');
+        const displayPhone = hasHidePhoneTag ? 'Private' : (resident.phone || 'Not provided');
+        
+        text += `${resident.unit || 'No Unit'} - ${resident.name || 'Unknown'}\n`;
+        text += `  Phone: ${displayPhone}\n`;
+        text += `  Email: ${resident.email || 'Not provided'}\n`;
+        text += `  Address: ${resident.address || 'Not available'}\n`;
+        text += `  Stage: ${resident.stage || 'Stage 1'}\n\n`;
+    });
+    
+    text += `Total: ${filteredResidents.length} residents`;
+    
+    try {
+        await navigator.clipboard.writeText(text);
+        alert('Directory copied to clipboard!');
+    } catch (err) {
+        console.error('Copy failed:', err);
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        alert('Directory copied to clipboard!');
+    }
+}
+
+        function downloadCSV() {
+    const stageName = currentStageFilter === 'all' ? 'All_Stages' : 
+                    currentStageFilter === 'stage1' ? 'Stage_1' : 'Stage_2';
+    
+    let csv = 'Unit,Name,Phone,Email,Address,Stage\n';
+    
+    filteredResidents.forEach(resident => {
+        // Check for Hide-Phone tag to respect privacy in exports
+        const hasHidePhoneTag = resident.roleTags && 
+            resident.roleTags.toLowerCase().includes('hide-phone');
+        const displayPhone = hasHidePhoneTag ? 'Private' : (resident.phone || '');
+        
+        const row = [
+            resident.unit || '',
+            resident.name || '',
+            displayPhone,
+            resident.email || '',
+            resident.address || '',
+            resident.stage || 'Stage 1'
+        ].map(field => `"${field.replace(/"/g, '""')}"`).join(',');
+        
+        csv += row + '\n';
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Lake_Illawong_Directory_${stageName}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function downloadPDF() {
+    const stageName = currentStageFilter === 'all' ? 'All Stages' : 
+                    currentStageFilter === 'stage1' ? 'Stage 1' : 'Stage 2';
+    
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('Lake Illawong Residents Directory', 20, 20);
+    
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'normal');
+    doc.text(`${stageName} - Generated ${new Date().toLocaleDateString()}`, 20, 30);
+    
+    // Table headers
+    const headers = [['Unit', 'Name', 'Phone', 'Email']];
+    
+    // Table data with Hide-Phone tag check
+    const data = filteredResidents.map(resident => {
+        // Check for Hide-Phone tag to respect privacy in PDF exports
+        const hasHidePhoneTag = resident.roleTags && 
+            resident.roleTags.toLowerCase().includes('hide-phone');
+        const displayPhone = hasHidePhoneTag ? 'Private' : (resident.phone || '');
+        
+        return [
+            resident.unit || '',
+            resident.name || '',
+            displayPhone,
+            resident.email || ''
+        ];
+    });
+    
+    // Add table
+    doc.autoTable({
+        head: headers,
+        body: data,
+        startY: 40,
+        styles: {
+            fontSize: 10,
+            cellPadding: 4
+        },
+        headStyles: {
+            fillColor: [59, 130, 246],
+            textColor: 255,
+            fontStyle: 'bold'
+        },
+        columnStyles: {
+            0: { cellWidth: 25 },  // Unit
+            1: { cellWidth: 55 },  // Name
+            2: { cellWidth: 35 },  // Phone
+            3: { cellWidth: 75 }   // Email
+        },
+        tableWidth: 'auto',
+        margin: { left: 15, right: 15 }
+    });
+    
+    // Footer
+    const pageCount = doc.internal.getNumberOfPages();
+    doc.setFontSize(8);
+    doc.text(`Total: ${filteredResidents.length} residents`, 20, doc.internal.pageSize.height - 10);
+    
+    // Save
+    const fileName = `Lake_Illawong_Directory_${stageName.replace(' ', '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+}
+
+        // Hide loading state
+        function hideLoading() {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('resultsGrid').style.display = 'grid';
+        }
+
+        // Show error state
+        function showError(message) {
+            const loadingState = document.getElementById('loadingState');
+            loadingState.innerHTML = `
+                <div style="color: #ef4444; font-weight: 600;">❌ Error</div>
+                <p>${escapeHtml(message)}</p>
+            `;
+        }
+
+        // Make API call with JSONP
+        function makeApiCall(url) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'callback_' + Date.now();
+                const script = document.createElement('script');
+                
+                window[callbackName] = function(data) {
+                    resolve(data);
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                };
+                
+                script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
+                script.onerror = () => {
+                    reject(new Error('Network error'));
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                };
+                
+                document.head.appendChild(script);
+                
+                // Timeout after 15 seconds
+                setTimeout(() => {
+                    if (window[callbackName]) {
+                        reject(new Error('Request timeout'));
+                        document.head.removeChild(script);
+                        delete window[callbackName];
+                    }
+                }, 15000);
+            });
+        }
+
+        // Utility function to escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+// Display results in list view
+        // Display results in list view
+function displayListResults(searchTerm = '') {
+    const tableBody = document.getElementById('listTableBody');
+    
+    if (filteredResidents.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b; padding: 40px;">No residents found</td></tr>';
+        return;
+    }
+    
+    tableBody.innerHTML = filteredResidents.map((resident, index) => createListRow(resident, index, searchTerm)).join('');
+}
+
+        // Create list row HTML
+      function createListRow(resident, index, searchTerm = '') {
+    const hasPhone = resident.phone && resident.phone.trim();
+    const hasEmail = resident.email && resident.email.trim();
+    const hidePhone = resident.hidePhone || false;
+    const hideEmail = resident.hideEmail || false;
+    
+    // Determine if we should show roles in list view
+    let roleDisplay = '';
+    const shouldShowRoles = shouldDisplayRoles(resident, searchTerm);
+    
+    if (shouldShowRoles) {
+        const relevantRoles = getRelevantRoles(resident, searchTerm);
+        if (relevantRoles) {
+            roleDisplay = `<br><small style="color: #666; font-size: 0.8em;">${escapeHtml(relevantRoles)}</small>`;
+        }
+    }
+    
+    // Check if this unit was already shown in previous row
+    const showUnit = index === 0 || filteredResidents[index - 1].unit !== resident.unit;
+    
+    // Phone display with privacy
+    let phoneText = '';
+    if (hidePhone) {
+        phoneText = '<span class="privacy-hidden" style="color: #94a3b8; font-style: italic;">🔒 Not Listed (Resident Request)</span>';
+    } else if (hasPhone) {
+        phoneText = escapeHtml(resident.phone);
+    } else {
+        phoneText = '<span class="privacy-hidden" style="color: #94a3b8;">Not provided</span>';
+    }
+    
+    // Email display with privacy
+    let emailText = '';
+    if (hideEmail) {
+        emailText = '<span class="privacy-hidden" style="color: #94a3b8; font-style: italic;">🔒 Not Listed (Resident Request)</span>';
+    } else if (hasEmail) {
+        emailText = escapeHtml(resident.email);
+    } else {
+        emailText = '<span class="privacy-hidden" style="color: #94a3b8;">Not provided</span>';
+    }
+    
+    return `
+        <tr>
+            <td><strong>${showUnit ? escapeHtml(resident.unit || 'No Unit') : ''}</strong></td>
+            <td>
+                ${escapeHtml(resident.name || 'Unknown')}
+                ${roleDisplay}
+            </td>
+            <td>${phoneText}</td>
+            <td>${emailText}</td>
+            <td>
+                <div class="list-actions">
+                    <a href="${hasPhone && !hidePhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
+                       class="list-action-btn call ${(!hasPhone || hidePhone) ? 'disabled' : ''}"
+                       ${(!hasPhone || hidePhone) ? 'onclick="return false;"' : ''}>
+                        📞
+                    </a>
+                    <a href="${hasEmail && !hideEmail ? `mailto:${resident.email}` : '#'}" 
+                       class="list-action-btn email ${(!hasEmail || hideEmail) ? 'disabled' : ''}"
+                       ${(!hasEmail || hideEmail) ? 'onclick="return false;"' : ''}>
+                        📧
+                    </a>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+        // Performance monitoring
+        window.addEventListener('load', function() {
+            const loadTime = (performance.now() / 1000).toFixed(2);
+            console.log(`⚡ Directory loaded in ${loadTime} seconds`);
+        });
+
+// Toggle phone number visibility
+function togglePhoneVisibility() {
+    const phoneInput = document.getElementById('phoneVerify');
+    const toggleBtn = document.getElementById('togglePhoneVisibility');
+    
+    if (phoneInput.type === 'password') {
+        // Show the number
+        phoneInput.type = 'text';
+        toggleBtn.textContent = '🙈'; // Hide icon
+    } else {
+        // Hide the number
+        phoneInput.type = 'password';
+        toggleBtn.textContent = '👁️'; // Show icon
+    }
+}
+
+    </script>
+</body>
+</html>
