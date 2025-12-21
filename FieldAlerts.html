@@ -1096,6 +1096,52 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             color: #3b82f6;
         }
 
+.notification-options {
+    background: rgba(255,255,255,0.95);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.options-title {
+    font-weight: 600;
+    margin-bottom: 15px;
+    color: #1f2937;
+}
+
+.options-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.option-item {
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 15px;
+    transition: all 0.2s;
+}
+
+.option-item:has(input:checked) {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.option-checkbox {
+    margin-right: 8px;
+}
+
+.option-label {
+    font-weight: 500;
+    font-size: 1rem;
+}
+
+.option-help {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-top: 5px;
+}
+
     </style>
 </head>
 <body>
@@ -1210,6 +1256,31 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
             </div>
         </div>
 
+<!-- Notification Options -->
+<div class="notification-options">
+    <div class="options-title">Choose Notification Method(s)</div>
+    
+    <div class="options-grid">
+        <div class="option-item">
+            <input type="checkbox" id="emailEnabled" class="option-checkbox" checked>
+            <label for="emailEnabled" class="option-label">
+                📧 Send Email
+            </label>
+        </div>
+        
+        <div class="option-item">
+            <input type="checkbox" id="smsEnabled" class="option-checkbox">
+            <label for="smsEnabled" class="option-label">
+                📱 Send SMS
+            </label>
+            <div class="option-help">Only SMS-Alerts tagged residents</div>
+        </div>
+    </div>
+</div>
+
+<!-- Message Composition -->
+<div class="compose-section">
+
         <!-- Message Composition -->
         <div class="compose-section">
             <div class="compose-title">Compose Message</div>
@@ -1222,20 +1293,7 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
         </div>
 
 <!-- SMS Options -->
-        <div class="sms-options">
-            <div class="sms-toggle-container">
-                <input 
-                    type="checkbox" 
-                    id="smsEnabled" 
-                    class="sms-checkbox"
-                    onchange="updateSMSCostEstimate()">
-                <label for="smsEnabled" class="sms-toggle-label">
-                    📱 Include SMS Notifications
-                </label>
-            </div>
-            <div class="sms-help-text">
-                Only residents with "SMS-Alerts" tag will receive SMS
-            </div>
+      
             
             <div id="smsCostEstimate" class="sms-cost-estimate">
     <div class="cost-breakdown">
@@ -1654,21 +1712,33 @@ messageInput.addEventListener('input', updateSendButton);  // ← ADD THIS LINE
     const length = messageInput.value.length;
     
     if (smsEnabled) {
-        // SMS mode - 160 character limit
-        const remaining = 160 - length;
+        // SMS mode - account for "Lake Illawong Alert: " prefix (21 chars)
+        const prefix = 21;
+        const totalLength = length + prefix;
         
-        if (length > 160) {
-            charCount.textContent = `${length}/160 characters - ⚠️ TOO LONG FOR SMS`;
-            charCount.className = 'char-count error';
-        } else if (length > 140) {
-            charCount.textContent = `${length}/160 characters (${remaining} remaining)`;
-            charCount.className = 'char-count warning';
+        // Calculate SMS parts and cost
+        let parts, cost;
+        if (totalLength <= 160) {
+            parts = 1;
+            cost = 0.037;
+            const remaining = 160 - totalLength;
+            
+            if (remaining < 20) {
+                charCount.textContent = `${totalLength}/160 chars (${remaining} left)`;
+                charCount.className = 'char-count warning';
+            } else {
+                charCount.textContent = `${totalLength}/160 chars (1 SMS)`;
+                charCount.className = 'char-count';
+            }
         } else {
-            charCount.textContent = `${length}/160 characters`;
-            charCount.className = 'char-count';
+            // Multi-part SMS (153 chars per part after first)
+            parts = Math.ceil(totalLength / 153);
+            cost = parts * 0.037;
+            charCount.textContent = `${totalLength} chars (${parts} SMS, $${cost.toFixed(3)})`;
+            charCount.className = 'char-count warning';
         }
     } else {
-        // Normal mode - 500 character limit
+        // Normal email mode - 500 character limit
         charCount.textContent = `${length}/500 characters`;
         charCount.className = 'char-count';
         if (length > 400) charCount.classList.add('warning');
@@ -2344,6 +2414,7 @@ let pendingSendParams = null;
 async function sendFieldAlert() {
     const sendBtn = document.getElementById('sendBtn');
     const messageText = document.getElementById('messageText').value;
+    const emailEnabled = document.getElementById('emailEnabled').checked;
     const smsEnabled = document.getElementById('smsEnabled').checked;
     
     if (!messageText || messageText.trim() === '') {
@@ -2351,51 +2422,88 @@ async function sendFieldAlert() {
         return;
     }
     
-// Check SMS character limit
-if (smsEnabled && messageText.length > 160) {
-    showNotification('⚠️ Message too long for SMS (max 160 characters)', 'error');
-    return;
-}
-
+    // Must select at least email OR SMS
+    if (!emailEnabled && !smsEnabled) {
+        showNotification('Please select Email and/or SMS', 'error');
+        return;
+    }
+    
+    // Warn about multi-part SMS cost
+    if (smsEnabled) {
+        const prefix = 21; // "Lake Illawong Alert: "
+        const totalLength = messageText.length + prefix;
+        
+        if (totalLength > 160) {
+            const parts = Math.ceil(totalLength / 153);
+            const smsCountText = document.getElementById('smsCount').textContent || '0';
+            const smsCount = parseInt(smsCountText);
+            const costPerRecipient = (parts * 0.037).toFixed(3);
+            
+            // Handle case where count isn't loaded yet
+            let totalCostLine;
+            if (!isNaN(smsCount) && smsCount > 0) {
+                const totalCost = (parts * 0.037 * smsCount).toFixed(2);
+                totalCostLine = `Total: ~$${totalCost} for ${smsCount} recipients`;
+            } else {
+                totalCostLine = `Total: calculating...`;
+            }
+            
+            const confirmed = confirm(
+                `⚠️ Multi-part SMS Alert\n\n` +
+                `Message: ${totalLength} chars\n` +
+                `Parts: ${parts} SMS per recipient\n` +
+                `Cost: $${costPerRecipient} per recipient\n` +
+                `${totalCostLine}\n\n` +
+                `Continue?`
+            );
+            
+            if (!confirmed) {
+                showNotification('Cancelled', 'info');
+                return;
+            }
+        }
+    }
+    
     if (selectedZones.length === 0 && selectedUnits.length === 0) {
         showNotification('Please select recipients', 'error');
         return;
     }
+    
     // BUILD RECIPIENT FILTER - MATCH EMAIL SERVER FORMAT
-let recipientFilter;
-
-if (selectedZones.includes('ecopy')) {
-    recipientFilter = 'role:E-Copy';
-} else if (selectedUnits.length > 0) {
-    const unitsList = selectedUnits.map(u => `Unit ${u}`).join(',');
-    recipientFilter = `units:${unitsList}`;  // ← Add "units:" prefix!
-} else if (selectedZones.includes('all')) {
-    recipientFilter = 'all_units';
-} else if (selectedZones.length === 1) {
-    const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3', 
-                      'zone4': 'zone_4', 'zone5': 'zone_5' };
-    recipientFilter = zoneMap[selectedZones[0]] || 'all_units';
-} else {
-    // Multiple zones
-    const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3', 
-                      'zone4': 'zone_4', 'zone5': 'zone_5' };
-    recipientFilter = selectedZones.map(z => zoneMap[z]).filter(Boolean).join(',');
-}
+    let recipientFilter;
+    if (selectedZones.includes('ecopy')) {
+        recipientFilter = 'role:E-Copy';
+    } else if (selectedUnits.length > 0) {
+        const unitsList = selectedUnits.map(u => `Unit ${u}`).join(',');
+        recipientFilter = `units:${unitsList}`;
+    } else if (selectedZones.includes('all')) {
+        recipientFilter = 'all_units';
+    } else if (selectedZones.length === 1) {
+        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3', 
+                          'zone4': 'zone_4', 'zone5': 'zone_5' };
+        recipientFilter = zoneMap[selectedZones[0]] || 'all_units';
+    } else {
+        // Multiple zones
+        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3', 
+                          'zone4': 'zone_4', 'zone5': 'zone_5' };
+        recipientFilter = selectedZones.map(z => zoneMap[z]).filter(Boolean).join(',');
+    }
     
     // Store parameters for confirmAndSend
-    pendingSendParams = { recipientFilter, messageText, smsEnabled, sendBtn };
+    pendingSendParams = { recipientFilter, messageText, emailEnabled, smsEnabled, sendBtn };
     
-    // CHECK FOR NO-EMAIL RESIDENTS (unless E-Copy)
-    if (!selectedZones.includes('ecopy')) {
-        try {
-            const noEmailResponse = await callNotificationAPI('getNoEmailResidents', { 
-                recipientFilter: recipientFilter 
-            });
-            
-            if (noEmailResponse.success && noEmailResponse.count > 0) {
-                showNoEmailModal(noEmailResponse.residents);
-                return; // Modal's confirmAndSend button will call executeFieldAlertSend
-            }
+// CHECK FOR NO-EMAIL RESIDENTS (unless E-Copy or SMS-only mode)
+if (!selectedZones.includes('ecopy') && emailEnabled) {
+    try {
+        const noEmailResponse = await callNotificationAPI('getNoEmailResidents', { 
+            recipientFilter: recipientFilter,
+            smsEnabled: smsEnabled ? 'true' : 'false'  // Tell backend if SMS is enabled
+        });
+        
+        if (noEmailResponse.success && noEmailResponse.count > 0) {
+            showNoEmailModal(noEmailResponse.residents);
+            return;
+        }
         } catch (error) {
             console.error('Error checking no-email:', error);
         }
@@ -2404,48 +2512,62 @@ if (selectedZones.includes('ecopy')) {
     // No issues, proceed
     await executeFieldAlertSend();
 }
-
 async function executeFieldAlertSend() {
     if (!pendingSendParams) return;
     
-    const { recipientFilter, messageText, smsEnabled, sendBtn } = pendingSendParams;
+    const { recipientFilter, messageText, emailEnabled, smsEnabled, sendBtn } = pendingSendParams;
     
+    // Build confirmation message
+    let confirmMsg = 'Send ';
+    let methods = [];
+    
+    if (emailEnabled) {
+        methods.push('Email');
+    }
     if (smsEnabled) {
         const smsCount = document.getElementById('smsCount').textContent;
-        if (!confirm(`Send to selected + SMS to ${smsCount} opted-in?`)) {
-            showNotification('Cancelled', 'info');
-            return;
-        }
+        methods.push(`SMS to ${smsCount} recipients`);
     }
     
-    const originalText = sendBtn.innerHTML;
+    confirmMsg += methods.join(' + ') + '?';
+    
+    if (!confirm(confirmMsg)) {
+        showNotification('Cancelled', 'info');
+        return;
+    }
+    
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending...';
     
     try {
-        sendBtn.disabled = true;
-        sendBtn.innerHTML = '⏳ Sending...';
-        
         const response = await callNotificationAPI('sendFieldAlert', {
             message: messageText,
             recipientFilter: recipientFilter,
+            includeEmail: emailEnabled ? 'true' : 'false',
             includeSMS: smsEnabled ? 'true' : 'false'
         });
         
         if (response.success) {
-            showNotification(
-                `✅ Sent! Emails: ${response.email.sent}, SMS: ${response.sms.sent}`,
-                'success'
-            );
-            resetForm();
-            pendingSendParams = null;
+            let message = '✅ Alert sent!\n';
+            if (emailEnabled) message += `📧 Emails: ${response.email.sent}\n`;
+            if (smsEnabled) message += `📱 SMS: ${response.sms.sent} ($${response.sms.cost})`;
+            
+            showNotification(message, 'success');
+            
+            // Clear form
+            document.getElementById('messageText').value = '';
+            updateCharCount();
+            updateSendButton();
         } else {
-            throw new Error(response.error || 'Failed');
+            throw new Error(response.error || 'Failed to send');
         }
     } catch (error) {
-        console.error('Error:', error);
-        showNotification('Failed: ' + error.message, 'error');
+        console.error('Send error:', error);
+        showNotification('❌ Send failed: ' + error.message, 'error');
     } finally {
         sendBtn.disabled = false;
-        sendBtn.innerHTML = originalText;
+        updateSendButton();
+        pendingSendParams = null;
     }
 }
 
