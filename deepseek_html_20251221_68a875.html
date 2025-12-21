@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facility Booking Calendar</title>
+    <style>
+        /* ===== MOBILE-FIRST STYLES ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fa;
+            color: #202124;
+            max-width: 100%;
+            overflow-x: hidden;
+            touch-action: pan-y;
+        }
+        
+        /* ===== TABS ===== */
+        .tabs {
+            display: flex;
+            background: white;
+            border-bottom: 1px solid #dadce0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .tab {
+            flex: 1;
+            min-width: 120px;
+            padding: 16px;
+            border: none;
+            background: none;
+            font-size: 15px;
+            font-weight: 500;
+            color: #5f6368;
+            cursor: pointer;
+            text-align: center;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .tab.active {
+            color: #1a73e8;
+            border-bottom-color: #1a73e8;
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 16px;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* ===== MOBILE CALENDAR ===== */
+        .calendar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            background: #1a73e8;
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            position: relative;
+            user-select: none;
+        }
+        
+        .month-nav {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .month-nav:active {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .month-title {
+            font-size: 18px;
+            font-weight: 500;
+            z-index: 2;
+        }
+        
+        .week-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            margin-bottom: 8px;
+            text-align: center;
+            font-size: 12px;
+            color: #5f6368;
+            font-weight: 500;
+            text-transform: uppercase;
+            user-select: none;
+        }
+        
+        .days-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            user-select: none;
+            margin-bottom: 24px;
+        }
+        
+        .day-cell {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            border-radius: 50%;
+            font-size: 15px;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+            -webkit-tap-highlight-color: transparent;
+            font-weight: normal;
+        }
+        
+        .day-cell:active {
+            background: #f1f3f4;
+        }
+        
+        .day-cell.selected {
+            background: #1a73e8;
+            color: white;
+            font-weight: 600;
+        }
+        
+        .day-cell.today {
+            border: 2px solid #1a73e8;
+            font-weight: 600;
+        }
+        
+        .day-cell.other-month {
+            color: #dadce0;
+        }
+        
+        /* BOLD days with events (simpler than dots) */
+        .day-cell.has-events {
+            font-weight: 700 !important;
+        }
+        
+        .day-cell.has-clubhouse {
+            color: #1a73e8; /* Blue text for Clubhouse days */
+        }
+        
+        .day-cell.has-gazebo {
+            color: #0b8043; /* Green text for Gazebo days */
+        }
+        
+        .day-cell.has-recroom {
+            color: #f6bf26; /* Yellow text for Rec Room days */
+        }
+        
+        /* Multiple facilities - show mix color */
+        .day-cell.has-multiple {
+            background: linear-gradient(45deg, #1a73e8 25%, #0b8043 25%, #0b8043 50%, #f6bf26 50%, #f6bf26 75%, #1a73e8 75%);
+            background-size: 8px 8px;
+            color: white;
+            font-weight: 700;
+        }
+        
+        /* ===== EVENTS LIST ===== */
+        .selected-date {
+            font-size: 16px;
+            font-weight: 500;
+            margin: 0 0 16px 0;
+            color: #202124;
+        }
+        
+        .events-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .event-card {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            border-left: 4px solid #1a73e8;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .event-card:active {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        /* Facility colors in event list - FIXED */
+        .event-card.clubhouse { border-left-color: #1a73e8; }
+        .event-card.gazebo { border-left-color: #0b8043; }
+        .event-card.recroom { border-left-color: #f6bf26; }
+        
+        .event-time {
+            font-size: 14px;
+            color: #5f6368;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+        
+        .event-title {
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #202124;
+        }
+        
+        .event-details {
+            font-size: 14px;
+            color: #5f6368;
+        }
+        
+        .event-facility {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            color: white;
+        }
+        
+        .facility-clubhouse { background: #1a73e8; }
+        .facility-gazebo { background: #0b8043; }
+        .facility-recroom { background: #f6bf26; color: black; }
+        
+        .no-events {
+            text-align: center;
+            padding: 40px 20px;
+            color: #5f6368;
+            font-style: italic;
+        }
+        
+        /* ===== MODAL ===== */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            animation: modalSlideIn 0.3s ease;
+        }
+        
+        @keyframes modalSlideIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #dadce0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-title {
+            font-size: 18px;
+            font-weight: 500;
+            color: #202124;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #5f6368;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+        
+        .modal-close:hover {
+            background: #f1f3f4;
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .modal-field {
+            margin-bottom: 16px;
+        }
+        
+        .modal-label {
+            display: block;
+            font-size: 12px;
+            color: #5f6368;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+        
+        .modal-value {
+            font-size: 16px;
+            color: #202124;
+        }
+        
+        .modal-actions {
+            padding: 20px;
+            border-top: 1px solid #dadce0;
+            display: flex;
+            gap: 12px;
+        }
+        
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        
+        .modal-btn.cancel {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .modal-btn.cancel:hover {
+            background: #c82333;
+        }
+        
+        .modal-btn.close {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .modal-btn.close:hover {
+            background: #5a6268;
+        }
+        
+        /* ===== BOOKINGS LIST (My Bookings Tab) ===== */
+        .bookings-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .booking-item {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            border-left: 4px solid #1a73e8;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .booking-item.clubhouse { border-left-color: #1a73e8; }
+        .booking-item.gazebo { border-left-color: #0b8043; }
+        .booking-item.recroom { border-left-color: #f6bf26; }
+        
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        
+        .booking-title {
+            font-weight: 500;
+            font-size: 16px;
+            color: #202124;
+        }
+        
+        .booking-status {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+        
+        .status-confirmed {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-cancelled {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .booking-details {
+            font-size: 14px;
+            color: #5f6368;
+            margin-bottom: 12px;
+        }
+        
+        .booking-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        
+        .btn-view {
+            background: #1a73e8;
+            color: white;
+        }
+        
+        .btn-cancel {
+            background: #dc3545;
+            color: white;
+        }
+        
+        /* ===== BOOKING FORM ===== */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #202124;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            font-size: 15px;
+            background: white;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+        }
+        
+        .time-slots {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+        
+        .time-slot {
+            padding: 12px;
+            border: 2px solid #dadce0;
+            border-radius: 8px;
+            background: white;
+            text-align: center;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .time-slot:hover {
+            border-color: #1a73e8;
+        }
+        
+        .time-slot.selected {
+            background: #1a73e8;
+            color: white;
+            border-color: #1a73e8;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 20px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .btn:active {
+            background: #0d62d9;
+        }
+        
+        /* ===== LOADING & MESSAGES ===== */
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        
+        .loading.active {
+            display: flex;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f1f3f4;
+            border-top-color: #1a73e8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .message {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        /* ===== AUTHENTICATION ===== */
+        .auth-form {
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        
+        /* ===== DESKTOP ENHANCEMENT ===== */
+        @media (min-width: 768px) {
+            .container {
+                max-width: 900px;
+                margin: 20px auto;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                overflow: hidden;
+            }
+            
+            .tab-content {
+                padding: 24px;
+            }
+            
+            .calendar-and-events {
+                display: grid;
+                grid-template-columns: 1fr 350px;
+                gap: 24px;
+            }
+            
+            .time-slots {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('calendar')">📅 Calendar</button>
+            <button class="tab" onclick="showTab('mybookings')">📋 My Bookings</button>
+            <button class="tab" onclick="showTab('booking')">➕ Make Booking</button>
+            <button class="tab" onclick="showTab('admin')">👨‍💼 Admin</button>
+        </div>
+        
+        <!-- Calendar Tab -->
+        <div id="calendar-tab" class="tab-content active">
+            <div class="calendar-and-events">
+                <div>
+                    <div class="calendar-header" id="calendarHeader">
+                        <button class="month-nav" onclick="previousMonth()">‹</button>
+                        <div class="month-title" id="monthTitle">December 2025</div>
+                        <button class="month-nav" onclick="nextMonth()">›</button>
+                    </div>
+                    
+                    <div class="week-days">
+                        <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
+                    </div>
+                    
+                    <div class="days-grid" id="daysGrid">
+                        <!-- Days will be generated here -->
+                    </div>
+                    
+                    <div class="selected-date" id="selectedDate">Monday, December 29, 2025</div>
+                    
+                    <div class="events-container" id="eventsContainer">
+                        <!-- Events will appear here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- My Bookings Tab -->
+        <div id="mybookings-tab" class="tab-content">
+            <div class="auth-form" id="authSection">
+                <h3>View Your Bookings</h3>
+                <p>Enter your email to view and manage your bookings:</p>
+                <div class="form-group">
+                    <label class="form-label">Your Email</label>
+                    <input type="email" id="userEmailAuth" class="form-input" placeholder="you@example.com">
+                </div>
+                <button class="btn" onclick="loadMyBookings()">View My Bookings</button>
+            </div>
+            <div id="myBookingsList" style="display: none;">
+                <h3>Your Bookings</h3>
+                <div class="bookings-list" id="bookingsListContent">
+                    <!-- User's bookings will appear here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Booking Form Tab -->
+        <div id="booking-tab" class="tab-content">
+            <form id="bookingForm">
+                <div class="form-group">
+                    <label class="form-label">Facility *</label>
+                    <select id="facility" class="form-input" required>
+                        <option value="">Select a facility</option>
+                        <!-- Facilities will be loaded here -->
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Event Name *</label>
+                    <input type="text" id="eventName" class="form-input" required placeholder="e.g., Birthday Party">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Date *</label>
+                    <input type="date" id="bookingDate" class="form-input" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Time Slot *</label>
+                    <div class="time-slots" id="timeSlots">
+                        <!-- Time slots will be generated here -->
+                    </div>
+                </div>
+                
+                <div class="form-group" id="customTimeGroup" style="display: none;">
+                    <label class="form-label">Custom Time</label>
+                    <div style="display: flex; gap: 12px;">
+                        <input type="time" id="customStartTime" class="form-input" style="flex: 1;">
+                        <span style="align-self: center;">to</span>
+                        <input type="time" id="customEndTime" class="form-input" style="flex: 1;">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Your Name *</label>
+                    <input type="text" id="userName" class="form-input" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Email *</label>
+                    <input type="email" id="userEmail" class="form-input" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Unit Number *</label>
+                    <input type="text" id="unitNumber" class="form-input" required>
+                </div>
+                
+                <button type="submit" class="btn">Submit Booking</button>
+            </form>
+        </div>
+        
+        <!-- Admin Tab -->
+        <div id="admin-tab" class="tab-content">
+            <div class="admin-login">
+                <h3>Admin Login</h3>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" id="adminPassword" class="form-input">
+                </div>
+                <button class="btn" onclick="adminLogin()">Login</button>
+                <div id="adminContent" style="display: none; margin-top: 24px;">
+                    <!-- Admin content will appear here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Event Details Modal -->
+        <div class="modal" id="eventModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title" id="modalTitle">Event Details</div>
+                    <button class="modal-close" onclick="closeModal()">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-field">
+                        <div class="modal-label">Event</div>
+                        <div class="modal-value" id="modalEventName"></div>
+                    </div>
+                    <div class="modal-field">
+                        <div class="modal-label">Facility</div>
+                        <div class="modal-value" id="modalFacility"></div>
+                    </div>
+                    <div class="modal-field">
+                        <div class="modal-label">Date & Time</div>
+                        <div class="modal-value" id="modalDateTime"></div>
+                    </div>
+                    <div class="modal-field">
+                        <div class="modal-label">Booked By</div>
+                        <div class="modal-value" id="modalBookedBy"></div>
+                    </div>
+                    <div class="modal-field">
+                        <div class="modal-label">Unit Number</div>
+                        <div class="modal-value" id="modalUnitNumber"></div>
+                    </div>
+                    <div class="modal-field">
+                        <div class="modal-label">Email</div>
+                        <div class="modal-value" id="modalEmail"></div>
+                    </div>
+                    <div class="modal-field">
+                        <div class="modal-label">Status</div>
+                        <div class="modal-value" id="modalStatus"></div>
+                    </div>
+                </div>
+                <div class="modal-actions" id="modalActions">
+                    <!-- Actions will be added dynamically -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Messages -->
+        <div id="message" class="message"></div>
+        
+        <!-- Loading Overlay -->
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <div>Loading...</div>
+        </div>
+    </div>
+
+    <script>
+        // ===== BACKEND URL =====
+        const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwHwXWJdSpRP6j3CJVDWSZ_n6vEBjEhpA9wZv1AunaGsCfKPBaIGnzrexJe_8asf6PF/exec';
+        
+        // ===== YOUR CALLAPI FUNCTION =====
+        function callAPI(action, data, callback) {
+            showLoading(true);
+            
+            var now = Date.now();
+            Object.keys(window).forEach(function(key) {
+                if (key.startsWith('callback_') || key.startsWith('booking_pass_callback_')) {
+                    var match = key.match(/callback_(\d+)/);
+                    if (match) {
+                        var timestamp = parseInt(match[1]);
+                        if (now - timestamp > 30000) {
+                            delete window[key];
+                            console.log('🧹 Cleaned up stale callback:', key);
+                        }
+                    }
+                }
+            });
+            
+            var url = BACKEND_URL + '?action=' + encodeURIComponent(action);
+            
+            Object.keys(data).forEach(function(key) {
+                if (data[key] !== undefined && data[key] !== null) {
+                    url += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(data[key]);
+                }
+            });
+            
+            url += '&_t=' + Date.now();
+            
+            console.log('📡 API Call:', { action: action, url: url });
+            
+            var callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2);
+            window[callbackName] = function(response) {
+                console.log('📡 API Response for', action, ':', response);
+                showLoading(false);
+                if (callback) callback(response);
+                delete window[callbackName];
+            };
+            
+            url += '&callback=' + callbackName;
+            
+            var script = document.createElement('script');
+            script.src = url;
+            script.onerror = function() {
+                console.error('❌ API Error: Failed to load script for', action);
+                showLoading(false);
+                showMessage('❌ Failed to connect to server. Please try again.', 'error');
+                if (callback) callback({success: false, error: 'Network error'});
+            };
+            
+            var timeoutId = setTimeout(function() {
+                console.warn('⏰ API Timeout for', action);
+                showLoading(false);
+                if (callback) callback({success: false, error: 'Request timeout'});
+                delete window[callbackName];
+            }, 10000);
+            
+            script.onload = function() {
+                clearTimeout(timeoutId);
+            };
+            
+            document.head.appendChild(script);
+        }
+        
+        // ===== GLOBAL VARIABLES =====
+        let currentDate = new Date();
+        let currentMonth = currentDate.getMonth();
+        let currentYear = currentDate.getFullYear();
+        let selectedDate = currentDate;
+        let allBookings = [];
+        let facilities = [];
+        let currentUserEmail = '';
+        let selectedTimeSlot = '';
+        
+        // Facility configuration
+        const facilityConfig = {
+            'Clubhouse': { color: '#1a73e8', class: 'clubhouse' },
+            'Gazebo': { color: '#0b8043', class: 'gazebo' },
+            'Rec Room': { color: '#f6bf26', class: 'recroom' }
+        };
+        
+        // Time slots
+        const timeSlots = [
+            { label: '9 AM - 12 PM', start: '09:00', end: '12:00' },
+            { label: '12 PM - 3 PM', start: '12:00', end: '15:00' },
+            { label: '3 PM - 6 PM', start: '15:00', end: '18:00' },
+            { label: '6 PM - 9 PM', start: '18:00', end: '21:00' },
+            { label: 'All Day (8 AM - 10 PM)', start: '08:00', end: '22:00' },
+            { label: 'Custom Time', start: 'custom', end: 'custom' }
+        ];
+        
+        // ===== INITIALIZATION =====
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize calendar
+            renderCalendar();
+            loadBookings();
+            loadFacilities();
+            setupTimeSlots();
+            
+            // Set up form
+            document.getElementById('bookingForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                submitBooking();
+            });
+            
+            // Set default date to tomorrow
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            document.getElementById('bookingDate').valueAsDate = tomorrow;
+            
+            // Setup swipe gestures
+            setupSwipeGestures();
+            
+            // Check if user email is in localStorage
+            const savedEmail = localStorage.getItem('bookingUserEmail');
+            if (savedEmail) {
+                document.getElementById('userEmailAuth').value = savedEmail;
+                loadMyBookings();
+            }
+        });
+        
+        // ===== SWIPE GESTURES =====
+        function setupSwipeGestures() {
+            const calendarArea = document.querySelector('.calendar-and-events') || document.body;
+            
+            let touchStartX = 0;
+            let touchStartY = 0;
+            
+            calendarArea.addEventListener('touchstart', function(e) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }, { passive: true });
+            
+            calendarArea.addEventListener('touchend', function(e) {
+                const touchEndX = e.changedTouches[0].clientX;
+                const touchEndY = e.changedTouches[0].clientY;
+                
+                const deltaX = touchEndX - touchStartX;
+                const deltaY = touchEndY - touchStartY;
+                
+                // Only horizontal swipes (not vertical scrolls)
+                if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+                    if (deltaX > 0) {
+                        // Swipe right -> previous month
+                        previousMonth();
+                    } else {
+                        // Swipe left -> next month
+                        nextMonth();
+                    }
+                }
+            }, { passive: true });
+        }
+        
+        // ===== TIME SLOTS =====
+        function setupTimeSlots() {
+            const timeSlotsContainer = document.getElementById('timeSlots');
+            timeSlotsContainer.innerHTML = '';
+            
+            timeSlots.forEach((slot, index) => {
+                const slotElement = document.createElement('div');
+                slotElement.className = 'time-slot';
+                slotElement.textContent = slot.label;
+                slotElement.dataset.index = index;
+                
+                if (slot.start === 'custom') {
+                    slotElement.dataset.custom = 'true';
+                } else {
+                    slotElement.dataset.start = slot.start;
+                    slotElement.dataset.end = slot.end;
+                }
+                
+                slotElement.addEventListener('click', function() {
+                    // Remove selected from all slots
+                    document.querySelectorAll('.time-slot').forEach(s => {
+                        s.classList.remove('selected');
+                    });
+                    
+                    // Add selected to clicked slot
+                    this.classList.add('selected');
+                    selectedTimeSlot = this.dataset.index;
+                    
+                    // Show/hide custom time inputs
+                    const isCustom = this.dataset.custom === 'true';
+                    document.getElementById('customTimeGroup').style.display = isCustom ? 'block' : 'none';
+                });
+                
+                timeSlotsContainer.appendChild(slotElement);
+            });
+            
+            // Select first time slot by default
+            if (timeSlotsContainer.firstChild) {
+                timeSlotsContainer.firstChild.click();
+            }
+        }
+        
+        // ===== TAB MANAGEMENT =====
+        function showTab(tabName) {
+            // Update tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            
+            // Load data if needed
+            if (tabName === 'calendar') {
+                renderCalendar();
+            } else if (tabName === 'mybookings' && currentUserEmail) {
+                loadMyBookingsList();
+            }
+        }
+        
+        // ===== CALENDAR FUNCTIONS =====
+        function renderCalendar() {
+            // Update month title
+            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                              'July', 'August', 'September', 'October', 'November', 'December'];
+            document.getElementById('monthTitle').textContent = 
+                `${monthNames[currentMonth]} ${currentYear}`;
+            
+            // Generate days grid
+            const daysGrid = document.getElementById('daysGrid');
+            daysGrid.innerHTML = '';
+            
+            // First day of month
+            const firstDay = new Date(currentYear, currentMonth, 1);
+            const startingDay = firstDay.getDay();
+            
+            // Days in month
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+            
+            // Previous month days
+            const prevMonthDays = new Date(currentYear, currentMonth, 0).getDate();
+            
+            // Generate 42 cells (6 weeks)
+            for (let i = 0; i < 42; i++) {
+                const dayCell = document.createElement('div');
+                dayCell.className = 'day-cell';
+                
+                let day, month, year, isCurrentMonth;
+                
+                if (i < startingDay) {
+                    // Previous month
+                    day = prevMonthDays - startingDay + i + 1;
+                    month = currentMonth - 1;
+                    year = currentYear;
+                    isCurrentMonth = false;
+                    dayCell.classList.add('other-month');
+                } else if (i < startingDay + daysInMonth) {
+                    // Current month
+                    day = i - startingDay + 1;
+                    month = currentMonth;
+                    year = currentYear;
+                    isCurrentMonth = true;
+                } else {
+                    // Next month
+                    day = i - startingDay - daysInMonth + 1;
+                    month = currentMonth + 1;
+                    year = currentYear;
+                    isCurrentMonth = false;
+                    dayCell.classList.add('other-month');
+                }
+                
+                const cellDate = new Date(year, month, day);
+                dayCell.textContent = day;
+                dayCell.dataset.date = formatDateLocal(cellDate);
+                
+                // Check if today
+                const today = new Date();
+                if (formatDateLocal(cellDate) === formatDateLocal(today)) {
+                    dayCell.classList.add('today');
+                }
+                
+                // Check if selected
+                if (formatDateLocal(cellDate) === formatDateLocal(selectedDate)) {
+                    dayCell.classList.add('selected');
+                }
+                
+                // Check for ACTIVE events on this date
+                const activeFacilities = getActiveFacilitiesForDate(cellDate);
+                
+                // Clear any existing classes
+                dayCell.classList.remove('has-events', 'has-clubhouse', 'has-gazebo', 'has-recroom', 'has-multiple');
+                
+                // Add appropriate styling based on facilities with events
+                if (activeFacilities.length === 1) {
+                    // Single facility with active events
+                    const facility = activeFacilities[0];
+                    if (facility === 'Clubhouse') {
+                        dayCell.classList.add('has-clubhouse', 'has-events');
+                    } else if (facility === 'Gazebo') {
+                        dayCell.classList.add('has-gazebo', 'has-events');
+                    } else if (facility === 'Rec Room') {
+                        dayCell.classList.add('has-recroom', 'has-events');
+                    } else {
+                        dayCell.classList.add('has-events');
+                    }
+                } else if (activeFacilities.length > 1) {
+                    // Multiple facilities with active events
+                    dayCell.classList.add('has-multiple', 'has-events');
+                }
+                // No events = no special styling
+                
+                // Click handler
+                dayCell.addEventListener('click', () => selectDate(cellDate));
+                
+                daysGrid.appendChild(dayCell);
+            }
+            
+            // Update selected date display
+            updateSelectedDateDisplay();
+        }
+        
+        function formatDateLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+        
+        function getActiveFacilitiesForDate(date) {
+            const dateStr = formatDateLocal(date);
+            
+            // Get UNIQUE facilities that have ACTIVE (not cancelled) events on this date
+            const activeFacilities = new Set();
+            
+            allBookings.forEach(booking => {
+                if (!booking.start || isBookingCancelled(booking)) return;
+                
+                const bookingDateStr = formatDateLocal(new Date(booking.start));
+                if (bookingDateStr === dateStr && booking.facility) {
+                    activeFacilities.add(booking.facility);
+                }
+            });
+            
+            return Array.from(activeFacilities);
+        }
+        
+        function isBookingCancelled(booking) {
+            return booking.status === 'cancelled' || 
+                   booking.status === 'Cancelled' ||
+                   (booking.cancelled && booking.cancelled === true) ||
+                   (typeof booking.cancelled === 'string' && booking.cancelled.toLowerCase() === 'true');
+        }
+        
+        function selectDate(date) {
+            selectedDate = date;
+            
+            if (date.getMonth() !== currentMonth || date.getFullYear() !== currentYear) {
+                currentMonth = date.getMonth();
+                currentYear = date.getFullYear();
+                renderCalendar();
+            } else {
+                renderCalendar();
+            }
+            
+            updateSelectedDateDisplay();
+        }
+        
+        function updateSelectedDateDisplay() {
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('selectedDate').textContent = 
+                selectedDate.toLocaleDateString('en-US', options);
+            
+            showEventsForDate(selectedDate);
+        }
+        
+        function showEventsForDate(date) {
+            const eventsContainer = document.getElementById('eventsContainer');
+            const dateStr = formatDateLocal(date);
+            
+            // Filter for ACTIVE events on this date
+            const dayEvents = allBookings
+                .filter(booking => {
+                    if (!booking.start || isBookingCancelled(booking)) return false;
+                    
+                    const bookingDateStr = formatDateLocal(new Date(booking.start));
+                    return bookingDateStr === dateStr;
+                })
+                .sort((a, b) => new Date(a.start) - new Date(b.start));
+            
+            if (dayEvents.length === 0) {
+                eventsContainer.innerHTML = '<div class="no-events">No events scheduled for this date</div>';
+                return;
+            }
+            
+            // Generate event cards
+            let html = '';
+            dayEvents.forEach(event => {
+                const startTime = new Date(event.start);
+                const endTime = event.end ? new Date(event.end) : 
+                               new Date(startTime.getTime() + 3600000);
+                
+                const startStr = startTime.toLocaleTimeString([], { 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    hour12: true 
+                });
+                
+                const endStr = endTime.toLocaleTimeString([], { 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    hour12: true 
+                });
+                
+                // Get facility configuration
+                const facility = event.facility || 'Clubhouse';
+                const config = facilityConfig[facility] || facilityConfig['Clubhouse'];
+                const facilityClass = config.class;
+                const facilityBgClass = 'facility-' + facilityClass;
+                
+                html += `
+                    <div class="event-card ${facilityClass}" onclick="showEventDetails('${event.id || event.bookingId || ''}')">
+                        <div class="event-time">${startStr} - ${endStr}</div>
+                        <span class="event-facility ${facilityBgClass}">${facility}</span>
+                        <div class="event-title">${event.title || event.eventName || 'Event'}</div>
+                        <div class="event-details">
+                            ${event.unitNumber ? `Unit ${event.unitNumber}` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            eventsContainer.innerHTML = html;
+        }
+        
+        // ===== EVENT MODAL =====
+        function showEventDetails(bookingId) {
+            if (!bookingId) return;
+            
+            const booking = allBookings.find(b => b.id === bookingId || b.bookingId === bookingId);
+            if (!booking) return;
+            
+            // Populate modal
+            document.getElementById('modalEventName').textContent = booking.title || booking.eventName || 'Event';
+            document.getElementById('modalFacility').textContent = booking.facility || 'Unknown';
+            
+            const startTime = new Date(booking.start);
+            const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
+            const dateStr = startTime.toLocaleDateString();
+            const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+            document.getElementById('modalDateTime').textContent = `${dateStr} at ${timeStr}`;
+            
+            document.getElementById('modalBookedBy').textContent = booking.residentName || 'Unknown';
+            document.getElementById('modalUnitNumber').textContent = booking.unitNumber || 'Unknown';
+            document.getElementById('modalEmail').textContent = booking.residentEmail || 'Unknown';
+            
+            const isCancelled = isBookingCancelled(booking);
+            document.getElementById('modalStatus').textContent = isCancelled ? 'Cancelled' : 'Confirmed';
+            document.getElementById('modalStatus').style.color = isCancelled ? '#dc3545' : '#28a745';
+            
+            // Set modal title with facility color
+            const facility = booking.facility || 'Clubhouse';
+            const config = facilityConfig[facility] || facilityConfig['Clubhouse'];
+            document.getElementById('modalTitle').style.color = config.color;
+            
+            // Setup actions
+            const modalActions = document.getElementById('modalActions');
+            modalActions.innerHTML = '';
+            
+            if (!isCancelled && currentUserEmail && booking.residentEmail === currentUserEmail) {
+                // User can cancel their own booking
+                modalActions.innerHTML = `
+                    <button class="modal-btn cancel" onclick="cancelBookingFromModal('${bookingId}')">Cancel Booking</button>
+                    <button class="modal-btn close" onclick="closeModal()">Close</button>
+                `;
+            } else {
+                modalActions.innerHTML = `
+                    <button class="modal-btn close" onclick="closeModal()">Close</button>
+                `;
+            }
+            
+            // Show modal
+            document.getElementById('eventModal').classList.add('active');
+        }
+        
+        function closeModal() {
+            document.getElementById('eventModal').classList.remove('active');
+        }
+        
+        function cancelBookingFromModal(bookingId) {
+            if (!confirm('Are you sure you want to cancel this booking?')) return;
+            
+            const reason = prompt('Please enter a reason for cancellation:');
+            if (!reason) return;
+            
+            callAPI('cancelBooking', {
+                bookingId: bookingId,
+                reason: reason
+            }, function(response) {
+                if (response.success) {
+                    showMessage('✅ Booking cancelled successfully', 'success');
+                    closeModal();
+                    loadBookings();
+                    if (currentUserEmail) {
+                        loadMyBookingsList();
+                    }
+                } else {
+                    showMessage('❌ Failed to cancel booking: ' + (response.error || 'Unknown error'), 'error');
+                }
+            });
+        }
+        
+        // ===== MY BOOKINGS TAB =====
+        function loadMyBookings() {
+            const email = document.getElementById('userEmailAuth').value.trim().toLowerCase();
+            if (!email) {
+                showMessage('Please enter your email address', 'error');
+                return;
+            }
+            
+            currentUserEmail = email;
+            localStorage.setItem('bookingUserEmail', email);
+            
+            loadMyBookingsList();
+        }
+        
+        function loadMyBookingsList() {
+            if (!currentUserEmail) return;
+            
+            const userBookings = allBookings.filter(booking => 
+                booking.residentEmail && 
+                booking.residentEmail.toLowerCase() === currentUserEmail.toLowerCase()
+            );
+            
+            const bookingsList = document.getElementById('bookingsListContent');
+            const authSection = document.getElementById('authSection');
+            const myBookingsList = document.getElementById('myBookingsList');
+            
+            if (userBookings.length === 0) {
+                bookingsList.innerHTML = '<div class="no-events">You have no bookings</div>';
+            } else {
+                let html = '';
+                userBookings.sort((a, b) => new Date(a.start) - new Date(b.start)).forEach(booking => {
+                    const isCancelled = isBookingCancelled(booking);
+                    const startTime = new Date(booking.start);
+                    const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
+                    
+                    const facility = booking.facility || 'Clubhouse';
+                    const config = facilityConfig[facility] || facilityConfig['Clubhouse'];
+                    const facilityClass = config.class;
+                    
+                    html += `
+                        <div class="booking-item ${facilityClass}">
+                            <div class="booking-header">
+                                <div class="booking-title">${booking.title || booking.eventName || 'Event'}</div>
+                                <div class="booking-status ${isCancelled ? 'status-cancelled' : 'status-confirmed'}">
+                                    ${isCancelled ? 'Cancelled' : 'Confirmed'}
+                                </div>
+                            </div>
+                            <div class="booking-details">
+                                <strong>${facility}</strong><br>
+                                ${startTime.toLocaleDateString()} • ${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}<br>
+                                Unit ${booking.unitNumber}
+                            </div>
+                            <div class="booking-actions">
+                                <button class="btn-small btn-view" onclick="showEventDetails('${booking.id || booking.bookingId || ''}')">View Details</button>
+                                ${!isCancelled ? `<button class="btn-small btn-cancel" onclick="cancelBookingFromList('${booking.id || booking.bookingId || ''}')">Cancel</button>` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                bookingsList.innerHTML = html;
+            }
+            
+            // Show bookings list, hide auth section
+            authSection.style.display = 'none';
+            myBookingsList.style.display = 'block';
+        }
+        
+        function cancelBookingFromList(bookingId) {
+            cancelBookingFromModal(bookingId);
+        }
+        
+        function previousMonth() {
+            currentMonth--;
+            if (currentMonth < 0) {
+                currentMonth = 11;
+                currentYear--;
+            }
+            selectedDate = new Date(currentYear, currentMonth, 1);
+            renderCalendar();
+        }
+        
+        function nextMonth() {
+            currentMonth++;
+            if (currentMonth > 11) {
+                currentMonth = 0;
+                currentYear++;
+            }
+            selectedDate = new Date(currentYear, currentMonth, 1);
+            renderCalendar();
+        }
+        
+        // ===== DATA LOADING =====
+        function loadBookings() {
+            callAPI('getBookings', {}, function(response) {
+                if (response.success && response.bookings) {
+                    allBookings = response.bookings;
+                    console.log(`Loaded ${allBookings.length} bookings`);
+                    
+                    const cancelledCount = allBookings.filter(isBookingCancelled).length;
+                    console.log(`Found ${cancelledCount} cancelled events (hidden)`);
+                    
+                    renderCalendar();
+                    
+                    // Reload My Bookings if user is logged in
+                    if (currentUserEmail) {
+                        loadMyBookingsList();
+                    }
+                } else {
+                    showMessage('Failed to load bookings', 'error');
+                }
+            });
+        }
+        
+        function loadFacilities() {
+            callAPI('getFacilities', {}, function(response) {
+                console.log('Facilities response:', response); // DEBUG
+                if (response.success && response.facilities) {
+                    facilities = response.facilities;
+                    console.log('Available facilities:', facilities); // DEBUG
+                    
+                    const select = document.getElementById('facility');
+                    select.innerHTML = '<option value="">Select a facility</option>';
+                    
+                    facilities.forEach(facility => {
+                        const option = document.createElement('option');
+                        option.value = facility;
+                        option.textContent = facility;
+                        select.appendChild(option);
+                    });
+                    
+                    // If no facilities loaded, add defaults
+                    if (facilities.length === 0) {
+                        console.log('No facilities loaded, adding defaults');
+                        const defaultFacilities = ['Clubhouse', 'Gazebo', 'Rec Room'];
+                        defaultFacilities.forEach(facility => {
+                            const option = document.createElement('option');
+                            option.value = facility;
+                            option.textContent = facility;
+                            select.appendChild(option);
+                        });
+                        facilities = defaultFacilities;
+                    }
+                } else {
+                    console.log('Failed to load facilities, using defaults');
+                    // Fallback to default facilities
+                    const select = document.getElementById('facility');
+                    select.innerHTML = '<option value="">Select a facility</option>';
+                    const defaultFacilities = ['Clubhouse', 'Gazebo', 'Rec Room'];
+                    defaultFacilities.forEach(facility => {
+                        const option = document.createElement('option');
+                        option.value = facility;
+                        option.textContent = facility;
+                        select.appendChild(option);
+                    });
+                    facilities = defaultFacilities;
+                }
+            });
+        }
+        
+        // ===== BOOKING FUNCTIONS =====
+        function submitBooking() {
+            const facility = document.getElementById('facility').value;
+            const eventName = document.getElementById('eventName').value;
+            const date = document.getElementById('bookingDate').value;
+            const userName = document.getElementById('userName').value;
+            const userEmail = document.getElementById('userEmail').value;
+            const unitNumber = document.getElementById('unitNumber').value;
+            
+            // Get selected time slot
+            const selectedSlot = document.querySelector('.time-slot.selected');
+            if (!selectedSlot) {
+                showMessage('Please select a time slot', 'error');
+                return;
+            }
+            
+            let startTime, endTime;
+            
+            if (selectedSlot.dataset.custom === 'true') {
+                // Custom time
+                startTime = document.getElementById('customStartTime').value;
+                endTime = document.getElementById('customEndTime').value;
+                
+                if (!startTime || !endTime) {
+                    showMessage('Please enter custom start and end times', 'error');
+                    return;
+                }
+            } else {
+                // Predefined slot
+                startTime = selectedSlot.dataset.start;
+                endTime = selectedSlot.dataset.end;
+            }
+            
+            // Validation
+            if (!facility || !eventName || !date || !userName || !userEmail || !unitNumber) {
+                showMessage('Please fill in all required fields', 'error');
+                return;
+            }
+            
+            // Prepare booking data
+            const bookingData = {
+                facility: facility,
+                title: eventName,
+                date: date,
+                startTime: startTime,
+                endTime: endTime,
+                residentName: userName,
+                residentEmail: userEmail,
+                unitNumber: unitNumber
+            };
+            
+            console.log('Submitting booking:', bookingData);
+            
+            callAPI('createBooking', bookingData, function(response) {
+                if (response.success) {
+                    showMessage('✅ Booking created successfully!', 'success');
+                    
+                    // Clear form
+                    document.getElementById('bookingForm').reset();
+                    
+                    // Set defaults
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    document.getElementById('bookingDate').valueAsDate = tomorrow;
+                    
+                    // Reset time slot selection
+                    document.querySelectorAll('.time-slot').forEach(s => {
+                        s.classList.remove('selected');
+                    });
+                    if (document.querySelector('.time-slot')) {
+                        document.querySelector('.time-slot').classList.add('selected');
+                    }
+                    document.getElementById('customTimeGroup').style.display = 'none';
+                    
+                    // Reload and switch to calendar
+                    loadBookings();
+                    showTab('calendar');
+                } else {
+                    showMessage('❌ Failed to create booking: ' + (response.error || 'Unknown error'), 'error');
+                }
+            });
+        }
+        
+        // ===== ADMIN FUNCTIONS =====
+        function adminLogin() {
+            const password = document.getElementById('adminPassword').value;
+            if (password === 'admin123') {
+                document.getElementById('adminContent').style.display = 'block';
+                loadAdminContent();
+            } else {
+                showMessage('Incorrect password', 'error');
+            }
+        }
+        
+        function loadAdminContent() {
+            const activeBookings = allBookings.filter(b => !isBookingCancelled(b));
+            const cancelledBookings = allBookings.filter(isBookingCancelled);
+            
+            const adminContent = document.getElementById('adminContent');
+            adminContent.innerHTML = `
+                <h4>Active Bookings (${activeBookings.length})</h4>
+                <div style="margin-top: 16px; margin-bottom: 24px;">
+                    ${activeBookings.map(booking => {
+                        const facility = booking.facility || 'Unknown';
+                        const config = facilityConfig[facility] || facilityConfig['Clubhouse'];
+                        
+                        return `
+                        <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 8px;
+                             border-left: 4px solid ${config.color};">
+                            <div><strong>${booking.title || booking.eventName}</strong></div>
+                            <div style="font-size: 14px; color: #666;">
+                                ${new Date(booking.start).toLocaleString()} | 
+                                ${facility} | 
+                                Unit ${booking.unitNumber}
+                            </div>
+                        </div>
+                        `;
+                    }).join('')}
+                </div>
+                
+                <h4>Cancelled Bookings (${cancelledBookings.length})</h4>
+                <div style="margin-top: 16px;">
+                    ${cancelledBookings.map(booking => {
+                        return `
+                        <div style="background: #f8d7da; padding: 12px; border-radius: 6px; margin-bottom: 8px;
+                             border-left: 4px solid #dc3545;">
+                            <div><strong>${booking.title || booking.eventName}</strong></div>
+                            <div style="font-size: 14px; color: #666;">
+                                ${new Date(booking.start).toLocaleString()} | 
+                                ${booking.facility} | 
+                                Unit ${booking.unitNumber}
+                                <span style="color: #dc3545; margin-left: 10px;">Cancelled</span>
+                            </div>
+                        </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+        
+        // ===== UI HELPERS =====
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('active', show);
+        }
+        
+        function showMessage(text, type) {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = text;
+            messageEl.className = `message ${type}`;
+            
+            setTimeout(() => {
+                messageEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Close modal when clicking outside
+        document.getElementById('eventModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>
