@@ -1267,6 +1267,14 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
                 📧 Send Email
             </label>
         </div>
+
+<div class="option-item">
+    <input type="checkbox" id="useAlertFormat" class="option-checkbox" checked>
+    <label for="useAlertFormat" class="option-label">
+        📋 Use Alert Format
+    </label>
+    <div class="option-help">Includes header/footer for formal alerts</div>
+</div>
         
         <div class="option-item">
             <input type="checkbox" id="smsEnabled" class="option-checkbox">
@@ -1279,18 +1287,29 @@ background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
 </div>
 
 <!-- Message Composition -->
+<!-- Message Composition -->
 <div class="compose-section">
-
-        <!-- Message Composition -->
-        <div class="compose-section">
-            <div class="compose-title">Compose Message</div>
-            <textarea 
-                class="message-input" 
-                id="messageText" 
-                placeholder="Select a template or enter your custom message here..."
-                maxlength="500"></textarea>
-            <div class="char-count" id="charCount">0/500 characters</div>
-        </div>
+    <div class="compose-title">Compose Message</div>
+    
+    <!-- Subject line (only for plain emails) -->
+    <div id="subjectField" style="display: none; margin-bottom: 15px;">
+        <label for="emailSubject" style="display: block; font-weight: 500; margin-bottom: 5px; color: #1f2937;">
+            Email Subject:
+        </label>
+        <input 
+            type="text"
+            id="emailSubject"
+            placeholder="Enter email subject..."
+            style="width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 8px; font-family: inherit; font-size: 1rem;">
+    </div>
+    
+    <textarea 
+        class="message-input" 
+        id="messageText" 
+        placeholder="Select a template or type your message here..."
+        maxlength="500"></textarea>
+    <div class="char-count" id="charCount">0/500 characters</div>
+</div>
 
 <!-- SMS Options -->
       
@@ -1417,7 +1436,13 @@ let attachmentFilename = null;
             // Character counter and button update
 const messageInput = document.getElementById('messageText');
 messageInput.addEventListener('input', updateCharCount);
-messageInput.addEventListener('input', updateSendButton);  // ← ADD THIS LINE
+messageInput.addEventListener('input', updateSendButton); 
+
+// Alert format toggle - show/hide subject field
+const alertFormatCheckbox = document.getElementById('useAlertFormat');
+if (alertFormatCheckbox) {
+    alertFormatCheckbox.addEventListener('change', toggleSubjectField);
+}
             
             // Send button
             document.getElementById('sendBtn').addEventListener('click', sendFieldAlert);
@@ -1743,6 +1768,19 @@ messageInput.addEventListener('input', updateSendButton);  // ← ADD THIS LINE
         charCount.className = 'char-count';
         if (length > 400) charCount.classList.add('warning');
         if (length > 450) charCount.classList.add('error');
+    }
+}
+
+function toggleSubjectField() {
+    const useAlertFormat = document.getElementById('useAlertFormat');
+    const subjectField = document.getElementById('subjectField');
+    
+    if (useAlertFormat && useAlertFormat.checked) {
+        // Alert format enabled - hide subject field
+        subjectField.style.display = 'none';
+    } else {
+        // Plain email - show subject field
+        subjectField.style.display = 'block';
     }
 }
         
@@ -2540,12 +2578,17 @@ async function executeFieldAlertSend() {
     sendBtn.textContent = 'Sending...';
     
     try {
-        const response = await callNotificationAPI('sendFieldAlert', {
-            message: messageText,
-            recipientFilter: recipientFilter,
-            includeEmail: emailEnabled ? 'true' : 'false',
-            includeSMS: smsEnabled ? 'true' : 'false'
-        });
+        const useAlertFormat = document.getElementById('useAlertFormat').checked;
+const emailSubject = document.getElementById('emailSubject').value;
+
+const response = await callNotificationAPI('sendFieldAlert', {
+    message: messageText,
+    recipientFilter: recipientFilter,
+    includeEmail: emailEnabled ? 'true' : 'false',
+    includeSMS: smsEnabled ? 'true' : 'false',
+    useAlertFormat: useAlertFormat ? 'true' : 'false',
+    emailSubject: emailSubject || ''
+});
         
         if (response.success) {
             let message = '✅ Alert sent!\n';
