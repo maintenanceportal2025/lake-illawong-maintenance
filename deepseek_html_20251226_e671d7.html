@@ -1697,29 +1697,39 @@ function loadAdminPasswordFromManager() {
     }
     
     // ===== FACILITY FUNCTIONS =====
-    function getFacilityClass(facility) {
-        if (!facility) return 'clubhouse';
-        const normalized = facility.toLowerCase().trim();
-        if (normalized.includes('gazebo')) return 'gazebo';
-        if (normalized.includes('rec') || normalized.includes('room')) return 'recroom';
+function getFacilityClass(facility) {
+    if (!facility) return 'clubhouse';
+    
+    // Convert to lowercase and trim
+    const normalized = facility.toString().toLowerCase().trim();
+    
+    // Check for each facility type
+    if (normalized.includes('clubhouse') || normalized.includes('club house')) {
         return 'clubhouse';
+    } else if (normalized.includes('gazebo')) {
+        return 'gazebo';
+    } else if (normalized.includes('rec') || normalized.includes('room') || normalized.includes('recroom')) {
+        return 'recroom';
     }
-    
-    function getFacilityColor(facility) {
-        const norm = getFacilityClass(facility);
-        if (norm === 'clubhouse') return '#1a73e8';
-        if (norm === 'gazebo') return '#0b8043';
-        if (norm === 'recroom') return '#f6bf26';
-        return '#1a73e8';
-    }
-    
-    function formatFacilityDisplayName(facility) {
-        const norm = getFacilityClass(facility);
-        if (norm === 'clubhouse') return 'Clubhouse';
-        if (norm === 'gazebo') return 'Gazebo';
-        if (norm === 'recroom') return 'Rec Room';
-        return 'Clubhouse';
-    }
+    return 'clubhouse'; // default
+}
+
+function getFacilityColor(facility) {
+    const norm = getFacilityClass(facility);
+    if (norm === 'clubhouse') return '#1a73e8';
+    if (norm === 'gazebo') return '#0b8043';
+    if (norm === 'recroom') return '#f6bf26';
+    return '#1a73e8';
+}
+
+function formatFacilityDisplayName(facility) {
+    const norm = getFacilityClass(facility);
+    // Always return capitalized display names
+    if (norm === 'clubhouse') return 'Clubhouse';
+    if (norm === 'gazebo') return 'Gazebo';
+    if (norm === 'recroom') return 'Rec Room';
+    return 'Clubhouse';
+}
     
     // ===== ADMIN FUNCTIONS =====
     function checkAdminAvailability() {
@@ -1813,95 +1823,96 @@ function loadAdminPasswordFromManager() {
     }
     
     function createAdminBooking() {
-        // Check admin token first
-        if (!checkAdminToken()) {
-            showMessage('Admin session expired. Please login again.', 'error', 8000);
-            adminLogout();
-            return;
-        }
-        
-        const facility = document.getElementById('adminFacility').value;
-        const eventName = document.getElementById('adminEventName').value.trim();
-        const date = document.getElementById('adminDate').value;
-        const startTime = document.getElementById('adminStartTime').value;
-        const endTime = document.getElementById('adminEndTime').value;
-        
-        if (!eventName) {
-            showMessage('Please enter event name', 'error', 8000);
-            return;
-        }
-        
-        if (!date) {
-            showMessage('Please select date', 'error', 8000);
-            return;
-        }
-        
-        const startDateTime = new Date(date + 'T' + startTime);
-        const endDateTime = new Date(date + 'T' + endTime);
-        
-        if (endDateTime <= startDateTime) {
-            showMessage('End time must be after start time', 'error', 8000);
-            return;
-        }
-        
-        // Prevent double submission
-        if (window.isSubmittingAdminBooking) return;
-        window.isSubmittingAdminBooking = true;
-        
-        showLoading(true, 'Creating admin booking...');
-        
-        const normalizedFacility = getFacilityClass(facility);
-        const displayFacility = formatFacilityDisplayName(facility);
-        
-        const apiData = {
-            title: eventName,
-            purpose: eventName,
-            facility: normalizedFacility,
-            facilityName: displayFacility,
-            resident: 'Admin Booking',
-            residentName: 'Admin Booking',
-            residentEmail: ADMIN_EMAIL,
-            residentPhone: '',
-            unitNumber: 'Admin',
-            date: date,
-            startTime: startTime,
-            endTime: endTime,
-            start: startDateTime.toISOString().replace('.000Z', ''),
-            end: endDateTime.toISOString().replace('.000Z', ''),
-            timestamp: new Date().toISOString(),
-            status: 'Confirmed',
-            admin: true
-        };
-        
-        console.log('📤 Creating admin booking:', apiData);
-        
-        callAPI('createBooking', apiData, function(response) {
-            showLoading(false);
-            window.isSubmittingAdminBooking = false;
-            
-            if (response && response.success) {
-                // Show success message for longer
-                showMessage('✅ Admin booking created successfully!', 'success', 8000);
-                clearAdminForm();
-                
-                // Wait 3 seconds before refreshing to let user see the message
-                setTimeout(() => {
-                    loadBookings(true);
-                    if (isAdmin && document.getElementById('adminContent') && 
-                        document.getElementById('adminContent').classList.contains('hidden') === false) {
-                        setTimeout(() => renderAdminBookings(), 500);
-                    }
-                }, 3000);
-            } else {
-                if (response && response.message && (response.message.includes('some features failed') || response.message.includes('saved but'))) {
-                    showMessage('⚠️ Booking saved but with minor issues', 'info', 8000);
-                    setTimeout(() => loadBookings(true), 1000);
-                } else {
-                    showMessage('❌ Failed to create booking: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
-                }
-            }
-        });
+    // Check admin token first
+    if (!checkAdminToken()) {
+        showMessage('Admin session expired. Please login again.', 'error', 8000);
+        adminLogout();
+        return;
     }
+    
+    const facility = document.getElementById('adminFacility').value;
+    const eventName = document.getElementById('adminEventName').value.trim();
+    const date = document.getElementById('adminDate').value;
+    const startTime = document.getElementById('adminStartTime').value;
+    const endTime = document.getElementById('adminEndTime').value;
+    
+    if (!eventName) {
+        showMessage('Please enter event name', 'error', 8000);
+        return;
+    }
+    
+    if (!date) {
+        showMessage('Please select date', 'error', 8000);
+        return;
+    }
+    
+    const startDateTime = new Date(date + 'T' + startTime);
+    const endDateTime = new Date(date + 'T' + endTime);
+    
+    if (endDateTime <= startDateTime) {
+        showMessage('End time must be after start time', 'error', 8000);
+        return;
+    }
+    
+    // Prevent double submission
+    if (window.isSubmittingAdminBooking) return;
+    window.isSubmittingAdminBooking = true;
+    
+    showLoading(true, 'Creating admin booking...');
+    
+    // FIXED: Use consistent facility naming
+    const normalizedFacility = getFacilityClass(facility);          // "clubhouse" (lowercase)
+    const displayFacility = formatFacilityDisplayName(facility);    // "Clubhouse" (capitalized)
+    
+    const apiData = {
+        title: eventName,
+        purpose: eventName,
+        facility: normalizedFacility,        // lowercase for database
+        facilityName: displayFacility,      // capitalized for display
+        resident: 'Admin Booking',
+        residentName: 'Admin Booking',
+        residentEmail: ADMIN_EMAIL,
+        residentPhone: '',
+        unitNumber: 'Admin',
+        date: date,
+        startTime: startTime,
+        endTime: endTime,
+        start: startDateTime.toISOString().replace('.000Z', ''),
+        end: endDateTime.toISOString().replace('.000Z', ''),
+        timestamp: new Date().toISOString(),
+        status: 'Confirmed',
+        admin: true
+    };
+    
+    console.log('📤 Creating admin booking:', apiData);
+    
+    callAPI('createBooking', apiData, function(response) {
+        showLoading(false);
+        window.isSubmittingAdminBooking = false;
+        
+        if (response && response.success) {
+            // Show success message for longer
+            showMessage('✅ Admin booking created successfully!', 'success', 8000);
+            clearAdminForm();
+            
+            // Wait 3 seconds before refreshing to let user see the message
+            setTimeout(() => {
+                loadBookings(true);
+                if (isAdmin && document.getElementById('adminContent') && 
+                    document.getElementById('adminContent').classList.contains('hidden') === false) {
+                    setTimeout(() => renderAdminBookings(), 500);
+                }
+            }, 3000);
+        } else {
+            if (response && response.message && (response.message.includes('some features failed') || response.message.includes('saved but'))) {
+                showMessage('⚠️ Booking saved but with minor issues', 'info', 8000);
+                setTimeout(() => loadBookings(true), 1000);
+            } else {
+                showMessage('❌ Failed to create booking: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
+            }
+        }
+    });
+}
     
     // ===== FIXED BOOKING FUNCTIONS =====
     function selectFacility(element, facility) {
@@ -1982,104 +1993,105 @@ function loadAdminPasswordFromManager() {
     }
     
     function submitBooking() {
-        if (window.isSubmittingBooking) return;
-        window.isSubmittingBooking = true;
-        
-        hideAllErrors();
-        
-        const facility = document.getElementById('selectedFacility').value;
-        const eventName = document.getElementById('eventName').value.trim();
-        const bookingDate = document.getElementById('bookingDate').value;
-        const startTime = document.getElementById('startTime').value;
-        const endTime = document.getElementById('endTime').value;
-        const userName = document.getElementById('userName').value.trim();
-        const userEmail = document.getElementById('userEmail').value.trim();
-        const unitNumber = document.getElementById('unitNumber').value.trim();
-        
-        let isValid = true;
-        if (!facility) { showError('facilityError', 'Please select a facility'); isValid = false; }
-        if (!eventName) { showError('eventNameError', 'Please enter an event name'); isValid = false; }
-        if (!bookingDate) { showError('dateError', 'Please select a date'); isValid = false; }
-        if (!userName) { showError('nameError', 'Please enter your name'); isValid = false; }
-        if (!userEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) { 
-            showError('emailError', 'Please enter a valid email'); 
-            isValid = false; 
-        }
-        if (!unitNumber) { showError('unitError', 'Please enter your unit number'); isValid = false; }
-        
-        if (!isValid) {
-            window.isSubmittingBooking = false;
-            return;
-        }
-        
-        const startDateTime = new Date(bookingDate + 'T' + startTime);
-        const endDateTime = new Date(bookingDate + 'T' + endTime);
-        
-        if (endDateTime <= startDateTime) {
-            showError('timeError', 'End time must be after start time');
-            window.isSubmittingBooking = false;
-            return;
-        }
-        
-        showLoading(true, 'Submitting booking...');
-        
-        const normalizedFacility = getFacilityClass(facility);
-        const displayFacility = formatFacilityDisplayName(facility);
-        
-        const apiData = {
-            title: eventName,
-            purpose: eventName,
-            facility: normalizedFacility,
-            facilityName: displayFacility,
-            resident: userName,
-            residentName: userName,
-            residentEmail: userEmail,
-            residentPhone: '',
-            unitNumber: isNaN(unitNumber) ? unitNumber : Number(unitNumber),
-            date: bookingDate,
-            startTime: startTime,
-            endTime: endTime,
-            start: startDateTime.toISOString().replace('.000Z', ''),
-            end: endDateTime.toISOString().replace('.000Z', ''),
-            timestamp: new Date().toISOString(),
-            status: 'Confirmed'
-        };
-        
-        callAPI('createBooking', apiData, function(response) {
-            showLoading(false);
-            window.isSubmittingBooking = false;
-            
-            if (response && response.success) {
-                // Show success message for longer duration
-                showMessage('✅ Booking created successfully!', 'success', 8000);
-                resetBookingForm();
-                
-                // Delay the refresh so user can see the success message
-                setTimeout(() => {
-                    loadBookings(true);
-                    currentUserEmail = userEmail;
-                    localStorage.setItem('bookingUserEmail', userEmail);
-                    if (document.getElementById('userEmailAuth')) {
-                        document.getElementById('userEmailAuth').value = userEmail;
-                    }
-                    if (document.getElementById('myBookingsContent') && 
-                        document.getElementById('myBookingsContent').classList.contains('hidden') === false) {
-                        loadMyBookings();
-                    }
-                    showTab('mybookings');
-                }, 3000); // Wait 3 seconds before refreshing
-                
-            } else {
-                const errorMsg = response ? (response.message || response.error || 'Unknown error') : 'No response from server';
-                if (errorMsg.includes('some features failed') || errorMsg.includes('saved but')) {
-                    showMessage('⚠️ Booking saved but with issues: ' + errorMsg, 'info', 8000);
-                    setTimeout(() => loadBookings(true), 1000);
-                } else {
-                    showMessage('❌ ' + errorMsg, 'error', 8000);
-                }
-            }
-        });
+    if (window.isSubmittingBooking) return;
+    window.isSubmittingBooking = true;
+    
+    hideAllErrors();
+    
+    const facility = document.getElementById('selectedFacility').value;
+    const eventName = document.getElementById('eventName').value.trim();
+    const bookingDate = document.getElementById('bookingDate').value;
+    const startTime = document.getElementById('startTime').value;
+    const endTime = document.getElementById('endTime').value;
+    const userName = document.getElementById('userName').value.trim();
+    const userEmail = document.getElementById('userEmail').value.trim();
+    const unitNumber = document.getElementById('unitNumber').value.trim();
+    
+    let isValid = true;
+    if (!facility) { showError('facilityError', 'Please select a facility'); isValid = false; }
+    if (!eventName) { showError('eventNameError', 'Please enter an event name'); isValid = false; }
+    if (!bookingDate) { showError('dateError', 'Please select a date'); isValid = false; }
+    if (!userName) { showError('nameError', 'Please enter your name'); isValid = false; }
+    if (!userEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) { 
+        showError('emailError', 'Please enter a valid email'); 
+        isValid = false; 
     }
+    if (!unitNumber) { showError('unitError', 'Please enter your unit number'); isValid = false; }
+    
+    if (!isValid) {
+        window.isSubmittingBooking = false;
+        return;
+    }
+    
+    const startDateTime = new Date(bookingDate + 'T' + startTime);
+    const endDateTime = new Date(bookingDate + 'T' + endTime);
+    
+    if (endDateTime <= startDateTime) {
+        showError('timeError', 'End time must be after start time');
+        window.isSubmittingBooking = false;
+        return;
+    }
+    
+    showLoading(true, 'Submitting booking...');
+    
+    // FIXED: Use consistent facility naming
+    const normalizedFacility = getFacilityClass(facility);          // "clubhouse" (lowercase)
+    const displayFacility = formatFacilityDisplayName(facility);    // "Clubhouse" (capitalized)
+    
+    const apiData = {
+        title: eventName,
+        purpose: eventName,
+        facility: normalizedFacility,        // lowercase for database
+        facilityName: displayFacility,      // capitalized for display
+        resident: userName,
+        residentName: userName,
+        residentEmail: userEmail,
+        residentPhone: '',
+        unitNumber: isNaN(unitNumber) ? unitNumber : Number(unitNumber),
+        date: bookingDate,
+        startTime: startTime,
+        endTime: endTime,
+        start: startDateTime.toISOString().replace('.000Z', ''),
+        end: endDateTime.toISOString().replace('.000Z', ''),
+        timestamp: new Date().toISOString(),
+        status: 'Confirmed'
+    };
+    
+    callAPI('createBooking', apiData, function(response) {
+        showLoading(false);
+        window.isSubmittingBooking = false;
+        
+        if (response && response.success) {
+            // Show success message for longer duration
+            showMessage('✅ Booking created successfully!', 'success', 8000);
+            resetBookingForm();
+            
+            // Delay the refresh so user can see the success message
+            setTimeout(() => {
+                loadBookings(true);
+                currentUserEmail = userEmail;
+                localStorage.setItem('bookingUserEmail', userEmail);
+                if (document.getElementById('userEmailAuth')) {
+                    document.getElementById('userEmailAuth').value = userEmail;
+                }
+                if (document.getElementById('myBookingsContent') && 
+                    document.getElementById('myBookingsContent').classList.contains('hidden') === false) {
+                    loadMyBookings();
+                }
+                showTab('mybookings');
+            }, 3000); // Wait 3 seconds before refreshing
+            
+        } else {
+            const errorMsg = response ? (response.message || response.error || 'Unknown error') : 'No response from server';
+            if (errorMsg.includes('some features failed') || errorMsg.includes('saved but')) {
+                showMessage('⚠️ Booking saved but with issues: ' + errorMsg, 'info', 8000);
+                setTimeout(() => loadBookings(true), 1000);
+            } else {
+                showMessage('❌ ' + errorMsg, 'error', 8000);
+            }
+        }
+    });
+}
     
     // ===== IMPROVED MESSAGE FUNCTION =====
     function showMessage(text, type, duration = 5000) {
@@ -2103,62 +2115,64 @@ function loadAdminPasswordFromManager() {
     }
     
     // ===== DAY MODAL FUNCTIONS =====
-    function showDayDetails(date) {
-        const dateStr = formatDate(date);
-        const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-        document.getElementById('dayModalTitle').textContent = date.toLocaleDateString('en-US', options);
+    // ===== DAY MODAL FUNCTIONS =====
+function showDayDetails(date) {
+    const dateStr = formatDate(date);
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    document.getElementById('dayModalTitle').textContent = date.toLocaleDateString('en-US', options);
+    
+    const dayEvents = eventsByDate[dateStr] || [];
+    const activeEvents = dayEvents.filter(event => !isBookingCancelled(event));
+    
+    let html = '';
+    if (activeEvents.length === 0) {
+        html = '<p style="text-align: center; color: #666; font-style: italic;">No bookings for this date</p>';
+    } else {
+        const eventsByFacility = {};
+        activeEvents.forEach(event => {
+            const facilityClass = getFacilityClass(event.facility);
+            if (!eventsByFacility[facilityClass]) eventsByFacility[facilityClass] = [];
+            eventsByFacility[facilityClass].push(event);
+        });
         
-        const dayEvents = eventsByDate[dateStr] || [];
-        const activeEvents = dayEvents.filter(event => !isBookingCancelled(event));
-        
-        let html = '';
-        if (activeEvents.length === 0) {
-            html = '<p style="text-align: center; color: #666; font-style: italic;">No bookings for this date</p>';
-        } else {
-            const eventsByFacility = {};
-            activeEvents.forEach(event => {
-                const facility = event.facility || 'Clubhouse';
-                if (!eventsByFacility[facility]) eventsByFacility[facility] = [];
-                eventsByFacility[facility].push(event);
+        Object.keys(eventsByFacility).forEach(facilityClass => {
+            const facilityEvents = eventsByFacility[facilityClass];
+            const displayFacility = formatFacilityDisplayName(facilityClass);
+            const color = getFacilityColor(facilityClass);
+            const icon = facilityClass === 'clubhouse' ? '🏠' : facilityClass === 'gazebo' ? '🌳' : '🎮';
+            
+            html += `<div style="margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid ${color};">
+                    <span style="font-size: 20px;">${icon}</span>
+                    <span style="font-weight: 600; color: ${color};">${displayFacility}</span>
+                </div>`;
+            
+            facilityEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
+            
+            facilityEvents.forEach(event => {
+                const startTime = new Date(event.start);
+                const endTime = event.end ? new Date(event.end) : new Date(startTime.getTime() + 3600000);
+                const startStr = startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+                const endStr = endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+                
+                html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid ${color};">
+                    <div style="font-weight: 500; margin-bottom: 4px;">${startStr} - ${endStr}</div>
+                    <div style="font-size: 14px; margin-bottom: 4px;">${event.title || event.eventName || 'Event'}</div>
+                    <div style="font-size: 12px; color: #666;">Booked by: ${event.residentName || 'Unknown'} • Unit ${event.unitNumber || 'N/A'}</div>
+                </div>`;
             });
             
-            Object.keys(eventsByFacility).forEach(facility => {
-                const facilityEvents = eventsByFacility[facility];
-                const color = getFacilityColor(facility);
-                const icon = facility === 'Clubhouse' ? '🏠' : facility === 'Gazebo' ? '🌳' : '🎮';
-                
-                html += `<div style="margin-bottom: 20px;">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid ${color};">
-                        <span style="font-size: 20px;">${icon}</span>
-                        <span style="font-weight: 600; color: ${color};">${facility}</span>
-                    </div>`;
-                
-                facilityEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
-                
-                facilityEvents.forEach(event => {
-                    const startTime = new Date(event.start);
-                    const endTime = event.end ? new Date(event.end) : new Date(startTime.getTime() + 3600000);
-                    const startStr = startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
-                    const endStr = endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
-                    
-                    html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid ${color};">
-                        <div style="font-weight: 500; margin-bottom: 4px;">${startStr} - ${endStr}</div>
-                        <div style="font-size: 14px; margin-bottom: 4px;">${event.title || event.eventName || 'Event'}</div>
-                        <div style="font-size: 12px; color: #666;">Booked by: ${event.residentName || 'Unknown'} • Unit ${event.unitNumber || 'N/A'}</div>
-                    </div>`;
-                });
-                
-                html += '</div>';
-            });
-        }
-        
-        document.getElementById('dayModalEvents').innerHTML = html;
-        document.getElementById('dayModal').classList.add('active');
+            html += '</div>';
+        });
     }
     
-    function closeDayModal() {
-        document.getElementById('dayModal').classList.remove('active');
-    }
+    document.getElementById('dayModalEvents').innerHTML = html;
+    document.getElementById('dayModal').classList.add('active');
+}
+
+function closeDayModal() {
+    document.getElementById('dayModal').classList.remove('active');
+}
     
     // ===== MY BOOKINGS FUNCTIONS =====
     function loadMyBookings() {
