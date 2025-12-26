@@ -723,6 +723,101 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+/* ===== MOBILE CALENDAR ENHANCEMENTS ===== */
+@media (max-width: 767px) {
+    .day-cell {
+        min-height: 60px !important;
+        padding: 3px !important;
+    }
+    
+    .day-number {
+        font-size: 12px !important;
+        margin-bottom: 1px !important;
+    }
+    
+    .day-events-list {
+        min-height: 12px;
+    }
+    
+    .event-dot-mobile {
+        width: 4px !important;
+        height: 4px !important;
+        background-color: #333 !important;
+        border-radius: 50%;
+    }
+    
+    /* Hide event details on mobile */
+    .day-event-item {
+        display: none !important;
+    }
+    
+    /* Show only dots on mobile */
+    .day-events-dots {
+        display: flex !important;
+    }
+    
+    /* Adjust calendar layout for mobile */
+    .days-grid {
+        gap: 2px !important;
+    }
+    
+    .calendar-header {
+        padding: 12px !important;
+    }
+    
+    .calendar-title {
+        font-size: 14px !important;
+        min-width: 120px !important;
+    }
+    
+    .calendar-nav-btn {
+        width: 32px !important;
+        height: 32px !important;
+        font-size: 14px !important;
+    }
+}
+
+/* Touch-friendly tap targets for mobile */
+@media (max-width: 480px) {
+    .day-cell {
+        min-height: 50px !important;
+    }
+    
+    .day-number {
+        font-size: 11px !important;
+        padding: 2px 4px !important;
+    }
+    
+    .event-dot-mobile {
+        width: 3px !important;
+        height: 3px !important;
+    }
+}
+
+/* Ensure calendar is responsive when resizing */
+window.addEventListener('resize', function() {
+    if (currentTab === 'calendar') {
+        updateCalendarEvents();
+    }
+});
+
+@media (max-width: 767px) {
+    .container { padding: 8px; }
+    .tabs { grid-template-columns: repeat(4, 1fr); }
+    .tab { padding: 12px 6px; font-size: 12px; }
+    .facility-options { grid-template-columns: 1fr; }
+    .btn-group { flex-direction: column; }
+    .btn { width: 100%; }
+    .filters, .facility-filters { flex-direction: column; }
+    .filter, .facility-filter { width: 100%; text-align: center; }
+    .day-cell { min-height: 70px; }
+    
+    /* ADD THIS ONE LINE to your existing @media rule: */
+    .day-event-item { display: none !important; }
+}
+
+
+
     </style>
 </head>
 <body>
@@ -1122,6 +1217,7 @@
         
         // Start cache refresh interval
         setupCacheRefresh();
+window.addEventListener('resize', () => currentTab === 'calendar' && updateCalendarEvents());
     });
     
     // ===== LOAD ADMIN PASSWORD FROM PASSWORD MANAGER =====
@@ -1526,15 +1622,56 @@ function loadAdminPasswordFromManager() {
     }
     
     function updateCalendarEvents() {
-        document.querySelectorAll('.day-cell').forEach(dayCell => {
-            const dateStr = dayCell.dataset.date;
-            const eventsList = dayCell.querySelector('.day-events-list');
-            const dayEvents = eventsByDate[dateStr] || [];
-            const activeEvents = dayEvents.filter(event => !isBookingCancelled(event));
-            
-            eventsList.innerHTML = '';
-            
-            if (activeEvents.length > 0) {
+    const isMobile = window.innerWidth <= 768;
+    
+    document.querySelectorAll('.day-cell').forEach(dayCell => {
+        const dateStr = dayCell.dataset.date;
+        const eventsList = dayCell.querySelector('.day-events-list');
+        const dayEvents = eventsByDate[dateStr] || [];
+        const activeEvents = dayEvents.filter(event => !isBookingCancelled(event));
+        
+        eventsList.innerHTML = '';
+        
+        if (activeEvents.length > 0) {
+            if (isMobile) {
+                // MOBILE VIEW: Show simple dots
+                const dotsContainer = document.createElement('div');
+                dotsContainer.className = 'day-events-dots';
+                dotsContainer.style.display = 'flex';
+                dotsContainer.style.justifyContent = 'center';
+                dotsContainer.style.alignItems = 'center';
+                dotsContainer.style.gap = '2px';
+                dotsContainer.style.marginTop = '2px';
+                
+                // Limit to 3 dots maximum for small mobile screens
+                const dotsToShow = Math.min(activeEvents.length, 3);
+                
+                for (let i = 0; i < dotsToShow; i++) {
+                    const dot = document.createElement('div');
+                    dot.className = 'event-dot-mobile';
+                    dot.style.width = '6px';
+                    dot.style.height = '6px';
+                    dot.style.borderRadius = '50%';
+                    dot.style.backgroundColor = '#333';
+                    dot.style.display = 'block';
+                    dotsContainer.appendChild(dot);
+                }
+                
+                // If there are more events than dots shown, add a "+" indicator
+                if (activeEvents.length > 3) {
+                    const moreIndicator = document.createElement('div');
+                    moreIndicator.className = 'event-more-indicator';
+                    moreIndicator.textContent = '+';
+                    moreIndicator.style.fontSize = '10px';
+                    moreIndicator.style.color = '#666';
+                    moreIndicator.style.marginLeft = '2px';
+                    dotsContainer.appendChild(moreIndicator);
+                }
+                
+                eventsList.appendChild(dotsContainer);
+                
+            } else {
+                // DESKTOP VIEW: Show full event list
                 activeEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
                 activeEvents.slice(0, 3).forEach(event => {
                     const eventItem = createCalendarEventItem(event);
@@ -1548,8 +1685,9 @@ function loadAdminPasswordFromManager() {
                     eventsList.appendChild(moreItem);
                 }
             }
-        });
-    }
+        }
+    });
+}
     
     function createCalendarEventItem(event) {
         const eventItem = document.createElement('div');
