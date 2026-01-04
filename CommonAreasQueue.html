@@ -374,8 +374,8 @@ RELATED FILES: ResidentSubmissionForm.html
     </div>
 
     <script>
-        // Backend URL - Explorer V1.1.js
-        const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyk42AhVhukr7cwsAvLRFR0K7PcBXsrhgAUd-3c2dXp2Q0ILNuD-S0I28T5t4f-37hJZA/exec';
+        // Backend URL - Same as ProblemQueue.html
+        const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
         
         let allProblems = [];
 
@@ -387,20 +387,38 @@ RELATED FILES: ResidentSubmissionForm.html
         function fetchProblems() {
             showLoading();
             
-            fetch(BACKEND_URL + '?action=getFaultLogData')
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    onDataLoaded(data);
-                })
-                .catch(error => {
-                    console.error('Error fetching data:', error);
-                    onDataError(error);
-                });
+            // Use JSONP to avoid CORS issues (same as ProblemQueue.html)
+            const callbackName = 'jsonpCallback_' + Math.random().toString(36).substring(7);
+            const script = document.createElement('script');
+            const timeout = setTimeout(() => {
+                cleanup();
+                onDataError(new Error('Request timeout'));
+            }, 30000);
+
+            window[callbackName] = (data) => {
+                cleanup();
+                if (data.success) {
+                    onDataLoaded(data.data || []);
+                } else {
+                    onDataError(new Error(data.error || 'Unknown error'));
+                }
+            };
+
+            function cleanup() {
+                clearTimeout(timeout);
+                delete window[callbackName];
+                if (script.parentNode) {
+                    script.parentNode.removeChild(script);
+                }
+            }
+
+            script.src = `${API_URL}?action=getFaultLogData&callback=${callbackName}`;
+            script.onerror = () => {
+                cleanup();
+                onDataError(new Error('Network error'));
+            };
+            
+            document.head.appendChild(script);
         }
 
         function onDataLoaded(data) {
