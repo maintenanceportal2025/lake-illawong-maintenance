@@ -2685,6 +2685,11 @@ if (!selectedZones.includes('ecopy') && emailEnabled) {
     // No issues, proceed
     await executeFieldAlertSend();
 }
+// =====================================================================
+// COMPLETE executeFieldAlertSend WITH ATTACHMENT SUPPORT
+// =====================================================================
+// Replace your executeFieldAlertSend function (lines 2592-2654) with this
+
 async function executeFieldAlertSend() {
     if (!pendingSendParams) return;
     
@@ -2702,7 +2707,14 @@ async function executeFieldAlertSend() {
         methods.push(`SMS to ${smsCount} recipients`);
     }
     
-    confirmMsg += methods.join(' + ') + '?';
+    confirmMsg += methods.join(' + ');
+    
+    // Add attachment info to confirmation
+    if (attachmentData && attachmentFilename) {
+        confirmMsg += `\n\nWith attachment: ${attachmentFilename}`;
+    }
+    
+    confirmMsg += '\n\nContinue?';
     
     if (!confirm(confirmMsg)) {
         showNotification('Cancelled', 'info');
@@ -2714,26 +2726,45 @@ async function executeFieldAlertSend() {
     
     try {
         const useAlertFormat = document.getElementById('useAlertFormat').checked;
-const emailSubject = document.getElementById('emailSubject').value;
-
-const response = await callNotificationAPI('sendFieldAlert', {
-    message: messageText,
-    recipientFilter: recipientFilter,
-    includeEmail: emailEnabled ? 'true' : 'false',
-    includeSMS: smsEnabled ? 'true' : 'false',
-    useAlertFormat: useAlertFormat ? 'true' : 'false',
-    emailSubject: emailSubject || ''
-});
+        const emailSubject = document.getElementById('emailSubject').value;
+        
+        // Build API parameters
+        const params = {
+            message: messageText,
+            recipientFilter: recipientFilter,
+            includeEmail: emailEnabled ? 'true' : 'false',
+            includeSMS: smsEnabled ? 'true' : 'false',
+            useAlertFormat: useAlertFormat ? 'true' : 'false',
+            emailSubject: emailSubject || ''
+        };
+        
+        // Add attachment if present
+        if (attachmentData && attachmentFilename) {
+            params.attachment = JSON.stringify({
+                filename: attachmentFilename,
+                data: attachmentData,
+                mimeType: getMimeType(attachmentFilename)
+            });
+        }
+        
+        const response = await callNotificationAPI('sendFieldAlert', params);
         
         if (response.success) {
             let message = '✅ Alert sent!\n';
-            if (emailEnabled) message += `📧 Emails: ${response.email.sent}\n`;
+            if (emailEnabled) {
+                message += `📧 Emails: ${response.email.sent}`;
+                if (attachmentData && attachmentFilename) {
+                    message += ` (with ${attachmentFilename})`;
+                }
+                message += '\n';
+            }
             if (smsEnabled) message += `📱 SMS: ${response.sms.sent} ($${response.sms.cost})`;
             
             showNotification(message, 'success');
             
-            // Clear form
+            // Clear form including attachment
             document.getElementById('messageText').value = '';
+            clearAttachment(); // Clear attachment after successful send
             updateCharCount();
             updateSendButton();
         } else {
