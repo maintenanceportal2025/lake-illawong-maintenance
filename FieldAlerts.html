@@ -2314,51 +2314,147 @@ function openManagementCentral() {
     showNotification('Opening Management Central...', 'info');
 }
 
-// =====================================================================
-// ATTACHMENT HANDLING
-// =====================================================================
-
-function handleAttachment(event) {
+/**
+ * Handle file selection from input
+ */
+function handleFileSelect(event) {
     const file = event.target.files[0];
-    if (!file) return;
     
-    // Validate file type
-    const validTypes = ['.pdf', '.doc', '.docx'];
-    const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-    if (!validTypes.includes(fileExt)) {
-        showNotification('Please select a PDF, DOC, or DOCX file', 'error');
-        event.target.value = '';
+    if (!file) {
+        clearAttachment();
         return;
     }
     
-    // Validate file size (5MB limit)
-    if (file.size > 5 * 1024 * 1024) {
-        showNotification('File too large. Maximum size is 5MB', 'error');
-        event.target.value = '';
+    // Validate file
+    if (!validateFile(file)) {
+        event.target.value = ''; // Clear the input
+        clearAttachment();
         return;
     }
     
-    // Read file as base64
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        attachmentData = e.target.result.split(',')[1]; // Get base64 data
-        attachmentFilename = file.name;
-        
-        // Show preview
-        document.getElementById('attachmentName').textContent = file.name;
-        document.getElementById('attachmentPreview').classList.add('show');
-        
-        showNotification('Attachment added: ' + file.name, 'success');
-    };
-    reader.readAsDataURL(file);
+    // Show loading state
+    showNotification('Processing file...', 'info');
+    
+    // Convert to base64
+    convertFileToBase64(file)
+        .then(base64Data => {
+            attachmentData = base64Data;
+            attachmentFilename = file.name;
+            
+            // Update preview
+            displayAttachmentPreview(file);
+            showNotification(`File attached: ${file.name}`, 'success');
+        })
+        .catch(error => {
+            console.error('File conversion error:', error);
+            showNotification('Failed to process file: ' + error.message, 'error');
+            clearAttachment();
+            event.target.value = '';
+        });
 }
 
-function removeAttachment() {
+/**
+ * Validate file type and size
+ */
+function validateFile(file) {
+    // Allowed file types
+    const allowedTypes = {
+        'application/pdf': '.pdf',
+        'application/msword': '.doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+        'image/jpeg': '.jpg',
+        'image/png': '.png'
+    };
+    
+    const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+    
+    // Check file type
+    if (!allowedTypes[file.type]) {
+        showNotification('Invalid file type. Please use: PDF, DOC, DOCX, JPG, PNG', 'error');
+        return false;
+    }
+    
+    // Check file size
+    if (file.size > maxSize) {
+        const fileSizeMB = (file.size / 1024 / 1024).toFixed(1);
+        showNotification(`File too large (${fileSizeMB}MB). Maximum size: 10MB`, 'error');
+        return false;
+    }
+    
+    // Check filename length
+    if (file.name.length > 100) {
+        showNotification('Filename too long. Please rename to less than 100 characters.', 'error');
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * Convert file to base64 string
+ */
+function convertFileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        
+        reader.onload = () => {
+            // Remove the data:mime;base64, prefix to get just the base64 data
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+        };
+        
+        reader.onerror = () => {
+            reject(new Error('Failed to read file'));
+        };
+        
+        reader.readAsDataURL(file);
+    });
+}
+
+/**
+ * Display attachment preview
+ */
+function displayAttachmentPreview(file) {
+    const preview = document.getElementById('attachmentPreview');
+    const nameElement = document.getElementById('attachmentName');
+    const sizeElement = document.getElementById('attachmentSize');
+    
+    // Format file size
+    let sizeText;
+    if (file.size < 1024) {
+        sizeText = file.size + ' bytes';
+    } else if (file.size < 1024 * 1024) {
+        sizeText = (file.size / 1024).toFixed(1) + ' KB';
+    } else {
+        sizeText = (file.size / 1024 / 1024).toFixed(1) + ' MB';
+    }
+    
+    nameElement.textContent = file.name;
+    sizeElement.textContent = sizeText;
+    preview.classList.add('show');
+}
+
+/**
+ * Clear attachment
+ */
+function clearAttachment() {
     attachmentData = null;
     attachmentFilename = null;
-    document.getElementById('attachmentInput').value = '';
-    document.getElementById('attachmentPreview').classList.remove('show');
-    showNotification('Attachment removed', 'info');
+    
+    const fileInput = document.getElementById('fileAttachment');
+    if (fileInput) {
+        fileInput.value = '';
+    }
+    
+    const preview = document.getElementById('attachmentPreview');
+    if (preview) {
+        preview.classList.remove('show');
+    }
+    
+    const nameElement = document.getElementById('attachmentName');
+    const sizeElement = document.getElementById('attachmentSize');
+    if (nameElement) nameElement.textContent = 'No file selected';
+    if (sizeElement) sizeElement.textContent = '0 KB';
 }
 
 function escapeHtml(text) {
