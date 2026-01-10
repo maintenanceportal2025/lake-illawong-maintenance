@@ -27,11 +27,13 @@ QUEUE LOGIC:
 - Purpose: Eliminate perceived favoritism through transparent ordering
 
 CHANGELOG V1.2:
- - Added "Programmed-Completed" status support
- - Programmed Queue now shows BOTH Programmed and Programmed-Completed items
- - Green badge styling for Programmed-Completed (visual completion indicator)
- - Updated info box to explain dual-status system
- - Program items stay grouped even when marked complete
+ - ✅ Added "Programmed-Completed" status support
+ - ✅ Programmed Queue now shows BOTH Programmed and Programmed-Completed items
+ - ✅ Green badge styling with checkmark for Programmed-Completed
+ - ✅ Smart sorting: Active items first, completed items grouped at bottom
+ - ✅ Current Queue excludes both Programmed statuses
+ - ✅ Updated info box to explain dual-status system
+ - ✅ Program items stay grouped even when marked complete
 
 CHANGELOG V1.1:
  -  Added Queue Type toggle button (Current/Programmed)
@@ -914,12 +916,14 @@ CHANGELOG V1.1:
                     <strong>Programmed Queue Logic</strong><br>
                     Shows problems with "Programmed" or "Programmed-Completed" status - items in a planned maintenance program
                     (e.g., Dormer Windows project). Items stay grouped together throughout the program lifecycle.
-                    Sorted by Priority, then by Date Reported (oldest first).
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
+                        <strong>Sort Order:</strong> Active items first (by Priority, then Date), followed by completed items at the bottom.
+                    </div>
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
                         <strong>Status Meanings:</strong><br>
                         <span style="background: #e9d5ff; color: #9333ea; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Programmed</span> 
                         = Scheduled for future work<br>
-                        <span style="background: #d1fae5; color: #047857; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Programmed-Completed</span> 
+                        <span style="background: #d1fae5; color: #047857; padding: 2px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #10b981;">✓ Programmed-Completed</span> 
                         = Work completed, stays in program group
                     </div>
                 `;
@@ -958,8 +962,23 @@ CHANGELOG V1.1:
                 problem.daysInQueue = calculateDaysInQueue(problem);
             });
             
-            // Sort by priority first, then by date (oldest first)
+            // Sort logic - UPDATED V1.2 for Programmed Queue
             queueProblems.sort((a, b) => {
+                // SPECIAL SORT for Programmed Queue: Active items first, completed at bottom
+                if (currentQueueType === 'programmed') {
+                    const statusA = (a.problemStatus || '').toLowerCase().replace(/\s+/g, '');
+                    const statusB = (b.problemStatus || '').toLowerCase().replace(/\s+/g, '');
+                    
+                    // Programmed = 0, Programmed-Completed = 1 (so Programmed sorts first)
+                    const statusOrderA = statusA === 'programmed-completed' ? 1 : 0;
+                    const statusOrderB = statusB === 'programmed-completed' ? 1 : 0;
+                    
+                    if (statusOrderA !== statusOrderB) {
+                        return statusOrderA - statusOrderB; // Active first, completed last
+                    }
+                }
+                
+                // Then sort by priority
                 const priorityA = PRIORITY_ORDER[a.problemPriority] || 999;
                 const priorityB = PRIORITY_ORDER[b.problemPriority] || 999;
                 
