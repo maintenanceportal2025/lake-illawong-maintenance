@@ -4,8 +4,8 @@ PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
 PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: v1.1.0 - QUEUE TYPE TOGGLE (CURRENT/PROGRAMMED)
-LAST UPDATED: November 20, 2025
+VERSION: v1.2.0 - PROGRAMMED-COMPLETED STATUS SUPPORT
+LAST UPDATED: January 11, 2026
 DESIGN SYSTEM: Lake Illawong Unified v1.4
 - Terminology: "Problem" standard (V1.4 update)
 - Header: Transparent with logo
@@ -18,13 +18,20 @@ RELATED FILES: MaintenanceModule.html, FieldOperationsPortal.html
 HIERARCHICAL POSITION: system_problem_queue
 
 QUEUE LOGIC:
-- Primary Sort: Priority (Urgent → High → Medium → Low)
+- Primary Sort: Priority (Urgent â†’ High â†’ Medium â†’ Low)
 - Secondary Sort: Date Reported (Oldest first)
 - NEW V1.1: Queue Type Toggle (Current/Programmed)
   - Current Queue: Active problems (excludes Completed/Cancelled/Programmed/Project)
-  - Programmed Queue: Problems with Programmed status
+  - Programmed Queue: Shows both "Programmed" AND "Programmed-Completed" statuses
 - Display: Days in queue, current status, problem details
 - Purpose: Eliminate perceived favoritism through transparent ordering
+
+CHANGELOG V1.2:
+ - Added "Programmed-Completed" status support
+ - Programmed Queue now shows BOTH Programmed and Programmed-Completed items
+ - Green badge styling for Programmed-Completed (visual completion indicator)
+ - Updated info box to explain dual-status system
+ - Program items stay grouped even when marked complete
 
 CHANGELOG V1.1:
  -  Added Queue Type toggle button (Current/Programmed)
@@ -355,22 +362,19 @@ CHANGELOG V1.1:
             color: #9333ea;
         }
 
+        .status-programmed-completed {
+            background: #d1fae5;
+            color: #047857;
+            font-weight: 600;
+            border: 2px solid #10b981;
+        }
+
         .status-project {
             background: #fef3c7;
             color: #d97706;
         }
 
       .status-unknown { background: #f3f4f6; color: #6b7280; }
-
-
-      .status-programmed-completed {
-      background: #d1fae5;
-      color: #047857;
-      border: 2px solid #10b981;
-  }
-  .status-programmed-completed::before {
-      content: "✓ ";
-  }
 
         /* LOADING STATE */
         .loading {
@@ -908,10 +912,15 @@ CHANGELOG V1.1:
             } else {
                 infoBox.innerHTML = `
                     <strong>Programmed Queue Logic</strong><br>
-                    Problems marked as "Programmed" - scheduled for future work or part of a planned maintenance program. 
-                    These are sorted by Priority (Urgent → High → Medium → Low), then by Date Reported (oldest first).
+                    Shows problems with "Programmed" or "Programmed-Completed" status - items in a planned maintenance program
+                    (e.g., Dormer Windows project). Items stay grouped together throughout the program lifecycle.
+                    Sorted by Priority, then by Date Reported (oldest first).
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
-                        <strong>Note:</strong> Programmed problems are not yet in the active work queue but are scheduled for completion.
+                        <strong>Status Meanings:</strong><br>
+                        <span style="background: #e9d5ff; color: #9333ea; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Programmed</span> 
+                        = Scheduled for future work<br>
+                        <span style="background: #d1fae5; color: #047857; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Programmed-Completed</span> 
+                        = Work completed, stays in program group
                     </div>
                 `;
             }
@@ -925,20 +934,21 @@ CHANGELOG V1.1:
             let queueProblems;
             
             if (currentQueueType === 'current') {
-                // Current Queue: Filter active problems only (exclude Completed, Cancelled, Programmed, Project)
+                // Current Queue: Filter active problems only (exclude Completed, Cancelled, Programmed, Programmed-Completed, Project)
                 queueProblems = allProblems.filter(problem => {
-                    const status = (problem.problemStatus || '').toLowerCase();
+                    const status = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, ''); // Remove spaces
                     return status !== 'completed' && 
                            status !== 'cancelled' && 
                            status !== 'closed' &&
                            status !== 'programmed' &&
+                           status !== 'programmed-completed' && // CRITICAL: Exclude from current queue
                            status !== 'project' &&
                            status !== '';
                 });
             } else {
-                // Programmed Queue: Show only Programmed problems
+                // Programmed Queue: Show Programmed AND Programmed-Completed problems
                 queueProblems = allProblems.filter(problem => {
-                    const status = (problem.problemStatus || '').toLowerCase();
+                    const status = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, ''); // Remove spaces
                     return status === 'programmed' || status === 'programmed-completed';
                 });
             }
@@ -1069,6 +1079,11 @@ CHANGELOG V1.1:
             const statusClass = getStatusClass(problem.problemStatus);
             const friendlyPID = getFriendlyPID(problem.internalId || problem.problemId);
             
+            // Add checkmark for Programmed-Completed status
+            const statusText = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, '') === 'programmed-completed' 
+                ? '✓ Programmed-Completed' 
+                : (problem.problemStatus || 'Reported');
+            
             card.innerHTML = `
                 <div class="queue-card-header">
                     <div class="queue-position-badge">${problem.queuePosition}</div>
@@ -1084,7 +1099,7 @@ CHANGELOG V1.1:
                 <div class="queue-card-body">
                     <div class="queue-card-badges">
                         <span class="priority-badge ${priorityClass}">${problem.problemPriority || 'None'}</span>
-                        <span class="status-badge ${statusClass}">${problem.problemStatus || 'Reported'}</span>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
                     </div>
                 </div>
             `;
@@ -1136,6 +1151,11 @@ CHANGELOG V1.1:
             const priorityClass = getPriorityClass(problem.problemPriority);
             const statusClass = getStatusClass(problem.problemStatus);
             
+            // Add checkmark for Programmed-Completed status
+            const statusText = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, '') === 'programmed-completed' 
+                ? '✓ Programmed-Completed' 
+                : (problem.problemStatus || 'Reported');
+            
             modalBody.innerHTML = `
                 <div class="modal-field">
                     <div class="modal-label">Queue Position</div>
@@ -1162,7 +1182,7 @@ CHANGELOG V1.1:
                 <div class="modal-field">
                     <div class="modal-label">Status</div>
                     <div class="modal-value">
-                        <span class="status-badge ${statusClass}">${problem.problemStatus || 'Reported'}</span>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
                     </div>
                 </div>
                 <div class="modal-field">
@@ -1288,9 +1308,10 @@ CHANGELOG V1.1:
     if (s.includes('hold') || s.includes('pending')) return 'status-on-hold';
     if (s.includes('cancelled')) return 'status-cancelled';
     if (s.includes('scheduled')) return 'status-scheduled';
+    if (s === 'programmed-completed') return 'status-programmed-completed';
     if (s.includes('programmed')) return 'status-programmed';
     if (s.includes('project')) return 'status-project';
-    if (s.includes('unknown')) return 'status-unknown'; // Add this line
+    if (s.includes('unknown')) return 'status-unknown';
     
     return 'status-reported';
 }
