@@ -648,6 +648,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         <span class="sidebar-title">🎛️ Data Slicers</span>
     </div>
     <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search PID, unit, description...">
+
+    <!-- Data Mode Toggle - NEW -->
+    <div class="filter-section" style="margin-top: 16px;">
+        <div class="filter-header"><div class="filter-label">📊 Data Mode</div></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <button id="btnCurrentMode" onclick="setDataMode('current')" style="background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%); color: white; border: none; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; font-weight: 600; transition: all 0.2s;">
+                Current Queue
+            </button>
+            <button id="btnAllMode" onclick="setDataMode('all')" style="background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; font-weight: 600; transition: all 0.2s;">
+                All Data
+            </button>
+        </div>
+        <div style="font-size: 0.7rem; color: #94a3b8; line-height: 1.4; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+            <strong style="color: #cbd5e1;">Current:</strong> Active problems only<br>
+            <strong style="color: #cbd5e1;">All:</strong> Includes completed & archived
+        </div>
+    </div>
     
     <!-- Date Range Filter (unchanged) -->
     <div class="filter-section">
@@ -884,6 +901,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
 
         let allProblems = [], filteredProblems = [], currentProblem = null, currentDataset = 'all';
+        let dataMode = 'current'; // NEW: 'current' or 'all' - default to Current Queue
+        let allProblemsRaw = []; // Store unfiltered raw data
         let currentDateFilter = null;
         let customDateRange = null;
         let sortDirection = 'desc'; // NEW: Track sort direction
@@ -1072,17 +1091,16 @@ async function loadAllDataSequentially() {
         const response = await makeRequest('getLegacyLogData');
         
         if (response && response.success) {
-            allProblems = response.data || [];
-            console.log('Loaded', allProblems.length, 'legacy problems');
+            allProblemsRaw = response.data || []; // Store raw data
+            console.log('Loaded', allProblemsRaw.length, 'total problems');
             
-            // Clear date filters when switching to legacy data
+            // Clear date filters when switching to current data
             currentDateFilter = null;
             customDateRange = null;
             clearCustomDateInputs();
             updateDateRangeDisplay('all');
             
-            buildFilters();
-            applyFilters();
+            filterDataByMode(); // Apply mode filter and rebuild
         } else {
             throw new Error('Failed to load legacy data');
         }
@@ -1129,6 +1147,58 @@ async function loadAllDataSequentially() {
         console.error('Error loading current data:', error);
         showError('Failed to load current problems data');
     }
+
+            function setDataMode(mode) {
+            dataMode = mode;
+            
+            // Update button styles
+            const btnCurrent = document.getElementById('btnCurrentMode');
+            const btnAll = document.getElementById('btnAllMode');
+            
+            if (mode === 'current') {
+                btnCurrent.style.background = 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)';
+                btnCurrent.style.color = 'white';
+                btnCurrent.style.border = 'none';
+                btnAll.style.background = '#f1f5f9';
+                btnAll.style.color = '#475569';
+                btnAll.style.border = '1px solid #e2e8f0';
+            } else {
+                btnAll.style.background = 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)';
+                btnAll.style.color = 'white';
+                btnAll.style.border = 'none';
+                btnCurrent.style.background = '#f1f5f9';
+                btnCurrent.style.color = '#475569';
+                btnCurrent.style.border = '1px solid #e2e8f0';
+            }
+            
+            // Filter data based on mode
+            filterDataByMode();
+        }
+        
+        function filterDataByMode() {
+            if (dataMode === 'current') {
+                // Filter to Current Queue only (same logic as QueueDigest and ProblemQueue)
+                allProblems = allProblemsRaw.filter(problem => {
+                    const status = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, '');
+                    return status !== 'completed' && 
+                           status !== 'cancelled' && 
+                           status !== 'closed' &&
+                           status !== 'programmed' &&
+                           status !== 'programmed-completed' &&
+                           status !== 'project' &&
+                           status !== '';
+                });
+                console.log('Current Queue mode:', allProblems.length, 'active problems');
+            } else {
+                // Show all data
+                allProblems = [...allProblemsRaw];
+                console.log('All Data mode:', allProblems.length, 'total problems');
+            }
+            
+            buildFilters();
+            applyFilters();
+        }
+            
 }
 
 // Expandable sections functionality
