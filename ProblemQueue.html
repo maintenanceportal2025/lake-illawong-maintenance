@@ -4,7 +4,7 @@ PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
 PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: v1.2.0 - PROGRAMMED-COMPLETED STATUS SUPPORT
+VERSION: v1.3.0 - AGING ALERTS & SORT TOGGLE
 LAST UPDATED: January 11, 2026
 DESIGN SYSTEM: Lake Illawong Unified v1.4
 - Terminology: "Problem" standard (V1.4 update)
@@ -25,6 +25,13 @@ QUEUE LOGIC:
   - Programmed Queue: Shows both "Programmed" AND "Programmed-Completed" statuses
 - Display: Days in queue, current status, problem details
 - Purpose: Eliminate perceived favoritism through transparent ordering
+
+CHANGELOG V1.3:
+ - ✅ Added sort toggle: Priority-first (default) vs Age-first
+ - ✅ Visual aging alerts: ⚠️ 30-59 days, 🚨 60+ days
+ - ✅ Highlights long-waiting low priority items
+ - ✅ Age-first mode prevents priority starvation
+ - ✅ Non-intrusive visual warnings for aging items
 
 CHANGELOG V1.2:
  - ✅ Added "Programmed-Completed" status support
@@ -378,6 +385,35 @@ CHANGELOG V1.1:
 
       .status-unknown { background: #f3f4f6; color: #6b7280; }
 
+        /* AGING BADGES - NEW V1.3 */
+        .aging-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .aging-warning {
+            background: #fef3c7;
+            color: #d97706;
+            border: 2px solid #f59e0b;
+        }
+
+        .aging-alert {
+            background: #fecaca;
+            color: #dc2626;
+            border: 2px solid #ef4444;
+            animation: pulse-alert 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-alert {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
         /* LOADING STATE */
         .loading {
             text-align: center;
@@ -709,6 +745,16 @@ CHANGELOG V1.1:
                 </button>
             </div>
 
+            <!-- SORT MODE TOGGLE - NEW V1.3 -->
+            <div class="queue-type-toggle" style="margin-top: 16px;">
+                <button class="queue-type-btn active" id="sortPriorityBtn" onclick="setSortMode('priority')">
+                    📊 Priority First
+                </button>
+                <button class="queue-type-btn" id="sortAgeBtn" onclick="setSortMode('age')">
+                    ⏰ Age First
+                </button>
+            </div>
+
             <!-- INFO BOX (DYNAMIC) -->
             <div class="info-box" id="infoBox">
                 <!-- Populated by JavaScript based on queue type -->
@@ -800,6 +846,7 @@ CHANGELOG V1.1:
         
         let allProblems = [];
         let currentQueueType = 'current'; // NEW V1.1: Track queue type
+        let sortMode = 'priority'; // NEW V1.3: 'priority' or 'age'
         let currentFilter = 'all';
         let selectedProblem = null;
         
@@ -897,18 +944,46 @@ CHANGELOG V1.1:
             processQueue();
         }
 
+        function setSortMode(mode) {
+            sortMode = mode;
+            
+            // Update button states
+            const sortPriorityBtn = document.getElementById('sortPriorityBtn');
+            const sortAgeBtn = document.getElementById('sortAgeBtn');
+            
+            if (mode === 'priority') {
+                sortPriorityBtn.classList.add('active');
+                sortAgeBtn.classList.remove('active');
+            } else {
+                sortAgeBtn.classList.add('active');
+                sortPriorityBtn.classList.remove('active');
+            }
+            
+            // Update info box and reprocess queue
+            updateInfoBox();
+            processQueue();
+        }
+
         function updateInfoBox() {
             const infoBox = document.getElementById('infoBox');
             
             if (currentQueueType === 'current') {
+                const sortInfo = sortMode === 'priority' 
+                    ? 'Priority (Urgent, High, Medium, Low), then by Date (oldest first)'
+                    : 'Age (oldest to newest), regardless of priority';
+                
                 infoBox.innerHTML = `
                     <strong>Current Queue Logic</strong><br>
-                    Problems are sorted by Priority (Urgent → High → Medium → Low), then by Date Reported (oldest first). 
-                    This ensures transparent, fair allocation of work. Excludes completed, cancelled, programmed, and project items.
+                    Problems sorted by: <strong>${sortInfo}</strong>
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
-                        <strong>Visual Indicators:</strong><br>
-                        <span style="display: inline-block; width: 4px; height: 12px; background: #3b82f6; vertical-align: middle; margin-right: 8px;"></span>
-                        <span style="background: #f1f5f9; padding: 2px 8px; border-radius: 4px;">Blue bar + gray background</span> = Work In Progress (multi-visit job)
+                        <strong>Aging Alerts:</strong><br>
+                        <span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #f59e0b; font-size: 11px;">⚠️ 30-59 DAYS</span> 
+                        = Needs attention<br>
+                        <span style="background: #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #ef4444; font-size: 11px;">🚨 60+ DAYS</span> 
+                        = Urgent attention required
+                    </div>
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
+                        <strong>Tip:</strong> Use "Age First" sort to highlight long-waiting items.
                     </div>
                 `;
             } else {
@@ -962,7 +1037,7 @@ CHANGELOG V1.1:
                 problem.daysInQueue = calculateDaysInQueue(problem);
             });
             
-            // Sort logic - UPDATED V1.2 for Programmed Queue
+            // Sort logic - UPDATED V1.3 for Sort Mode Toggle
             queueProblems.sort((a, b) => {
                 // SPECIAL SORT for Programmed Queue: Active items first, completed at bottom
                 if (currentQueueType === 'programmed') {
@@ -978,7 +1053,16 @@ CHANGELOG V1.1:
                     }
                 }
                 
-                // Then sort by priority
+                // NEW V1.3: Check sort mode for Current Queue
+                if (currentQueueType === 'current' && sortMode === 'age') {
+                    // AGE FIRST MODE: Sort by date only (oldest first)
+                    const dateA = new Date(a.timestamp || a.dateReported);
+                    const dateB = new Date(b.timestamp || b.dateReported);
+                    return dateA - dateB;
+                }
+                
+                // DEFAULT: PRIORITY FIRST MODE
+                // Sort by priority first
                 const priorityA = PRIORITY_ORDER[a.problemPriority] || 999;
                 const priorityB = PRIORITY_ORDER[b.problemPriority] || 999;
                 
@@ -1103,6 +1187,14 @@ CHANGELOG V1.1:
                 ? '✓ Programmed-Completed' 
                 : (problem.problemStatus || 'Reported');
             
+            // NEW V1.3: Generate aging badge
+            let agingBadgeHTML = '';
+            if (problem.daysInQueue >= 60) {
+                agingBadgeHTML = '<span class="aging-badge aging-alert">🚨 60+ DAYS</span>';
+            } else if (problem.daysInQueue >= 30) {
+                agingBadgeHTML = '<span class="aging-badge aging-warning">⚠️ 30-59 DAYS</span>';
+            }
+            
             card.innerHTML = `
                 <div class="queue-card-header">
                     <div class="queue-position-badge">${problem.queuePosition}</div>
@@ -1119,6 +1211,7 @@ CHANGELOG V1.1:
                     <div class="queue-card-badges">
                         <span class="priority-badge ${priorityClass}">${problem.problemPriority || 'None'}</span>
                         <span class="status-badge ${statusClass}">${statusText}</span>
+                        ${agingBadgeHTML}
                     </div>
                 </div>
             `;
@@ -1175,6 +1268,28 @@ CHANGELOG V1.1:
                 ? '✓ Programmed-Completed' 
                 : (problem.problemStatus || 'Reported');
             
+            // NEW V1.3: Generate aging badge for modal
+            let agingBadgeHTML = '';
+            if (problem.daysInQueue >= 60) {
+                agingBadgeHTML = `
+                    <div class="modal-field">
+                        <div class="modal-label">Aging Alert</div>
+                        <div class="modal-value">
+                            <span class="aging-badge aging-alert">🚨 60+ DAYS - URGENT ATTENTION REQUIRED</span>
+                        </div>
+                    </div>
+                `;
+            } else if (problem.daysInQueue >= 30) {
+                agingBadgeHTML = `
+                    <div class="modal-field">
+                        <div class="modal-label">Aging Alert</div>
+                        <div class="modal-value">
+                            <span class="aging-badge aging-warning">⚠️ 30-59 DAYS - NEEDS ATTENTION</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
             modalBody.innerHTML = `
                 <div class="modal-field">
                     <div class="modal-label">Queue Position</div>
@@ -1212,6 +1327,7 @@ CHANGELOG V1.1:
                     <div class="modal-label">Days in Queue</div>
                     <div class="modal-value">${problem.daysInQueue} days</div>
                 </div>
+                ${agingBadgeHTML}
                 <div class="modal-field full-width">
                     <div class="modal-label">Problem Description</div>
                     <div class="modal-value">${problem.problemDescription || 'No description'}</div>
