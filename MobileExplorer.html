@@ -1271,20 +1271,37 @@ async function loadAllData() {
                 });
             }
             
-            // Apply search filter
+           // Apply search filter
             const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
             if (searchTerm) {
                 filtered = filtered.filter(problem => {
-                    const searchableText = [
-                        getFriendlyPID(problem.internalId),
-                        problem.unitNumber,
-                        problem.zone,
-                        problem.problemDescription,
-                        problem.reportedBy,
-                        problem.category
-                    ].filter(Boolean).join(' ').toLowerCase();
+                    // Remove "unit " prefix if present
+                    const cleanTerm = searchTerm.replace(/^unit\s+/i, '').trim();
                     
-                    return searchableText.includes(searchTerm);
+                    // Get fields and trim whitespace
+                    const pid = getFriendlyPID(problem.internalId).toLowerCase().trim();
+                    const unitField = String(problem.unitNumber || '').toLowerCase().trim();
+                    const zone = (problem.zone || '').toLowerCase().trim();
+                    const desc = (problem.problemDescription || '').toLowerCase().trim();
+                    const reporter = (problem.reportedBy || '').toLowerCase().trim();
+                    const category = (problem.category || '').toLowerCase().trim();
+                    
+                    // Extract just the number from unit field (e.g., "30" from "unit 30")
+                    const unitNumberMatch = unitField.match(/\d+/);
+                    const unitNumber = unitNumberMatch ? unitNumberMatch[0] : '';
+                    
+                    // If search is ONLY digits, match unit number EXACTLY
+                    if (/^\d+$/.test(cleanTerm)) {
+                        return unitNumber === cleanTerm;
+                    }
+                    
+                    // For text searches, check all fields
+                    return pid.includes(searchTerm) || 
+                           unitField.includes(searchTerm) || 
+                           zone.includes(searchTerm) ||
+                           desc.includes(searchTerm) || 
+                           reporter.includes(searchTerm) ||
+                           category.includes(searchTerm);
                 });
             }
             
