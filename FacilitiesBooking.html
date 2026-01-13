@@ -3085,74 +3085,98 @@ function closeAdminSuccessModal() {
     let originalBookingData = null;
     
     function editUserBooking(bookingId) {
-        const booking = allBookings.find(b => b.id === bookingId || b.bookingId === bookingId);
-        if (!booking) {
-            showMessage('Booking not found', 'error', 5000);
-            return;
-        }
+    const booking = allBookings.find(b => b.id === bookingId || b.bookingId === bookingId);
+    if (!booking) {
+        showMessage('Booking not found', 'error', 5000);
+        return;
+    }
+    
+    editingBookingId = bookingId;
+    originalBookingData = {...booking};
+    
+    const facility = booking.facility || 'clubhouse';
+    
+    // Handle different date formats - MORE ROBUST
+    let startTime, endTime;
+    
+    // Try to parse the start time
+    if (booking.start) {
+        startTime = new Date(booking.start);
+    } else if (booking.date && booking.startTime) {
+        startTime = new Date(`${booking.date}T${booking.startTime}`);
+    } else {
+        console.error('Cannot find start time in booking:', booking);
+        showMessage('Error loading booking times', 'error', 5000);
+        return;
+    }
+    
+    // Try to parse the end time
+    if (booking.end) {
+        endTime = new Date(booking.end);
+    } else if (booking.date && booking.endTime) {
+        endTime = new Date(`${booking.date}T${booking.endTime}`);
+    } else {
+        endTime = new Date(startTime.getTime() + 3600000); // Default 1 hour
+    }
+    
+    // Format for input fields - use raw data if available
+    const dateStr = booking.date || startTime.toISOString().split('T')[0];
+    const startTimeStr = booking.startTime || startTime.toTimeString().slice(0, 5);
+    const endTimeStr = booking.endTime || endTime.toTimeString().slice(0, 5);
+    
+    console.log('Edit booking times:', { dateStr, startTimeStr, endTimeStr, booking });
+    
+    const html = `
+        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <div style="margin-bottom: 12px; font-size: 14px; color: #666;">
+                <strong>Booking ID:</strong> ${booking.id || booking.bookingId}
+            </div>
+        </div>
         
-        editingBookingId = bookingId;
-        originalBookingData = {...booking};
-        
-        const facility = booking.facility || 'clubhouse';
-        const startTime = new Date(booking.start);
-        const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
-        
-        const dateStr = startTime.toISOString().split('T')[0];
-        const startTimeStr = startTime.toTimeString().slice(0, 5);
-        const endTimeStr = endTime.toTimeString().slice(0, 5);
-        
-        const html = `
-            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-                <div style="margin-bottom: 12px; font-size: 14px; color: #666;">
-                    <strong>Booking ID:</strong> ${booking.id || booking.bookingId}
-                </div>
+        <form id="editBookingForm" onsubmit="submitEditBooking(event)">
+            <div class="form-group">
+                <label class="form-label required">Facility</label>
+                <select class="form-select" id="editFacility" required>
+                    <option value="clubhouse" ${facility === 'clubhouse' ? 'selected' : ''}>Clubhouse</option>
+                    <option value="gazebo" ${facility === 'gazebo' ? 'selected' : ''}>Gazebo</option>
+                    <option value="recroom" ${facility === 'recroom' ? 'selected' : ''}>Rec Room</option>
+                </select>
             </div>
             
-            <form id="editBookingForm" onsubmit="submitEditBooking(event)">
-                <div class="form-group">
-                    <label class="form-label required">Facility</label>
-                    <select class="form-select" id="editFacility" required>
-                        <option value="clubhouse" ${facility === 'clubhouse' ? 'selected' : ''}>Clubhouse</option>
-                        <option value="gazebo" ${facility === 'gazebo' ? 'selected' : ''}>Gazebo</option>
-                        <option value="recroom" ${facility === 'recroom' ? 'selected' : ''}>Rec Room</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label required">Date</label>
-                    <input type="date" class="form-input" id="editDate" value="${dateStr}" required>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label required">Start Time</label>
-                    <input type="time" class="form-input" id="editStartTime" value="${startTimeStr}" required>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label required">End Time</label>
-                    <input type="time" class="form-input" id="editEndTime" value="${endTimeStr}" required>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Purpose / Event Name</label>
-                    <input type="text" class="form-input" id="editPurpose" value="${booking.purpose || booking.title || ''}" placeholder="e.g., Birthday party">
-                </div>
-                
-                <div style="background: #fff3cd; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; border-left: 4px solid #ffc107;">
-                    <strong>Note:</strong> We'll check availability before updating your booking.
-                </div>
-                
-                <div class="btn-group">
-                    <button type="submit" class="btn btn-success">✅ Update Booking</button>
-                    <button type="button" class="btn btn-secondary" onclick="closeEditBookingModal()">Cancel</button>
-                </div>
-            </form>
-        `;
-        
-        document.getElementById('editBookingModalContent').innerHTML = html;
-        document.getElementById('editBookingModal').classList.add('active');
-    }
+            <div class="form-group">
+                <label class="form-label required">Date</label>
+                <input type="date" class="form-input" id="editDate" value="${dateStr}" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label required">Start Time</label>
+                <input type="time" class="form-input" id="editStartTime" value="${startTimeStr}" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label required">End Time</label>
+                <input type="time" class="form-input" id="editEndTime" value="${endTimeStr}" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Purpose / Event Name</label>
+                <input type="text" class="form-input" id="editPurpose" value="${booking.purpose || booking.title || ''}" placeholder="e.g., Birthday party">
+            </div>
+            
+            <div style="background: #fff3cd; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; border-left: 4px solid #ffc107;">
+                <strong>Note:</strong> We'll check availability before updating your booking.
+            </div>
+            
+            <div class="btn-group">
+                <button type="submit" class="btn btn-success">✅ Update Booking</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditBookingModal()">Cancel</button>
+            </div>
+        </form>
+    `;
+    
+    document.getElementById('editBookingModalContent').innerHTML = html;
+    document.getElementById('editBookingModal').classList.add('active');
+}
     
     function closeEditBookingModal() {
         document.getElementById('editBookingModal').classList.remove('active');
