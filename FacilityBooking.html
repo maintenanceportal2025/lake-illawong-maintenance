@@ -1340,6 +1340,19 @@
                 </div>
             </div>
         </div>
+
+        <!-- Edit Booking Modal -->
+    <div id="editBookingModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 style="margin: 0; color: var(--primary-blue);">Edit Booking</h2>
+                <button class="modal-close" onclick="closeEditBookingModal()">&times;</button>
+            </div>
+            <div id="editBookingModalContent">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
         
         <!-- Loading -->
         <div id="loading" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.95); z-index: 2000; align-items: center; justify-content: center; flex-direction: column;">
@@ -2981,7 +2994,8 @@ function closeAdminSuccessModal() {
         
         if (!isCancelled && !isPast) {
             html += `<div class="btn-group">
-                <button class="btn btn-danger" onclick="cancelUserBooking('${booking.id || booking.bookingId || ''}'); closeBookingModal();">❌ Cancel Booking</button>
+                <button class="btn btn-primary" onclick="editUserBooking('${booking.id || booking.bookingId || ''}'); closeBookingModal();">✏️ Edit</button>
+                <button class="btn btn-danger" onclick="cancelUserBooking('${booking.id || booking.bookingId || ''}'); closeBookingModal();">❌ Cancel</button>
                 <button class="btn btn-secondary" onclick="closeBookingModal();">Close</button>
             </div>`;
         } else {
@@ -3010,6 +3024,206 @@ function closeAdminSuccessModal() {
             }
         });
     }
+
+// ===== EDIT BOOKING FUNCTIONALITY =====
+    
+    let editingBookingId = null;
+    let originalBookingData = null;
+    
+    function editUserBooking(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId || b.bookingId === bookingId);
+        if (!booking) {
+            showMessage('Booking not found', 'error', 5000);
+            return;
+        }
+        
+        editingBookingId = bookingId;
+        originalBookingData = {...booking};
+        
+        const facility = booking.facility || 'clubhouse';
+        const startTime = new Date(booking.start);
+        const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
+        
+        const dateStr = startTime.toISOString().split('T')[0];
+        const startTimeStr = startTime.toTimeString().slice(0, 5);
+        const endTimeStr = endTime.toTimeString().slice(0, 5);
+        
+        const html = `
+            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                <div style="margin-bottom: 12px; font-size: 14px; color: #666;">
+                    <strong>Booking ID:</strong> ${booking.id || booking.bookingId}
+                </div>
+            </div>
+            
+            <form id="editBookingForm" onsubmit="submitEditBooking(event)">
+                <div class="form-group">
+                    <label class="form-label required">Facility</label>
+                    <select class="form-select" id="editFacility" required>
+                        <option value="clubhouse" ${facility === 'clubhouse' ? 'selected' : ''}>Clubhouse</option>
+                        <option value="gazebo" ${facility === 'gazebo' ? 'selected' : ''}>Gazebo</option>
+                        <option value="recroom" ${facility === 'recroom' ? 'selected' : ''}>Rec Room</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label required">Date</label>
+                    <input type="date" class="form-input" id="editDate" value="${dateStr}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label required">Start Time</label>
+                    <input type="time" class="form-input" id="editStartTime" value="${startTimeStr}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label required">End Time</label>
+                    <input type="time" class="form-input" id="editEndTime" value="${endTimeStr}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Purpose / Event Name</label>
+                    <input type="text" class="form-input" id="editPurpose" value="${booking.purpose || booking.title || ''}" placeholder="e.g., Birthday party">
+                </div>
+                
+                <div style="background: #fff3cd; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; border-left: 4px solid #ffc107;">
+                    <strong>Note:</strong> We'll check availability before updating your booking.
+                </div>
+                
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-success">✅ Update Booking</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeEditBookingModal()">Cancel</button>
+                </div>
+            </form>
+        `;
+        
+        document.getElementById('editBookingModalContent').innerHTML = html;
+        document.getElementById('editBookingModal').classList.add('active');
+    }
+    
+    function closeEditBookingModal() {
+        document.getElementById('editBookingModal').classList.remove('active');
+        editingBookingId = null;
+        originalBookingData = null;
+    }
+    
+    function submitEditBooking(event) {
+        event.preventDefault();
+        
+        if (!editingBookingId) {
+            showMessage('No booking selected for editing', 'error', 5000);
+            return;
+        }
+        
+        const facility = document.getElementById('editFacility').value;
+        const date = document.getElementById('editDate').value;
+        const startTime = document.getElementById('editStartTime').value;
+        const endTime = document.getElementById('editEndTime').value;
+        const purpose = document.getElementById('editPurpose').value.trim();
+        
+        if (!date || !startTime || !endTime) {
+            showMessage('Please fill in all required fields', 'error', 5000);
+            return;
+        }
+        
+        const startDateTime = new Date(`${date}T${startTime}`);
+        const endDateTime = new Date(`${date}T${endTime}`);
+        
+        if (endDateTime <= startDateTime) {
+            showMessage('End time must be after start time', 'error', 5000);
+            return;
+        }
+        
+        // Check if anything changed
+        const originalDate = new Date(originalBookingData.start).toISOString().split('T')[0];
+        const originalStartTime = new Date(originalBookingData.start).toTimeString().slice(0, 5);
+        const originalEndTime = new Date(originalBookingData.end).toTimeString().slice(0, 5);
+        
+        const dateChanged = date !== originalDate;
+        const timeChanged = startTime !== originalStartTime || endTime !== originalEndTime;
+        const facilityChanged = facility !== originalBookingData.facility;
+        
+        if (!dateChanged && !timeChanged && !facilityChanged && purpose === (originalBookingData.purpose || originalBookingData.title)) {
+            showMessage('No changes were made', 'info', 5000);
+            closeEditBookingModal();
+            return;
+        }
+        
+        // If date/time/facility changed, check availability
+        if (dateChanged || timeChanged || facilityChanged) {
+            showLoading(true, 'Checking availability...');
+            
+            callAPI('checkAvailability', {
+                facility: facility,
+                date: date,
+                startTime: startTime,
+                endTime: endTime
+            }, function(response) {
+                showLoading(false);
+                
+                if (!response || !response.success) {
+                    showMessage('Failed to check availability', 'error', 5000);
+                    return;
+                }
+                
+                // Filter out current booking from conflicts
+                const conflicts = (response.conflicts || []).filter(c => 
+                    c.bookingId !== editingBookingId
+                );
+                
+                if (conflicts.length > 0) {
+                    let conflictMsg = `⚠️ ${response.facility} is not available at that time.\n\n`;
+                    conflictMsg += `Existing bookings:\n`;
+                    conflicts.forEach(c => {
+                        conflictMsg += `• ${c.start} - ${c.end} (${c.resident})\n`;
+                    });
+                    
+                    if (response.availableSlots && response.availableSlots.length > 0) {
+                        conflictMsg += `\nAvailable time slots:\n`;
+                        response.availableSlots.forEach(slot => {
+                            conflictMsg += `• ${slot.start} - ${slot.end} (${slot.duration})\n`;
+                        });
+                    }
+                    
+                    alert(conflictMsg);
+                    return;
+                }
+                
+                performBookingUpdate(facility, date, startTime, endTime, purpose);
+            });
+        } else {
+            performBookingUpdate(facility, date, startTime, endTime, purpose);
+        }
+    }
+    
+    function performBookingUpdate(facility, date, startTime, endTime, purpose) {
+        showLoading(true, 'Updating booking...');
+        
+        callAPI('updateBooking', {
+            bookingId: editingBookingId,
+            facility: facility,
+            date: date,
+            startTime: startTime,
+            endTime: endTime,
+            purpose: purpose || 'General use',
+            residentName: originalBookingData.residentName,
+            residentEmail: originalBookingData.residentEmail,
+            residentPhone: originalBookingData.residentPhone || '',
+            unitNumber: originalBookingData.unitNumber || ''
+        }, function(response) {
+            showLoading(false);
+            
+            if (response && response.success) {
+                showMessage('✅ Booking updated successfully', 'success', 5000);
+                closeEditBookingModal();
+                loadBookings(true);
+                setTimeout(() => renderMyBookings(), 500);
+            } else {
+                showMessage('❌ Failed to update: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
+            }
+        });
+    }
+
+        
     
     function showAuthSection() {
         document.getElementById('authSection').classList.remove('hidden');
