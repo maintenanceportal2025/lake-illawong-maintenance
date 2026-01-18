@@ -806,7 +806,7 @@ Padding: 10px;
             color: white;
             border: none;
             padding: 12px 20px;
-            border-radius: 0 0 12px 12px;
+             border-radius: 0 0 12px 12px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
@@ -2953,82 +2953,103 @@ async function saveDetailsFromPage(e) {
         saveBtn.disabled = true;
         saveBtn.textContent = '💾 Saving...';
         
+        // 🔧 FIX: Get these values first to check conditions
+        const completionDateValue = document.getElementById('detailCompletionDate').value;
+        const statusValue = document.getElementById('detailStatus').value;
+        
+        // Build base update data (without completion date)
         const updateData = {
             internalId: currentProblem.internalId,
             unitNumber: document.getElementById('detailUnitNumber').value,
             zone: document.getElementById('detailZone').value,
             problemDescription: document.getElementById('detailDescription').value,
-            problemStatus: document.getElementById('detailStatus').value,
+            problemStatus: statusValue,
             problemPriority: document.getElementById('detailPriority').value,
             category: document.getElementById('detailCategory').value,
             subCategory: document.getElementById('detailSubCategory').value,
             assignedTo: document.getElementById('detailAssignedTo').value,
-            completionDate: document.getElementById('detailCompletionDate').value,
             comments: document.getElementById('detailComments').value
         };
         
-        // ============================================================
-// * IMPROVED SOFT VALIDATION: Prompt for closing comments on completion
-// ============================================================
-if (updateData.problemStatus === 'Completed') {
-    const commentsField = document.getElementById('detailComments');
-    const comments = commentsField.value.trim();
-    const existingComments = currentProblem.comments || '';
-    
-    // Improved logic: Check if user already added meaningful comments
-    const hasMeaningfulComments = comments.length > 0 && comments !== existingComments;
-    
-    if (!hasMeaningfulComments) {
-        // Highlight the comments field to draw attention
-        commentsField.style.border = '3px solid #f59e0b';
-        commentsField.style.backgroundColor = '#fffbeb';
-        
-        const shouldAddComments = confirm(
-            '⚠️ CLOSING NOTES RECOMMENDED\n\n' +
-            'You\'re marking this problem as Completed.\n\n' +
-            'Best Practice - Add brief closing notes:\n' +
-            '• What was done to fix the problem\n' +
-            '• Parts or materials used\n' +
-            '• Time spent or follow-up needed\n' +
-            '\n' +
-            'This helps with:\n' +
-            '✓ Future reference and warranty tracking\n' +
-            '✓ Team knowledge sharing\n' +
-            '✓ Complete audit trail\n' +
-            '\n' +
-            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-            'Click OK to add notes (recommended)\n' +
-            'Click Cancel to complete without notes'
-        );
-        
-        if (shouldAddComments) {
-            // User chose to add comments - stop save, focus field, but don't validate length
-            commentsField.style.border = '2px solid #2563eb';
-            commentsField.style.backgroundColor = '#f0f9ff';
-            commentsField.focus();
-            commentsField.setSelectionRange(comments.length, comments.length);
-            
-            // Re-enable save button but don't block future saves
-            saveBtn.disabled = false;
-            saveBtn.textContent = originalText;
-            
-            // Show helpful message
-            updateDataStatus('* Please add your closing notes, then save again', 'loading');
-            return; // Stop THIS save attempt, allow user to add comments
-        } else {
-            // User chose to proceed without comments - reset styling and continue with save
-            commentsField.style.border = '';
-            commentsField.style.backgroundColor = '';
-            console.log('✅ User opted to complete without additional comments');
+        // 🔧 FIX: Only include completion date when appropriate
+        // Case 1: User manually entered a date (for backdating)
+        if (completionDateValue && completionDateValue.trim() !== '') {
+            updateData.completionDate = completionDateValue;
+            console.log('✅ Using manual completion date:', completionDateValue);
+        } 
+        // Case 2: Status is Completed but no manual date (backend will auto-set)
+        else if (statusValue === 'Completed') {
+            updateData.completionDate = '';  // Empty signals backend to auto-set
+            console.log('✅ Backend will auto-set completion date');
         }
-    } else {
-        // User already added meaningful comments - proceed with save
-        console.log('✅ Closing notes provided, proceeding with completion');
-    }
-}
-// ============================================================
-// END IMPROVED SOFT VALIDATION
-// ============================================================
+        // Case 3: Not completing, no date needed - don't include field at all
+        else {
+            console.log('✅ No completion date needed');
+        }
+        
+        // ============================================================
+        // IMPROVED SOFT VALIDATION: Prompt for closing comments on completion
+        // ============================================================
+        if (updateData.problemStatus === 'Completed') {
+            const commentsField = document.getElementById('detailComments');
+            const comments = commentsField.value.trim();
+            const existingComments = currentProblem.comments || '';
+            
+            // Improved logic: Check if user already added meaningful comments
+            const hasMeaningfulComments = comments.length > 0 && comments !== existingComments;
+            
+            if (!hasMeaningfulComments) {
+                // Highlight the comments field to draw attention
+                commentsField.style.border = '3px solid #f59e0b';
+                commentsField.style.backgroundColor = '#fffbeb';
+                
+                const shouldAddComments = confirm(
+                    '⚠️ CLOSING NOTES RECOMMENDED\n\n' +
+                    'You\'re marking this problem as Completed.\n\n' +
+                    'Best Practice - Add brief closing notes:\n' +
+                    '• What was done to fix the problem\n' +
+                    '• Parts or materials used\n' +
+                    '• Time spent or follow-up needed\n' +
+                    '\n' +
+                    'This helps with:\n' +
+                    '✓ Future reference and warranty tracking\n' +
+                    '✓ Team knowledge sharing\n' +
+                    '✓ Complete audit trail\n' +
+                    '\n' +
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
+                    'Click OK to add notes (recommended)\n' +
+                    'Click Cancel to complete without notes'
+                );
+                
+                if (shouldAddComments) {
+                    // User chose to add comments - stop save, focus field, but don't validate length
+                    commentsField.style.border = '2px solid #2563eb';
+                    commentsField.style.backgroundColor = '#f0f9ff';
+                    commentsField.focus();
+                    commentsField.setSelectionRange(comments.length, comments.length);
+                    
+                    // Re-enable save button but don't block future saves
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = originalText;
+                    
+                    // Show helpful message
+                    updateDataStatus('* Please add your closing notes, then save again', 'loading');
+                    return; // Stop THIS save attempt, allow user to add comments
+                } else {
+                    // User chose to proceed without comments - reset styling and continue with save
+                    commentsField.style.border = '';
+                    commentsField.style.backgroundColor = '';
+                    console.log('✅ User opted to complete without additional comments');
+                }
+            } else {
+                // User already added meaningful comments - proceed with save
+                console.log('✅ Closing notes provided, proceeding with completion');
+            }
+        }
+        // ============================================================
+        // END IMPROVED SOFT VALIDATION
+        // ============================================================
+        
         const response = await makeRequest('updateProblem', updateData);
         
         if (response.success) {
@@ -3048,7 +3069,7 @@ if (updateData.problemStatus === 'Completed') {
             
             // Check if status was changed to Completed and show toast
             if (updateData.problemStatus === 'Completed') {
-                updateDataStatus('Problem marked as completed ✔', 'success');
+                updateDataStatus('Problem marked as completed ✓', 'success');
             }
             
             currentProblem = problems[problemIndex];
