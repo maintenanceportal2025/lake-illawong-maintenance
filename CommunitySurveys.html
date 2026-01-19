@@ -594,7 +594,7 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
 
     <script>
         // CONFIGURATION
-        const SURVEY_API_URL = 'https://script.google.com/macros/s/AKfycbxBI2ZNmu_1MS8VCME96cdPwhLmiJKiHRKza2z5_P0VvkJt8Q8J--Q_FHScu4ID6zB6ng/exec';
+        const SURVEY_API_URL = 'https://script.google.com/macros/s/AKfycby4CGaQHZbNwQZTv1t4zFnZ8L8opU0jqpAOWBzstfTqA7oTAN-oPykOhWjdZAxJrLazFA/exec';
 
         // STATE
         let allSurveys = [];
@@ -625,7 +625,10 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
         function callAPI(action, params, callback) {
             const callbackName = 'surveyCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
             
+            console.log('🔍 Calling API:', action, params);
+            
             window[callbackName] = function(response) {
+                console.log('✅ API Response received:', response);
                 callback(response);
                 delete window[callbackName];
                 const script = document.querySelector(`script[src*="${callbackName}"]`);
@@ -640,9 +643,12 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
                 url += `&${key}=${encodeURIComponent(params[key])}`;
             }
             
+            console.log('🔍 Request URL:', url);
+            
             script.src = url;
-            script.onerror = function() {
-                callback({ success: false, error: 'Network error' });
+            script.onerror = function(e) {
+                console.error('❌ Script load error:', e);
+                callback({ success: false, error: 'Network error - unable to load script' });
                 delete window[callbackName];
             };
             
@@ -670,12 +676,19 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
             const container = document.getElementById('surveyList');
             container.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div><div>Loading surveys...</div></div>';
 
+            console.log('🔍 Loading surveys...');
+            console.log('🔍 API URL:', SURVEY_API_URL);
+
             callAPI('getSurveys', { includeArchived: 'false', isAdmin: 'false' }, function(data) {
+                console.log('✅ Surveys response:', data);
+                
                 if (data.success) {
                     allSurveys = data.surveys;
                     renderSurveys();
                 } else {
-                    container.innerHTML = `<div class="error-message">❌ Error loading surveys: ${data.message}</div>`;
+                    const errorMsg = data.message || data.error || 'Unknown error';
+                    console.error('❌ Error:', errorMsg);
+                    container.innerHTML = `<div class="error-message">❌ Error loading surveys: ${errorMsg}</div>`;
                 }
             });
         }
