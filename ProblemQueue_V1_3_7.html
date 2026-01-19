@@ -4,7 +4,7 @@ PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
 PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: v1.3.9 - AGING ALERTS & SORT TOGGLE + LOW PRIORITY STAT + PHOTO DISPLAY + BUTTON FIX
+VERSION: v1.3.11 - AGING ALERTS & SORT TOGGLE + LOW PRIORITY STAT + PHOTO DISPLAY + BUTTON FIX + PHOTO DEBUG
 LAST UPDATED: January 19, 2026
 DESIGN SYSTEM: Lake Illawong Unified v1.4
 - Terminology: "Problem" standard (V1.4 update)
@@ -25,6 +25,16 @@ QUEUE LOGIC:
   - Programmed Queue: Shows both "Programmed" AND "Programmed-Completed" statuses
 - Display: Days in queue, current status, problem details
 - Purpose: Eliminate perceived favoritism through transparent ordering
+
+CHANGELOG V1.3.11:
+ - ✅ Added more robust photo URL validation (checks for http, excludes N/A, none, undefined)
+ - ✅ Added debug logging to identify photoUrls values
+ - ✅ Photo button should only show when valid URL exists
+
+CHANGELOG V1.3.10:
+ - ✅ Added consistent padding between Programmed badge examples in info box
+ - ✅ Uses margin-top (8px) instead of <br> tags for better spacing
+ - ✅ Matches Current Queue aging alert spacing style
 
 CHANGELOG V1.3.9:
  - ✅ Search parameter now uses just the number (160113) not the full PID (PID160113)
@@ -1048,11 +1058,15 @@ CHANGELOG V1.1:
                         <strong>Sort Order:</strong> Active items first (by Priority, then Date), followed by completed items at the bottom.
                     </div>
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
-                        <strong>Status Meanings:</strong><br>
-                        <span style="background: #e9d5ff; color: #9333ea; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Programmed</span> 
-                        = Scheduled for future work<br>
-                        <span style="background: #d1fae5; color: #047857; padding: 2px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #10b981;">✓ Programmed-Completed</span> 
-                        = Work completed, stays in program group
+                        <strong>Status Meanings:</strong>
+                        <div style="margin-top: 8px;">
+                            <span style="background: #e9d5ff; color: #9333ea; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Programmed</span> 
+                            = Scheduled for future work
+                        </div>
+                        <div style="margin-top: 8px;">
+                            <span style="background: #d1fae5; color: #047857; padding: 2px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #10b981;">✓ Programmed-Completed</span> 
+                            = Work completed, stays in program group
+                        </div>
                     </div>
                 `;
             }
@@ -1312,6 +1326,11 @@ CHANGELOG V1.1:
             const modal = document.getElementById('problemModal');
             const modalBody = document.getElementById('modalBody');
             
+            // DEBUG: Check photoUrls value
+            console.log('🔍 PhotoUrls value:', problem.photoUrls);
+            console.log('🔍 PhotoUrls type:', typeof problem.photoUrls);
+            console.log('🔍 PhotoUrls exists?', problem.photoUrls ? 'YES' : 'NO');
+            
             const friendlyPID = getFriendlyPID(problem.internalId || problem.problemId);
             document.getElementById('modalTitle').textContent = `Problem ${friendlyPID}`;
             
@@ -1409,7 +1428,12 @@ CHANGELOG V1.1:
                         <div class="modal-value">${problem.comments}</div>
                     </div>
                 ` : ''}
-                ${problem.photoUrls && problem.photoUrls.trim() !== '' ? `
+                ${problem.photoUrls && 
+                  problem.photoUrls.trim() !== '' && 
+                  problem.photoUrls.toLowerCase() !== 'n/a' &&
+                  problem.photoUrls.toLowerCase() !== 'none' &&
+                  problem.photoUrls !== 'undefined' &&
+                  problem.photoUrls.startsWith('http') ? `
                     <div class="modal-field full-width" style="border-top: 2px solid #e5e7eb; padding-top: 16px; margin-top: 16px;">
                         <div class="modal-label">📷 Photos</div>
                         <div class="modal-value">
