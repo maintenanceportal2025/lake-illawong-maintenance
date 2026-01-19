@@ -947,7 +947,7 @@ RELATED FILES: AdminPortal.html, CommunitySurveys.html
 
     <script>
         // CONFIGURATION
-        const SURVEY_API_URL = 'https://script.google.com/macros/s/AKfycbzuEJAfYZI-5Ak21iRVc1dfAEJooGS4xbxBTrY6ob-1BpXov5shp6HXF4gUowXhzlgH/exec'; // Update this with your deployed SurveyModule URL
+        const SURVEY_API_URL = 'https://script.google.com/macros/s/AKfycby4CGaQHZbNwQZTv1t4zFnZ8L8opU0jqpAOWBzstfTqA7oTAN-oPykOhWjdZAxJrLazFA/exec'; 
 
         // STATE
         let allSurveys = [];
@@ -1203,8 +1203,37 @@ RELATED FILES: AdminPortal.html, CommunitySurveys.html
             optionsList.appendChild(optionGroup);
         }
 
+        // JSONP HELPER FUNCTION
+        function callAPI(action, data, callback) {
+            const callbackName = 'apiCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            
+            window[callbackName] = function(response) {
+                callback(response);
+                // Cleanup
+                delete window[callbackName];
+                const script = document.querySelector(`script[src*="${callbackName}"]`);
+                if (script) script.remove();
+            };
+            
+            const script = document.createElement('script');
+            let url = `${SURVEY_API_URL}?action=${action}&callback=${callbackName}`;
+            
+            // Add data as JSON string parameter for write operations
+            if (data) {
+                url += `&data=${encodeURIComponent(JSON.stringify(data))}`;
+            }
+            
+            script.src = url;
+            script.onerror = function() {
+                callback({ success: false, error: 'Network error' });
+                delete window[callbackName];
+            };
+            
+            document.head.appendChild(script);
+        }
+
         // SAVE SURVEY
-        async function saveSurvey() {
+        function saveSurvey() {
             const messageDiv = document.getElementById('createMessage');
             messageDiv.innerHTML = '';
 
@@ -1269,10 +1298,9 @@ RELATED FILES: AdminPortal.html, CommunitySurveys.html
 
             // Build survey data
             const surveyData = {
-                action: 'createSurvey',
                 title: title,
                 description: document.getElementById('surveyDescription').value.trim(),
-                createdBy: 'Admin', // Could get from session
+                createdBy: 'Admin',
                 questions: questions,
                 settings: {
                     targetAudience: 'All Residents',
@@ -1285,15 +1313,8 @@ RELATED FILES: AdminPortal.html, CommunitySurveys.html
             // Show loading
             messageDiv.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div> Creating survey...</div>';
 
-            try {
-                const response = await fetch(SURVEY_API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(surveyData)
-                });
-
-                const result = await response.json();
-
+            // Call via JSONP
+            callAPI('createSurvey', surveyData, function(result) {
                 if (result.success) {
                     messageDiv.innerHTML = `<div class="success-message">✅ Survey created successfully!</div>`;
                     setTimeout(() => {
@@ -1302,40 +1323,39 @@ RELATED FILES: AdminPortal.html, CommunitySurveys.html
                 } else {
                     messageDiv.innerHTML = `<div class="error-message">❌ Error: ${result.message || result.error}</div>`;
                 }
-            } catch (error) {
-                messageDiv.innerHTML = `<div class="error-message">❌ Error creating survey: ${error.message}</div>`;
-            }
+            });
         }
 
         // CHANGE SURVEY STATUS
-        async function changeSurveyStatus(surveyId, newStatus) {
+        function changeSurveyStatus(surveyId, newStatus) {
             const statusText = newStatus === 'Active' ? 'activate' : 'close';
             if (!confirm(`Are you sure you want to ${statusText} this survey?`)) {
                 return;
             }
 
-            try {
-                const response = await fetch(SURVEY_API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'toggleSurveyStatus',
-                        surveyId: surveyId,
-                        newStatus: newStatus
-                    })
-                });
-
-                const result = await response.json();
-
+            // Call via JSONP (simple parameters, no complex data)
+            const callbackName = 'statusCallback_' + Date.now();
+            
+            window[callbackName] = function(result) {
                 if (result.success) {
                     alert(`✅ Survey ${statusText}d successfully!`);
                     loadSurveys();
                 } else {
                     alert(`❌ Error: ${result.message || result.error}`);
                 }
-            } catch (error) {
-                alert(`❌ Error changing status: ${error.message}`);
-            }
+                delete window[callbackName];
+                const script = document.querySelector(`script[src*="${callbackName}"]`);
+                if (script) script.remove();
+            };
+
+            const script = document.createElement('script');
+            script.src = `${SURVEY_API_URL}?action=toggleSurveyStatus&surveyId=${surveyId}&newStatus=${newStatus}&callback=${callbackName}`;
+            script.onerror = function() {
+                alert('❌ Error changing status');
+                delete window[callbackName];
+            };
+            
+            document.head.appendChild(script);
         }
 
         // VIEW RESULTS
