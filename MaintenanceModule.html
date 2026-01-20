@@ -602,6 +602,7 @@ Padding: 10px;
 .badge-programmed { background: #e9d5ff; color: #9333ea; }
 .badge-project { background: #fef3c7; color: #d97706; }
 .badge-unknown { background: #f3f4f6; color: #6b7280; } 
+.badge-programmed-completed { background: #e9d5ff; color: #9333ea; }
         
         .report-btn {
             padding: 10px 20px;
@@ -1536,6 +1537,20 @@ Padding: 10px;
                     </div>
                 </div>
             </div>
+
+<!-- SHOW COMPLETED TOGGLE -->
+            <div class="priority-dashboard" style="margin-top: 15px;">
+                <div class="dashboard-header">
+                    <span>🔍</span>
+                    <div class="dashboard-title">View Options</div>
+                </div>
+                <div style="padding: 15px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: #374151; font-weight: 500;">
+                        <input type="checkbox" id="showCompletedToggle" style="width: 18px; height: 18px; cursor: pointer;">
+                        <span>Include Completed & Cancelled Problems</span>
+                    </label>
+                </div>
+            </div>
             
             <!-- SEARCH -->
             <div class="search-section">
@@ -1645,6 +1660,15 @@ Padding: 10px;
                                 <option value="Cancelled">Cancelled</option>
                             </select>
                         </div>
+
+<!-- Reopen Button (only shows for Completed problems) -->
+<div class="detail-field" id="reopenButtonContainer" style="display: none; grid-column: 1 / -1;">
+    <button id="reopenProblemBtn" class="btn" style="background: #f59e0b; color: white; width: 100%; padding: 12px; font-weight: 600;">
+        🔄 Reopen Problem (Change Status to Reported)
+    </button>
+</div>
+
+
                         <div class="detail-field">
                             <label>Priority</label>
                             <select id="detailPriority" class="form-input">
@@ -1791,6 +1815,7 @@ async function getMaintenancePassword() {
         let filteredProblems = [];
         let activePriorityFilter = 'all';
         let searchTerm = '';
+	let showCompleted = false;  // Toggle for showing completed/cancelled problems
         let currentProblem = null;
         let isAuthenticated = false;
 
@@ -2030,16 +2055,34 @@ let sortNewestFirst = false; // Default: Oldest first (current behavior)
             }
             
             if (searchBtn) {
-                searchBtn.addEventListener('click', handleSearchButton);
-            }
-            
-            // Priority filters
-            document.querySelectorAll('.priority-filter').forEach(filter => {
+                // Search button
+		searchBtn.addEventListener('click', handleSearchButton);
+
+		// Show Completed Toggle (only exists after login)
+const showCompletedToggle = document.getElementById('showCompletedToggle');
+if (showCompletedToggle) {
+    showCompletedToggle.addEventListener('change', function() {
+        showCompleted = this.checked;
+        console.log('🔍 Show completed toggle:', showCompleted);
+        applyFilters();
+    });
+}
+
+// Reopen Problem Button
+// Reopen Problem Button
+const reopenBtn = document.getElementById('reopenProblemBtn');
+if (reopenBtn) {
+    reopenBtn.addEventListener('click', reopenProblem);
+}
+
+		// Priority filters
+		document.querySelectorAll('.priority-filter').forEach(filter => {
                 filter.addEventListener('click', function() {
                     const priority = this.dataset.priority;
                     setActivePriorityFilter(priority);
                 });
             });
+            } 
             
             // Navigation
             const backToList = document.getElementById('backToList');
@@ -2407,12 +2450,16 @@ if (activityReportBtn) {
     
     console.log('🔒" Starting with', filtered.length, 'problems');
     
-    // Step 1: ALWAYS exclude completed and cancelled
+    // Step 1: Conditionally exclude completed and cancelled
+if (!showCompleted) {
     filtered = filtered.filter(problem => 
         problem.problemStatus !== 'Completed' && 
         problem.problemStatus !== 'Cancelled'
     );
     console.log('📊 After excluding completed/cancelled:', filtered.length);
+} else {
+    console.log('📊 Including all problems (completed/cancelled shown):', filtered.length);
+}
     
     // Step 2: Apply priority filter
     if (activePriorityFilter !== 'all') {
@@ -2830,6 +2877,20 @@ if (sortToggleBtn) {
     
     // Management Details (editable)
     document.getElementById('detailStatus').value = problem.problemStatus || 'Reported';
+
+document.getElementById('detailStatus').value = problem.problemStatus || 'Reported';
+
+// Show/hide reopen button based on status
+const reopenContainer = document.getElementById('reopenButtonContainer');
+if (problem.problemStatus === 'Completed' || problem.problemStatus === 'Cancelled') {
+    reopenContainer.style.display = 'block';
+} else {
+    reopenContainer.style.display = 'none';
+}
+
+document.getElementById('detailPriority').value = problem.problemPriority || 'Medium';
+
+
     document.getElementById('detailPriority').value = problem.problemPriority || 'Medium';
     document.getElementById('detailCategory').value = problem.category || '';
     document.getElementById('detailSubCategory').value = problem.subCategory || '';
@@ -3069,6 +3130,7 @@ async function saveDetailsFromPage(e) {
                 console.log('✅ Closing notes provided, proceeding with completion');
             }
         }
+
         // ============================================================
         // END IMPROVED SOFT VALIDATION
         // ============================================================
@@ -3106,6 +3168,55 @@ async function saveDetailsFromPage(e) {
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = originalText;
+    }
+}
+
+async function reopenProblem() {
+    if (!currentProblem) return;
+    
+    const confirmReopen = confirm(
+        `Reopen Problem ${getFriendlyPID(currentProblem.internalId)}?\n\n` +
+        `This will change the status from "${currentProblem.problemStatus}" to "Reported" ` +
+        `and return it to the active queue.\n\n` +
+        `Are you sure you want to proceed?`
+    );
+    
+    if (!confirmReopen) return;
+    
+    try {
+        // Prepare update data
+        const updateData = {
+            internalId: currentProblem.internalId,
+            unitNumber: currentProblem.unitNumber,
+            zone: currentProblem.zone,
+            problemDescription: currentProblem.problemDescription,
+            problemStatus: 'Reported',  // Change to Reported
+            problemPriority: currentProblem.problemPriority,
+            category: currentProblem.category,
+            subCategory: currentProblem.subCategory,
+            assignedTo: currentProblem.assignedTo || '',
+            comments: (currentProblem.comments || '') + '\n[REOPENED - Problem returned to active queue]',
+            completionDate: ''  // Clear completion date
+        };
+        
+        console.log('🔄 Reopening problem:', updateData);
+        
+        // Save changes
+        const response = await makeRequest('updateProblem', updateData);
+        
+        if (response.success) {
+            alert('✅ Problem successfully reopened and returned to active queue');
+            
+            // Refresh data and return to list
+            await loadProblems();
+            showListView();
+        } else {
+            throw new Error(response.message || 'Failed to reopen problem');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error reopening problem:', error);
+        alert('Failed to reopen problem: ' + error.message);
     }
 }
         
