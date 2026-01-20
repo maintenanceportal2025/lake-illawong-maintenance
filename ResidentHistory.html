@@ -1036,10 +1036,25 @@ window.onclick = (e) => {
         });
         
         console.log(`Found ${unitProblems.length} problems for unit ${normalizedUnit}`);
+        
+        // DEBUG: Check photoUrls on each problem
+        console.log('=== UNIT PROBLEMS PHOTO DEBUG ===');
+        unitProblems.forEach((p, idx) => {
+            console.log(`Problem ${idx + 1} (${p.internalId}):`, {
+                hasPhotos: !!p.photoUrls,
+                photoUrls: p.photoUrls,
+                status: p.problemStatus
+            });
+        });
+        console.log('==================================');
+        
         updateUnitStats(normalizedUnit);
         
+        // Deep clone problems to prevent object reference sharing
+        const clonedProblems = unitProblems.map(problem => ({...problem}));
+        
         // Display results
-        displayResults(unitProblems, normalizedUnit);
+        displayResults(clonedProblems, normalizedUnit);
         
     } catch (error) {
         console.error('Error loading maintenance history:', error);
@@ -1183,7 +1198,7 @@ ${(() => {
                         <span class="queue-stat-value">${problem.queueInfo.daysInQueue} days</span>
                     </div>
                     <a href="ProblemQueue.html?unit=${problem.unitNumber}" class="queue-link" onclick="event.stopPropagation();">
-                        View Full Queue →
+                        View Full Queue â†’
                     </a>
                 </div>`;
             }
@@ -1301,7 +1316,7 @@ ${(() => {
         return 'status-in-progress';
     } else if (statusLower.includes('hold') || statusLower.includes('waiting') || statusLower.includes('pending')) {
         return 'status-on-hold';
-	} else if (statusLower.includes('unknown')) {  // ← ADD THIS
+	} else if (statusLower.includes('unknown')) {  // â† ADD THIS
         return 'status-unknown';	
     } else {
         return 'status-reported';
@@ -1311,6 +1326,13 @@ ${(() => {
 
 async function enrichWithQueuePosition(problems) {
     try {
+        // DEBUG: Check photoUrls BEFORE enrichment
+        console.log('=== BEFORE ENRICH - PHOTO STATUS ===');
+        problems.forEach((p, idx) => {
+            console.log(`Problem ${idx + 1} (${p.internalId}): photoUrls=${!!p.photoUrls}`);
+        });
+        console.log('====================================');
+        
         // Fetch all problems to calculate queue positions
         const response = await makeAPIRequest('getFaultLogData');
         
@@ -1381,6 +1403,13 @@ async function enrichWithQueuePosition(problems) {
             }
         });
         
+        // DEBUG: Check photoUrls AFTER enrichment
+        console.log('=== AFTER ENRICH - PHOTO STATUS ===');
+        problems.forEach((p, idx) => {
+            console.log(`Problem ${idx + 1} (${p.internalId}): photoUrls=${!!p.photoUrls}, queueInfo=${!!p.queueInfo}`);
+        });
+        console.log('===================================');
+        
         return problems;
         
     } catch (error) {
@@ -1448,6 +1477,15 @@ async function enrichWithQueuePosition(problems) {
         }
 
 function showProblemDetail(problem) {
+    // DEBUG: Log photoUrls for this specific problem
+    console.log('=== PHOTO DEBUG ===');
+    console.log('Problem ID:', problem.internalId);
+    console.log('Unit:', problem.unitNumber);
+    console.log('photoUrls value:', problem.photoUrls);
+    console.log('photoUrls exists:', !!problem.photoUrls);
+    console.log('photoUrls trimmed:', problem.photoUrls ? problem.photoUrls.trim() : 'N/A');
+    console.log('==================');
+    
     document.getElementById('modalTitle').textContent = `Problem #${getFriendlyPID(problem.internalId)}`;
     
     let modalContent = '';
@@ -1494,8 +1532,10 @@ if (problem.assignedTo || problem.problemStatus !== 'Reported') {
     modalContent += `<div class="detail-field"><div class="detail-label">Unit Email</div><div class="detail-value">${problem.unitPrimaryEmail || 'Not provided'}</div></div>`;
    modalContent += '</div></div>';
 
-    // 📷 Photo Section
-    if (problem.photoUrls && problem.photoUrls.trim() !== '') {
+    // 📷 Photo Section - Only show for valid Drive URLs
+    if (problem.photoUrls && 
+        problem.photoUrls.trim() !== '' && 
+        problem.photoUrls.startsWith('https://drive.google.com')) {
         modalContent += `
             <div class="detail-section">
                 <div class="section-header">📷 Photos</div>
