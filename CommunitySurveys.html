@@ -4,18 +4,15 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - COMMUNITY SURVEYS
 =====================================================================
 PURPOSE: Resident interface for viewing and completing community surveys
 PORTAL: Residents Portal (Public Access)
-VERSION: 1.0
-LAST UPDATED: January 19, 2026
+VERSION: 1.1 (Updated with Google Forms-like features)
+LAST UPDATED: [Current Date]
 BACKEND API: SurveyModule V1.1 (JSONP only)
 DESIGN SYSTEM: Lake Illawong Unified v1.4
-- Terminology: "Survey" standard
-- Header: Transparent with logo
-- Colors: Blue gradient background
-- Layout: White content cards
-- API Protocol: JSONP only (NO fetch)
-AUTHENTICATION: None (Public Access - Anonymous or identified surveys)
-DEPENDENCIES: SurveyModule V1.1
-RELATED FILES: ResidentPortal.html, SurveyManagement.html
+ENHANCEMENTS:
+- Google Forms-like progress bar with percentage
+- Section break support
+- Enhanced confirmation settings
+- Response summary display
 =====================================================================
 -->
 <!DOCTYPE html>
@@ -206,6 +203,10 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
         /* QUESTION FORM */
         .question-container {
             margin-bottom: 35px;
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid #e2e8f0;
+            transition: all 0.3s ease;
         }
 
         .question-number {
@@ -225,13 +226,18 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
         .question-required {
             color: #ef4444;
             font-size: 0.9rem;
+            margin-left: 4px;
         }
 
         .question-help {
-            font-size: 0.85rem;
-            color: #64748b;
-            margin-top: 5px;
-            margin-bottom: 15px;
+            font-size: 0.9rem;
+            color: #5f6368;
+            margin: 8px 0 15px 0;
+            line-height: 1.4;
+            padding: 10px 15px;
+            background: #f8f9fa;
+            border-left: 3px solid #4285f4;
+            border-radius: 0 8px 8px 0;
         }
 
         /* INPUT STYLES */
@@ -324,6 +330,69 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
             margin-top: 10px;
         }
 
+        /* PROGRESS BAR - GOOGLE FORMS STYLE */
+        .progress-container {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .progress-text {
+            font-size: 1rem;
+            color: #1e293b;
+            font-weight: 500;
+        }
+
+        .progress-percentage {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
+
+        .progress-bar-google {
+            height: 12px;
+            background: #e2e8f0;
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill-google {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            height: 100%;
+            width: 0%;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .progress-fill-google::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, 
+                transparent 0%, 
+                rgba(255, 255, 255, 0.3) 50%, 
+                transparent 100%);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
         /* BUTTONS */
         .btn-primary {
             background: linear-gradient(135deg, #667eea, #764ba2);
@@ -365,30 +434,6 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
 
         .btn-secondary:hover {
             background: #f8fafc;
-        }
-
-        /* PROGRESS BAR */
-        .progress-container {
-            margin-bottom: 25px;
-        }
-
-        .progress-text {
-            font-size: 0.9rem;
-            color: #64748b;
-            margin-bottom: 8px;
-        }
-
-        .progress-bar-bg {
-            background: #e2e8f0;
-            height: 8px;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .progress-bar-fill {
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            height: 100%;
-            transition: width 0.5s ease;
         }
 
         /* MESSAGES */
@@ -562,10 +607,14 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
                 <!-- Survey title and description -->
             </div>
 
+            <!-- ENHANCED PROGRESS BAR -->
             <div id="progressContainer" class="progress-container">
-                <div class="progress-text">Question <span id="currentQuestion">1</span> of <span id="totalQuestions">0</span></div>
-                <div class="progress-bar-bg">
-                    <div id="progressBar" class="progress-bar-fill" style="width: 0%"></div>
+                <div class="progress-info">
+                    <div class="progress-text">Progress: <span id="currentQuestion">0</span>/<span id="totalQuestions">0</span></div>
+                    <div class="progress-percentage" id="progressPercentage">0%</div>
+                </div>
+                <div class="progress-bar-google">
+                    <div id="progressBar" class="progress-fill-google"></div>
                 </div>
             </div>
 
@@ -581,14 +630,34 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
             </form>
         </div>
 
-        <!-- THANK YOU VIEW -->
+        <!-- ENHANCED THANK YOU VIEW -->
         <div id="thankYouView" class="content-card hidden">
             <div class="success-message">
                 <div class="success-icon">✅</div>
-                <div class="success-title">Thank You!</div>
-                <div id="thankYouMessage" class="success-text"></div>
+                <div class="success-title">Survey Submitted Successfully!</div>
+                <div id="confirmationContent" class="success-text"></div>
             </div>
-            <button class="btn-primary" onclick="showView('list')">View Other Surveys</button>
+            
+            <div id="responseSummary" style="
+                background: #f8fafc;
+                border: 2px solid #e2e8f0;
+                border-radius: 12px;
+                padding: 20px;
+                margin: 20px 0;
+                display: none;
+            ">
+                <h3 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 15px; color: #1e293b;">
+                    Your Response Summary
+                </h3>
+                <div id="summaryContent"></div>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
+                <button class="btn-primary" onclick="showView('list')">View Other Surveys</button>
+                <button id="anotherResponseBtn" class="btn-secondary" style="display: none;" onclick="submitAnotherResponse()">
+                    Submit Another Response
+                </button>
+            </div>
         </div>
     </div>
 
@@ -758,20 +827,44 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
             `;
 
             // Update progress
-            document.getElementById('totalQuestions').textContent = survey.questions.length;
+            updateProgress();
             
             // Render questions
             const container = document.getElementById('questionsContainer');
             container.innerHTML = survey.questions.map((question, index) => renderQuestion(question, index)).join('');
-
-            // Update progress for first question
-            updateProgress();
         }
 
         // RENDER QUESTION
         function renderQuestion(question, index) {
             const questionNum = index + 1;
             
+            // Handle Section Break differently - it's not a regular question
+            if (question.questionType === 'Section Break') {
+                return `
+                    <div class="section-break" style="
+                        background: linear-gradient(135deg, #667eea, #764ba2);
+                        color: white;
+                        padding: 30px;
+                        border-radius: 12px;
+                        margin: 40px 0;
+                        text-align: center;
+                        position: relative;
+                        overflow: hidden;
+                    ">
+                        <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 10px; position: relative; z-index: 1;">
+                            ${escapeHtml(question.questionText || 'Section Break')}
+                        </div>
+                        ${question.helpText ? `
+                            <div style="width: 80px; height: 4px; background: rgba(255, 255, 255, 0.3); margin: 20px auto; border-radius: 2px;"></div>
+                            <div style="font-size: 1rem; opacity: 0.9; line-height: 1.6; position: relative; z-index: 1;">
+                                ${escapeHtml(question.helpText)}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+            
+            // For regular questions, build the input HTML
             let inputHtml = '';
             
             if (question.questionType === 'Multiple Choice') {
@@ -826,15 +919,20 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
                     <input type="hidden" id="${question.questionId}" name="${question.questionId}" ${question.isRequired ? 'required' : ''}>
                 `;
             }
-
+            
+            // Build question header (for regular questions only)
+            const questionHeader = `
+                <div class="question-text">
+                    ${escapeHtml(question.questionText)}
+                    ${question.isRequired ? '<span class="question-required">*</span>' : ''}
+                </div>
+                ${question.helpText ? `<div class="question-help">${escapeHtml(question.helpText)}</div>` : ''}
+            `;
+            
             return `
                 <div class="question-container" data-question-index="${index}">
                     <div class="question-number">Question ${questionNum} of ${currentSurvey.questions.length}</div>
-                    <div class="question-text">
-                        ${escapeHtml(question.questionText)}
-                        ${question.isRequired ? '<span class="question-required">*</span>' : ''}
-                    </div>
-                    ${question.helpText ? `<div class="question-help">${escapeHtml(question.helpText)}</div>` : ''}
+                    ${questionHeader}
                     ${inputHtml}
                 </div>
             `;
@@ -886,6 +984,8 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
         function updateResponse(questionId) {
             const question = currentSurvey.questions.find(q => q.questionId === questionId);
             
+            if (!question) return;
+            
             if (question.questionType === 'Multiple Choice') {
                 const checked = Array.from(document.querySelectorAll(`input[name="${questionId}"]:checked`))
                     .map(input => input.value);
@@ -902,12 +1002,52 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
 
         // UPDATE PROGRESS
         function updateProgress() {
-            const answeredCount = Object.keys(responses).filter(key => responses[key]).length;
-            const totalQuestions = currentSurvey.questions.length;
-            const percentage = (answeredCount / totalQuestions) * 100;
+            if (!currentSurvey || !currentSurvey.questions) return;
             
+            // Filter out section breaks - they don't count in progress
+            const regularQuestions = currentSurvey.questions.filter(q => q.questionType !== 'Section Break');
+            
+            // Count only answered regular questions (not section breaks)
+            const answeredCount = regularQuestions.filter(question => 
+                responses[question.questionId] && 
+                responses[question.questionId].toString().trim() !== ''
+            ).length;
+            
+            const totalQuestions = regularQuestions.length;
+            const percentage = Math.round((answeredCount / totalQuestions) * 100);
+            
+            // Update all progress elements
             document.getElementById('currentQuestion').textContent = answeredCount;
-            document.getElementById('progressBar').style.width = percentage + '%';
+            document.getElementById('totalQuestions').textContent = totalQuestions;
+            document.getElementById('progressPercentage').textContent = `${percentage}%`;
+            
+            const progressBar = document.getElementById('progressBar');
+            if (progressBar) {
+                progressBar.style.width = `${percentage}%`;
+            }
+            
+            // Add visual feedback for completed questions (skip section breaks)
+            currentSurvey.questions.forEach((question, index) => {
+                // Skip section breaks for visual feedback
+                if (question.questionType === 'Section Break') return;
+                
+                const container = document.querySelector(`[data-question-index="${index}"]`);
+                if (container) {
+                    if (responses[question.questionId] && responses[question.questionId].toString().trim() !== '') {
+                        // Question is answered
+                        container.style.borderLeft = '3px solid #10b981';
+                        container.style.backgroundColor = '#f0fdf4';
+                    } else if (question.isRequired) {
+                        // Required question not answered
+                        container.style.borderLeft = '3px solid #ef4444';
+                        container.style.backgroundColor = '#fef2f2';
+                    } else {
+                        // Optional question not answered
+                        container.style.borderLeft = '3px solid #e2e8f0';
+                        container.style.backgroundColor = '';
+                    }
+                }
+            });
         }
 
         // SUBMIT SURVEY
@@ -915,23 +1055,38 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
             const messageDiv = document.getElementById('messageContainer');
             messageDiv.innerHTML = '';
 
-            // Validate required questions
-            const requiredQuestions = currentSurvey.questions.filter(q => q.isRequired);
-            const missingRequired = requiredQuestions.filter(q => !responses[q.questionId] || responses[q.questionId] === '');
+            // Validate required questions (skip section breaks)
+            const requiredQuestions = currentSurvey.questions.filter(q => 
+                q.questionType !== 'Section Break' && q.isRequired
+            );
+            
+            const missingRequired = requiredQuestions.filter(q => 
+                !responses[q.questionId] || responses[q.questionId].toString().trim() === ''
+            );
             
             if (missingRequired.length > 0) {
                 messageDiv.innerHTML = `<div class="error-message">❌ Please answer all required questions (marked with *)</div>`;
+                
+                // Scroll to first missing required question
+                const firstMissing = missingRequired[0];
+                const questionIndex = currentSurvey.questions.findIndex(q => q.questionId === firstMissing.questionId);
+                const questionElement = document.querySelector(`[data-question-index="${questionIndex}"]`);
+                if (questionElement) {
+                    questionElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
                 return;
             }
 
-            // Build answers array
-            const answers = currentSurvey.questions.map(question => ({
-                questionId: question.questionId,
-                answer: responses[question.questionId] || ''
-            }));
+            // Build answers array (skip section breaks)
+            const answers = currentSurvey.questions
+                .filter(q => q.questionType !== 'Section Break')
+                .map(question => ({
+                    questionId: question.questionId,
+                    answer: responses[question.questionId] || ''
+                }));
 
             // Get respondent (unit number for identified surveys)
-            const respondent = currentSurvey.isAnonymous ? 'Anonymous' : 'Resident'; // Could prompt for unit number
+            const respondent = currentSurvey.isAnonymous ? 'Anonymous' : 'Resident';
 
             const submitData = {
                 surveyId: currentSurvey.surveyId,
@@ -950,7 +1105,23 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
                 submitBtn.textContent = 'Submit Survey';
 
                 if (result.success) {
-                    document.getElementById('thankYouMessage').textContent = result.thankYouMessage;
+                    // Use custom confirmation message if available, otherwise use default
+                    const confirmationMessage = currentSurvey.confirmationMessage || 
+                                               result.thankYouMessage || 
+                                               'Thank you for completing our survey! Your feedback is valuable to us.';
+                    
+                    document.getElementById('confirmationContent').textContent = confirmationMessage;
+                    
+                    // Show response summary if enabled
+                    if (currentSurvey.showResponseSummary) {
+                        showResponseSummary(responses);
+                    }
+                    
+                    // Show "Submit Another Response" button if enabled and multiple responses allowed
+                    if (currentSurvey.allowAnotherResponse && currentSurvey.allowMultipleResponses) {
+                        document.getElementById('anotherResponseBtn').style.display = 'block';
+                    }
+                    
                     showView('thankyou');
                 } else {
                     messageDiv.innerHTML = `<div class="error-message">❌ Error: ${result.message || result.error}</div>`;
@@ -958,8 +1129,52 @@ RELATED FILES: ResidentPortal.html, SurveyManagement.html
             });
         }
 
+        // SHOW RESPONSE SUMMARY
+        function showResponseSummary(responses) {
+            const summaryDiv = document.getElementById('responseSummary');
+            const contentDiv = document.getElementById('summaryContent');
+            
+            let summaryHTML = '';
+            
+            currentSurvey.questions.forEach((question, index) => {
+                if (question.questionType === 'Section Break') return;
+                
+                const response = responses[question.questionId];
+                if (response) {
+                    summaryHTML += `
+                        <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;">
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 5px;">
+                                ${index + 1}. ${escapeHtml(question.questionText)}
+                            </div>
+                            <div style="color: #64748b; padding-left: 10px;">
+                                <strong>Your answer:</strong> ${escapeHtml(response.toString())}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+            
+            if (summaryHTML) {
+                contentDiv.innerHTML = summaryHTML;
+                summaryDiv.style.display = 'block';
+            }
+        }
+
+        // SUBMIT ANOTHER RESPONSE
+        function submitAnotherResponse() {
+            // Reset the form and show the survey again
+            responses = {};
+            currentQuestionIndex = 0;
+            document.getElementById('surveyForm').reset();
+            document.getElementById('anotherResponseBtn').style.display = 'none';
+            document.getElementById('responseSummary').style.display = 'none';
+            showView('survey');
+            renderSurvey();
+        }
+
         // UTILITY
         function escapeHtml(text) {
+            if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
