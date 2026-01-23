@@ -1,0 +1,969 @@
+<!--
+=====================================================================
+LAKE ILLAWONG MANAGEMENT SYSTEM - COMMUNITY SURVEYS
+=====================================================================
+PURPOSE: Resident interface for viewing and completing community surveys
+PORTAL: Residents Portal (Public Access)
+VERSION: 1.0
+LAST UPDATED: January 19, 2026
+BACKEND API: SurveyModule V1.1 (JSONP only)
+DESIGN SYSTEM: Lake Illawong Unified v1.4
+- Terminology: "Survey" standard
+- Header: Transparent with logo
+- Colors: Blue gradient background
+- Layout: White content cards
+- API Protocol: JSONP only (NO fetch)
+AUTHENTICATION: None (Public Access - Anonymous or identified surveys)
+DEPENDENCIES: SurveyModule V1.1
+RELATED FILES: ResidentPortal.html, SurveyManagement.html
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Surveys - Lake Illawong</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            color: #1e293b;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* HEADER */
+        .header {
+            background: transparent;
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .logo-container {
+            flex-shrink: 0;
+        }
+
+        .logo-image {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            object-fit: cover;
+            padding: 5px;
+        }
+
+        .header-text {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+        }
+
+        .header-title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: white;
+            margin: 0 0 5px 0;
+            line-height: 1.1;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .header-subtitle {
+            font-size: 1rem;
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .header-divider {
+            width: 100%;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.2);
+            margin-top: 15px;
+        }
+
+        /* BACK BUTTON */
+        .back-button {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+            margin-bottom: 20px;
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .back-button:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
+        }
+
+        /* CONTENT CARD */
+        .content-card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            margin-bottom: 20px;
+        }
+
+        /* SURVEY LIST */
+        .survey-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .survey-item {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .survey-item:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.15);
+        }
+
+        .survey-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .survey-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+
+        .survey-status {
+            background: #d1fae5;
+            color: #047857;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .survey-description {
+            color: #64748b;
+            font-size: 1rem;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .survey-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+
+        .survey-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* QUESTION FORM */
+        .question-container {
+            margin-bottom: 35px;
+        }
+
+        .question-number {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .question-text {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 6px;
+        }
+
+        .question-required {
+            color: #ef4444;
+            font-size: 0.9rem;
+        }
+
+        .question-help {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-top: 5px;
+            margin-bottom: 15px;
+        }
+
+        /* INPUT STYLES */
+        .text-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.3s ease;
+        }
+
+        .text-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .text-input.textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        /* CHOICE OPTIONS */
+        .choice-options {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .choice-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 15px 20px;
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .choice-option:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+
+        .choice-option.selected {
+            background: #ede9fe;
+            border-color: #667eea;
+        }
+
+        .choice-input {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .choice-label {
+            flex: 1;
+            font-size: 1rem;
+            color: #1e293b;
+            cursor: pointer;
+        }
+
+        /* RATING STARS */
+        .rating-container {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .star {
+            font-size: 2.5rem;
+            color: #e2e8f0;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .star:hover,
+        .star.selected {
+            color: #fbbf24;
+            transform: scale(1.1);
+        }
+
+        .rating-label {
+            font-size: 0.9rem;
+            color: #64748b;
+            margin-top: 10px;
+        }
+
+        /* BUTTONS */
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1rem;
+            width: 100%;
+            margin-top: 25px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-primary:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+            padding: 12px 28px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+            margin-top: 15px;
+        }
+
+        .btn-secondary:hover {
+            background: #f8fafc;
+        }
+
+        /* PROGRESS BAR */
+        .progress-container {
+            margin-bottom: 25px;
+        }
+
+        .progress-text {
+            font-size: 0.9rem;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+
+        .progress-bar-bg {
+            background: #e2e8f0;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            height: 100%;
+            transition: width 0.5s ease;
+        }
+
+        /* MESSAGES */
+        .success-message {
+            background: #d1fae5;
+            border: 2px solid #10b981;
+            color: #047857;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .success-icon {
+            font-size: 3rem;
+            margin-bottom: 10px;
+        }
+
+        .success-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .success-text {
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #dc2626;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .warning-message {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            color: #92400e;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        /* LOADING STATE */
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e2e8f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 40px auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-message {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+            font-size: 1.1rem;
+        }
+
+        /* EMPTY STATE */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .empty-state-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 10px;
+        }
+
+        .empty-state-description {
+            font-size: 1rem;
+            margin-bottom: 25px;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .header-text {
+                align-items: center;
+                text-align: center;
+            }
+
+            .header-title {
+                font-size: 1.8rem;
+            }
+
+            .logo-image {
+                width: 70px;
+                height: 70px;
+            }
+
+            .content-card {
+                padding: 20px;
+            }
+
+            .survey-title {
+                font-size: 1.2rem;
+            }
+
+            .question-text {
+                font-size: 1.1rem;
+            }
+
+            .star {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <div class="header">
+            <div class="header-content">
+                <div class="logo-container">
+                    <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+                </div>
+                <div class="header-text">
+                    <h1 class="header-title">Community Surveys</h1>
+                    <p class="header-subtitle">Share your feedback and help shape our community</p>
+                </div>
+            </div>
+            <div class="header-divider"></div>
+        </div>
+
+        <a href="ResidentPortal.html" class="back-button">← Back to Resident Portal</a>
+
+        <!-- SURVEY LIST VIEW -->
+        <div id="listView" class="content-card">
+            <h2 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 20px; color: #1e293b;">Active Surveys</h2>
+            <div id="surveyList">
+                <div class="loading-message">
+                    <div class="loading-spinner"></div>
+                    <div>Loading surveys...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAKE SURVEY VIEW -->
+        <div id="surveyView" class="content-card hidden">
+            <div id="surveyHeader">
+                <!-- Survey title and description -->
+            </div>
+
+            <div id="progressContainer" class="progress-container">
+                <div class="progress-text">Question <span id="currentQuestion">1</span> of <span id="totalQuestions">0</span></div>
+                <div class="progress-bar-bg">
+                    <div id="progressBar" class="progress-bar-fill" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div id="messageContainer"></div>
+
+            <form id="surveyForm">
+                <div id="questionsContainer">
+                    <!-- Questions will be added here -->
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn-primary">Submit Survey</button>
+                <button type="button" class="btn-secondary" onclick="showView('list')">Cancel</button>
+            </form>
+        </div>
+
+        <!-- THANK YOU VIEW -->
+        <div id="thankYouView" class="content-card hidden">
+            <div class="success-message">
+                <div class="success-icon">✅</div>
+                <div class="success-title">Thank You!</div>
+                <div id="thankYouMessage" class="success-text"></div>
+            </div>
+            <button class="btn-primary" onclick="showView('list')">View Other Surveys</button>
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURATION
+        const SURVEY_API_URL = 'https://script.google.com/macros/s/AKfycby4CGaQHZbNwQZTv1t4zFnZ8L8opU0jqpAOWBzstfTqA7oTAN-oPykOhWjdZAxJrLazFA/exec';
+
+        // STATE
+        let allSurveys = [];
+        let currentSurvey = null;
+        let currentQuestionIndex = 0;
+        let responses = {};
+
+        // INITIALIZATION
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check for survey ID in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const surveyId = urlParams.get('survey');
+            
+            if (surveyId) {
+                loadSurveyDetails(surveyId);
+            } else {
+                loadSurveys();
+            }
+
+            // Form submission
+            document.getElementById('surveyForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                submitSurvey();
+            });
+        });
+
+        // JSONP HELPER
+        function callAPI(action, params, callback) {
+            const callbackName = 'surveyCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+            
+            console.log('🔍 Calling API:', action, params);
+            
+            window[callbackName] = function(response) {
+                console.log('✅ API Response received:', response);
+                callback(response);
+                delete window[callbackName];
+                const script = document.querySelector(`script[src*="${callbackName}"]`);
+                if (script) script.remove();
+            };
+            
+            const script = document.createElement('script');
+            let url = `${SURVEY_API_URL}?action=${action}&callback=${callbackName}`;
+            
+            // Add additional parameters
+            for (let key in params) {
+                url += `&${key}=${encodeURIComponent(params[key])}`;
+            }
+            
+            console.log('🔍 Request URL:', url);
+            
+            script.src = url;
+            script.onerror = function(e) {
+                console.error('❌ Script load error:', e);
+                callback({ success: false, error: 'Network error - unable to load script' });
+                delete window[callbackName];
+            };
+            
+            document.head.appendChild(script);
+        }
+
+        // VIEW MANAGEMENT
+        function showView(viewName) {
+            document.getElementById('listView').classList.add('hidden');
+            document.getElementById('surveyView').classList.add('hidden');
+            document.getElementById('thankYouView').classList.add('hidden');
+
+            if (viewName === 'list') {
+                document.getElementById('listView').classList.remove('hidden');
+                loadSurveys();
+            } else if (viewName === 'survey') {
+                document.getElementById('surveyView').classList.remove('hidden');
+            } else if (viewName === 'thankyou') {
+                document.getElementById('thankYouView').classList.remove('hidden');
+            }
+        }
+
+        // LOAD SURVEYS
+        function loadSurveys() {
+            const container = document.getElementById('surveyList');
+            container.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div><div>Loading surveys...</div></div>';
+
+            console.log('🔍 Loading surveys...');
+            console.log('🔍 API URL:', SURVEY_API_URL);
+
+            callAPI('getSurveys', { includeArchived: 'false', isAdmin: 'false' }, function(data) {
+                console.log('✅ Surveys response:', data);
+                
+                if (data.success) {
+                    allSurveys = data.surveys;
+                    renderSurveys();
+                } else {
+                    const errorMsg = data.message || data.error || 'Unknown error';
+                    console.error('❌ Error:', errorMsg);
+                    container.innerHTML = `<div class="error-message">❌ Error loading surveys: ${errorMsg}</div>`;
+                }
+            });
+        }
+
+        // RENDER SURVEYS
+        function renderSurveys() {
+            const container = document.getElementById('surveyList');
+            
+            if (allSurveys.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        <div class="empty-state-title">No Active Surveys</div>
+                        <div class="empty-state-description">There are currently no surveys available. Check back soon!</div>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = '<div class="survey-list">' + allSurveys.map(survey => `
+                <div class="survey-item" onclick="loadSurveyDetails('${survey.surveyId}')">
+                    <div class="survey-item-header">
+                        <div>
+                            <div class="survey-title">${escapeHtml(survey.title)}</div>
+                        </div>
+                        <div class="survey-status">Active</div>
+                    </div>
+                    <div class="survey-description">${escapeHtml(survey.description || 'No description available')}</div>
+                    <div class="survey-meta">
+                        <div class="survey-meta-item">
+                            📊 ${survey.totalResponses} responses
+                        </div>
+                        ${survey.isAnonymous ? '<div class="survey-meta-item">🔒 Anonymous</div>' : ''}
+                    </div>
+                </div>
+            `).join('') + '</div>';
+        }
+
+        // LOAD SURVEY DETAILS
+        function loadSurveyDetails(surveyId) {
+            showView('survey');
+            
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div><div>Loading survey...</div></div>';
+
+            callAPI('getSurveyDetails', { surveyId: surveyId }, function(data) {
+                if (data.success) {
+                    currentSurvey = data.survey;
+                    responses = {};
+                    currentQuestionIndex = 0;
+                    renderSurvey();
+                } else {
+                    container.innerHTML = `<div class="error-message">❌ Error: ${data.message}</div>`;
+                }
+            });
+        }
+
+        // RENDER SURVEY
+        function renderSurvey() {
+            const survey = currentSurvey;
+            
+            // Update header
+            document.getElementById('surveyHeader').innerHTML = `
+                <h2 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 10px; color: #1e293b;">${escapeHtml(survey.title)}</h2>
+                <p style="color: #64748b; margin-bottom: 25px; line-height: 1.6;">${escapeHtml(survey.description || '')}</p>
+                ${survey.isAnonymous ? '<div class="warning-message">🔒 This survey is anonymous. Your responses will not be linked to your identity.</div>' : ''}
+            `;
+
+            // Update progress
+            document.getElementById('totalQuestions').textContent = survey.questions.length;
+            
+            // Render questions
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = survey.questions.map((question, index) => renderQuestion(question, index)).join('');
+
+            // Update progress for first question
+            updateProgress();
+        }
+
+        // RENDER QUESTION
+        function renderQuestion(question, index) {
+            const questionNum = index + 1;
+            
+            let inputHtml = '';
+            
+            if (question.questionType === 'Multiple Choice') {
+                inputHtml = `
+                    <div class="choice-options">
+                        ${question.optionsArray.map((option, optIndex) => `
+                            <div class="choice-option" onclick="toggleChoice('${question.questionId}', '${escapeHtml(option)}', true, this)">
+                                <input type="checkbox" 
+                                       id="${question.questionId}_${optIndex}" 
+                                       name="${question.questionId}" 
+                                       value="${escapeHtml(option)}"
+                                       class="choice-input"
+                                       onchange="updateResponse('${question.questionId}')">
+                                <label for="${question.questionId}_${optIndex}" class="choice-label">${escapeHtml(option)}</label>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else if (question.questionType === 'Single Choice' || question.questionType === 'Yes/No') {
+                inputHtml = `
+                    <div class="choice-options">
+                        ${question.optionsArray.map((option, optIndex) => `
+                            <div class="choice-option" onclick="toggleChoice('${question.questionId}', '${escapeHtml(option)}', false, this)">
+                                <input type="radio" 
+                                       id="${question.questionId}_${optIndex}" 
+                                       name="${question.questionId}" 
+                                       value="${escapeHtml(option)}"
+                                       class="choice-input"
+                                       onchange="updateResponse('${question.questionId}')">
+                                <label for="${question.questionId}_${optIndex}" class="choice-label">${escapeHtml(option)}</label>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else if (question.questionType === 'Text') {
+                inputHtml = `
+                    <textarea 
+                        id="${question.questionId}" 
+                        class="text-input textarea" 
+                        placeholder="Enter your response..."
+                        onchange="updateResponse('${question.questionId}')"
+                        ${question.isRequired ? 'required' : ''}></textarea>
+                `;
+            } else if (question.questionType === 'Rating') {
+                inputHtml = `
+                    <div class="rating-container" id="${question.questionId}_stars">
+                        ${[1, 2, 3, 4, 5].map(star => `
+                            <span class="star" data-value="${star}" onclick="setRating('${question.questionId}', ${star})">★</span>
+                        `).join('')}
+                    </div>
+                    <div class="rating-label">1 = Poor, 5 = Excellent</div>
+                    <input type="hidden" id="${question.questionId}" name="${question.questionId}" ${question.isRequired ? 'required' : ''}>
+                `;
+            }
+
+            return `
+                <div class="question-container" data-question-index="${index}">
+                    <div class="question-number">Question ${questionNum} of ${currentSurvey.questions.length}</div>
+                    <div class="question-text">
+                        ${escapeHtml(question.questionText)}
+                        ${question.isRequired ? '<span class="question-required">*</span>' : ''}
+                    </div>
+                    ${question.helpText ? `<div class="question-help">${escapeHtml(question.helpText)}</div>` : ''}
+                    ${inputHtml}
+                </div>
+            `;
+        }
+
+        // TOGGLE CHOICE
+        function toggleChoice(questionId, value, isMultiple, element) {
+            const input = element.querySelector('input');
+            
+            if (isMultiple) {
+                input.checked = !input.checked;
+            } else {
+                // Deselect all other options
+                const container = element.parentElement;
+                container.querySelectorAll('.choice-option').forEach(opt => {
+                    opt.classList.remove('selected');
+                });
+                input.checked = true;
+            }
+            
+            if (input.checked) {
+                element.classList.add('selected');
+            } else {
+                element.classList.remove('selected');
+            }
+            
+            updateResponse(questionId);
+        }
+
+        // SET RATING
+        function setRating(questionId, rating) {
+            const container = document.getElementById(questionId + '_stars');
+            const stars = container.querySelectorAll('.star');
+            
+            stars.forEach((star, index) => {
+                if (index < rating) {
+                    star.classList.add('selected');
+                } else {
+                    star.classList.remove('selected');
+                }
+            });
+            
+            document.getElementById(questionId).value = rating;
+            responses[questionId] = rating.toString();
+            updateProgress();
+        }
+
+        // UPDATE RESPONSE
+        function updateResponse(questionId) {
+            const question = currentSurvey.questions.find(q => q.questionId === questionId);
+            
+            if (question.questionType === 'Multiple Choice') {
+                const checked = Array.from(document.querySelectorAll(`input[name="${questionId}"]:checked`))
+                    .map(input => input.value);
+                responses[questionId] = checked.join('|');
+            } else if (question.questionType === 'Single Choice' || question.questionType === 'Yes/No') {
+                const checked = document.querySelector(`input[name="${questionId}"]:checked`);
+                responses[questionId] = checked ? checked.value : '';
+            } else if (question.questionType === 'Text') {
+                responses[questionId] = document.getElementById(questionId).value;
+            }
+            
+            updateProgress();
+        }
+
+        // UPDATE PROGRESS
+        function updateProgress() {
+            const answeredCount = Object.keys(responses).filter(key => responses[key]).length;
+            const totalQuestions = currentSurvey.questions.length;
+            const percentage = (answeredCount / totalQuestions) * 100;
+            
+            document.getElementById('currentQuestion').textContent = answeredCount;
+            document.getElementById('progressBar').style.width = percentage + '%';
+        }
+
+        // SUBMIT SURVEY
+        function submitSurvey() {
+            const messageDiv = document.getElementById('messageContainer');
+            messageDiv.innerHTML = '';
+
+            // Validate required questions
+            const requiredQuestions = currentSurvey.questions.filter(q => q.isRequired);
+            const missingRequired = requiredQuestions.filter(q => !responses[q.questionId] || responses[q.questionId] === '');
+            
+            if (missingRequired.length > 0) {
+                messageDiv.innerHTML = `<div class="error-message">❌ Please answer all required questions (marked with *)</div>`;
+                return;
+            }
+
+            // Build answers array
+            const answers = currentSurvey.questions.map(question => ({
+                questionId: question.questionId,
+                answer: responses[question.questionId] || ''
+            }));
+
+            // Get respondent (unit number for identified surveys)
+            const respondent = currentSurvey.isAnonymous ? 'Anonymous' : 'Resident'; // Could prompt for unit number
+
+            const submitData = {
+                surveyId: currentSurvey.surveyId,
+                respondent: respondent,
+                answers: answers
+            };
+
+            // Show loading
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+
+            // Submit via JSONP
+            callAPI('submitResponse', { data: JSON.stringify(submitData) }, function(result) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Survey';
+
+                if (result.success) {
+                    document.getElementById('thankYouMessage').textContent = result.thankYouMessage;
+                    showView('thankyou');
+                } else {
+                    messageDiv.innerHTML = `<div class="error-message">❌ Error: ${result.message || result.error}</div>`;
+                }
+            });
+        }
+
+        // UTILITY
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
