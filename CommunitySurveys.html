@@ -4,15 +4,35 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - COMMUNITY SURVEYS
 =====================================================================
 PURPOSE: Resident interface for viewing and completing community surveys
 PORTAL: Residents Portal (Public Access)
-VERSION: 1.1 (Updated with Google Forms-like features)
-LAST UPDATED: [Current Date]
-BACKEND API: SurveyModule V1.1 (JSONP only)
-DESIGN SYSTEM: Lake Illawong Unified v1.4
-ENHANCEMENTS:
-- Google Forms-like progress bar with percentage
-- Section break support
-- Enhanced confirmation settings
-- Response summary display
+VERSION: 2.2.0 (Unit number collection for non-anonymous surveys)
+LAST UPDATED: January 27, 2026
+BACKEND API: SurveyModule V1.2.1 (JSONP only)
+DESIGN SYSTEM: Lake Illawong Unified v1.4 + Mockup Design
+
+CHANGES IN V2.2.0:
+- NEW: Unit number collection for non-anonymous surveys
+- Unit dropdown modal appears before non-anonymous survey starts
+- Respondent field now uses actual unit number (e.g., "Unit 5") for identified surveys
+- Duplicate prevention now works correctly (per unit, not system-wide)
+- Anonymous surveys unchanged - still use "Anonymous" as respondent
+
+CHANGES IN V2.1.1:
+- BUGFIX: Improved null handling for ratingMin/ratingMax (prevents "Null 1 2 3" display)
+- Added explicit null checks in rating scale rendering
+
+CHANGES IN V2.1:
+- Dynamic rating scales: supports 1-5 (satisfaction) and 0-10 (NPS) scales
+- Rating labels adjust based on scale type
+- Backend reads ratingMin/ratingMax from question data
+
+CHANGES IN V2.0:
+- Questions use dividing lines instead of boxes (cleaner mockup design)
+- Survey cards include icon/emoji display
+- Status badge appears inline with title
+- Meta items use emojis (📅 📊 👥 ⏱️)
+- "Take Survey →" button text
+- Character counter on text areas
+- Question numbering excludes section breaks (matches progress bar)
 =====================================================================
 -->
 <!DOCTYPE html>
@@ -106,23 +126,46 @@ ENHANCEMENTS:
 
         /* BACK BUTTON */
         .back-button {
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            color: #374151;
+            border: 2px solid #e2e8f0;
             padding: 10px 20px;
             border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
             font-size: 0.95rem;
-            margin-bottom: 20px;
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
             text-decoration: none;
         }
 
         .back-button:hover {
-            background: rgba(255, 255, 255, 0.25);
-            transform: translateY(-1px);
+            background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .nav-button {
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            color: #374151;
+            border: 2px solid #e2e8f0;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+            font-family: inherit;
+        }
+
+        .nav-button:hover {
+            background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
         }
 
         /* CONTENT CARD */
@@ -200,13 +243,41 @@ ENHANCEMENTS:
             gap: 5px;
         }
 
+        .survey-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .btn-take-survey {
+            flex: 1;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+
+        .btn-take-survey:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
         /* QUESTION FORM */
         .question-container {
             margin-bottom: 35px;
-            padding: 20px;
-            border-radius: 12px;
-            border: 2px solid #e2e8f0;
-            transition: all 0.3s ease;
+            padding-bottom: 25px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .question-container:last-of-type {
+            border-bottom: none;
         }
 
         .question-number {
@@ -262,6 +333,13 @@ ENHANCEMENTS:
             resize: vertical;
         }
 
+        .char-count {
+            text-align: right;
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-top: 5px;
+        }
+
         /* CHOICE OPTIONS */
         .choice-options {
             display: flex;
@@ -273,8 +351,8 @@ ENHANCEMENTS:
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 15px 20px;
-            background: #f8fafc;
+            padding: 12px 16px;
+            background: white;
             border: 2px solid #e2e8f0;
             border-radius: 8px;
             cursor: pointer;
@@ -282,52 +360,74 @@ ENHANCEMENTS:
         }
 
         .choice-option:hover {
-            background: #f1f5f9;
-            border-color: #cbd5e1;
-        }
-
-        .choice-option.selected {
-            background: #ede9fe;
             border-color: #667eea;
+            background: #f8fafc;
         }
 
         .choice-input {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             cursor: pointer;
+            accent-color: #667eea;
         }
 
         .choice-label {
             flex: 1;
-            font-size: 1rem;
-            color: #1e293b;
+            font-size: 0.95rem;
+            color: #374151;
             cursor: pointer;
+            font-weight: 500;
         }
 
         /* RATING STARS */
-        .rating-container {
+        /* RATING SCALE */
+        .rating-scale {
             display: flex;
-            gap: 8px;
-            margin-top: 10px;
+            gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
         }
 
-        .star {
-            font-size: 2.5rem;
-            color: #e2e8f0;
+        .rating-option {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .rating-circle {
+            width: 50px;
+            height: 50px;
+            border: 3px solid #e2e8f0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: #64748b;
             cursor: pointer;
             transition: all 0.2s ease;
         }
 
-        .star:hover,
-        .star.selected {
-            color: #fbbf24;
+        .rating-circle:hover {
+            border-color: #667eea;
+            background: #f8fafc;
             transform: scale(1.1);
         }
 
+        .rating-circle.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            transform: scale(1.15);
+        }
+
         .rating-label {
-            font-size: 0.9rem;
+            font-size: 0.75rem;
             color: #64748b;
-            margin-top: 10px;
+            font-weight: 600;
+            text-align: center;
         }
 
         /* PROGRESS BAR - GOOGLE FORMS STYLE */
@@ -395,22 +495,21 @@ ENHANCEMENTS:
 
         /* BUTTONS */
         .btn-primary {
+            flex: 1;
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
             border: none;
-            padding: 14px 32px;
-            border-radius: 8px;
-            font-weight: 600;
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-weight: 700;
             cursor: pointer;
             transition: all 0.3s ease;
             font-size: 1rem;
-            width: 100%;
-            margin-top: 25px;
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.3);
         }
 
         .btn-primary:disabled {
@@ -420,20 +519,21 @@ ENHANCEMENTS:
         }
 
         .btn-secondary {
-            background: white;
-            color: #667eea;
-            border: 2px solid #667eea;
-            padding: 12px 28px;
-            border-radius: 8px;
-            font-weight: 600;
+            flex: 1;
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            color: #374151;
+            border: 2px solid #e2e8f0;
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-weight: 700;
             cursor: pointer;
             transition: all 0.3s ease;
-            font-size: 0.95rem;
-            margin-top: 15px;
+            font-size: 1rem;
         }
 
         .btn-secondary:hover {
-            background: #f8fafc;
+            background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+            transform: translateY(-2px);
         }
 
         /* MESSAGES */
@@ -566,10 +666,112 @@ ENHANCEMENTS:
                 font-size: 1.1rem;
             }
 
-            .star {
-                font-size: 2rem;
+            .rating-scale {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .rating-circle {
+                width: 45px;
+                height: 45px;
+                font-size: 1rem;
             }
         }
+/* MODAL STYLES */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 15px;
+        }
+
+        .modal-description {
+            color: #64748b;
+            margin-bottom: 25px;
+            line-height: 1.6;
+        }
+
+        .modal-select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 20px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .modal-select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .modal-btn-primary {
+            flex: 1;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .modal-btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .modal-btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .modal-btn-secondary {
+            flex: 1;
+            padding: 12px 24px;
+            background: white;
+            color: #64748b;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .modal-btn-secondary:hover {
+            background: #f8fafc;
+        }
+
     </style>
 </head>
 <body>
@@ -588,7 +790,11 @@ ENHANCEMENTS:
             <div class="header-divider"></div>
         </div>
 
-        <a href="ResidentPortal.html" class="back-button">← Back to Resident Portal</a>
+        <!-- NAVIGATION HEADER -->
+        <div style="background: white; padding: 20px 30px; border-radius: 16px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); display: flex; justify-content: space-between; align-items: center;">
+            <a href="ResidentPortal.html" class="back-button">← Back to Resident Portal</a>
+            <button onclick="showView('list')" class="nav-button">Survey Listing</button>
+        </div>
 
         <!-- SURVEY LIST VIEW -->
         <div id="listView" class="content-card">
@@ -607,15 +813,12 @@ ENHANCEMENTS:
                 <!-- Survey title and description -->
             </div>
 
-            <!-- ENHANCED PROGRESS BAR -->
-            <div id="progressContainer" class="progress-container">
-                <div class="progress-info">
-                    <div class="progress-text">Progress: <span id="currentQuestion">0</span>/<span id="totalQuestions">0</span></div>
-                    <div class="progress-percentage" id="progressPercentage">0%</div>
+            <!-- PROGRESS BAR -->
+            <div style="margin-bottom: 30px;">
+                <div style="background: #e2e8f0; border-radius: 8px; height: 8px; margin-bottom: 10px; overflow: hidden;">
+                    <div id="progressBar" style="background: linear-gradient(135deg, #667eea, #764ba2); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
                 </div>
-                <div class="progress-bar-google">
-                    <div id="progressBar" class="progress-fill-google"></div>
-                </div>
+                <div id="progressText" style="text-align: center; color: #64748b; font-size: 0.85rem;">Question 0 of 0</div>
             </div>
 
             <div id="messageContainer"></div>
@@ -625,8 +828,14 @@ ENHANCEMENTS:
                     <!-- Questions will be added here -->
                 </div>
 
-                <button type="submit" id="submitBtn" class="btn-primary">Submit Survey</button>
-                <button type="button" class="btn-secondary" onclick="showView('list')">Cancel</button>
+                <div style="display: flex; gap: 15px; margin-top: 40px; padding-top: 30px; border-top: 2px solid #e2e8f0;">
+                    <button type="button" class="btn-secondary" onclick="showView('list')">
+                        ← Cancel
+                    </button>
+                    <button type="submit" id="submitBtn" class="btn-primary">
+                        Submit Survey ✓
+                    </button>
+                </div>
             </form>
         </div>
 
@@ -661,6 +870,68 @@ ENHANCEMENTS:
         </div>
     </div>
 
+<!-- UNIT NUMBER MODAL (for non-anonymous surveys) -->
+        <div id="unitModal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <div class="modal-title">Before You Begin</div>
+                <div class="modal-description">
+                    This survey collects identified responses. Please select your unit number to continue.
+                </div>
+                <select id="unitSelect" class="modal-select">
+                    <option value="">-- Select Your Unit --</option>
+                    <option value="Unit 1">Unit 1</option>
+                    <option value="Unit 2">Unit 2</option>
+                    <option value="Unit 3">Unit 3</option>
+                    <option value="Unit 4">Unit 4</option>
+                    <option value="Unit 5">Unit 5</option>
+                    <option value="Unit 6">Unit 6</option>
+                    <option value="Unit 7">Unit 7</option>
+                    <option value="Unit 8">Unit 8</option>
+                    <option value="Unit 9">Unit 9</option>
+                    <option value="Unit 10">Unit 10</option>
+                    <option value="Unit 11">Unit 11</option>
+                    <option value="Unit 12">Unit 12</option>
+                    <option value="Unit 13">Unit 13</option>
+                    <option value="Unit 14">Unit 14</option>
+                    <option value="Unit 15">Unit 15</option>
+                    <option value="Unit 16">Unit 16</option>
+                    <option value="Unit 17">Unit 17</option>
+                    <option value="Unit 18">Unit 18</option>
+                    <option value="Unit 19">Unit 19</option>
+                    <option value="Unit 20">Unit 20</option>
+                    <option value="Unit 21">Unit 21</option>
+                    <option value="Unit 22">Unit 22</option>
+                    <option value="Unit 23">Unit 23</option>
+                    <option value="Unit 24">Unit 24</option>
+                    <option value="Unit 25">Unit 25</option>
+                    <option value="Unit 26">Unit 26</option>
+                    <option value="Unit 27">Unit 27</option>
+                    <option value="Unit 28">Unit 28</option>
+                    <option value="Unit 29">Unit 29</option>
+                    <option value="Unit 30">Unit 30</option>
+                    <option value="Unit 31">Unit 31</option>
+                    <option value="Unit 32">Unit 32</option>
+                    <option value="Unit 33">Unit 33</option>
+                    <option value="Unit 34">Unit 34</option>
+                    <option value="Unit 35">Unit 35</option>
+                    <option value="Unit 36">Unit 36</option>
+                    <option value="Unit 37">Unit 37</option>
+                    <option value="Unit 38">Unit 38</option>
+                    <option value="Unit 39">Unit 39</option>
+                    <option value="Unit 40">Unit 40</option>
+                    <option value="Unit 41">Unit 41</option>
+                    <option value="Unit 42">Unit 42</option>
+                    <option value="Unit 43">Unit 43</option>
+                    <option value="Unit 44">Unit 44</option>
+                </select>
+                <div class="modal-buttons">
+                    <button class="modal-btn-secondary" onclick="cancelUnitSelection()">Cancel</button>
+                    <button class="modal-btn-primary" onclick="confirmUnitSelection()">Continue to Survey</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // CONFIGURATION
         const SURVEY_API_URL = 'https://script.google.com/macros/s/AKfycby4CGaQHZbNwQZTv1t4zFnZ8L8opU0jqpAOWBzstfTqA7oTAN-oPykOhWjdZAxJrLazFA/exec';
@@ -670,6 +941,7 @@ ENHANCEMENTS:
         let currentSurvey = null;
         let currentQuestionIndex = 0;
         let responses = {};
+        let currentRespondent = null; // Stores unit number for non-anonymous surveys
 
         // INITIALIZATION
         document.addEventListener('DOMContentLoaded', function() {
@@ -777,66 +1049,150 @@ ENHANCEMENTS:
                 return;
             }
 
-            container.innerHTML = '<div class="survey-list">' + allSurveys.map(survey => `
+            container.innerHTML = '<div class="survey-list">' + allSurveys.map(survey => {
+                const icon = survey.icon || '📋';
+                const estimatedTime = survey.estimatedTime || '~5 minutes';
+                const dateLabel = survey.closeDate ? `Closes: ${formatDate(survey.closeDate)}` : `Created: ${formatDate(survey.createdDate)}`;
+                
+                return `
                 <div class="survey-item" onclick="loadSurveyDetails('${survey.surveyId}')">
                     <div class="survey-item-header">
-                        <div>
-                            <div class="survey-title">${escapeHtml(survey.title)}</div>
+                        <div style="display: flex; align-items: flex-start; flex: 1; gap: 15px;">
+                            <div style="font-size: 2rem; flex-shrink: 0;">${icon}</div>
+                            <div style="flex: 1;">
+                                <div class="survey-title">${escapeHtml(survey.title)}</div>
+                                <span class="survey-status">Active</span>
+                            </div>
                         </div>
-                        <div class="survey-status">Active</div>
                     </div>
                     <div class="survey-description">${escapeHtml(survey.description || 'No description available')}</div>
                     <div class="survey-meta">
                         <div class="survey-meta-item">
-                            📊 ${survey.totalResponses} responses
+                            📅 ${dateLabel}
+                        </div>
+                        <div class="survey-meta-item">
+                            👥 ${survey.totalResponses || 0} responses
+                        </div>
+                        <div class="survey-meta-item">
+                            ⏱️ ${estimatedTime}
                         </div>
                         ${survey.isAnonymous ? '<div class="survey-meta-item">🔒 Anonymous</div>' : ''}
                     </div>
+                    <div class="survey-actions" onclick="event.stopPropagation()">
+                        <button class="btn-take-survey" onclick="loadSurveyDetails('${survey.surveyId}')">
+                            Take Survey →
+                        </button>
+                    </div>
                 </div>
-            `).join('') + '</div>';
+            `;
+            }).join('') + '</div>';
         }
 
         // LOAD SURVEY DETAILS
         function loadSurveyDetails(surveyId) {
-            showView('survey');
+            // Immediately show loading state in the survey list
+            const button = event.target.closest('.btn-take-survey');
+            if (button) {
+                button.disabled = true;
+                button.style.opacity = '0.6';
+                button.innerHTML = 'Loading...';
+            }
             
             const container = document.getElementById('questionsContainer');
             container.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div><div>Loading survey...</div></div>';
 
             callAPI('getSurveyDetails', { surveyId: surveyId }, function(data) {
+                // Re-enable button
+                if (button) {
+                    button.disabled = false;
+                    button.style.opacity = '1';
+                    button.innerHTML = 'Take Survey →';
+                }
+                
                 if (data.success) {
                     currentSurvey = data.survey;
                     responses = {};
                     currentQuestionIndex = 0;
-                    renderSurvey();
+                    
+                    // Check if this is a non-anonymous survey that needs unit collection
+                    if (!currentSurvey.isAnonymous) {
+                        // Show unit selection modal
+                        showUnitModal();
+                    } else {
+                        // Anonymous survey - proceed directly
+                        currentRespondent = null;
+                        showView('survey');
+                        renderSurvey();
+                    }
                 } else {
-                    container.innerHTML = `<div class="error-message">❌ Error: ${data.message}</div>`;
+                    container.innerHTML = '<div class="error-message">Error: ' + data.message + '</div>';
                 }
             });
+        }
+
+// UNIT MODAL FUNCTIONS
+        function showUnitModal() {
+            document.getElementById('unitModal').classList.remove('hidden');
+            document.getElementById('unitSelect').value = '';
+        }
+
+        function cancelUnitSelection() {
+            document.getElementById('unitModal').classList.add('hidden');
+            currentRespondent = null;
+            showView('list');
+        }
+
+        function confirmUnitSelection() {
+            const unitSelect = document.getElementById('unitSelect');
+            const selectedUnit = unitSelect.value;
+            
+            if (!selectedUnit) {
+                alert('Please select your unit number');
+                return;
+            }
+            
+            currentRespondent = selectedUnit;
+            document.getElementById('unitModal').classList.add('hidden');
+            showView('survey');
+            renderSurvey();
         }
 
         // RENDER SURVEY
         function renderSurvey() {
             const survey = currentSurvey;
             
-            // Update header
+            // Update header with mockup styling
             document.getElementById('surveyHeader').innerHTML = `
-                <h2 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 10px; color: #1e293b;">${escapeHtml(survey.title)}</h2>
-                <p style="color: #64748b; margin-bottom: 25px; line-height: 1.6;">${escapeHtml(survey.description || '')}</p>
-                ${survey.isAnonymous ? '<div class="warning-message">🔒 This survey is anonymous. Your responses will not be linked to your identity.</div>' : ''}
+                <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e2e8f0;">
+                    <h2 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 10px; color: #1e293b;">${escapeHtml(survey.title)}</h2>
+                    <p style="color: #64748b; font-size: 1rem; line-height: 1.6;">${escapeHtml(survey.description || '')}</p>
+                    ${survey.isAnonymous ? '<div style="margin-top: 15px; padding: 10px 16px; background: #e0f2fe; color: #0369a1; border-radius: 8px; display: inline-block; font-size: 0.85rem;">🔒 This survey is anonymous. Your responses will not be linked to your identity.</div>' : ''}
+                </div>
             `;
 
             // Update progress
             updateProgress();
             
+            // Calculate total regular questions (excluding section breaks) for numbering
+            const regularQuestions = survey.questions.filter(q => q.questionType !== 'Section Break');
+            const totalRegularQuestions = regularQuestions.length;
+            
+            // Track question number for regular questions only
+            let regularQuestionNumber = 0;
+            
             // Render questions
             const container = document.getElementById('questionsContainer');
-            container.innerHTML = survey.questions.map((question, index) => renderQuestion(question, index)).join('');
+            container.innerHTML = survey.questions.map((question, index) => {
+                // Increment question number only for regular questions
+                if (question.questionType !== 'Section Break') {
+                    regularQuestionNumber++;
+                }
+                return renderQuestion(question, index, regularQuestionNumber, totalRegularQuestions);
+            }).join('');
         }
 
         // RENDER QUESTION
-        function renderQuestion(question, index) {
-            const questionNum = index + 1;
+        function renderQuestion(question, index, questionNum, totalQuestions) {
             
             // Handle Section Break differently - it's not a regular question
             if (question.questionType === 'Section Break') {
@@ -906,17 +1262,32 @@ ENHANCEMENTS:
                         class="text-input textarea" 
                         placeholder="Enter your response..."
                         onchange="updateResponse('${question.questionId}')"
+                        oninput="updateCharCount(this, 500)"
+                        maxlength="500"
                         ${question.isRequired ? 'required' : ''}></textarea>
+                    <div class="char-count">0 / 500 characters</div>
                 `;
             } else if (question.questionType === 'Rating') {
+                // Get rating range from question (default to 1-5)
+                const ratingMin = (question.ratingMin !== undefined && question.ratingMin !== null) ? question.ratingMin : 1;
+                const ratingMax = (question.ratingMax !== undefined && question.ratingMax !== null) ? question.ratingMax : 5;
+                
+                // Build rating array dynamically
+                const ratings = [];
+                for (let i = ratingMin; i <= ratingMax; i++) {
+                    ratings.push(i);
+                }
+                
                 inputHtml = `
-                    <div class="rating-container" id="${question.questionId}_stars">
-                        ${[1, 2, 3, 4, 5].map(star => `
-                            <span class="star" data-value="${star}" onclick="setRating('${question.questionId}', ${star})">★</span>
+                    <div class="rating-scale">
+                        ${ratings.map(rating => `
+                            <div class="rating-option">
+                                <div class="rating-circle" onclick="selectRating('${question.questionId}', ${rating}, this)">${rating}</div>
+                                <div class="rating-label">${getRatingLabel(rating, ratingMin, ratingMax)}</div>
+                            </div>
                         `).join('')}
                     </div>
-                    <div class="rating-label">1 = Poor, 5 = Excellent</div>
-                    <input type="hidden" id="${question.questionId}" name="${question.questionId}" ${question.isRequired ? 'required' : ''}>
+                    <input type="hidden" id="${question.questionId}" ${question.isRequired ? 'required' : ''}>
                 `;
             }
             
@@ -931,7 +1302,7 @@ ENHANCEMENTS:
             
             return `
                 <div class="question-container" data-question-index="${index}">
-                    <div class="question-number">Question ${questionNum} of ${currentSurvey.questions.length}</div>
+                    <div class="question-number">Question ${questionNum} of ${totalQuestions}</div>
                     ${questionHeader}
                     ${inputHtml}
                 </div>
@@ -943,41 +1314,65 @@ ENHANCEMENTS:
             const input = element.querySelector('input');
             
             if (isMultiple) {
+                // For checkboxes, just toggle
                 input.checked = !input.checked;
             } else {
-                // Deselect all other options
+                // For radio buttons, uncheck all others first
                 const container = element.parentElement;
-                container.querySelectorAll('.choice-option').forEach(opt => {
-                    opt.classList.remove('selected');
+                container.querySelectorAll('input[type="radio"]').forEach(radio => {
+                    radio.checked = false;
                 });
                 input.checked = true;
-            }
-            
-            if (input.checked) {
-                element.classList.add('selected');
-            } else {
-                element.classList.remove('selected');
             }
             
             updateResponse(questionId);
         }
 
         // SET RATING
-        function setRating(questionId, rating) {
-            const container = document.getElementById(questionId + '_stars');
-            const stars = container.querySelectorAll('.star');
+        // SELECT RATING
+        function selectRating(questionId, rating, circle) {
+            // Find the rating scale container (parent of parent)
+            const container = circle.parentElement.parentElement;
             
-            stars.forEach((star, index) => {
-                if (index < rating) {
-                    star.classList.add('selected');
-                } else {
-                    star.classList.remove('selected');
-                }
+            // Deselect all circles
+            container.querySelectorAll('.rating-circle').forEach(c => {
+                c.classList.remove('selected');
             });
             
+            // Select the clicked circle
+            circle.classList.add('selected');
+            
+            // Store the rating
             document.getElementById(questionId).value = rating;
             responses[questionId] = rating.toString();
             updateProgress();
+        }
+
+        // GET RATING LABEL
+        function getRatingLabel(rating, min, max) {
+            // For 1-5 scale (satisfaction)
+            if (min === 1 && max === 5) {
+                const labels = {
+                    1: 'Very\nDissatisfied',
+                    2: 'Dissatisfied',
+                    3: 'Neutral',
+                    4: 'Satisfied',
+                    5: 'Very\nSatisfied'
+                };
+                return labels[rating] || '';
+            }
+            
+            // For 0-10 scale (NPS) - only show labels on 0 and 10
+            if (min === 0 && max === 10) {
+                if (rating === 0) return 'Not at all\nlikely';
+                if (rating === 10) return 'Extremely\nlikely';
+                return '';
+            }
+            
+            // For other scales, show min/max labels only
+            if (rating === min) return 'Low';
+            if (rating === max) return 'High';
+            return '';
         }
 
         // UPDATE RESPONSE
@@ -1000,6 +1395,16 @@ ENHANCEMENTS:
             updateProgress();
         }
 
+        // UPDATE CHARACTER COUNT
+        function updateCharCount(textarea, maxLength) {
+            const charCount = textarea.value.length;
+            const counter = textarea.nextElementSibling;
+            if (counter && counter.classList.contains('char-count')) {
+                counter.textContent = `${charCount} / ${maxLength} characters`;
+            }
+            updateResponse(textarea.id);
+        }
+
         // UPDATE PROGRESS
         function updateProgress() {
             if (!currentSurvey || !currentSurvey.questions) return;
@@ -1016,38 +1421,17 @@ ENHANCEMENTS:
             const totalQuestions = regularQuestions.length;
             const percentage = Math.round((answeredCount / totalQuestions) * 100);
             
-            // Update all progress elements
-            document.getElementById('currentQuestion').textContent = answeredCount;
-            document.getElementById('totalQuestions').textContent = totalQuestions;
-            document.getElementById('progressPercentage').textContent = `${percentage}%`;
-            
+            // Update progress bar
             const progressBar = document.getElementById('progressBar');
             if (progressBar) {
                 progressBar.style.width = `${percentage}%`;
             }
             
-            // Add visual feedback for completed questions (skip section breaks)
-            currentSurvey.questions.forEach((question, index) => {
-                // Skip section breaks for visual feedback
-                if (question.questionType === 'Section Break') return;
-                
-                const container = document.querySelector(`[data-question-index="${index}"]`);
-                if (container) {
-                    if (responses[question.questionId] && responses[question.questionId].toString().trim() !== '') {
-                        // Question is answered
-                        container.style.borderLeft = '3px solid #10b981';
-                        container.style.backgroundColor = '#f0fdf4';
-                    } else if (question.isRequired) {
-                        // Required question not answered
-                        container.style.borderLeft = '3px solid #ef4444';
-                        container.style.backgroundColor = '#fef2f2';
-                    } else {
-                        // Optional question not answered
-                        container.style.borderLeft = '3px solid #e2e8f0';
-                        container.style.backgroundColor = '';
-                    }
-                }
-            });
+            // Update progress text
+            const progressText = document.getElementById('progressText');
+            if (progressText) {
+                progressText.textContent = `Question ${answeredCount} of ${totalQuestions}`;
+            }
         }
 
         // SUBMIT SURVEY
@@ -1086,7 +1470,7 @@ ENHANCEMENTS:
                 }));
 
             // Get respondent (unit number for identified surveys)
-            const respondent = currentSurvey.isAnonymous ? 'Anonymous' : 'Resident';
+            const respondent = currentSurvey.isAnonymous ? 'Anonymous' : currentRespondent;
 
             const submitData = {
                 surveyId: currentSurvey.surveyId,
@@ -1178,6 +1562,16 @@ ENHANCEMENTS:
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-AU', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
         }
     </script>
 </body>
