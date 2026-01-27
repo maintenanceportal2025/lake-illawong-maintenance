@@ -4,15 +4,29 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 1.1 (Updated with Preview and Google Forms features)
-LAST UPDATED: [Current Date]
-BACKEND API: SurveyModule.js V1.1
+VERSION: 1.7.2 (Multiple responses always enabled)
+LAST UPDATED: January 27, 2026
+BACKEND API: SurveyModule.js V1.2.1
 ENHANCEMENTS:
 - Survey preview functionality
 - Section break support
 - Progress bar toggle
 - Enhanced confirmation settings
 - Improved question descriptions
+- FIXED: Dropdown hover stability (removed gap between button and menu)
+- NEW: Enhanced visual design with gradients, depth, and better color palette
+- NEW: Improved card styling with subtle shadows and hover effects
+- NEW: Better status badges with gradient backgrounds
+- NEW: Enhanced buttons and meta items with modern styling
+- FIXED: Question numbering excludes section breaks (preview, results, all views)
+- NEW V1.6: Configurable rating scales (1-5 Satisfaction or 0-10 NPS)
+- NEW V1.6: Rating scale selector in question form (saved to ratingMin/ratingMax)
+- NEW V1.7: Click-only dropdowns (no hover) for consistency across all cards
+- NEW V1.7: Portal pattern - dropdown moves to <body> to escape stacking contexts
+- NEW V1.7: Visual feedback on Save button (loading, success, error states)
+- CHANGE V1.7.2: Removed "Allow multiple responses" checkbox - always enabled
+- CLEANED: All console.log/warn/error debug statements removed for production
+- BUGFIX V1.7.1: Improved null handling for ratingMin/ratingMax in preview
 =====================================================================
 -->
 <!DOCTYPE html>
@@ -159,10 +173,10 @@ ENHANCEMENTS:
 
         /* VIEWS */
         .view-container {
-            background: white;
+            background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
             border-radius: 16px;
             padding: 30px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
             min-height: 400px;
         }
 
@@ -175,20 +189,30 @@ ENHANCEMENTS:
         }
 
         .filter-btn {
-            background: #f1f5f9;
+            background: linear-gradient(135deg, #ffffff, #f8fafc);
             color: #64748b;
             border: 2px solid #e2e8f0;
-            padding: 8px 20px;
-            border-radius: 8px;
+            padding: 10px 24px;
+            border-radius: 10px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+        }
+
+        .filter-btn:hover {
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            border-color: #cbd5e1;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
         }
 
         .filter-btn.active {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
             border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            transform: translateY(-1px);
         }
 
         .survey-grid {
@@ -198,18 +222,28 @@ ENHANCEMENTS:
         }
 
         .survey-card {
-            background: white;
-            border: 2px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 20px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 2px solid transparent;
+            border-radius: 16px;
+            padding: 24px;
             transition: all 0.3s ease;
             cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 
+                        0 0 0 1px rgba(102, 126, 234, 0.1);
+            position: relative;
+            overflow: visible;
+            z-index: 1;
+        }
+
+        .survey-card:has(.dropdown-menu.show) {
+            z-index: 100;
         }
 
         .survey-card:hover {
-            border-color: #667eea;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.15);
+            border-color: rgba(102, 126, 234, 0.3);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15),
+                        0 0 0 1px rgba(102, 126, 234, 0.2);
         }
 
         .survey-card-header {
@@ -220,113 +254,148 @@ ENHANCEMENTS:
         }
 
         .survey-title {
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             font-weight: 700;
             color: #1e293b;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
+            line-height: 1.3;
+            background: linear-gradient(135deg, #1e293b, #475569);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
 
         .survey-description {
             color: #64748b;
-            font-size: 0.9rem;
-            margin-bottom: 15px;
-            line-height: 1.5;
+            font-size: 0.95rem;
+            margin-bottom: 16px;
+            line-height: 1.6;
+            padding-left: 12px;
+            border-left: 3px solid #e2e8f0;
         }
 
         .survey-meta {
             display: flex;
             flex-wrap: wrap;
-            gap: 12px;
-            margin-bottom: 15px;
+            gap: 10px;
+            margin-bottom: 16px;
             font-size: 0.85rem;
-            color: #64748b;
         }
 
         .survey-meta-item {
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 6px;
+            background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+            padding: 6px 12px;
+            border-radius: 8px;
+            color: #475569;
+            font-weight: 500;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
 
         .survey-actions {
             display: flex;
-            gap: 8px;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #e2e8f0;
+            gap: 10px;
+            margin-top: 18px;
+            padding-top: 18px;
+            border-top: 2px solid #e2e8f0;
+            background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.03), transparent);
+            overflow: visible;
         }
 
         .survey-actions button {
-            padding: 8px 12px;
-            border-radius: 6px;
+            padding: 10px 16px;
+            border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
             font-size: 0.85rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
         }
 
         .btn-preview {
-            background: #f0f9ff;
+            background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
             color: #0369a1;
             border: 1px solid #bae6fd;
         }
 
         .btn-preview:hover {
-            background: #e0f2fe;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 5px rgba(3, 105, 161, 0.2);
+            background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(3, 105, 161, 0.2);
         }
 
         .btn-view {
-            background: #f1f5f9;
+            background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
             color: #667eea;
-            border: 1px solid #e2e8f0;
+            border: 1px solid #cbd5e1;
         }
 
         .btn-view:hover {
-            background: #e2e8f0;
+            background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.2);
         }
 
         .btn-activate {
-            background: #d1fae5;
-            color: #047857;
-            border: 1px solid #10b981;
+            background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+            color: #065f46;
+            border: 1px solid #6ee7b7;
+        }
+
+        .btn-activate:hover {
+            background: linear-gradient(135deg, #a7f3d0, #6ee7b7);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
         }
 
         .btn-close {
-            background: #fee2e2;
-            color: #dc2626;
-            border: 1px solid #ef4444;
+            background: linear-gradient(135deg, #fee2e2, #fecaca);
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+
+        .btn-close:hover {
+            background: linear-gradient(135deg, #fecaca, #fca5a5);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
         }
 
         /* STATUS BADGES */
         .status-badge {
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 0.75rem;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.7rem;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: 1px solid;
         }
 
         .status-draft {
-            background: #f3f4f6;
-            color: #6b7280;
+            background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+            color: #4b5563;
+            border-color: #d1d5db;
         }
 
         .status-active {
-            background: #d1fae5;
-            color: #047857;
+            background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+            color: #065f46;
+            border-color: #6ee7b7;
         }
 
         .status-closed {
-            background: #fee2e2;
-            color: #dc2626;
+            background: linear-gradient(135deg, #fee2e2, #fecaca);
+            color: #991b1b;
+            border-color: #fca5a5;
         }
 
         .status-archived {
-            background: #fde2e8;
-            color: #be185d;
+            background: linear-gradient(135deg, #fce7f3, #fbcfe8);
+            color: #9f1239;
+            border-color: #f9a8d4;
         }
 
         /* CREATE SURVEY FORM */
@@ -349,6 +418,14 @@ ENHANCEMENTS:
 
         .form-group {
             margin-bottom: 20px;
+        }
+
+        .rating-scale-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
         }
 
         .form-label {
@@ -523,7 +600,7 @@ ENHANCEMENTS:
 
         .results-summary {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmin(200px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -653,6 +730,31 @@ ENHANCEMENTS:
             margin-top: 10px;
         }
 
+/* EDIT BUTTON STYLES */
+.btn-edit {
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.85rem;
+}
+
+.btn-edit:hover {
+    background: #bae6fd;
+    border-color: #7dd3fc;
+}
+
+.btn-edit:disabled {
+    background: #f3f4f6;
+    color: #9ca3af;
+    border-color: #e5e7eb;
+    cursor: not-allowed;
+}
+
         /* SECTION BREAK STYLES */
         .section-break {
             background: linear-gradient(135deg, #667eea, #764ba2);
@@ -734,25 +836,33 @@ ENHANCEMENTS:
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #64748b;
+            background: linear-gradient(135deg, #f8fafc, #ffffff);
+            border-radius: 16px;
+            border: 2px dashed #cbd5e1;
         }
 
         .empty-state-icon {
-            font-size: 4rem;
+            font-size: 5rem;
             margin-bottom: 20px;
-            opacity: 0.3;
+            opacity: 0.5;
+            filter: grayscale(30%);
         }
 
         .empty-state-title {
-            font-size: 1.5rem;
+            font-size: 1.6rem;
             font-weight: 700;
-            color: #1e293b;
-            margin-bottom: 10px;
+            background: linear-gradient(135deg, #1e293b, #475569);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
         }
 
         .empty-state-description {
-            font-size: 1rem;
-            margin-bottom: 25px;
+            font-size: 1.05rem;
+            margin-bottom: 30px;
+            color: #64748b;
+            line-height: 1.6;
         }
 
         /* MODAL */
@@ -766,7 +876,8 @@ ENHANCEMENTS:
     z-index: 9999 !important;
   }
   
-  .preview-modal {
+  /* FIX PREVIEW MODAL SCROLL */
+.preview-modal {
     position: relative !important;
     background: white !important;
     border-radius: 8px !important;
@@ -774,12 +885,41 @@ ENHANCEMENTS:
     padding: 20px !important;
     width: 90% !important;
     max-width: 800px !important;
-  }
+    max-height: 85vh !important;
+    overflow-y: auto !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2) !important;
+}
+
+/* Make sure content can scroll */
+#previewContent {
+    max-height: calc(85vh - 100px);
+    overflow-y: auto;
+    padding-right: 5px;
+}
+
+/* Custom scrollbar styling */
+.preview-modal::-webkit-scrollbar {
+    width: 8px;
+}
+
+.preview-modal::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.preview-modal::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.preview-modal::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+}
   
   .preview-close {
   position: absolute !important;
-  top: 15px !important;        /* Adjusted position */
-  right: 15px !important;      /* Adjusted position */
+  top: 15px !important;
+  right: 15px !important;
   z-index: 10000 !important;
   margin: 0 !important;
   
@@ -896,29 +1036,126 @@ ENHANCEMENTS:
     cursor: not-allowed;
 }
 
-/* DELETE BUTTON STYLES */
-.btn-delete-survey {
-    background: #fee2e2;
-    color: #dc2626;
-    border: 1px solid #fecaca;
-    padding: 8px 12px;
-    border-radius: 6px;
+/* ACTIONS DROPDOWN - FIXED HOVER BEHAVIOR */
+.actions-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.btn-actions {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
     font-size: 0.85rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
-.btn-delete-survey:hover {
-    background: #fecaca;
-    border-color: #f87171;
+.btn-actions:hover {
+    background: linear-gradient(135deg, #4b5563, #374151);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-.btn-delete-survey:disabled {
-    background: #f3f4f6;
+/* FIXED: Removed gap and added invisible bridge to prevent hover loss */
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: linear-gradient(135deg, #ffffff, #f8fafc);
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    min-width: 220px;
+    max-height: 400px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 9999 !important;
+    display: none;
+    margin-top: 2px;
+}
+
+/* Invisible bridge between button and menu - prevents hover gap issues */
+.actions-dropdown::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 5px;
+    background: transparent;
+    display: block;
+}
+
+/* REMOVED: Hover to show dropdown - using click only for consistency */
+
+.dropdown-menu.show {
+    display: block;
+}
+
+.dropdown-menu button {
+    display: block;
+    width: 100%;
+    padding: 12px 18px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: #374151;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-bottom: 1px solid #f1f5f9;
+    transition: all 0.2s ease;
+}
+
+.dropdown-menu button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+    color: #1e40af;
+    padding-left: 22px;
+}
+
+.dropdown-menu button:disabled {
     color: #9ca3af;
-    border-color: #e5e7eb;
     cursor: not-allowed;
+    background: #fafafa;
+    opacity: 0.6;
+}
+
+.dropdown-menu button.danger {
+    color: #dc2626;
+}
+
+.dropdown-menu button.danger:hover:not(:disabled) {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+}
+
+.dropdown-menu button.success {
+    color: #059669;
+}
+
+.dropdown-menu button.success:hover:not(:disabled) {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
+}
+
+.dropdown-menu button.warning {
+    color: #d97706;
+}
+
+.dropdown-menu button.warning:hover:not(:disabled) {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    color: #92400e;
+}
+
+.dropdown-divider {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
+    margin: 8px 0;
 }
 
     </style>
@@ -1005,10 +1242,7 @@ ENHANCEMENTS:
                         <label for="isAnonymous">Anonymous responses (recommended for honest feedback)</label>
                     </div>
 
-                    <div class="form-checkbox-group">
-                        <input type="checkbox" id="allowMultiple" class="form-checkbox">
-                        <label for="allowMultiple">Allow multiple responses per resident</label>
-                    </div>
+                    
                 </div>
 
                 <div class="form-group">
@@ -1053,9 +1287,9 @@ ENHANCEMENTS:
             </div>
 
             <div class="form-section" style="margin-top: 30px;">
-                <button class="btn-primary" onclick="saveSurvey()" style="width: 200px;">
-                    💾 Save Survey
-                </button>
+                <button class="btn-primary" id="saveSurveyBtn" onclick="saveSurvey()" style="width: 200px;">
+    💾 Save Survey
+</button>
                 <button class="btn-secondary" onclick="showView('list')" style="width: 150px; margin-left: 12px;">
                     Cancel
                 </button>
@@ -1139,74 +1373,87 @@ ENHANCEMENTS:
         }
 
         // RENDER SURVEYS
-        function renderSurveys() {
-            const container = document.getElementById('surveyList');
+function renderSurveys() {
+    const container = document.getElementById('surveyList');
+    
+    let surveys = allSurveys;
+    if (currentFilter !== 'all') {
+        surveys = allSurveys.filter(s => s.status === currentFilter);
+    }
+
+    if (surveys.length === 0) {
+        const filterText = currentFilter === 'all' ? 'surveys' : `${currentFilter.toLowerCase()} surveys`;
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📊</div>
+                <div class="empty-state-title">No ${filterText} found</div>
+                <div class="empty-state-description">Create your first survey to get started</div>
+                <button class="btn-primary" onclick="showView('create')">➕ Create Survey</button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = surveys.map(survey => {
+        // Build status buttons outside template to avoid nested template issues
+        const statusButtons = survey.status === 'Draft' 
+            ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active'); this.closest('.dropdown-menu').classList.remove('show');" class="success">▶️ Activate Survey</button>`
+            : survey.status === 'Active'
+            ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Closed'); this.closest('.dropdown-menu').classList.remove('show');" class="warning">⏸️ Close Survey</button>`
+            : '';
+        
+        return `
+        <div class="survey-card">
+            <div class="survey-card-header">
+                <div class="survey-title">${escapeHtml(survey.title)}</div>
+                <span class="status-badge status-${survey.status.toLowerCase()}">${survey.status}</span>
+            </div>
+            <div class="survey-description">${escapeHtml(survey.description || 'No description')}</div>
+            <div class="survey-meta">
+                <div class="survey-meta-item">
+                    📅 Created: ${formatDate(survey.createdDate)}
+                </div>
+                <div class="survey-meta-item">
+                    📊 ${survey.totalResponses} responses
+                </div>
+                ${survey.isAnonymous ? '<div class="survey-meta-item">🔒 Anonymous</div>' : ''}
+            </div>
             
-            let surveys = allSurveys;
-            if (currentFilter !== 'all') {
-                surveys = allSurveys.filter(s => s.status === currentFilter);
-            }
-
-            if (surveys.length === 0) {
-                const filterText = currentFilter === 'all' ? 'surveys' : `${currentFilter.toLowerCase()} surveys`;
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📊</div>
-                        <div class="empty-state-title">No ${filterText} found</div>
-                        <div class="empty-state-description">Create your first survey to get started</div>
-                        <button class="btn-primary" onclick="showView('create')">➕ Create Survey</button>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = surveys.map(survey => `
-                <div class="survey-card">
-                    <div class="survey-card-header">
-                        <div class="survey-title">${escapeHtml(survey.title)}</div>
-                        <span class="status-badge status-${survey.status.toLowerCase()}">${survey.status}</span>
-                    </div>
-                    <div class="survey-description">${escapeHtml(survey.description || 'No description')}</div>
-                    <div class="survey-meta">
-                        <div class="survey-meta-item">
-                            📅 Created: ${formatDate(survey.createdDate)}
-                        </div>
-                        <div class="survey-meta-item">
-                            📊 ${survey.totalResponses} responses
-                        </div>
-                        ${survey.isAnonymous ? '<div class="survey-meta-item">🔒 Anonymous</div>' : ''}
-                    </div>
-                    
-                    <!-- ADDED PREVIEW BUTTON HERE -->
-                    <div class="survey-actions">
-                        <button class="btn-preview" onclick="previewSurvey('${survey.surveyId}')">
-                            👁️ Preview
+            <!-- SURVEY ACTIONS WITH DROPDOWN -->
+            <div class="survey-actions">
+                <!-- Preview button stays outside for quick access -->
+                <button class="btn-preview" onclick="previewSurvey('${survey.surveyId}')">
+                    👁️ Preview
+                </button>
+                
+                <!-- All other actions in dropdown -->
+                <div class="actions-dropdown">
+                    <button class="btn-actions" onclick="toggleDropdown(event, this)">
+                        ⚙️ Actions ▼
+                    </button>
+                    <div class="dropdown-menu" onclick="event.stopPropagation()">
+                        <button onclick="editSurvey('${survey.surveyId}', this); this.closest('.dropdown-menu').classList.remove('show');" ${survey.status !== 'Draft' ? 'disabled' : ''}>
+                            ✏️ Edit Survey
                         </button>
-
-<!-- ADD THIS DELETE BUTTON -->
-    <button class="btn-delete-survey" 
-        onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', ${survey.totalResponses})"
-        ${survey.totalResponses > 0 ? 'disabled' : ''}>
-    🗑️ ${survey.totalResponses > 0 ? 'Archive' : 'Delete'}
-</button>
-
-                        <button class="btn-view" onclick="viewResults('${survey.surveyId}')">
+                        <button onclick="shareSurvey('${survey.surveyId}'); this.closest('.dropdown-menu').classList.remove('show');">
+                            🔗 Share Link
+                        </button>
+                        <button onclick="viewResults('${survey.surveyId}'); this.closest('.dropdown-menu').classList.remove('show');">
                             📈 View Results
                         </button>
-                        ${survey.status === 'Draft' ? `
-                            <button class="btn-activate" onclick="changeSurveyStatus('${survey.surveyId}', 'Active')">
-                                ▶️ Activate
-                            </button>
-                        ` : ''}
-                        ${survey.status === 'Active' ? `
-                            <button class="btn-close" onclick="changeSurveyStatus('${survey.surveyId}', 'Closed')">
-                                ⏸️ Close
-                            </button>
-                        ` : ''}
+                        <div class="dropdown-divider"></div>
+                        <button onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', ${survey.totalResponses}); this.closest('.dropdown-menu').classList.remove('show');"
+                                ${survey.totalResponses > 0 ? 'disabled' : ''}
+                                class="danger">
+                            🗑️ ${survey.totalResponses > 0 ? 'Archive Survey' : 'Delete Survey'}
+                        </button>
+                        ${statusButtons}
                     </div>
                 </div>
-            `).join('');
-        }
+            </div>
+        </div>`;
+    }).join('');
+} 
 
         // FILTER SURVEYS
         function filterSurveys(filter) {
@@ -1223,23 +1470,124 @@ ENHANCEMENTS:
             renderSurveys();
         }
 
+        // TOGGLE DROPDOWN (Click-only for consistency)
+        let currentOpenDropdown = null;
+        
+        function toggleDropdown(event, button) {
+            event.stopPropagation();
+            
+            const dropdown = button.nextElementSibling;
+            
+            // If clicking on already-open dropdown, close it
+            if (dropdown.classList.contains('show')) {
+                closeDropdown(dropdown);
+            } else {
+                openDropdown(button, dropdown);
+            }
+        }
+        
+        function openDropdown(button, dropdown) {
+            // Close any other open dropdowns first
+            if (currentOpenDropdown && currentOpenDropdown !== dropdown) {
+                closeDropdown(currentOpenDropdown);
+            }
+            
+            dropdown.classList.add('show');
+            currentOpenDropdown = dropdown;
+            
+            // Store original parent reference
+            const actionsDropdown = button.parentElement;
+            const dropdownId = 'dropdown-' + Date.now();
+            actionsDropdown.dataset.dropdownId = dropdownId;
+            dropdown.dataset.originalParent = dropdownId;
+            
+            // Calculate position before moving
+            const rect = button.getBoundingClientRect();
+            
+            // Move to body (portal pattern)
+            document.body.appendChild(dropdown);
+            
+            // Position using fixed
+            dropdown.style.position = 'fixed';
+            
+            // Check if there's enough space below (estimate 200px for dropdown height)
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const dropdownHeight = 200; // Approximate height
+            
+            if (spaceBelow < dropdownHeight) {
+                // Not enough space below - position above
+                dropdown.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+                dropdown.style.top = 'auto';
+            } else {
+                // Enough space below - position normally
+                dropdown.style.top = (rect.bottom + 4) + 'px';
+                dropdown.style.bottom = 'auto';
+            }
+            
+            dropdown.style.left = rect.left + 'px';
+            dropdown.style.width = '220px';
+        }
+        
+        function closeDropdown(dropdown) {
+            dropdown.classList.remove('show');
+            
+            // Return to original parent
+            const originalParent = dropdown.dataset.originalParent;
+            if (originalParent) {
+                const parent = document.querySelector(`[data-dropdown-id="${originalParent}"]`);
+                if (parent) {
+                    parent.appendChild(dropdown);
+                }
+            }
+            dropdown.style.position = 'absolute';
+            dropdown.style.top = '';
+            dropdown.style.left = '';
+            
+            if (currentOpenDropdown === dropdown) {
+                currentOpenDropdown = null;
+            }
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function() {
+            if (currentOpenDropdown) {
+                closeDropdown(currentOpenDropdown);
+            }
+        });
+
         // CREATE SURVEY FORM
         function resetCreateForm() {
-            document.getElementById('surveyTitle').value = '';
-            document.getElementById('surveyDescription').value = '';
-            document.getElementById('isAnonymous').checked = true;
-            document.getElementById('allowMultiple').checked = false;
-            document.getElementById('thankYouMessage').value = 'Thank you for taking the time to provide your valuable feedback!';
-            document.getElementById('confirmationMessage').value = '';
-            document.getElementById('allowAnotherResponse').checked = false;
-            document.getElementById('showResponseSummary').checked = false;
-            document.getElementById('questionsContainer').innerHTML = '';
-            document.getElementById('createMessage').innerHTML = '';
-            questionCount = 0;
-            
-            // Add first question
-            addQuestion();
-        }
+    // Reset form fields
+    document.getElementById('surveyTitle').value = '';
+    document.getElementById('surveyDescription').value = '';
+    document.getElementById('isAnonymous').checked = true;
+    
+    document.getElementById('thankYouMessage').value = 'Thank you for taking the time to provide your valuable feedback!';
+    document.getElementById('confirmationMessage').value = '';
+    document.getElementById('allowAnotherResponse').checked = false;
+    document.getElementById('showResponseSummary').checked = false;
+    document.getElementById('questionsContainer').innerHTML = '';
+    document.getElementById('createMessage').innerHTML = '';
+// Reset save button to original state
+    const saveBtn = document.getElementById('saveSurveyBtn');
+    if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.style.background = '';
+        saveBtn.style.cursor = '';
+        saveBtn.innerHTML = '💾 Save Changes';
+    }
+    
+    // Reset editing state
+    currentEditingSurveyId = null;
+    questionCount = 0;
+    
+    // Reset form title
+    document.querySelector('#createView .section-title').textContent = 'Create New Survey';
+    document.querySelector('#createView .section-description').textContent = 'Build a community survey to gather feedback from residents';
+    
+    // Add first question
+    addQuestion();
+}
 
         // ADD QUESTION
         function addQuestion() {
@@ -1291,6 +1639,17 @@ ENHANCEMENTS:
                     <button class="btn-add-option" onclick="addOption(${questionCount})">+ Add Option</button>
                 </div>
 
+                <div class="rating-scale-container" style="display: block;">
+                    <label class="form-label">Rating Scale</label>
+                    <select class="form-select rating-scale-type">
+                        <option value="1-5">1-5 (Satisfaction)</option>
+                        <option value="0-10">0-10 (NPS / Net Promoter Score)</option>
+                    </select>
+                    <div style="margin-top: 8px; font-size: 0.85rem; color: #64748b;">
+                        Choose the rating scale for this question
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label class="form-label">Help Text (optional)</label>
                     <input type="text" class="form-input question-help" placeholder="Additional guidance for respondents...">
@@ -1324,9 +1683,14 @@ ENHANCEMENTS:
             const card = document.querySelector(`.question-card[data-question-id="${questionId}"]`);
             const type = card.querySelector('.question-type').value;
             const optionsContainer = card.querySelector('.options-container');
+            const ratingScaleContainer = card.querySelector('.rating-scale-container');
             const questionText = card.querySelector('.question-text');
             const helpText = card.querySelector('.question-help');
             const requiredCheckbox = card.querySelector('.question-required');
+            
+            // Hide both by default
+            if (optionsContainer) optionsContainer.style.display = 'none';
+            if (ratingScaleContainer) ratingScaleContainer.style.display = 'none';
             
             if (type === 'Single Choice' || type === 'Multiple Choice') {
                 optionsContainer.style.display = 'block';
@@ -1347,6 +1711,13 @@ ENHANCEMENTS:
                 `;
                 optionsContainer.querySelector('.btn-add-option').style.display = 'none';
                 questionText.placeholder = "Enter your question...";
+                helpText.placeholder = "Additional guidance for respondents...";
+                requiredCheckbox.disabled = false;
+                requiredCheckbox.parentElement.style.opacity = '1';
+            } else if (type === 'Rating') {
+                // Show rating scale configuration
+                if (ratingScaleContainer) ratingScaleContainer.style.display = 'block';
+                questionText.placeholder = "Enter your question (e.g., 'How satisfied are you...?')";
                 helpText.placeholder = "Additional guidance for respondents...";
                 requiredCheckbox.disabled = false;
                 requiredCheckbox.parentElement.style.opacity = '1';
@@ -1413,102 +1784,229 @@ ENHANCEMENTS:
             document.head.appendChild(script);
         }
 
-        // SAVE SURVEY
         function saveSurvey() {
-            const messageDiv = document.getElementById('createMessage');
-            messageDiv.innerHTML = '';
+    const messageDiv = document.getElementById('createMessage');
+    messageDiv.innerHTML = '';
 
-            // Validate
-            const title = document.getElementById('surveyTitle').value.trim();
-            if (!title) {
-                messageDiv.innerHTML = '<div class="error-message">❌ Please enter a survey title</div>';
-                return;
-            }
+    // Validate title
+    const title = document.getElementById('surveyTitle').value.trim();
+    if (!title) {
+        messageDiv.innerHTML = '<div class="error-message">❌ Please enter a survey title</div>';
+        return;
+    }
 
-            const questionCards = document.querySelectorAll('.question-card');
-            if (questionCards.length === 0) {
-                messageDiv.innerHTML = '<div class="error-message">❌ Please add at least one question</div>';
-                return;
-            }
+    const questionCards = document.querySelectorAll('.question-card');
+    if (questionCards.length === 0) {
+        messageDiv.innerHTML = '<div class="error-message">❌ Please add at least one question</div>';
+        return;
+    }
 
-            // Build questions array
-            const questions = [];
-            let hasError = false;
+    // Build questions array
+    const questions = [];
+    let hasError = false;
 
-            questionCards.forEach((card, index) => {
-                const questionText = card.querySelector('.question-text').value.trim();
-                const questionType = card.querySelector('.question-type').value;
-                const helpText = card.querySelector('.question-help').value.trim();
-                const isRequired = card.querySelector('.question-required').checked;
+    questionCards.forEach((card, index) => {
+        const questionText = card.querySelector('.question-text').value.trim();
+        const questionType = card.querySelector('.question-type').value;
+        const helpText = card.querySelector('.question-help').value.trim();
+        const isRequired = card.querySelector('.question-required').checked;
 
-                if (!questionText) {
-                    messageDiv.innerHTML = `<div class="error-message">❌ Question ${index + 1} is missing text</div>`;
-                    hasError = true;
-                    return;
-                }
-
-                const question = {
-                    questionText: questionText,
-                    questionType: questionType,
-                    isRequired: isRequired,
-                    helpText: helpText,
-                    options: []
-                };
-
-                // Get options for choice questions (skip for section breaks)
-                if (questionType === 'Single Choice' || questionType === 'Multiple Choice' || questionType === 'Yes/No') {
-                    const optionInputs = card.querySelectorAll('.option-input');
-                    optionInputs.forEach(input => {
-                        const optionText = input.value.trim();
-                        if (optionText) {
-                            question.options.push(optionText);
-                        }
-                    });
-
-                    if (question.options.length < 2 && questionType !== 'Yes/No') {
-                        messageDiv.innerHTML = `<div class="error-message">❌ Question ${index + 1} needs at least 2 options</div>`;
-                        hasError = true;
-                        return;
-                    }
-                }
-
-                questions.push(question);
-            });
-
-            if (hasError) return;
-
-            // Build survey data
-            const surveyData = {
-                title: title,
-                description: document.getElementById('surveyDescription').value.trim(),
-                createdBy: 'Admin',
-                questions: questions,
-                settings: {
-                    targetAudience: 'All Residents',
-                    isAnonymous: document.getElementById('isAnonymous').checked,
-                    allowMultipleResponses: document.getElementById('allowMultiple').checked,
-                    thankYouMessage: document.getElementById('thankYouMessage').value.trim(),
-                    confirmationMessage: document.getElementById('confirmationMessage').value.trim(),
-                    allowAnotherResponse: document.getElementById('allowAnotherResponse').checked,
-                    showResponseSummary: document.getElementById('showResponseSummary').checked
-                }
-            };
-
-            // Show loading
-            messageDiv.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div> Creating survey...</div>';
-
-            // Call via JSONP
-            callAPI('createSurvey', surveyData, function(result) {
-                if (result.success) {
-                    messageDiv.innerHTML = `<div class="success-message">✅ Survey created successfully!</div>`;
-                    setTimeout(() => {
-                        showView('list');
-                    }, 1500);
-                } else {
-                    messageDiv.innerHTML = `<div class="error-message">❌ Error: ${result.message || result.error}</div>`;
-                }
-            });
+        if (!questionText) {
+            messageDiv.innerHTML = `<div class="error-message">❌ Question ${index + 1} is missing text</div>`;
+            hasError = true;
+            return;
         }
+
+        const question = {
+            questionText: questionText,
+            questionType: questionType,
+            isRequired: isRequired,
+            helpText: helpText,
+            options: []
+        };
+
+        // Get rating scale for Rating questions
+        if (questionType === 'Rating') {
+            const ratingScaleType = card.querySelector('.rating-scale-type');
+            if (ratingScaleType) {
+                const scaleValue = ratingScaleType.value;
+                if (scaleValue === '0-10') {
+                    question.ratingMin = 0;
+                    question.ratingMax = 10;
+                } else {
+                    question.ratingMin = 1;
+                    question.ratingMax = 5;
+                }
+            } else {
+                // Default to 1-5 if not found
+                question.ratingMin = 1;
+                question.ratingMax = 5;
+            }
+        }
+
+        // Get options for choice questions
+        if (questionType === 'Single Choice' || questionType === 'Multiple Choice' || questionType === 'Yes/No') {
+            const optionInputs = card.querySelectorAll('.option-input');
+            optionInputs.forEach(input => {
+                const optionText = input.value.trim();
+                if (optionText) {
+                    question.options.push(optionText);
+                }
+            });
+
+            if (question.options.length < 2 && questionType !== 'Yes/No') {
+                messageDiv.innerHTML = `<div class="error-message">❌ Question ${index + 1} needs at least 2 options</div>`;
+                hasError = true;
+                return;
+            }
+        }
+
+        questions.push(question);
+    });
+
+    if (hasError) return;
+
+    // Determine if creating or updating
+    const isUpdate = currentEditingSurveyId !== null;
+    
+    // Get the save button and add visual feedback
+    const saveBtn = document.getElementById('saveSurveyBtn');
+    const originalBtnText = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.style.background = '#94a3b8';
+    saveBtn.style.cursor = 'not-allowed';
+    saveBtn.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <div style="width: 16px; height: 16px; border: 3px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span>${isUpdate ? 'Saving Changes...' : 'Creating Survey...'}</span>
+        </div>
+    `;
+    
+    // Visual feedback in message area
+    messageDiv.innerHTML = `
+        <div style="background: #f0f9ff; border: 2px solid #bae6fd; color: #0369a1; padding: 15px; border-radius: 8px; display: flex; align-items: center; gap: 10px;">
+            <div style="width: 20px; height: 20px; border: 3px solid #bae6fd; border-top-color: #0369a1; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <div>${isUpdate ? 'Updating survey...' : 'Creating survey...'}</div>
+        </div>
+    `;
+
+    // Build survey data
+    const surveyData = {
+        title: title,
+        description: document.getElementById('surveyDescription').value.trim(),
+        questions: questions,
+        settings: {
+            targetAudience: 'All Residents',
+            isAnonymous: document.getElementById('isAnonymous').checked,
+            allowMultipleResponses: true,
+            thankYouMessage: document.getElementById('thankYouMessage').value.trim(),
+            confirmationMessage: document.getElementById('confirmationMessage').value.trim(),
+            allowAnotherResponse: document.getElementById('allowAnotherResponse').checked,
+            showResponseSummary: document.getElementById('showResponseSummary').checked
+        }
+    };
+
+    if (isUpdate) {
+        surveyData.surveyId = currentEditingSurveyId;
+        surveyData.updates = {
+            title: title,
+            description: document.getElementById('surveyDescription').value.trim(),
+            thankYouMessage: document.getElementById('thankYouMessage').value.trim(),
+            confirmationMessage: document.getElementById('confirmationMessage').value.trim(),
+            allowAnotherResponse: document.getElementById('allowAnotherResponse').checked,
+            showResponseSummary: document.getElementById('showResponseSummary').checked
+        };
+    } else {
+        surveyData.createdBy = 'Admin';
+    }
+
+    const action = isUpdate ? 'updateSurvey' : 'createSurvey';
+    
+    callAPI(action, surveyData, function(result) {
+        if (result.success) {
+            // Success state - green button
+            saveBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+            saveBtn.style.cursor = 'pointer';
+            saveBtn.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                    <span>✅</span>
+                    <span>${isUpdate ? 'Changes Saved!' : 'Survey Created!'}</span>
+                </div>
+            `;
+            
+            messageDiv.innerHTML = `
+                <div style="background: #d1fae5; border: 2px solid #10b981; color: #047857; padding: 15px; border-radius: 8px;">
+                    ✅ Survey ${isUpdate ? 'updated' : 'created'} successfully!
+                </div>
+            `;
+            
+            setTimeout(() => {
+                currentEditingSurveyId = null;
+                resetCreateForm();
+                showView('list');
+            }, 2000);
+        } else {
+            // Error state - red button
+            saveBtn.disabled = false;
+            saveBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+            saveBtn.style.cursor = 'pointer';
+            saveBtn.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                    <span>❌</span>
+                    <span>Save Failed</span>
+                </div>
+            `;
+            
+            messageDiv.innerHTML = `
+                <div style="background: #fee2e2; border: 2px solid #ef4444; color: #dc2626; padding: 15px; border-radius: 8px;">
+                    ❌ Error: ${result.message || result.error}
+                </div>
+            `;
+            
+            // Restore button after 3 seconds
+            setTimeout(() => {
+                saveBtn.style.background = '';
+                saveBtn.innerHTML = originalBtnText;
+            }, 3000);
+        }
+    });
+}
+
+
+// Helper function for messages
+function showMessage(text, type = 'info') {
+    const messageDiv = document.getElementById('createMessage');
+    const colors = {
+        success: '#d1fae5',
+        error: '#fee2e2',
+        saving: '#f0f9ff',
+        info: '#f1f5f9'
+    };
+    const borders = {
+        success: '#10b981',
+        error: '#ef4444',
+        saving: '#0ea5e9',
+        info: '#94a3b8'
+    };
+    
+    messageDiv.innerHTML = `
+        <div style="
+            background: ${colors[type] || colors.info};
+            border: 2px solid ${borders[type] || borders.info};
+            color: ${type === 'saving' ? '#0369a1' : type === 'success' ? '#047857' : type === 'error' ? '#dc2626' : '#334155'};
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: fadeIn 0.3s ease-out;
+        ">
+            ${type === 'saving' ? '<div class="loading-spinner"></div>' : ''}
+            <div>${text}</div>
+        </div>
+    `;
+}
 
         // CHANGE SURVEY STATUS
         function changeSurveyStatus(surveyId, newStatus) {
@@ -1586,6 +2084,13 @@ ENHANCEMENTS:
         function renderPreview(survey) {
             const container = document.getElementById('previewContent');
             
+            // Calculate total regular questions (excluding section breaks)
+            const regularQuestions = survey.questions.filter(q => q.questionType !== 'Section Break');
+            const totalRegularQuestions = regularQuestions.length;
+            
+            // Track question number for regular questions only
+            let regularQuestionNumber = 0;
+            
             const surveyHtml = `
                 <div style="margin-bottom: 30px; padding: 20px; background: #f8fafc; border-radius: 12px;">
                     <h2 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 10px; color: #1e293b;">${escapeHtml(survey.title)}</h2>
@@ -1599,27 +2104,40 @@ ENHANCEMENTS:
                 <div style="background: white; border: 2px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                         <span style="color: #64748b;">Progress</span>
-                        <span style="font-weight: 600; color: #667eea;">0/${survey.questions.filter(q => q.questionType !== 'Section Break').length}</span>
+                        <span style="font-weight: 600; color: #667eea;">0/${totalRegularQuestions}</span>
                     </div>
                     <div style="background: #e2e8f0; height: 8px; border-radius: 4px; overflow: hidden;">
                         <div style="background: linear-gradient(90deg, #667eea, #764ba2); height: 100%; width: 0%;"></div>
                     </div>
                 </div>
                 
-                ${survey.questions.map((question, index) => `
-                    <div style="margin-bottom: 25px; padding: 20px; background: white; border: 2px solid #e2e8f0; border-radius: 12px;">
-                        <div style="font-size: 0.9rem; font-weight: 600; color: #667eea; margin-bottom: 8px;">
-                            Question ${index + 1} of ${survey.questions.length}
+                ${survey.questions.map((question, index) => {
+                    // Increment question number only for regular questions
+                    if (question.questionType !== 'Section Break') {
+                        regularQuestionNumber++;
+                    }
+                    
+                    // Section breaks don't get numbered - they're just visual dividers
+                    if (question.questionType === 'Section Break') {
+                        return renderPreviewQuestion(question);
+                    }
+                    
+                    // Regular questions get numbered
+                    return `
+                        <div style="margin-bottom: 25px; padding: 20px; background: white; border: 2px solid #e2e8f0; border-radius: 12px;">
+                            <div style="font-size: 0.9rem; font-weight: 600; color: #667eea; margin-bottom: 8px;">
+                                Question ${regularQuestionNumber} of ${totalRegularQuestions}
+                            </div>
+                            
+                            <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;">
+                                ${escapeHtml(question.questionText)}
+                                ${question.isRequired ? '<span style="color: #ef4444;"> *</span>' : ''}
+                            </div>
+                            
+                            ${renderPreviewQuestion(question)}
                         </div>
-                        
-                        <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;">
-                            ${escapeHtml(question.questionText)}
-                            ${question.isRequired ? '<span style="color: #ef4444;"> *</span>' : ''}
-                        </div>
-                        
-                        ${renderPreviewQuestion(question)}
-                    </div>
-                `).join('')}
+                    `;
+                }).join('')}
                 
                 <div style="text-align: center; padding: 20px; color: #64748b; font-size: 0.9rem;">
                     Preview only - responses cannot be submitted from this view
@@ -1634,7 +2152,8 @@ ENHANCEMENTS:
             let questionHtml = '';
             
             // Add help text if available (like Google Forms descriptions)
-            if (question.helpText) {
+            // But NOT for section breaks - they handle their own help text internally
+            if (question.helpText && question.questionType !== 'Section Break') {
                 questionHtml += `
                     <div style="
                         font-size: 0.85rem;
@@ -1681,15 +2200,48 @@ ENHANCEMENTS:
                     break;
                     
                 case 'Rating':
+                    // Get rating range from question (default to 1-5)
+                    const ratingMin = (question.ratingMin !== undefined && question.ratingMin !== null) ? question.ratingMin : 1;
+                    const ratingMax = (question.ratingMax !== undefined && question.ratingMax !== null) ? question.ratingMax : 5;
+                    
+                    // Build rating array dynamically
+                    const ratings = [];
+                    for (let i = ratingMin; i <= ratingMax; i++) {
+                        ratings.push(i);
+                    }
+                    
+                    // Determine label text based on scale
+                    let scaleLabel = '';
+                    if (ratingMin === 1 && ratingMax === 5) {
+                        scaleLabel = '1 = Very Dissatisfied, 5 = Very Satisfied';
+                    } else if (ratingMin === 0 && ratingMax === 10) {
+                        scaleLabel = '0 = Not at all likely, 10 = Extremely likely';
+                    } else {
+                        scaleLabel = `${ratingMin} = Low, ${ratingMax} = High`;
+                    }
+                    
                     questionHtml += `
                         <div style="margin-top: 10px;">
-                            <div style="display: flex; gap: 5px; margin: 15px 0;">
-                                ${[1, 2, 3, 4, 5].map(star => `
-                                    <span style="font-size: 2rem; color: #e2e8f0;">★</span>
+                            <div style="display: flex; gap: 8px; justify-content: center; margin: 20px 0; flex-wrap: wrap;">
+                                ${ratings.map(rating => `
+                                    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                                        <div style="
+                                            width: 50px;
+                                            height: 50px;
+                                            border: 3px solid #e2e8f0;
+                                            border-radius: 50%;
+                                            display: flex;
+                                            align-items: center;
+                                            justify-content: center;
+                                            font-weight: 700;
+                                            font-size: 1.2rem;
+                                            color: #64748b;
+                                        ">${rating}</div>
+                                    </div>
                                 `).join('')}
                             </div>
-                            <div style="font-size: 0.85rem; color: #64748b;">
-                                1 = Poor, 5 = Excellent
+                            <div style="font-size: 0.85rem; color: #64748b; text-align: center;">
+                                ${scaleLabel}
                             </div>
                         </div>
                     `;
@@ -1708,12 +2260,25 @@ ENHANCEMENTS:
                     break;
                     
                 case 'Section Break':
-                    questionHtml += `
-                        <div class="section-break" style="margin-top: 10px;">
-                            <div class="section-title">${escapeHtml(question.questionText || 'Section Break')}</div>
+                    return `
+                        <div style="
+                            background: linear-gradient(135deg, #667eea, #764ba2);
+                            color: white;
+                            padding: 30px;
+                            border-radius: 12px;
+                            margin: 40px 0;
+                            text-align: center;
+                            position: relative;
+                            overflow: hidden;
+                        ">
+                            <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 10px; position: relative; z-index: 1;">
+                                ${escapeHtml(question.questionText || 'Section Break')}
+                            </div>
                             ${question.helpText ? `
-                                <div class="section-divider"></div>
-                                <div class="section-description">${escapeHtml(question.helpText)}</div>
+                                <div style="width: 80px; height: 4px; background: rgba(255, 255, 255, 0.3); margin: 20px auto; border-radius: 2px;"></div>
+                                <div style="font-size: 1rem; opacity: 0.9; line-height: 1.6; position: relative; z-index: 1;">
+                                    ${escapeHtml(question.helpText)}
+                                </div>
                             ` : ''}
                         </div>
                     `;
@@ -1765,6 +2330,9 @@ ENHANCEMENTS:
         function renderResults(data) {
             const survey = data.survey;
             const results = data.results;
+            
+            // Filter out section breaks from results count (they don't have responses)
+            const regularQuestionResults = results.filter(r => r.questionType !== 'Section Break');
 
             // Update header
             document.getElementById('resultsTitle').textContent = survey.title;
@@ -1778,7 +2346,7 @@ ENHANCEMENTS:
                     <div class="summary-label">Total Responses</div>
                 </div>
                 <div class="summary-card">
-                    <div class="summary-value">${results.length}</div>
+                    <div class="summary-value">${regularQuestionResults.length}</div>
                     <div class="summary-label">Questions</div>
                 </div>
                 <div class="summary-card">
@@ -1944,6 +2512,374 @@ function deleteSurveyFrontend(surveyId, surveyTitle) {
     
     document.head.appendChild(script);
 }
+
+// ============================================
+// EDIT SURVEY FUNCTIONS - COMPLETE VERSION
+// ============================================
+
+let currentEditingSurveyId = null;
+
+function editSurvey(surveyId, buttonElement) {
+    
+    // Show loading on button if button was clicked
+    if (buttonElement) {
+        buttonElement.innerHTML = '⏳ Loading...';
+        buttonElement.disabled = true;
+        buttonElement.dataset.loading = 'true';
+    }
+    
+    currentEditingSurveyId = surveyId;
+    loadSurveyForEditing(surveyId, buttonElement);
+}
+
+function loadSurveyForEditing(surveyId, buttonElement = null) {
+    
+    // FIRST, switch to create view to ensure it exists
+    document.getElementById('listView').classList.add('hidden');
+    document.getElementById('createView').classList.remove('hidden');
+    document.getElementById('resultsView').classList.add('hidden');
+    
+    // NOW replace the content with loading message
+    const createView = document.getElementById('createView');
+    createView.innerHTML = `
+        <div class="loading-container" style="text-align: center; padding: 60px;">
+            <div class="loading-spinner" style="width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px;"></div>
+            <h3 style="color: #667eea; margin-bottom: 10px;">Loading Survey Editor</h3>
+            <p style="color: #64748b;">Loading survey data and questions...</p>
+        </div>
+    `;
+    
+    // JSONP request to get survey details
+    const callbackName = 'editLoadCallback_' + Date.now();
+    
+    window[callbackName] = function(data) {
+        // Reset button if it exists
+        if (buttonElement) {
+            buttonElement.innerHTML = '✏️ Edit';
+            buttonElement.disabled = false;
+            buttonElement.dataset.loading = 'false';
+        }
+        
+        if (data.success) {
+            populateEditForm(data.survey);
+        } else {
+            
+            // Show error
+            createView.innerHTML = `
+                <div style="padding: 40px;">
+                    <div class="error-message" style="background: #fee2e2; border: 2px solid #ef4444; color: #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        ❌ Error loading survey: ${data.message || 'Unknown error'}
+                    </div>
+                    <div style="text-align: center;">
+                        <button class="btn-primary" onclick="showView('list')" style="padding: 12px 24px;">
+                            ← Back to Survey List
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+        delete window[callbackName];
+    };
+    
+    const script = document.createElement('script');
+    script.src = `${SURVEY_API_URL}?action=getSurveyDetails&surveyId=${surveyId}&callback=${callbackName}`;
+    document.head.appendChild(script);
+}
+
+function populateEditForm(survey) {
+    
+    // Get the create view container
+    const createView = document.getElementById('createView');
+    
+    // Restore the original form structure
+    createView.innerHTML = `
+        <div class="form-section">
+            <h2 class="section-title">Edit Survey</h2>
+            <p class="section-description">Editing: ${escapeHtml(survey.title)}</p>
+
+            <div id="createMessage"></div>
+
+            <div class="form-group">
+                <label class="form-label">Survey Title <span class="required">*</span></label>
+                <input type="text" id="surveyTitle" class="form-input" placeholder="e.g., 2026 Community Satisfaction Survey">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea id="surveyDescription" class="form-textarea" placeholder="Briefly describe the purpose of this survey..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Survey Settings</label>
+                
+                <div class="form-checkbox-group">
+                    <input type="checkbox" id="isAnonymous" class="form-checkbox">
+                    <label for="isAnonymous">Anonymous responses (recommended for honest feedback)</label>
+                </div>
+
+                
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Thank You Message</label>
+                <textarea id="thankYouMessage" class="form-textarea" placeholder="Message shown after survey completion...">Thank you for taking the time to provide your valuable feedback!</textarea>
+            </div>
+
+            <!-- CONFIMATION SETTINGS -->
+            <div class="form-section">
+                <h2 class="section-title">Confirmation Settings</h2>
+                <p class="section-description">Customize what happens after survey completion</p>
+
+                <div class="form-group">
+                    <label class="form-label">Custom Confirmation Message</label>
+                    <textarea id="confirmationMessage" class="form-textarea" placeholder="Optional custom message to show after submission..."></textarea>
+                    <div class="form-hint">If left empty, the standard "Thank You" message will be used</div>
+                </div>
+
+                <div class="form-checkbox-group">
+                    <input type="checkbox" id="allowAnotherResponse" class="form-checkbox">
+                    <label for="allowAnotherResponse">Show option to submit another response (if multiple responses allowed)</label>
+                </div>
+
+                <div class="form-checkbox-group">
+                    <input type="checkbox" id="showResponseSummary" class="form-checkbox">
+                    <label for="showResponseSummary">Show response summary after submission</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h2 class="section-title">Questions</h2>
+            <p class="section-description">Add questions to your survey (minimum 1 required)</p>
+
+            <div id="questionsContainer" class="questions-container">
+                <!-- Questions will be added here -->
+            </div>
+
+            <button class="add-question-btn" onclick="addQuestion()">
+                ➕ Add Question
+            </button>
+        </div>
+
+        <div class="form-section" style="margin-top: 30px;">
+            <button class="btn-primary" id="saveSurveyBtn" onclick="saveSurvey()" style="width: 200px;">
+                💾 Save Changes
+            </button>
+            <button class="btn-secondary" onclick="showView('list')" style="width: 150px; margin-left: 12px;">
+                Cancel
+            </button>
+        </div>
+    `;
+    
+    // NOW populate the form fields
+    document.getElementById('surveyTitle').value = survey.title || '';
+    document.getElementById('surveyDescription').value = survey.description || '';
+    document.getElementById('isAnonymous').checked = survey.isAnonymous === true;
+    
+    document.getElementById('thankYouMessage').value = survey.thankYouMessage || 'Thank you for taking the time to provide your valuable feedback!';
+    document.getElementById('confirmationMessage').value = survey.confirmationMessage || '';
+    document.getElementById('allowAnotherResponse').checked = survey.allowAnotherResponse === true;
+    document.getElementById('showResponseSummary').checked = survey.showResponseSummary === true;
+    
+    // Clear existing questions
+    const questionsContainer = document.getElementById('questionsContainer');
+    questionsContainer.innerHTML = '';
+    questionCount = 0;
+    
+    // Add questions from survey
+    if (survey.questions && survey.questions.length > 0) {
+        survey.questions.forEach((question, index) => {
+            addQuestionToEditForm(question, index + 1);
+        });
+    } else {
+        addQuestion(); // Add empty question if none exist
+    }
+}
+
+function addQuestionToEditForm(question, questionNumber) {
+    questionCount = questionNumber;
+    const container = document.getElementById('questionsContainer');
+    
+    const questionCard = document.createElement('div');
+    questionCard.className = 'question-card';
+    questionCard.dataset.questionId = questionCount;
+    questionCard.innerHTML = `
+        <div class="question-header">
+            <div class="question-number">Question ${questionCount}</div>
+            <div class="question-actions">
+                <button class="btn-icon btn-delete" onclick="deleteQuestion(${questionCount})">
+                    🗑️ Delete
+                </button>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">Question Text <span class="required">*</span></label>
+            <input type="text" class="form-input question-text" 
+                   value="${escapeHtml(question.questionText || '')}" 
+                   placeholder="Enter your question..." required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Question Type <span class="required">*</span></label>
+            <select class="form-select question-type" onchange="handleQuestionTypeChange(${questionCount})">
+                <option value="Rating" ${question.questionType === 'Rating' ? 'selected' : ''}>Rating (1-5 stars)</option>
+                <option value="Single Choice" ${question.questionType === 'Single Choice' ? 'selected' : ''}>Single Choice</option>
+                <option value="Multiple Choice" ${question.questionType === 'Multiple Choice' ? 'selected' : ''}>Multiple Choice</option>
+                <option value="Text" ${question.questionType === 'Text' ? 'selected' : ''}>Text Response</option>
+                <option value="Yes/No" ${question.questionType === 'Yes/No' ? 'selected' : ''}>Yes/No</option>
+                <option value="Section Break" ${question.questionType === 'Section Break' ? 'selected' : ''}>📋 Section Break</option>
+            </select>
+        </div>
+
+        <div class="options-container" style="display: ${question.questionType === 'Single Choice' || question.questionType === 'Multiple Choice' || question.questionType === 'Yes/No' ? 'block' : 'none'};">
+            <label class="form-label">Options <span class="required">*</span></label>
+            <div class="options-list">
+                ${renderOptionsForEdit(question)}
+            </div>
+            ${question.questionType !== 'Yes/No' ? `<button class="btn-add-option" onclick="addOption(${questionCount})">+ Add Option</button>` : ''}
+        </div>
+
+        <div class="rating-scale-container" style="display: ${question.questionType === 'Rating' ? 'block' : 'none'};">
+            <label class="form-label">Rating Scale</label>
+            <select class="form-select rating-scale-type">
+                <option value="1-5" ${(!question.ratingMin || question.ratingMin === 1) && (!question.ratingMax || question.ratingMax === 5) ? 'selected' : ''}>1-5 (Satisfaction)</option>
+                <option value="0-10" ${question.ratingMin === 0 && question.ratingMax === 10 ? 'selected' : ''}>0-10 (NPS / Net Promoter Score)</option>
+            </select>
+            <div style="margin-top: 8px; font-size: 0.85rem; color: #64748b;">
+                Choose the rating scale for this question
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Help Text (optional)</label>
+            <input type="text" class="form-input question-help" 
+                   value="${escapeHtml(question.helpText || '')}" 
+                   placeholder="Additional guidance for respondents...">
+        </div>
+
+        <div class="form-checkbox-group">
+            <input type="checkbox" class="form-checkbox question-required" ${question.isRequired ? 'checked' : ''}>
+            <label>Required question</label>
+        </div>
+    `;
+    
+    container.appendChild(questionCard);
+}
+
+function renderOptionsForEdit(question) {
+    if (!question.optionsArray || question.optionsArray.length === 0) {
+        // Default options for choice questions
+        if (question.questionType === 'Yes/No') {
+            return `
+                <div class="option-input-group">
+                    <input type="text" class="form-input option-input" value="Yes" readonly>
+                </div>
+                <div class="option-input-group">
+                    <input type="text" class="form-input option-input" value="No" readonly>
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="option-input-group">
+                <input type="text" class="form-input option-input" placeholder="Option 1">
+                <button class="btn-icon btn-delete" onclick="this.parentElement.remove()">🗑️</button>
+            </div>
+            <div class="option-input-group">
+                <input type="text" class="form-input option-input" placeholder="Option 2">
+                <button class="btn-icon btn-delete" onclick="this.parentElement.remove()">🗑️</button>
+            </div>
+        `;
+    }
+    
+    return question.optionsArray.map((option, index) => `
+        <div class="option-input-group">
+            <input type="text" class="form-input option-input" 
+                   value="${escapeHtml(option)}" 
+                   placeholder="Option ${index + 1}">
+            <button class="btn-icon btn-delete" onclick="this.parentElement.remove()">🗑️</button>
+        </div>
+    `).join('');
+}
+
+// ============================================
+// SHARE SURVEY FUNCTION
+// ============================================
+
+function shareSurvey(surveyId) {
+    // Get the survey card to extract title
+    const shareButton = document.querySelector(`button[onclick*="shareSurvey('${surveyId}')"]`);
+    const surveyCard = shareButton?.closest('.survey-card');
+    const surveyTitle = surveyCard?.querySelector('.survey-title')?.textContent || 'Survey';
+    
+    // Construct the survey URL
+    const surveyUrl = `https://lake-illawong-maintenance.netlify.app/CommunitySurveys.html?survey=${surveyId}`;
+    
+    // Try to copy to clipboard
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(surveyUrl)
+            .then(() => {
+                // Show success message
+                showShareNotification(`✅ Survey link copied!<br><br>"${surveyTitle}"`, 'success');
+            })
+            .catch(() => {
+                // Fallback if clipboard fails
+                showShareCopyPrompt(surveyTitle, surveyUrl);
+            });
+    } else {
+        // Fallback for older browsers
+        showShareCopyPrompt(surveyTitle, surveyUrl);
+    }
+}
+
+function showShareCopyPrompt(title, url) {
+    const userCopied = confirm(
+        `📋 Share Survey Link\n\n` +
+        `Survey: "${title}"\n\n` +
+        `URL: ${url}\n\n` +
+        `Click OK, then copy the URL from your address bar.`
+    );
+    
+    if (userCopied) {
+        showShareNotification('✅ Ready to share!', 'success');
+    }
+}
+
+function showShareNotification(message, type = 'info') {
+    // Remove any existing notification
+    const existing = document.querySelector('.share-notification');
+    if (existing) existing.remove();
+    
+    // Create new notification
+    const notification = document.createElement('div');
+    notification.className = `share-notification ${type}`;
+    notification.innerHTML = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${type === 'success' ? '#10b981' : '#3b82f6'};
+        color: white;
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        animation: slideIn 0.3s ease-out;
+        max-width: 400px;
+        font-size: 14px;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 4 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => notification.remove(), 300);
+    }, 4000);
+}
+
+
 
 
     </script>
