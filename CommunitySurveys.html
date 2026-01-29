@@ -423,12 +423,29 @@ CHANGES IN V2.0:
             transform: scale(1.15);
         }
 
-        .rating-label {
-            font-size: 0.75rem;
-            color: #64748b;
-            font-weight: 600;
-            text-align: center;
-        }
+        /* Add this to your CSS section */
+.rating-label {
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 600;
+    text-align: center;
+    white-space: pre-line; /* Allows \n for line breaks */
+    line-height: 1.2;
+    min-height: 2.4rem; /* Fixed height for consistency */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+}
+
+/* For middle numbers with no labels */
+.rating-label:empty {
+    min-height: 1.2rem; /* Smaller height when empty */
+}
+
+.rating-label:not(:empty) {
+    margin-top: 4px;
+}
 
         /* PROGRESS BAR - GOOGLE FORMS STYLE */
         .progress-container {
@@ -942,12 +959,14 @@ CHANGES IN V2.0:
         let currentQuestionIndex = 0;
         let responses = {};
         let currentRespondent = null; // Stores unit number for non-anonymous surveys
+        let isTestMode = false; // Test mode flag
 
-        // INITIALIZATION
+        /// INITIALIZATION
         document.addEventListener('DOMContentLoaded', function() {
             // Check for survey ID in URL
             const urlParams = new URLSearchParams(window.location.search);
             const surveyId = urlParams.get('survey');
+            isTestMode = urlParams.get('testMode') === 'true'; // Check if in test mode
             
             if (surveyId) {
                 loadSurveyDetails(surveyId);
@@ -1160,12 +1179,14 @@ CHANGES IN V2.0:
         // RENDER SURVEY
         function renderSurvey() {
             const survey = currentSurvey;
-            
             // Update header with mockup styling
             document.getElementById('surveyHeader').innerHTML = `
                 <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e2e8f0;">
+                    ${isTestMode ? '<div style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 600; font-size: 1rem;">🧪 TEST MODE - Responses will NOT be saved to the database</div>' : ''}
                     <h2 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 10px; color: #1e293b;">${escapeHtml(survey.title)}</h2>
                     <p style="color: #64748b; font-size: 1rem; line-height: 1.6;">${escapeHtml(survey.description || '')}</p>
+
+
                     ${survey.isAnonymous ? '<div style="margin-top: 15px; padding: 10px 16px; background: #e0f2fe; color: #0369a1; border-radius: 8px; display: inline-block; font-size: 0.85rem;">🔒 This survey is anonymous. Your responses will not be linked to your identity.</div>' : ''}
                 </div>
             `;
@@ -1268,28 +1289,49 @@ CHANGES IN V2.0:
                     <div class="char-count">0 / 500 characters</div>
                 `;
             } else if (question.questionType === 'Rating') {
-                // Get rating range from question (default to 1-5)
-                const ratingMin = (question.ratingMin !== undefined && question.ratingMin !== null) ? question.ratingMin : 1;
-                const ratingMax = (question.ratingMax !== undefined && question.ratingMax !== null) ? question.ratingMax : 5;
-                
-                // Build rating array dynamically
-                const ratings = [];
-                for (let i = ratingMin; i <= ratingMax; i++) {
-                    ratings.push(i);
-                }
-                
-                inputHtml = `
-                    <div class="rating-scale">
-                        ${ratings.map(rating => `
-                            <div class="rating-option">
-                                <div class="rating-circle" onclick="selectRating('${question.questionId}', ${rating}, this)">${rating}</div>
-                                <div class="rating-label">${getRatingLabel(rating, ratingMin, ratingMax)}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-                    <input type="hidden" id="${question.questionId}" ${question.isRequired ? 'required' : ''}>
-                `;
-            }
+    // Get rating range from question (default to 1-5)
+    const ratingMin = (question.ratingMin !== undefined && question.ratingMin !== null) ? question.ratingMin : 1;
+    const ratingMax = (question.ratingMax !== undefined && question.ratingMax !== null) ? question.ratingMax : 5;
+    
+    // Get custom rating labels if available
+    const ratingLabels = question.ratingLabels || [];
+    
+    // Build rating array dynamically
+    const ratings = [];
+    for (let i = ratingMin; i <= ratingMax; i++) {
+        ratings.push(i);
+    }
+    
+    // SIMPLE SOLUTION: Build HTML with conditional label display
+    let ratingScaleHTML = '<div class="rating-scale">';
+    
+    ratings.forEach(rating => {
+        const label = getRatingLabel(rating, ratingMin, ratingMax, ratingLabels);
+        ratingScaleHTML += `
+            <div class="rating-option">
+                <div class="rating-circle" onclick="selectRating('${question.questionId}', ${rating}, this)">${rating}</div>
+                ${label ? `<div class="rating-label">${label}</div>` : '<div class="rating-label" style="visibility: hidden;">&nbsp;</div>'}
+            </div>
+        `;
+    });
+    
+    ratingScaleHTML += '</div>';
+    inputHtml = ratingScaleHTML + `<input type="hidden" id="${question.questionId}" ${question.isRequired ? 'required' : ''}>`;
+    
+    // Add scale info at the bottom
+    const minLabel = ratingLabels[0] || (ratingMin === 1 ? 'Very Dissatisfied' : ratingMin === 0 ? 'Not at all likely' : '');
+    const maxLabel = ratingLabels[ratingLabels.length - 1] || (ratingMax === 5 ? 'Very Satisfied' : ratingMax === 10 ? 'Extremely likely' : '');
+    
+    if (minLabel || maxLabel) {
+        inputHtml += `
+            <div style="text-align: center; margin-top: 10px; padding: 8px; background: #f8fafc; border-radius: 6px; font-size: 0.8rem; color: #64748b;">
+                <strong>Scale:</strong> ${ratingMin} = ${minLabel} 
+                <span style="margin: 0 8px;">•</span>
+                ${ratingMax} = ${maxLabel}
+            </div>
+        `;
+    }
+}
             
             // Build question header (for regular questions only)
             const questionHeader = `
@@ -1301,7 +1343,7 @@ CHANGES IN V2.0:
             `;
             
             return `
-                <div class="question-container" data-question-index="${index}">
+                <div class="question-container" data-question-index="${index}" data-question-id="${question.questionId}" data-question-type="${question.questionType}" data-has-conditional="${question.conditionalLogic && question.conditionalLogic !== 'none' ? 'true' : 'false'}">
                     <div class="question-number">Question ${questionNum} of ${totalQuestions}</div>
                     ${questionHeader}
                     ${inputHtml}
@@ -1345,34 +1387,131 @@ CHANGES IN V2.0:
             // Store the rating
             document.getElementById(questionId).value = rating;
             responses[questionId] = rating.toString();
+            // EVALUATE SKIP LOGIC for rating questions
+            evaluateSkipLogic(questionId, rating.toString());
             updateProgress();
         }
 
         // GET RATING LABEL
-        function getRatingLabel(rating, min, max) {
-            // For 1-5 scale (satisfaction)
-            if (min === 1 && max === 5) {
-                const labels = {
-                    1: 'Very\nDissatisfied',
-                    2: 'Dissatisfied',
-                    3: 'Neutral',
-                    4: 'Satisfied',
-                    5: 'Very\nSatisfied'
-                };
-                return labels[rating] || '';
+       function getRatingLabel(rating, min, max, ratingLabels = []) {
+    // First check if custom labels are provided
+    if (ratingLabels && ratingLabels.length > 0) {
+        // Calculate index for the rating (0-based for arrays)
+        const index = rating - min;
+        if (index >= 0 && index < ratingLabels.length) {
+            const label = ratingLabels[index];
+            // SIMPLE SOLUTION: Only return label if it's not empty
+            // Empty strings for middle numbers = show number only
+            return label && label.trim() !== '' ? label : '';
+        }
+    }
+    
+    // Fallback to default labels - also using SIMPLE SOLUTION
+    // For 1-5 scale (satisfaction) - only show labels on 1 and 5
+    if (min === 1 && max === 5) {
+        if (rating === 1) return 'Very\nDissatisfied';
+        if (rating === 5) return 'Very\nSatisfied';
+        return ''; // 2, 3, 4 show as numbers only
+    }
+    
+    // For 0-10 scale (NPS) - only show labels on 0 and 10
+    if (min === 0 && max === 10) {
+        if (rating === 0) return 'Not at all\nlikely';
+        if (rating === 10) return 'Extremely\nlikely';
+        return ''; // 1-9 show as numbers only
+    }
+    
+    // For other scales, show min/max labels only
+    if (rating === min) return 'Low';
+    if (rating === max) return 'High';
+    return '';
+}
+
+// EVALUATE SKIP LOGIC
+        function evaluateSkipLogic(questionId, answer) {
+            const question = currentSurvey.questions.find(q => q.questionId === questionId);
+            
+            // Check if question has conditional logic
+            if (!question || !question.conditionalLogic || question.conditionalLogic === 'none') {
+                return; // No skip logic on this question
             }
             
-            // For 0-10 scale (NPS) - only show labels on 0 and 10
-            if (min === 0 && max === 10) {
-                if (rating === 0) return 'Not at all\nlikely';
-                if (rating === 10) return 'Extremely\nlikely';
-                return '';
+            // Check if there are condition rules
+            if (!question.conditionRules || question.conditionRules.length === 0) {
+                return; // No rules defined
             }
             
-            // For other scales, show min/max labels only
-            if (rating === min) return 'Low';
-            if (rating === max) return 'High';
-            return '';
+            // Find matching rule based on answer
+            let matchedRule = null;
+            for (let rule of question.conditionRules) {
+                if (rule.value === answer) {
+                    matchedRule = rule;
+                    break;
+                }
+            }
+            
+            if (!matchedRule) {
+                // No rule matched - show all questions (reset to normal flow)
+                const allContainers = document.querySelectorAll('.question-container');
+                allContainers.forEach(container => {
+                    container.style.display = 'block';
+                });
+                return;
+            }
+            
+            // Get current question index
+            const currentQuestionIndex = currentSurvey.questions.findIndex(q => q.questionId === questionId);
+            
+            // Handle the matched rule
+            if (matchedRule.target === 'end_survey') {
+                // Hide all questions after current one
+                const allContainers = document.querySelectorAll('.question-container');
+                allContainers.forEach(container => {
+                    const containerIndex = parseInt(container.getAttribute('data-question-index'));
+                    if (containerIndex > currentQuestionIndex) {
+                        container.style.display = 'none';
+                    }
+                });
+            } else {
+                // Skip to specific question (format: "Q4" or "Q10")
+                const targetQuestionRef = matchedRule.target;
+                
+                // Find target question index
+                let targetQuestionIndex = -1;
+                if (targetQuestionRef.startsWith('Q')) {
+                    // It's a Q reference - need to find the actual question
+                    const targetQuestionNum = parseInt(targetQuestionRef.substring(1));
+                    // Find the Nth regular question (excluding section breaks)
+                    let regularQuestionCount = 0;
+                    for (let i = 0; i < currentSurvey.questions.length; i++) {
+                        if (currentSurvey.questions[i].questionType !== 'Section Break') {
+                            regularQuestionCount++;
+                            if (regularQuestionCount === targetQuestionNum) {
+                                targetQuestionIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    // It's a question ID - find by ID
+                    targetQuestionIndex = currentSurvey.questions.findIndex(q => q.questionId === targetQuestionRef);
+                }
+                
+                if (targetQuestionIndex === -1) {
+                    return; // Target not found
+                }
+                
+                // Hide all questions between current and target (exclusive)
+                const allContainers = document.querySelectorAll('.question-container');
+                allContainers.forEach(container => {
+                    const containerIndex = parseInt(container.getAttribute('data-question-index'));
+                    if (containerIndex > currentQuestionIndex && containerIndex < targetQuestionIndex) {
+                        container.style.display = 'none';
+                    } else {
+                        container.style.display = 'block';
+                    }
+                });
+            }
         }
 
         // UPDATE RESPONSE
@@ -1385,9 +1524,13 @@ CHANGES IN V2.0:
                 const checked = Array.from(document.querySelectorAll(`input[name="${questionId}"]:checked`))
                     .map(input => input.value);
                 responses[questionId] = checked.join('|');
-            } else if (question.questionType === 'Single Choice' || question.questionType === 'Yes/No') {
+} else if (question.questionType === 'Single Choice' || question.questionType === 'Yes/No') {
                 const checked = document.querySelector(`input[name="${questionId}"]:checked`);
                 responses[questionId] = checked ? checked.value : '';
+                // EVALUATE SKIP LOGIC for single choice/yes-no questions
+                if (checked) {
+                    evaluateSkipLogic(questionId, checked.value);
+                }
             } else if (question.questionType === 'Text') {
                 responses[questionId] = document.getElementById(questionId).value;
             }
@@ -1483,34 +1626,50 @@ CHANGES IN V2.0:
             submitBtn.disabled = true;
             submitBtn.textContent = 'Submitting...';
 
-            // Submit via JSONP
-            callAPI('submitResponse', { data: JSON.stringify(submitData) }, function(result) {
+            // Check if in test mode
+            if (isTestMode) {
+                // TEST MODE - Don't save, just show completion
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Submit Survey';
-
-                if (result.success) {
-                    // Use custom confirmation message if available, otherwise use default
-                    const confirmationMessage = currentSurvey.confirmationMessage || 
-                                               result.thankYouMessage || 
-                                               'Thank you for completing our survey! Your feedback is valuable to us.';
-                    
-                    document.getElementById('confirmationContent').textContent = confirmationMessage;
-                    
-                    // Show response summary if enabled
-                    if (currentSurvey.showResponseSummary) {
-                        showResponseSummary(responses);
-                    }
-                    
-                    // Show "Submit Another Response" button if enabled and multiple responses allowed
-                    if (currentSurvey.allowAnotherResponse && currentSurvey.allowMultipleResponses) {
-                        document.getElementById('anotherResponseBtn').style.display = 'block';
-                    }
-                    
-                    showView('thankyou');
-                } else {
-                    messageDiv.innerHTML = `<div class="error-message">❌ Error: ${result.message || result.error}</div>`;
+                
+                document.getElementById('confirmationContent').textContent = '🧪 Test Complete! This was a test submission - no data was saved to the database. You can now close this window.';
+                
+                // Show response summary if enabled
+                if (currentSurvey.showResponseSummary) {
+                    showResponseSummary(responses);
                 }
-            });
+                
+                showView('thankyou');
+            } else {
+                // REAL MODE - Submit via JSONP
+                callAPI('submitResponse', { data: JSON.stringify(submitData) }, function(result) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit Survey';
+
+                    if (result.success) {
+                        // Use custom confirmation message if available, otherwise use default
+                        const confirmationMessage = currentSurvey.confirmationMessage || 
+                                                   result.thankYouMessage || 
+                                                   'Thank you for completing our survey! Your feedback is valuable to us.';
+                        
+                        document.getElementById('confirmationContent').textContent = confirmationMessage;
+                        
+                        // Show response summary if enabled
+                        if (currentSurvey.showResponseSummary) {
+                            showResponseSummary(responses);
+                        }
+                        
+                        // Show "Submit Another Response" button if enabled and multiple responses allowed
+                        if (currentSurvey.allowAnotherResponse && currentSurvey.allowMultipleResponses) {
+                            document.getElementById('anotherResponseBtn').style.display = 'block';
+                        }
+                        
+                        showView('thankyou');
+                    } else {
+                        messageDiv.innerHTML = `<div class="error-message">❌ Error: ${result.message || result.error}</div>`;
+                    }
+                });
+            }
         }
 
         // SHOW RESPONSE SUMMARY
