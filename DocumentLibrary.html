@@ -222,6 +222,19 @@
             color: white;
         }
 
+        .mobile-close-filters {
+            display: none;
+            width: 100%;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
         .filter-group {
             margin-bottom: 25px;
         }
@@ -346,6 +359,49 @@
             text-align: center;
         }
 
+        /* Mobile Card View */
+        .mobile-card-view {
+            display: none;
+        }
+
+        .mobile-doc-card {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+            padding: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mobile-doc-card:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .mobile-doc-title {
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 8px;
+        }
+
+        .mobile-doc-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.85rem;
+        }
+
+        .mobile-doc-info {
+            display: flex;
+            gap: 12px;
+        }
+
+        .mobile-doc-type {
+            font-size: 1.2rem;
+        }
+
         /* Empty State */
         .empty-state {
             text-align: center;
@@ -437,24 +493,40 @@
                 overflow-y: auto;
             }
             
+            .filter-sidebar.mobile-open .mobile-close-filters {
+                display: block;
+            }
+            
             .filter-toggle {
                 display: block;
             }
             
+            /* Hide table view on mobile */
             .list-header {
-                grid-template-columns: 1fr 80px 50px;
+                display: none;
             }
             
             .document-row {
-                grid-template-columns: 1fr 80px 50px;
-            }
-            
-            .doc-category {
                 display: none;
             }
             
-            .list-header-cell:nth-child(2) {
-                display: none;
+            /* Show card view on mobile */
+            .mobile-card-view {
+                display: block;
+                padding: 15px;
+            }
+            
+            .content-card {
+                padding: 20px;
+            }
+            
+            .top-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .user-info-bar {
+                justify-content: space-between;
             }
         }
     </style>
@@ -529,6 +601,11 @@
                         <div class="filter-group-title">Year Added</div>
                         <div id="yearFilters"></div>
                     </div>
+
+                    <!-- Mobile Close Button -->
+                    <button class="mobile-close-filters" onclick="toggleMobileFilters()">
+                        Done
+                    </button>
                 </div>
 
                 <!-- Document List -->
@@ -539,7 +616,7 @@
                         <p>Loading your documents...</p>
                     </div>
 
-                    <!-- List Header -->
+                    <!-- Desktop: List Header -->
                     <div id="listHeader" class="list-header hidden">
                         <div class="list-header-cell" onclick="sortBy('title')">
                             Title <span class="sort-icon" id="sortTitle">▼</span>
@@ -553,8 +630,11 @@
                         <div class="list-header-cell">Type</div>
                     </div>
 
-                    <!-- List Body -->
+                    <!-- Desktop: List Body -->
                     <div id="listBody" class="list-body hidden"></div>
+
+                    <!-- Mobile: Card View -->
+                    <div id="mobileCardView" class="mobile-card-view hidden"></div>
 
                     <!-- Empty State -->
                     <div id="emptyState" class="empty-state hidden">
@@ -655,6 +735,7 @@
                 document.getElementById('loadingState').classList.add('hidden');
                 document.getElementById('listHeader').classList.remove('hidden');
                 document.getElementById('listBody').classList.remove('hidden');
+                document.getElementById('mobileCardView').classList.remove('hidden');
                 
             } catch (error) {
                 console.error('Load documents error:', error);
@@ -826,19 +907,23 @@
         // Display documents
         function displayDocuments() {
             const listBody = document.getElementById('listBody');
+            const mobileCardView = document.getElementById('mobileCardView');
             const emptyState = document.getElementById('emptyState');
             
             if (filteredDocuments.length === 0) {
                 listBody.classList.add('hidden');
+                mobileCardView.classList.add('hidden');
                 emptyState.classList.remove('hidden');
                 return;
             }
             
             emptyState.classList.add('hidden');
             listBody.classList.remove('hidden');
+            mobileCardView.classList.remove('hidden');
             
             const typeIcons = { 'Drive': '📄', 'Link': '🔗', 'Physical': '📦' };
             
+            // Desktop table view
             listBody.innerHTML = filteredDocuments.map(doc => {
                 const dateStr = doc.dateAdded ? new Date(doc.dateAdded).toLocaleDateString() : 'N/A';
                 return `
@@ -847,6 +932,24 @@
                         <div class="doc-category">${escapeHtml(doc.category)}</div>
                         <div class="doc-date">${dateStr}</div>
                         <div class="doc-type">${typeIcons[doc.sourceType] || '📄'}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Mobile card view
+            mobileCardView.innerHTML = filteredDocuments.map(doc => {
+                const dateStr = doc.dateAdded ? new Date(doc.dateAdded).toLocaleDateString() : 'N/A';
+                return `
+                    <div class="mobile-doc-card" onclick="openDocument('${escapeHtml(doc.documentId)}', '${escapeHtml(doc.sourceType)}', '${escapeHtml(doc.sourceLocation || '')}', '${escapeHtml(doc.title)}')">
+                        <div class="mobile-doc-title">${escapeHtml(doc.title)}</div>
+                        <div class="mobile-doc-meta">
+                            <div class="mobile-doc-info">
+                                <span>${escapeHtml(doc.category)}</span>
+                                <span>•</span>
+                                <span>${dateStr}</span>
+                            </div>
+                            <div class="mobile-doc-type">${typeIcons[doc.sourceType] || '📄'}</div>
+                        </div>
                     </div>
                 `;
             }).join('');
