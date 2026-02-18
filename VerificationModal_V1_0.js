@@ -139,7 +139,7 @@ const VerificationModal = (function() {
     function injectModal() {
         const modalHTML = `
 <style>
-/* Verification Modal Styles - Glass Effect */
+/* Verification Modal Styles - Matching Field Operations Portal Glass Effect */
 #vmModal {
     display: none;
     position: fixed;
@@ -147,7 +147,7 @@ const VerificationModal = (function() {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+    background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
     z-index: 10000;
     align-items: center;
     justify-content: center;
@@ -159,41 +159,42 @@ const VerificationModal = (function() {
 }
 
 .vm-content {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
     padding: 40px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
     max-width: 500px;
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
 .vm-header {
     text-align: center;
     margin-bottom: 30px;
     padding-bottom: 20px;
-    border-bottom: 2px solid rgba(30, 64, 175, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .vm-header-icon {
-    font-size: 48px;
+    font-size: 3rem;
     margin-bottom: 15px;
 }
 
 .vm-title {
-    font-size: 24px;
-    font-weight: 700;
-    color: #1e40af;
+    font-size: 2rem;
+    color: white;
+    font-weight: 600;
     margin: 0 0 8px 0;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
 }
 
 .vm-subtitle {
-    font-size: 14px;
-    color: #64748b;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.95rem;
+    font-weight: 500;
     margin: 0;
 }
 
@@ -214,33 +215,30 @@ const VerificationModal = (function() {
     align-items: center;
     gap: 15px;
     padding: 18px;
-    background: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(10px);
-    border: 2px solid rgba(30, 64, 175, 0.2);
-    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
     margin-bottom: 12px;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 
 .vm-method-option:hover {
-    background: rgba(255, 255, 255, 0.8);
-    border-color: #3b82f6;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 .vm-method-option.selected {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: #3b82f6;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
 .vm-method-option input[type="radio"] {
     width: 20px;
     height: 20px;
     cursor: pointer;
-    accent-color: #3b82f6;
+    accent-color: white;
 }
 
 .vm-method-label {
@@ -249,39 +247,42 @@ const VerificationModal = (function() {
 
 .vm-method-title {
     font-weight: 600;
-    color: #1e40af;
+    color: white;
     margin-bottom: 8px;
-    font-size: 16px;
+    font-size: 1rem;
 }
 
 .vm-method-input {
     width: 100%;
-    padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.8);
-    border: 2px solid rgba(30, 64, 175, 0.2);
-    border-radius: 8px;
-    font-size: 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    font-size: 0.95rem;
+    transition: border-color 0.2s ease;
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
     box-sizing: border-box;
-    transition: all 0.2s;
+}
+
+.vm-method-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
 }
 
 .vm-method-input:focus {
     outline: none;
-    background: rgba(255, 255, 255, 1);
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .vm-error {
-    background: rgba(254, 226, 226, 0.9);
-    backdrop-filter: blur(10px);
-    border-left: 4px solid #ef4444;
-    padding: 14px 18px;
-    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.15);
+    border-left: 3px solid rgba(239, 68, 68, 0.6);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 12px 16px;
     margin-bottom: 20px;
-    color: #991b1b;
-    font-size: 14px;
-    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
+    font-size: 0.9rem;
+    border-radius: 2px;
 }
 
 .vm-error.hidden {
@@ -289,46 +290,39 @@ const VerificationModal = (function() {
 }
 
 .vm-info {
-    background: rgba(239, 246, 255, 0.9);
-    backdrop-filter: blur(10px);
-    border-left: 4px solid #3b82f6;
-    padding: 14px 18px;
-    border-radius: 8px;
-    margin-bottom: 25px;
-    color: #1e40af;
-    font-size: 14px;
-    line-height: 1.6;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+    background: rgba(14, 165, 233, 0.15);
+    border-left: 3px solid rgba(14, 165, 233, 0.6);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    border-radius: 2px;
+    line-height: 1.5;
 }
 
 .vm-btn {
     width: 100%;
-    padding: 14px 24px;
-    border: none;
-    border-radius: 10px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    font-size: 15px;
-    transition: all 0.3s ease;
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    transition: all 0.2s ease;
+    margin-top: 10px;
+    backdrop-filter: blur(10px);
 }
 
 .vm-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
-}
-
-.vm-btn:active:not(:disabled) {
-    transform: translateY(0);
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
 .vm-btn:disabled {
-    background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+    background: rgba(255, 255, 255, 0.1);
     cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
 }
 
 .vm-code-group {
@@ -337,102 +331,102 @@ const VerificationModal = (function() {
 
 .vm-code-group label {
     display: block;
-    font-weight: 600;
-    color: #1e40af;
-    margin-bottom: 10px;
-    font-size: 15px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 6px;
+    font-size: 0.9rem;
 }
 
 .vm-code-input {
     width: 100%;
-    padding: 18px;
-    background: rgba(255, 255, 255, 0.9);
-    border: 2px solid rgba(30, 64, 175, 0.2);
-    border-radius: 10px;
-    font-size: 28px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    font-size: 1.5rem;
     text-align: center;
     letter-spacing: 12px;
-    font-weight: 700;
+    font-weight: 600;
+    transition: border-color 0.2s ease;
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
     box-sizing: border-box;
-    color: #1e40af;
-    transition: all 0.2s;
+}
+
+.vm-code-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
 }
 
 .vm-code-input:focus {
     outline: none;
-    background: rgba(255, 255, 255, 1);
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .vm-timer {
     text-align: center;
     margin-bottom: 20px;
-    font-size: 14px;
-    color: #64748b;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.8);
 }
 
 .vm-countdown {
-    font-weight: 700;
-    color: #3b82f6;
-    font-size: 16px;
+    font-weight: 600;
+    color: white;
 }
 
 .vm-resend {
     text-align: center;
     margin-top: 20px;
-    font-size: 14px;
 }
 
 .vm-resend p {
-    color: #64748b;
+    color: rgba(255, 255, 255, 0.8);
     margin-bottom: 8px;
+    font-size: 0.9rem;
 }
 
 .vm-resend-btn {
     background: none;
     border: none;
-    color: #3b82f6;
+    color: rgba(255, 255, 255, 0.9);
     text-decoration: underline;
     cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    transition: color 0.2s;
+    font-size: 0.9rem;
+    font-weight: 500;
 }
 
 .vm-resend-btn:hover:not(:disabled) {
-    color: #2563eb;
+    color: white;
 }
 
 .vm-resend-btn:disabled {
-    color: #94a3b8;
+    color: rgba(255, 255, 255, 0.5);
     cursor: not-allowed;
 }
 
 .vm-text-muted {
-    color: #64748b;
+    color: rgba(255, 255, 255, 0.8);
     margin-bottom: 20px;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 0.9rem;
 }
 
-/* Scrollbar styling for modal */
+/* Scrollbar styling */
 .vm-content::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
 }
 
 .vm-content::-webkit-scrollbar-track {
-    background: rgba(30, 64, 175, 0.05);
-    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .vm-content::-webkit-scrollbar-thumb {
-    background: rgba(59, 130, 246, 0.3);
-    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
 }
 
 .vm-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(59, 130, 246, 0.5);
+    background: rgba(255, 255, 255, 0.3);
 }
 
 /* Mobile responsive */
@@ -442,11 +436,11 @@ const VerificationModal = (function() {
     }
     
     .vm-title {
-        font-size: 20px;
+        font-size: 1.5rem;
     }
     
     .vm-code-input {
-        font-size: 24px;
+        font-size: 1.2rem;
         letter-spacing: 8px;
     }
 }
