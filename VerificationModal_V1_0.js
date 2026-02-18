@@ -45,6 +45,8 @@ const VerificationModal = (function() {
     };
     
     let modalInjected = false;
+    let expiryTimerInterval = null;
+    let resendTimerInterval = null;
     
     // Initialize
     function init(options) {
@@ -73,6 +75,16 @@ const VerificationModal = (function() {
     
     // Hide modal
     function hide() {
+        // Clear all timers
+        if (expiryTimerInterval) {
+            clearInterval(expiryTimerInterval);
+            expiryTimerInterval = null;
+        }
+        if (resendTimerInterval) {
+            clearInterval(resendTimerInterval);
+            resendTimerInterval = null;
+        }
+        
         const modal = document.getElementById('vmModal');
         if (modal) {
             modal.classList.remove('active');
@@ -127,7 +139,7 @@ const VerificationModal = (function() {
     function injectModal() {
         const modalHTML = `
 <style>
-/* Verification Modal Styles */
+/* Verification Modal Styles - Glass Effect */
 #vmModal {
     display: none;
     position: fixed;
@@ -135,7 +147,7 @@ const VerificationModal = (function() {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.5);
+    background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
     z-index: 10000;
     align-items: center;
     justify-content: center;
@@ -147,37 +159,42 @@ const VerificationModal = (function() {
 }
 
 .vm-content {
-    background: white;
-    border-radius: 15px;
-    padding: 30px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 40px;
     max-width: 500px;
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
 .vm-header {
     text-align: center;
-    margin-bottom: 25px;
-    padding-bottom: 15px;
-    border-bottom: 2px solid #f0f0f0;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid rgba(30, 64, 175, 0.1);
 }
 
 .vm-header-icon {
     font-size: 48px;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
 }
 
 .vm-title {
-    font-size: 22px;
-    font-weight: 600;
-    color: #333;
+    font-size: 24px;
+    font-weight: 700;
+    color: #1e40af;
+    margin: 0 0 8px 0;
 }
 
 .vm-subtitle {
     font-size: 14px;
-    color: #666;
-    margin-top: 5px;
+    color: #64748b;
+    margin: 0;
 }
 
 .vm-step {
@@ -189,35 +206,41 @@ const VerificationModal = (function() {
 }
 
 .vm-method-choice {
-    margin-bottom: 20px;
+    margin-bottom: 25px;
 }
 
 .vm-method-option {
     display: flex;
     align-items: center;
     gap: 15px;
-    padding: 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 10px;
+    padding: 18px;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(30, 64, 175, 0.2);
+    border-radius: 12px;
     margin-bottom: 12px;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: all 0.3s ease;
 }
 
 .vm-method-option:hover {
-    border-color: #667eea;
-    background: #f8f9ff;
+    background: rgba(255, 255, 255, 0.8);
+    border-color: #3b82f6;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 .vm-method-option.selected {
-    border-color: #667eea;
-    background: #f0f2ff;
+    background: rgba(59, 130, 246, 0.1);
+    border-color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
 }
 
 .vm-method-option input[type="radio"] {
     width: 20px;
     height: 20px;
     cursor: pointer;
+    accent-color: #3b82f6;
 }
 
 .vm-method-label {
@@ -226,32 +249,39 @@ const VerificationModal = (function() {
 
 .vm-method-title {
     font-weight: 600;
-    color: #333;
-    margin-bottom: 5px;
+    color: #1e40af;
+    margin-bottom: 8px;
+    font-size: 16px;
 }
 
 .vm-method-input {
     width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 2px solid rgba(30, 64, 175, 0.2);
+    border-radius: 8px;
     font-size: 14px;
     box-sizing: border-box;
+    transition: all 0.2s;
 }
 
 .vm-method-input:focus {
     outline: none;
-    border-color: #667eea;
+    background: rgba(255, 255, 255, 1);
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .vm-error {
-    background: #ffebee;
-    border-left: 4px solid #f44336;
-    padding: 12px 15px;
-    border-radius: 6px;
-    margin-bottom: 15px;
-    color: #c62828;
+    background: rgba(254, 226, 226, 0.9);
+    backdrop-filter: blur(10px);
+    border-left: 4px solid #ef4444;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: #991b1b;
     font-size: 14px;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
 }
 
 .vm-error.hidden {
@@ -259,103 +289,166 @@ const VerificationModal = (function() {
 }
 
 .vm-info {
-    background: #e7f0ff;
-    border-left: 4px solid #1e40af;
-    padding: 12px 15px;
-    border-radius: 6px;
-    margin-bottom: 20px;
+    background: rgba(239, 246, 255, 0.9);
+    backdrop-filter: blur(10px);
+    border-left: 4px solid #3b82f6;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 25px;
     color: #1e40af;
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
 }
 
 .vm-btn {
     width: 100%;
-    padding: 12px 24px;
+    padding: 14px 24px;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     font-weight: 600;
     cursor: pointer;
-    font-size: 14px;
-    transition: all 0.3s;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    font-size: 15px;
+    transition: all 0.3s ease;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     color: white;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 .vm-btn:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+}
+
+.vm-btn:active:not(:disabled) {
+    transform: translateY(0);
 }
 
 .vm-btn:disabled {
-    background: #ccc;
+    background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
     cursor: not-allowed;
     transform: none;
+    box-shadow: none;
 }
 
 .vm-code-group {
-    margin-bottom: 20px;
+    margin-bottom: 25px;
 }
 
 .vm-code-group label {
     display: block;
     font-weight: 600;
-    color: #333;
-    margin-bottom: 8px;
+    color: #1e40af;
+    margin-bottom: 10px;
+    font-size: 15px;
 }
 
 .vm-code-input {
     width: 100%;
-    padding: 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 24px;
+    padding: 18px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid rgba(30, 64, 175, 0.2);
+    border-radius: 10px;
+    font-size: 28px;
     text-align: center;
-    letter-spacing: 10px;
-    font-weight: 600;
+    letter-spacing: 12px;
+    font-weight: 700;
     box-sizing: border-box;
+    color: #1e40af;
+    transition: all 0.2s;
 }
 
 .vm-code-input:focus {
     outline: none;
-    border-color: #667eea;
+    background: rgba(255, 255, 255, 1);
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .vm-timer {
     text-align: center;
-    margin-bottom: 15px;
+    margin-bottom: 20px;
     font-size: 14px;
-    color: #666;
+    color: #64748b;
 }
 
 .vm-countdown {
-    font-weight: 600;
-    color: #667eea;
+    font-weight: 700;
+    color: #3b82f6;
+    font-size: 16px;
 }
 
 .vm-resend {
     text-align: center;
-    margin-top: 15px;
+    margin-top: 20px;
     font-size: 14px;
+}
+
+.vm-resend p {
+    color: #64748b;
+    margin-bottom: 8px;
 }
 
 .vm-resend-btn {
     background: none;
     border: none;
-    color: #667eea;
+    color: #3b82f6;
     text-decoration: underline;
     cursor: pointer;
     font-size: 14px;
+    font-weight: 600;
+    transition: color 0.2s;
+}
+
+.vm-resend-btn:hover:not(:disabled) {
+    color: #2563eb;
 }
 
 .vm-resend-btn:disabled {
-    color: #ccc;
+    color: #94a3b8;
     cursor: not-allowed;
 }
 
 .vm-text-muted {
-    color: #666;
+    color: #64748b;
     margin-bottom: 20px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Scrollbar styling for modal */
+.vm-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.vm-content::-webkit-scrollbar-track {
+    background: rgba(30, 64, 175, 0.05);
+    border-radius: 10px;
+}
+
+.vm-content::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.3);
+    border-radius: 10px;
+}
+
+.vm-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(59, 130, 246, 0.5);
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+    .vm-content {
+        padding: 30px 20px;
+    }
+    
+    .vm-title {
+        font-size: 20px;
+    }
+    
+    .vm-code-input {
+        font-size: 24px;
+        letter-spacing: 8px;
+    }
 }
 </style>
 
@@ -618,35 +711,61 @@ const VerificationModal = (function() {
     
     // Start expiry countdown
     function _startExpiryTimer() {
+        // Clear any existing timer
+        if (expiryTimerInterval) {
+            clearInterval(expiryTimerInterval);
+        }
+        
         let seconds = 600; // 10 minutes
         const el = document.getElementById('vmExpiry');
         
-        const interval = setInterval(() => {
+        if (!el) return; // Element doesn't exist
+        
+        expiryTimerInterval = setInterval(() => {
             seconds--;
             const mins = Math.floor(seconds / 60);
             const secs = seconds % 60;
-            el.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
             
-            if (seconds <= 0) clearInterval(interval);
+            if (el) { // Check element still exists
+                el.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+            
+            if (seconds <= 0) {
+                clearInterval(expiryTimerInterval);
+                expiryTimerInterval = null;
+            }
         }, 1000);
     }
     
     // Start resend countdown
     function _startResendTimer() {
+        // Clear any existing timer
+        if (resendTimerInterval) {
+            clearInterval(resendTimerInterval);
+        }
+        
         let seconds = 60;
         const btn = document.getElementById('vmResendBtn');
         const timer = document.getElementById('vmResendTimer');
         
+        if (!btn || !timer) return; // Elements don't exist
+        
         btn.disabled = true;
         
-        const interval = setInterval(() => {
+        resendTimerInterval = setInterval(() => {
             seconds--;
-            timer.textContent = seconds;
+            
+            if (timer) { // Check element still exists
+                timer.textContent = seconds;
+            }
             
             if (seconds <= 0) {
-                clearInterval(interval);
-                btn.disabled = false;
-                btn.innerHTML = 'Resend code';
+                clearInterval(resendTimerInterval);
+                resendTimerInterval = null;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = 'Resend code';
+                }
             }
         }, 1000);
     }
