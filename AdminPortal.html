@@ -440,61 +440,15 @@ Margin-botton: 15px;
             .login-card { margin: 20px; padding: 30px 25px; }
         }
     </style>
+
+<script src="VerificationModal_V1_0.js"></script>
+    
 </head>
 <body>
-    <!-- LOGIN SCREEN -->
-    <div id="loginView" class="login-container">
-        <div class="login-card">
-            <div class="login-header">
-                <h1 class="login-title">⚙️ Admin Portal</h1>
-                <div class="version-badge">v1.0 - Authorised Access Dashboard</div>
-                <p class="login-subtitle">Administrative control and system management</p>
-            </div>
-            
-            <div class="status-box">
-                🟢 Admin Portal Ready - All Admin Modules Available
-            </div>
-            
-            <div id="loginError" class="error-message hidden">
-                ❌ Invalid admin password
-            </div>
-            
-            <div class="warning-box">
-                <div class="warning-content">
-                    <span style="font-size: 18px; margin-top: 2px;">⚠️</span>
-                    <div>
-                        <div class="warning-title">Authorised Access Only</div>
-                        <div style="line-height: 1.5; font-size: 14px;">
-                            This portal provides access to administrative functions including 
-                            management tools, field alerts and Explorer<br/>
-                            
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label" for="passwordInput">Admin Password:</label>
-                <div class="password-input-group">
-                    <input type="password" 
-                           id="passwordInput" 
-                           class="password-input"
-                           placeholder="Enter admin password"
-                           autocomplete="current-password">
-                    <button type="button" 
-                            id="togglePassword" 
-                            class="toggle-btn">👁️</button>
-                </div>
-            </div>
-            
-            <button id="loginBtn">
-                🔓 Access Admin Portal
-            </button>
-        </div>
-    </div>
+   
 
     <!-- DASHBOARD VIEW -->
-    <div id="dashboardView" class="container hidden">
+    <div id="dashboardView" class="container">
         <!-- SIMPLE PAGE TITLE -->
 
 
@@ -828,127 +782,37 @@ RESULT:
         <!-- Logout Section -->
         <div class="logout-section">
             
-            <button id="logoutBtn" class="logout-btn">🚪 Logout from Administration</button>
+           <button id="logoutBtn" class="logout-btn" onclick="logout()">🚪 Logout from Administration</button>
         </div>
     </div>
 
     <script>
-        // Global variables
-        let isAuthenticated = false;
-
-        // Configuration
-        const ADMIN_CONFIG = {
-            fallbackPassword: 'admin2025'
-        };
-
-        // Initialize portal
+       // Initialize portal
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('⚙️ Admin Portal v2.2 - Initializing...');
-            setupEventListeners();
+            console.log('⚙️ Admin Portal - Initializing...');
+
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'Admin Portal',
+                moduleIcon: '⚙️',
+                sessionKey: 'portalAdminVerified',
+                onSuccess: function(userData) {
+                    console.log('✅ Admin authenticated:', userData.name);
+                }
+            });
+
+            if (!alreadyVerified) {
+                VerificationModal.show();
+            }
         });
 
-        // Event listeners
-        function setupEventListeners() {
-            // Login form
-            document.getElementById('loginBtn').addEventListener('click', handleLogin);
-            document.getElementById('passwordInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    handleLogin();
-                }
-            });
-
-            // Password toggle
-            document.getElementById('togglePassword').addEventListener('click', togglePasswordVisibility);
-
-            // Logout
-            document.getElementById('logoutBtn').addEventListener('click', logout);
-        }
-
-        // Handle login
-        function handleLogin() {
-            const password = document.getElementById('passwordInput').value;
-            const errorDiv = document.getElementById('loginError');
-            const loginBtn = document.getElementById('loginBtn');
-
-            // Clear previous errors
-            errorDiv.classList.add('hidden');
-
-            // Disable button and show loading
-            loginBtn.disabled = true;
-            loginBtn.textContent = '⏳ Authenticating...';
-
-            // Call PasswordManager API to verify admin password
-            makeAPICall('getPasswords', {}, function(response) {
-                if (response.success && response.passwords) {
-                    const adminPassword = response.passwords.admin || ADMIN_CONFIG.fallbackPassword;
-                    
-                    setTimeout(() => {
-                        if (password === adminPassword) {
-                            console.log('✅ Admin authentication successful');
-                            showDashboard();
-                        } else {
-                            showError('Invalid admin password');
-                        }
-                        resetLoginButton();
-                    }, 1500);
-                } else {
-                    // Fallback authentication if API fails
-                    console.warn('PasswordManager API unavailable, using fallback');
-                    setTimeout(() => {
-                        if (password === ADMIN_CONFIG.fallbackPassword) {
-                            console.log('✅ Admin authentication successful (fallback)');
-                            showDashboard();
-                        } else {
-                            showError('Invalid admin password');
-                        }
-                        resetLoginButton();
-                    }, 1500);
-                }
-            });
-        }
-
-        function resetLoginButton() {
-            const loginBtn = document.getElementById('loginBtn');
-            loginBtn.disabled = false;
-            loginBtn.textContent = '🔓 Access Admin Portal';
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('loginError');
-            errorDiv.textContent = message;
-            errorDiv.classList.remove('hidden');
-        }
-
-        function showDashboard() {
-            isAuthenticated = true;
-            document.getElementById('loginView').classList.add('hidden');
-            document.getElementById('dashboardView').classList.remove('hidden');
-            
-            // Clear password field
-            document.getElementById('passwordInput').value = '';
-        }
-
         function logout() {
-            isAuthenticated = false;
-            document.getElementById('dashboardView').classList.add('hidden');
-            document.getElementById('loginView').classList.remove('hidden');
-            
-            console.log('🚪 Admin logged out');
-        }
-
-        // Password visibility toggle
-        function togglePasswordVisibility() {
-            const passwordInput = document.getElementById('passwordInput');
-            const toggleButton = document.getElementById('togglePassword');
-            
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                toggleButton.textContent = '🙈';
-            } else {
-                passwordInput.type = 'password';
-                toggleButton.textContent = '👁️';
+            if (confirm('Are you sure you want to log out?')) {
+                VerificationModal.clearVerification();
+                location.reload();
             }
         }
+
+        
 
         // JSONP API call function for cross-origin compatibility
         function makeAPICall(action, params = {}, callback) {
@@ -983,15 +847,9 @@ RESULT:
             document.head.appendChild(script);
         }
 
-        // Module launcher
+   
         function openModule(url) {
-            if (!isAuthenticated) {
-                console.error('Authentication required');
-                return;
-            }
-            
             window.location.href = url;
-            console.log(`🚀 Launching admin module: ${url}`);
         }
 
         // Error handling
