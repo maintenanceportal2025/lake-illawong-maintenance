@@ -422,62 +422,15 @@ Margin-botton: 15px;
             .login-card { margin: 20px; padding: 30px 25px; }
         }
     </style>
+<script src="VerificationModal_V1_0.js"></script>
+    
 </head>
-</head>
+
 <body>
-    <!-- LOGIN SCREEN -->
-    <div id="loginView" class="login-container">
-        <div class="login-card">
-            <div class="login-header">
-                <h1 class="login-title">🛡️ SysAdmin Portal</h1>
-                <div class="version-badge">v1.0 - System Administration</div>
-                <p class="login-subtitle">Technical system management access</p>
-            </div>
-            
-            <div class="status-box">
-                🟢 System Administration Ready - All Technical Tools Available
-            </div>
-            
-            <div id="loginError" class="error-message hidden">
-                ❌ Invalid system administrator password
-            </div>
-            
-            <div class="warning-box">
-                <div class="warning-content">
-                    <span style="font-size: 18px; margin-top: 2px;">⚠️</span>
-                    <div>
-                        <div class="warning-title">System Administrator Access Only</div>
-                        <div style="line-height: 1.5; font-size: 14px;">
-                            This portal provides access to critical system administration tools including 
-                            password management, security settings, and technical configuration.<br/>
-                            <strong>Authorized technical personnel only.</strong>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label class="form-label" for="passwordInput">System Administrator Password:</label>
-                <div class="password-input-group">
-                    <input type="password" 
-                           id="passwordInput" 
-                           class="password-input"
-                           placeholder="Enter system password"
-                           autocomplete="current-password">
-                    <button type="button" 
-                            id="togglePassword" 
-                            class="toggle-btn">👁️</button>
-                </div>
-            </div>
-            
-            <button id="loginBtn" class="login-btn">
-                🔐 Access System Administration
-            </button>
-        </div>
-    </div>
+    
 
         <!-- DASHBOARD VIEW -->
-    <div id="dashboardView" class="container hidden">
+    <div id="dashboardView" class="container">
         <!-- SIMPLE PAGE TITLE -->
 
 
@@ -658,148 +611,36 @@ Margin-botton: 15px;
 </div>
 
     <script>
-        // SysAdmin Portal Configuration
+      // SysAdmin Portal Configuration
         const SYSADMIN_CONFIG = {
-    password: 'sysadmin2025',
-    modules: {
-        'passwords': 'PasswordSettings.html',
-        'dependencies': 'SystemDependencies.html',  // ADD THIS LINE
-        'logs': 'SystemLogs.html',
-        'health': '#future-module', 
-        'config': '#future-module'
-    }
-};
-        
-const PASSWORD_API = 'https://script.google.com/macros/s/AKfycbyu0RdVfmlQEnr1wi5tfkPi-tGNLzKcs5H3R9DAnKXzZROwqEPhnCvpNq3CsjKGeaxXwA/exec';
-
-async function getSysAdminPassword() {
-    return new Promise((resolve, reject) => {
-        const callbackName = `callback_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-        
-        window[callbackName] = function(data) {
-            delete window[callbackName];
-            if (data.success && data.passwords && data.passwords.sysadmin) {
-                resolve(data.passwords.sysadmin);
-            } else {
-                console.warn('⚠️ SysAdmin Password API failed, using fallback');
-                resolve('sysadmin2025');
+            modules: {
+                'passwords':     'PasswordSettings.html',
+                'dependencies':  'SystemDependencies.html',
+                'logs':          'SystemLogs.html',
+                'health':        '#future-module',
+                'config':        '#future-module'
             }
         };
-        
-        const script = document.createElement('script');
-        script.src = `${PASSWORD_API}?action=getPasswords&callback=${callbackName}`;
-        script.onerror = () => {
-            delete window[callbackName];
-            console.warn('⚠️ SysAdmin Password API unavailable, using fallback');
-            resolve('sysadmin2025');
-        };
-        document.head.appendChild(script);
-    });
-}
-
-        
-
-        
 
         // Initialize portal
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🛡️ SysAdmin Portal v1.0 - Initializing...');
-            setupEventListeners();
-        });
+            console.log('🛡️ SysAdmin Portal - Initializing...');
 
-        // Event listeners
-        function setupEventListeners() {
-            // Login form
-            document.getElementById('loginBtn').addEventListener('click', handleLogin);
-            document.getElementById('passwordInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    handleLogin();
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'SysAdmin Portal',
+                moduleIcon: '🛡️',
+                sessionKey: 'portalSysAdminVerified',
+                onSuccess: function(userData) {
+                    console.log('✅ SysAdmin authenticated:', userData.name);
                 }
             });
 
-            // Password toggle
-            document.getElementById('togglePassword').addEventListener('click', togglePasswordVisibility);
-
-            // Logout
-            document.getElementById('logoutBtn').addEventListener('click', logout);
-        }
-
-        // Handle login
-async function handleLogin() {
-    const password = document.getElementById('passwordInput').value;
-    const errorDiv = document.getElementById('loginError');
-    const loginBtn = document.getElementById('loginBtn');
-
-    // Disable button and show loading
-    loginBtn.disabled = true;
-    loginBtn.textContent = '⏳ Authenticating...';
-
-    try {
-        const currentPassword = await getSysAdminPassword();
-        
-        setTimeout(() => {
-            if (password === currentPassword) {
-                console.log('✅ System administrator authentication successful');
-                
-                // Hide login, show dashboard
-                document.getElementById('loginView').classList.add('hidden');
-                document.getElementById('dashboardView').classList.remove('hidden');
-                
-                // Clear password field
-                document.getElementById('passwordInput').value = '';
-                errorDiv.classList.add('hidden');
-            } else {
-                console.log('❌ Invalid system administrator password');
-                errorDiv.classList.remove('hidden');
-                
-                // Clear password field after delay
-                setTimeout(() => {
-                    document.getElementById('passwordInput').value = '';
-                }, 1500);
+            if (!alreadyVerified) {
+                VerificationModal.show();
             }
-            
-            // Reset button
-            loginBtn.disabled = false;
-            loginBtn.textContent = '🔐 Access System Administration';
-        }, 1000);
-        
-    } catch (error) {
-        console.error('⚠️ SysAdmin password check failed, trying fallback:', error);
-        
-        setTimeout(() => {
-            if (password === SYSADMIN_CONFIG.password) {
-                console.log('✅ SysAdmin fallback authentication successful');
-                document.getElementById('loginView').classList.add('hidden');
-                document.getElementById('dashboardView').classList.remove('hidden');
-                document.getElementById('passwordInput').value = '';
-                errorDiv.classList.add('hidden');
-            } else {
-                console.log('❌ SysAdmin fallback password also failed');
-                errorDiv.classList.remove('hidden');
-                setTimeout(() => {
-                    document.getElementById('passwordInput').value = '';
-                }, 1500);
-            }
-            
-            loginBtn.disabled = false;
-            loginBtn.textContent = '🔐 Access System Administration';
-        }, 1000);
-    }
-}
+        });
 
-        // Toggle password visibility
-        function togglePasswordVisibility() {
-            const passwordInput = document.getElementById('passwordInput');
-            const toggleBtn = document.getElementById('togglePassword');
-            
-            if (passwordInput.type === 'password') {
-                passwordInput.type = 'text';
-                toggleBtn.textContent = '🙈';
-            } else {
-                passwordInput.type = 'password';
-                toggleBtn.textContent = '👁️';
-            }
-        }
+        
 
         // Open module
         function openModule(moduleType) {
@@ -810,16 +651,7 @@ async function handleLogin() {
         return;
     }
     
-    if (moduleType === 'passwords') {
-        // Open password management module with full URL
-        const fullUrl = 'PasswordSettings.html';
-        window.location.href = fullUrl;
-console.log('🔑 Opening Password Management module at:', fullUrl);
-} else {
-    console.log(`Opening ${moduleType} module:`, moduleUrl);
-    const fullUrl = `${moduleUrl}`;
-    window.location.href = fullUrl;
-    }
+    window.location.href = moduleUrl;
 }
 
         // Get future features description
@@ -835,15 +667,10 @@ console.log('🔑 Opening Password Management module at:', fullUrl);
 
         // Logout
         function logout() {
-            console.log('🚪 Logging out of system administration portal');
-            
-            // Show login, hide dashboard
-            document.getElementById('dashboardView').classList.add('hidden');
-            document.getElementById('loginView').classList.remove('hidden');
-            
-            // Clear any cached data
-            document.getElementById('passwordInput').value = '';
-            document.getElementById('loginError').classList.add('hidden');
+            if (confirm('Are you sure you want to log out?')) {
+                VerificationModal.clearVerification();
+                location.reload();
+            }
         }
 
         // Error handling
