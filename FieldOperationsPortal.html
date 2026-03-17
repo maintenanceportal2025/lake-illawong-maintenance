@@ -416,50 +416,13 @@
             .login-card { margin: 20px; padding: 30px 25px; }
         }
     </style>
+    <script src="VerificationModal_V1_0.js"></script>
 </head>
 <body>
-    <!-- LOGIN VIEW -->
-    <div id="loginView" class="login-container">
-        <div class="login-card">
-            <div class="login-header">
-                <div class="login-title">🔧 Field Operations</div>
-                <div class="version-badge">v1.3.1</div>
-                <div class="login-subtitle">Maintenance team access portal</div>
-            </div>
-
-            <div class="status-box">
-                ✅ System Status: All Operations Online
-            </div>
-
-            <div class="warning-box">
-                <div class="warning-content">
-                    <div>⚡</div>
-                    <div>
-                        <div class="warning-title">Field Operations</div>
-                        This portal provides access to field operations and problem management tools.<br/>
-                        <strong>Authorized maintenance personnel only.</strong>
-                    </div>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label for="passwordInput" class="form-label">Password</label>
-                <div class="password-input-group">
-                    <input type="password" id="passwordInput" class="password-input" placeholder="Enter field operations password">
-                    <button type="button" id="togglePassword" class="toggle-btn">👁️</button>
-                </div>
-            </div>
-
-            <div id="loginError" class="error-message hidden">
-                Invalid password. Please try again.
-            </div>
-
-            <button id="loginBtn">🔓 Access Field Operations Portal</button>
-        </div>
-    </div>
+    
 
     <!-- DASHBOARD VIEW -->
-    <div id="dashboardView" class="container hidden">
+    <div id="dashboardView" class="container">
         <!-- SIMPLE PAGE TITLE -->
 
 
@@ -690,112 +653,35 @@
 
         <!-- SIMPLE LOGOUT -->
         <div class="logout-container">
-            <button id="logoutBtn" class="logout-btn">🚪 Logout</button>
+            <button id="logoutBtn" class="logout-btn" onclick="logout()">🚪 Logout</button>
         </div>
     </div>
 
     <script>
-        // Global variables
-        let isAuthenticated = false;
-
-        // Configuration
-        const FIELD_OPS_CONFIG = {
-            fallbackPassword: 'field2025'
-        };
-
         // Initialize portal
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🔧 Field Operations Portal v1.3.1 - High Contrast Cards - Initializing...');
-            setupEventListeners();
+            console.log('🔧 Field Operations Portal - Initializing...');
+
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'Field Operations Portal',
+                moduleIcon: '🔧',
+                sessionKey: 'portalFieldOpsVerified',
+                useLocalStorage: true,
+                onSuccess: function(userData) {
+                    console.log('✅ Field Operations authenticated:', userData.name);
+                }
+            });
+
+            if (!alreadyVerified) {
+                VerificationModal.show();
+            }
         });
-
-        // Event listeners
-        function setupEventListeners() {
-            // Login form
-            document.getElementById('loginBtn').addEventListener('click', handleLogin);
-            document.getElementById('passwordInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    handleLogin();
-                }
-            });
-
-            // Password toggle
-            document.getElementById('togglePassword').addEventListener('click', togglePasswordVisibility);
-
-            // Logout
-            document.getElementById('logoutBtn').addEventListener('click', logout);
-        }
-
-        // Handle login
-        function handleLogin() {
-            const password = document.getElementById('passwordInput').value;
-            const errorDiv = document.getElementById('loginError');
-            const loginBtn = document.getElementById('loginBtn');
-
-            // Clear previous errors
-            errorDiv.classList.add('hidden');
-
-            // Disable button and show loading
-            loginBtn.disabled = true;
-            loginBtn.textContent = '⏳ Authenticating...';
-
-            // Call PasswordManager API to verify field operations password
-            makeAPICall('getPasswords', {}, function(response) {
-                if (response.success && response.passwords) {
-                    const fieldPassword = response.passwords.field || FIELD_OPS_CONFIG.fallbackPassword;
-                    
-                    setTimeout(() => {
-                        if (password === fieldPassword) {
-                            console.log('✅ Field Operations authentication successful');
-                            showDashboard();
-                        } else {
-                            showError('Invalid field operations password');
-                        }
-                        resetLoginButton();
-                    }, 1500);
-                } else {
-                    // Fallback authentication if API fails
-                    console.warn('PasswordManager API unavailable, using fallback');
-                    setTimeout(() => {
-                        if (password === FIELD_OPS_CONFIG.fallbackPassword) {
-                            console.log('✅ Field Operations authentication successful (fallback)');
-                            showDashboard();
-                        } else {
-                            showError('Invalid field operations password');
-                        }
-                        resetLoginButton();
-                    }, 1500);
-                }
-            });
-        }
-
-        function resetLoginButton() {
-            const loginBtn = document.getElementById('loginBtn');
-            loginBtn.disabled = false;
-            loginBtn.textContent = '🔓 Access Field Operations Portal';
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('loginError');
-            errorDiv.textContent = message;
-            errorDiv.classList.remove('hidden');
-        }
-
-        function showDashboard() {
-            isAuthenticated = true;
-            document.getElementById('loginView').classList.add('hidden');
-            document.getElementById('dashboardView').classList.remove('hidden');
-            
-            // Clear password field
-            document.getElementById('passwordInput').value = '';
-        }
-
+        
         function logout() {
-            isAuthenticated = false;
-            document.getElementById('dashboardView').classList.add('hidden');
-            document.getElementById('loginView').classList.remove('hidden');
-            
-            console.log('🚪 Field Operations logged out');
+            if (confirm('Are you sure you want to log out?')) {
+                VerificationModal.clearVerification();
+                location.reload();
+            }
         }
 
         // Password visibility toggle
