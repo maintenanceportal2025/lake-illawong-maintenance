@@ -465,8 +465,8 @@ const VerificationModal = (function() {
             <p class="vm-text-muted">Choose how you'd like to receive your verification code:</p>
             
             <div class="vm-method-choice">
-                <div class="vm-method-option" onclick="VerificationModal._selectMethod('email')">
-                    <input type="radio" name="vmMethod" value="email" id="vmEmailRadio">
+               <div class="vm-method-option" onclick="VerificationModal._selectMethod('email')">
+                    <input type="radio" name="vmMethod" value="email" id="vmEmailRadio" onclick="event.stopPropagation(); VerificationModal._selectMethod('email')">
                     <div class="vm-method-label">
                         <div class="vm-method-title">📧 Email</div>
                         <input type="email" 
@@ -479,7 +479,7 @@ const VerificationModal = (function() {
                 </div>
                 
                 <div class="vm-method-option" onclick="VerificationModal._selectMethod('sms')">
-                    <input type="radio" name="vmMethod" value="sms" id="vmSmsRadio">
+                    <input type="radio" name="vmMethod" value="sms" id="vmSmsRadio" onclick="event.stopPropagation(); VerificationModal._selectMethod('sms')">
                     <div class="vm-method-label">
                         <div class="vm-method-title">📱 SMS</div>
                         <input type="tel" 
