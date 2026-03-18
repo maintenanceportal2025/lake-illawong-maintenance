@@ -230,8 +230,10 @@ const VerificationModal = (function() {
 }
 
 .vm-method-option.selected {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.25);
+    border-color: white;
+    border-width: 2px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.3);
 }
 
 .vm-method-option input[type="radio"] {
