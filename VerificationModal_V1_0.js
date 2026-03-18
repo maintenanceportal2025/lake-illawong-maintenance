@@ -257,18 +257,18 @@ const VerificationModal = (function() {
 .vm-method-input {
     width: 100%;
     padding: 12px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.4);
     border-radius: 2px;
     font-size: 0.95rem;
     transition: border-color 0.2s ease;
-    color: white;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
+    color: #1e293b;
+    background: rgba(255, 255, 255, 0.9);
     box-sizing: border-box;
+    caret-color: #1e293b;
 }
 
 .vm-method-input::placeholder {
-    color: rgba(255, 255, 255, 0.6);
+    color: #94a3b8;
 }
 
 .vm-method-input:focus {
