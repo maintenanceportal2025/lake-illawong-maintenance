@@ -35,6 +35,7 @@ const VerificationModal = (function() {
         moduleIcon: '🔐',
         sessionKey: 'verified',
         useSessionStorage: true,
+        smsOnly: false,
         onSuccess: null
     };
     
@@ -69,6 +70,11 @@ const VerificationModal = (function() {
         if (!modalInjected) {
             injectModal();
             modalInjected = true;
+        }
+        if (config.smsOnly) {
+            const emailOption = document.getElementById('vmEmailOption');
+            if (emailOption) emailOption.style.display = 'none';
+            _selectMethod('sms');
         }
         document.getElementById('vmModal').classList.add('active');
     }
@@ -467,7 +473,7 @@ const VerificationModal = (function() {
             <p class="vm-text-muted">Choose how you'd like to receive your verification code:</p>
             
             <div class="vm-method-choice">
-               <div class="vm-method-option" onclick="VerificationModal._selectMethod('email')">
+               <div class="vm-method-option" id="vmEmailOption" onclick="VerificationModal._selectMethod('email')">
                     <input type="radio" name="vmMethod" value="email" id="vmEmailRadio" onclick="event.stopPropagation(); VerificationModal._selectMethod('email')">
                     <div class="vm-method-label">
                         <div class="vm-method-title">📧 Email</div>
