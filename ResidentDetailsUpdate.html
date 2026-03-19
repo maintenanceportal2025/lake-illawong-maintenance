@@ -759,85 +759,12 @@ HIERARCHICAL POSITION: system_residents_portal-details_update
     </style>
 </head>
 <body style="display:none">
-<!-- ===================================================================
-     VERIFICATION VIEW - PHONE NUMBER AUTHENTICATION
-     =================================================================== -->
-<div id="verificationView" class="verification-container">
-    <div class="verification-card">
-        <!-- Initial Verification State -->
-        <div id="verificationStep">
-            <div class="verification-header">
-                <div class="verification-icon">📱</div>
-                <h1 class="verification-title">Verify Your Identity</h1>
-                <p class="verification-subtitle">Enter your phone number to securely update your contact details</p>
-            </div>
-            
-            <div class="verification-info">
-                <div class="verification-info-title">🔒 Secure Verification</div>
-                <div class="verification-info-text">
-                    We'll verify your phone number against our records to ensure 
-                    you can only update your own contact information.
-                </div>
-            </div>
-            
-            <div id="verificationError" class="error-message hidden">
-                ❌ Phone number not found in our system
-            </div>
-            
-            <div class="phone-input-group">
-    <label class="phone-input-label" for="phoneVerify">Your Phone Number:</label>
-    <div class="password-input-wrapper">
-        <input type="password" 
-               id="phoneVerify" 
-               class="phone-input"
-               placeholder="e.g., 0412-345-678"
-               autocomplete="tel"
-               inputmode="numeric">
-        <button type="button" 
-                class="toggle-visibility-btn" 
-                id="togglePhoneVisibility"
-                onclick="togglePhoneVisibility()">
-            👁️
-        </button>
-    </div>
-</div>
-            
-            <button id="verifyBtn" class="verify-btn">
-                🔍 Verify & Continue
-            </button>
-            
-            <div class="help-link">
-                Don't remember your phone number?<br/>
-                <a href="mailto:management@lakeillawong.com">Contact management for assistance</a>
-            </div>
-        </div>
-        
-        <!-- Verification Success State -->
-        <div id="verificationSuccessStep" class="hidden">
-            <div class="verification-header">
-                <div class="verification-icon">✅</div>
-                <h1 class="verification-title">Identity Verified</h1>
-            </div>
-            
-            <div class="verification-success">
-                <div class="verification-success-title" id="welcomeMessage">✓ Verification Successful</div>
-                <div class="verification-success-text">
-                    You can now update contact details for:
-                </div>
-                <div class="unit-display" id="verifiedUnit">Unit 42 - Stage 1</div>
-            </div>
-            
-            <button id="continueBtn" class="continue-btn">
-                📝 Continue to Update Form
-            </button>
-        </div>
-    </div>
-</div>
+
 
 <!-- ===================================================================
      UPDATE FORM VIEW - SHOWN AFTER VERIFICATION
      =================================================================== -->
-<div id="formView" class="container hidden">
+<div id="formView" class="container">
 
     <div class="container">
         <!-- HEADER -->
@@ -1036,213 +963,73 @@ HIERARCHICAL POSITION: system_residents_portal-details_update
         }
         
 // ===================================================================
-// RESIDENT DETAILS UPDATE V2.0 - PHONE VERIFICATION SYSTEM
+// RESIDENT DETAILS UPDATE V3.0 - OTP SESSION AUTHENTICATION
 // ===================================================================
 
-// Verification state
-let isVerified = false;
-let verifiedUnit = null;
-let verifiedStage = null;
-let verifiedData = null;
+// Session-based state
+const API_URL_MGMT = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec';
 
-// Configuration
-const VERIFICATION_CONFIG = {
-    managementCentralUrl: 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
-    
-};
-
-// Initialize on page load
+// Initialize on page load - fetch resident details from session
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('📱 Resident Details Update V2.0 - Phone Verification System');
-    setupVerificationListeners();
+    console.log('🏠 Resident Details Update V3.0 - OTP Session Authentication');
+    
+    const unit = sessionStorage.getItem('lakeIllawongVerified_unit');
+    const name = sessionStorage.getItem('lakeIllawongVerified_name');
+    
+    if (unit) {
+        loadResidentFromSession(unit, name);
+    }
 });
 
-// Setup verification event listeners
-function setupVerificationListeners() {
-    // Verify button
-    document.getElementById('verifyBtn').addEventListener('click', handleVerification);
+// Load resident details using unit from session
+function loadResidentFromSession(unit, name) {
+    showLoading(true);
     
-    // Enter key on phone input
-    document.getElementById('phoneVerify').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            handleVerification();
-        }
-    });
-    
-    // Continue button (after verification)
-    document.getElementById('continueBtn').addEventListener('click', showUpdateForm);
-}
-
-// Handle phone verification
-function handleVerification() {
-    const phoneNumber = document.getElementById('phoneVerify').value.trim();
-    const errorDiv = document.getElementById('verificationError');
-    const verifyBtn = document.getElementById('verifyBtn');
-    
-    // Clear previous errors
-    errorDiv.classList.add('hidden');
-    
-    // Validate input
-    if (!phoneNumber) {
-        showVerificationError('Please enter your phone number');
-        return;
-    }
-    
-    // Disable button and show loading
-    verifyBtn.disabled = true;
-    verifyBtn.textContent = '⏳ Verifying...';
-    
-    // Call ManagementCentral API to verify identity
-    makeManagementAPICall('verifyIdentity', { phoneNumber: phoneNumber }, function(response) {
-        if (response.success && response.verified) {
-            console.log('✅ Identity verified:', response.unit, response.stage);
-            
-            // Store verification data
-            isVerified = true;
-            verifiedUnit = response.unit;
-            verifiedStage = response.stage;
-            verifiedData = {
-                unit: response.unit,
-                name: response.name,
-                email: response.email,
-                phone: response.phone,
-                stage: response.stage
-            };
-            
-            // Show success state
-            showVerificationSuccess();
-        } else {
-            console.error('❌ Verification failed:', response.error);
-            showVerificationError(response.message || 'Phone number not found in our system. Please check and try again, or contact management for assistance.');
-            resetVerifyButton();
-        }
-    });
-}
-
-// Show verification success state
-function showVerificationSuccess() {
-    // Hide initial verification step
-    document.getElementById('verificationStep').classList.add('hidden');
-    
-    // Show success step
-    document.getElementById('verificationSuccessStep').classList.remove('hidden');
-    
-    // Display verified unit
-    document.getElementById('verifiedUnit').textContent = `${verifiedUnit} - ${verifiedStage}`;
-    
-    // PERSONALIZE THE WELCOME MESSAGE
-    if (verifiedData && verifiedData.name) {
-        const firstName = verifiedData.name.split(' ')[0];
-        document.getElementById('welcomeMessage').textContent = `✓ Welcome back, ${firstName}!`;
-    }
-}
-
-// Show update form (after verification)
-function showUpdateForm() {
-    // Hide verification view
-    document.getElementById('verificationView').classList.add('hidden');
-    
-    // Show form view
-    document.getElementById('formView').classList.remove('hidden');
-    
-    // Add verification badge
-    addVerificationBadge();
-    
-    // SKIP to detail selection screen (screen 3)
-    // We already know who they are from phone verification!
-    if (verifiedData) {
-        // Set current unit and selected resident from verified data
-        currentUnit = verifiedData.unit;
-        selectedResident = {
-            name: verifiedData.name,
-            email: verifiedData.email,
-            phone: verifiedData.phone
-        };
-        
-        // Display detail options
-        displayDetailOptions();
-        
-        // Go to screen 3 (detail selection)
-        goToScreen(3);
-    }
-}
-// Add verification badge to form header
-function addVerificationBadge() {
-    const formView = document.getElementById('formView');
-    if (!formView) return;
-    
-    const header = formView.querySelector('.header');
-    if (header && !document.getElementById('verificationBadge')) {
-        const badge = document.createElement('div');
-        badge.id = 'verificationBadge';
-        badge.style.cssText = `
-            background: #d1fae5;
-            border: 2px solid #10b981;
-            color: #065f46;
-            padding: 12px 20px;
-            border-radius: 12px;
-            text-align: center;
-            font-weight: 600;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
-        `;
-        badge.innerHTML = `✅ Verified: ${verifiedUnit} - ${verifiedStage}`;
-        header.insertAdjacentElement('afterend', badge);
-    }
-}
-
-// Reset verify button
-function resetVerifyButton() {
-    const verifyBtn = document.getElementById('verifyBtn');
-    verifyBtn.disabled = false;
-    verifyBtn.textContent = '🔍 Verify & Continue';
-}
-
-// Show verification error
-function showVerificationError(message) {
-    const errorDiv = document.getElementById('verificationError');
-    errorDiv.textContent = message;
-    errorDiv.classList.remove('hidden');
-}
-
-// JSONP API call to ManagementCentral
-function makeManagementAPICall(action, params = {}, callback) {
-    const baseUrl = VERIFICATION_CONFIG.managementCentralUrl;
     const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
     
-    // Create global callback function
-    window[callbackName] = function(data) {
-        callback(data);
-        // Clean up
+    window[callbackName] = function(response) {
         delete window[callbackName];
         document.head.removeChild(script);
+        
+        if (response.success && response.residents && response.residents.length > 0) {
+            currentUnit = unit;
+            unitResidents = response.residents;
+            
+            // If only one resident, select automatically and go to screen 3
+            if (unitResidents.length === 1) {
+                selectedResident = {
+                    name: unitResidents[0].name,
+                    email: unitResidents[0].email,
+                    phone: unitResidents[0].phone
+                };
+                displayDetailOptions();
+                goToScreen(3);
+            } else {
+                // Multiple residents — show selection screen
+                displayResidents();
+                goToScreen(2);
+            }
+        } else {
+            alert('Unable to load your details. Please try again or contact management.');
+        }
+        
+        showLoading(false);
     };
     
-    // Build URL with parameters
-    const urlParams = new URLSearchParams({
-        action: action,
-        callback: callbackName,
-        ...params
-    });
-    
-    // Create and execute JSONP request
     const script = document.createElement('script');
-    script.src = `${baseUrl}?${urlParams.toString()}`;
+    script.src = `${API_URL_MGMT}?action=getUnitResidents&unitNumber=${encodeURIComponent(unit)}&callback=${callbackName}`;
     script.onerror = function() {
-        console.error('ManagementCentral API connection failed');
-        callback({ success: false, error: 'Connection failed', message: 'Unable to connect to verification system. Please try again later.' });
+        console.error('API connection failed');
+        showLoading(false);
         delete window[callbackName];
         document.head.removeChild(script);
     };
-    
     document.head.appendChild(script);
 }
 
 // ===================================================================
-// END VERIFICATION SYSTEM
-// ===================================================================
-
 // EXISTING UPDATE FORM CODE CONTINUES BELOW...
+// ===================================================================
 // (Keep all your existing form submission, validation, update logic)
 
         // Configuration
