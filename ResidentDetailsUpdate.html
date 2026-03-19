@@ -985,39 +985,37 @@ document.addEventListener('DOMContentLoaded', function() {
 function loadResidentFromSession(unit, name) {
     showLoading(true);
     
+    const phone = sessionStorage.getItem('lakeIllawongVerified_identifier');
+    
+    if (!phone) {
+        alert('Unable to load your details. Please return to the portal and verify again.');
+        showLoading(false);
+        return;
+    }
+    
     const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
     
     window[callbackName] = function(response) {
         delete window[callbackName];
         document.head.removeChild(script);
         
-        if (response.success && response.residents && response.residents.length > 0) {
-            currentUnit = unit;
-            unitResidents = response.residents;
-            
-            // If only one resident, select automatically and go to screen 3
-            if (unitResidents.length === 1) {
-                selectedResident = {
-                    name: unitResidents[0].name,
-                    email: unitResidents[0].email,
-                    phone: unitResidents[0].phone
-                };
-                displayDetailOptions();
-                goToScreen(3);
-            } else {
-                // Multiple residents — show selection screen
-                displayResidents();
-                goToScreen(2);
-            }
+        if (response.success && response.verified) {
+            currentUnit = response.unit;
+            selectedResident = {
+                name: response.name,
+                email: response.email,
+                phone: response.phone
+            };
+            displayDetailOptions();
+            goToScreen(3);
         } else {
             alert('Unable to load your details. Please try again or contact management.');
         }
-        
         showLoading(false);
     };
     
     const script = document.createElement('script');
-    script.src = `${API_URL_MGMT}?action=getUnitResidents&unitNumber=${encodeURIComponent(unit)}&callback=${callbackName}`;
+    script.src = `${API_URL_MGMT}?action=verifyIdentity&phoneNumber=${encodeURIComponent(phone)}&callback=${callbackName}`;
     script.onerror = function() {
         console.error('API connection failed');
         showLoading(false);
