@@ -128,6 +128,7 @@ const VerificationModal = (function() {
         sessionStorage.setItem(config.sessionKey + '_name', userData.name);
         sessionStorage.setItem(config.sessionKey + '_unit', userData.unit);
         sessionStorage.setItem(config.sessionKey + '_roles', JSON.stringify(userData.roleTags));
+        sessionStorage.setItem(config.sessionKey + '_identifier', verificationData.identifier);
     }
     
     // Clear verification
@@ -137,6 +138,7 @@ const VerificationModal = (function() {
             sessionStorage.removeItem(config.sessionKey + '_name');
             sessionStorage.removeItem(config.sessionKey + '_unit');
             sessionStorage.removeItem(config.sessionKey + '_roles');
+            sessionStorage.removeItem(config.sessionKey + '_identifier');
         }
         verificationData = { method: null, identifier: null, verificationId: null };
     }
