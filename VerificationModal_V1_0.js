@@ -467,7 +467,7 @@ const VerificationModal = (function() {
             </div>
             
             <div class="vm-info">
-                🔒 For your security, please verify your identity using your email address or mobile number.
+                🔒 For your security, please verify your identity using your ${config.smsOnly ? 'mobile number' : 'email address or mobile number'}.
             </div>
             
             <div id="vmError1" class="vm-error hidden"></div>
