@@ -340,29 +340,12 @@
 
         <div class="form-card">
             <div class="form-container">
-                <div class="info-box">
+                <div class="info-box" id="infoBox">
                     <strong>Zone Representative Submission</strong><br>
-                    Select your zone, identify yourself, choose the unit, and describe the problem.
+                    <span id="infoText">Loading your zone...</span>
                 </div>
 
                 <form id="faultForm">
-                    <div class="form-group">
-                        <label class="form-label" for="zoneSelect">Select Zone *</label>
-                        <select class="form-input" id="zoneSelect" required>
-                            <option value="">-- Select Zone --</option>
-                            <option value="Zone 1">Zone 1</option>
-                            <option value="Zone 2">Zone 2</option>
-                            <option value="Zone 3">Zone 3</option>
-                            <option value="Zone 4">Zone 4</option>
-                            <option value="Zone 5">Zone 5</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group" id="zoneRepGroup" style="display: none;">
-                        <label class="form-label">Select Your Name *</label>
-                        <div class="radio-group" id="zoneRepRadios"></div>
-                    </div>
-
                     <div class="form-group" id="unitGroup" style="display: none;">
                         <label class="form-label" for="unitNumber">Unit Number *</label>
                         <select class="form-input" id="unitNumber" required disabled>
@@ -397,8 +380,7 @@
         </div>
     </div>
 
-    <script>
-
+<script>
 
         // SESSION GUARD
         if (!sessionStorage.getItem('portalZoneRepVerified')) {
@@ -406,81 +388,36 @@
         } else {
             document.body.style.display = '';
         }
-        
-        // Backend URL - V1.4 with new endpoints
+
+        // Backend URL
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyQZ2m6zSnN0LSD1BTBNn3hK81YextFLU89_DHB8ijjFi8U51Pa8QWlpu52H7AdGaXLcA/exec';
 
-
         let selectedZoneRepName = '';
+        let selectedZone = '';
 
         document.addEventListener('DOMContentLoaded', function() {
-            setupEventListeners();
+            initialiseFromSession();
         });
 
-        function setupEventListeners() {
-            document.getElementById('zoneSelect').addEventListener('change', handleZoneChange);
-            document.getElementById('zoneRepRadios').addEventListener('change', handleZoneRepChange);
-        }
+        function initialiseFromSession() {
+            const name = sessionStorage.getItem('portalZoneRepVerified_name') || '';
+            const rolesRaw = sessionStorage.getItem('portalZoneRepVerified_roles') || '[]';
+            const roles = JSON.parse(rolesRaw);
 
-        async function handleZoneChange(e) {
-            const zone = e.target.value;
-            
-            if (!zone) {
-                hideAllGroups();
+            const zoneRepTag = roles.find(r => r.startsWith('ZoneRep-'));
+            if (!zoneRepTag) {
+                document.getElementById('infoText').textContent = 'No zone assignment found. Please contact management.';
                 return;
             }
 
-            const zoneRepGroup = document.getElementById('zoneRepGroup');
-            zoneRepGroup.style.display = 'block';
-            document.getElementById('zoneRepRadios').innerHTML = '<div style="padding: 16px; text-align: center; color: #64748b;">Loading Zone Reps...</div>';
+            const zoneNumber = zoneRepTag.replace('ZoneRep-', '');
+            selectedZone = 'Zone ' + zoneNumber;
+            selectedZoneRepName = name;
 
-            try {
-                const response = await callScript({
-                    action: 'getZoneRepDropdowns',
-                    zone: zone
-                });
+            document.getElementById('infoText').innerHTML =
+                `Submitting as <strong>${name}</strong> &mdash; ${selectedZone}`;
 
-                if (response.success && response.zoneReps && response.zoneReps.length > 0) {
-                    populateZoneRepRadios(response.zoneReps);
-                } else {
-                    document.getElementById('zoneRepRadios').innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">No Zone Reps found</div>';
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                document.getElementById('zoneRepRadios').innerHTML = '<div style="padding: 16px; text-align: center; color: #ef4444;">Error loading Zone Reps</div>';
-            }
-        }
-
-        function populateZoneRepRadios(zoneReps) {
-            const container = document.getElementById('zoneRepRadios');
-            container.innerHTML = '';
-
-            zoneReps.forEach((rep, index) => {
-                const radioDiv = document.createElement('div');
-                radioDiv.className = 'radio-option';
-                
-                const radioInput = document.createElement('input');
-                radioInput.type = 'radio';
-                radioInput.name = 'zoneRep';
-                radioInput.id = `zoneRep${index}`;
-                radioInput.value = rep.name;
-                
-                const label = document.createElement('label');
-                label.htmlFor = `zoneRep${index}`;
-                label.textContent = rep.name;
-                
-                radioDiv.appendChild(radioInput);
-                radioDiv.appendChild(label);
-                container.appendChild(radioDiv);
-            });
-        }
-
-        async function handleZoneRepChange(e) {
-            if (e.target.type === 'radio') {
-                selectedZoneRepName = e.target.value;
-                const zone = document.getElementById('zoneSelect').value;
-                await loadUnitsForZone(zone);
-            }
+            loadUnitsForZone(selectedZone);
         }
 
         async function loadUnitsForZone(zone) {
@@ -525,11 +462,9 @@
         }
 
         function hideAllGroups() {
-            document.getElementById('zoneRepGroup').style.display = 'none';
             document.getElementById('unitGroup').style.display = 'none';
             document.getElementById('descriptionGroup').style.display = 'none';
             document.getElementById('submitBtn').disabled = true;
-            selectedZoneRepName = '';
         }
 
         async function callScript(data) {
@@ -608,7 +543,7 @@
                     `;
                     
                     document.getElementById('faultForm').reset();
-                    hideAllGroups();
+                    loadUnitsForZone(selectedZone);
                 } else {
                     result.className = 'result error';
                     resultMessage.innerHTML = `
