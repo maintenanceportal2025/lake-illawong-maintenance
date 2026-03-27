@@ -1536,7 +1536,6 @@ Padding: 10px;
 		
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxtdMfxB5b1F5K401X0lJxnK2-DGkiG2zYZNukJvAHx0K1AqgPTMIdiunwS3etm0FOL/exec';
        
-        // CLEAN STATE MANAGEMENT
         let problems = [];
         let filteredProblems = [];
         let activePriorityFilter = 'all';
@@ -1544,6 +1543,11 @@ Padding: 10px;
 	let showCompleted = false;  // Toggle for showing completed/cancelled problems
 	let showProgrammed = false; // Toggle for showing programmed work
 	let currentProblem = null;
+
+        // V1.1.0 - Server-side filtering caches
+        let activeProblems = [];
+        let programmedProblems = [];
+        let completedProblems = [];
        
 
 let sortNewestFirst = false; // Default: Oldest first (current behavior)
@@ -1669,13 +1673,13 @@ let sortNewestFirst = false; // Default: Oldest first (current behavior)
         await loadDropdownOptions();
         
         updateLoadingPhase('Loading problems data...', 60, 'Retrieving maintenance requests');
-        await loadProblems();
+        await loadActiveProblems();
         
         updateLoadingPhase('Finalizing display...', 90, 'Preparing user interface');
         await new Promise(resolve => setTimeout(resolve, 1000)); // Brief pause
         
         updateLoadingPhase('Complete!', 100, 'System ready for use');
-        updateDataStatus(`${problems.length} problems loaded successfully`, 'success');
+        updateDataStatus(`${activeProblems.length} active problems loaded successfully`, 'success');
         console.log('✅ System initialization complete');
         
         // Apply pending search after full initialization
@@ -1717,20 +1721,48 @@ let sortNewestFirst = false; // Default: Oldest first (current behavior)
 		// Show Completed Toggle (only exists after login)
 const showCompletedToggle = document.getElementById('showCompletedToggle');
 if (showCompletedToggle) {
-    showCompletedToggle.addEventListener('change', function() {
+    showCompletedToggle.addEventListener('change', async function() {
         showCompleted = this.checked;
         console.log('🔍 Show completed toggle:', showCompleted);
-        applyFilters();
+        
+        if (showCompleted && completedProblems.length === 0) {
+            this.disabled = true;
+            try {
+                await loadCompletedProblems();
+            } catch (error) {
+                console.error('❌ Failed to load completed problems:', error);
+                showCompleted = false;
+                this.checked = false;
+            } finally {
+                this.disabled = false;
+            }
+        } else {
+            applyFilters();
+        }
     });
 }
 
 // Show Programmed Toggle (only exists after login)
 const showProgrammedToggle = document.getElementById('showProgrammedToggle');
 if (showProgrammedToggle) {
-    showProgrammedToggle.addEventListener('change', function() {
+    showProgrammedToggle.addEventListener('change', async function() {
         showProgrammed = this.checked;
         console.log('Show programmed toggle:', showProgrammed);
-        applyFilters();
+        
+        if (showProgrammed && programmedProblems.length === 0) {
+            this.disabled = true;
+            try {
+                await loadProgrammedProblems();
+            } catch (error) {
+                console.error('❌ Failed to load programmed problems:', error);
+                showProgrammed = false;
+                this.checked = false;
+            } finally {
+                this.disabled = false;
+            }
+        } else {
+            applyFilters();
+        }
     });
 }
 
@@ -2015,6 +2047,82 @@ if (activityReportBtn) {
                 });
             });
         }
+
+		async function loadActiveProblems() {
+            console.log('* loadActiveProblems() FUNCTION STARTED');
+            
+            try {
+                updateConnectionStatus('Loading active problems...', 'loading');
+                
+                const response = await makeRequest('getActiveProblems');
+                
+                if (response.success) {
+                    activeProblems = response.data || [];
+                    console.log('📊 Active problems loaded:', activeProblems.length);
+                    
+                    applyFilters();
+                    updatePriorityCounts();
+                    updateConnectionStatus(`${activeProblems.length} active problems loaded`, 'success');
+                } else {
+                    throw new Error(response.message || 'Failed to load active problems');
+                }
+            } catch (error) {
+                console.error('❌ Error loading active problems:', error);
+                updateConnectionStatus(`Load failed: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+		async function loadProgrammedProblems() {
+            console.log('* loadProgrammedProblems() FUNCTION STARTED');
+            
+            try {
+                updateConnectionStatus('Loading programmed work...', 'loading');
+                
+                const response = await makeRequest('getProgrammedProblems');
+                
+                if (response.success) {
+                    programmedProblems = response.data || [];
+                    console.log('📊 Programmed problems loaded:', programmedProblems.length);
+                    
+                    applyFilters();
+                    updateConnectionStatus('Programmed work loaded', 'success');
+                } else {
+                    throw new Error(response.message || 'Failed to load programmed problems');
+                }
+            } catch (error) {
+                console.error('❌ Error loading programmed problems:', error);
+                updateConnectionStatus(`Load failed: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+async function loadCompletedProblems() {
+            console.log('* loadCompletedProblems() FUNCTION STARTED');
+            
+            try {
+                updateConnectionStatus('Loading completed problems...', 'loading');
+                
+                const response = await makeRequest('getCompletedProblems');
+                
+                if (response.success) {
+                    completedProblems = response.data || [];
+                    console.log('📊 Completed problems loaded:', completedProblems.length);
+                    
+                    applyFilters();
+                    updateConnectionStatus('Completed problems loaded', 'success');
+                } else {
+                    throw new Error(response.message || 'Failed to load completed problems');
+                }
+            } catch (error) {
+                console.error('❌ Error loading completed problems:', error);
+                updateConnectionStatus(`Load failed: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+		
+		
         
         async function loadProblems() {
     console.log('* loadProblems() FUNCTION STARTED');
@@ -2092,32 +2200,21 @@ if (activityReportBtn) {
         }
         
         // SINGLE CLEAN FILTERING FUNCTION
-        function applyFilters() {
-    let filtered = [...problems];
+       function applyFilters() {
+    // V1.1.0 - Merge from server-side filtered caches
+    let filtered = [...activeProblems];
     
-    console.log('🔒" Starting with', filtered.length, 'problems');
+    if (showProgrammed) {
+        filtered = [...filtered, ...programmedProblems];
+    }
     
-    // Step 1: Conditionally exclude completed and cancelled
-if (!showCompleted) {
-    filtered = filtered.filter(problem => 
-        problem.problemStatus !== 'Completed' && 
-        problem.problemStatus !== 'Cancelled'
-    );
-    console.log('📊 After excluding completed/cancelled:', filtered.length);
-} else {
-    console.log('📊 Including all problems (completed/cancelled shown):', filtered.length);
-}
-
-// Step 1b: Conditionally exclude programmed work
-if (!showProgrammed) {
-    filtered = filtered.filter(problem => 
-        problem.problemStatus !== 'Programmed' && 
-        problem.problemStatus !== 'Programmed-Completed'
-    );
-    console.log('📊 After excluding programmed work:', filtered.length);
-} else {
-    console.log('📊 Including programmed work:', filtered.length);
-}
+    if (showCompleted) {
+        filtered = [...filtered, ...completedProblems];
+    }
+    
+    console.log('📊 Starting with', filtered.length, 'problems (active:', activeProblems.length, 
+                'programmed:', showProgrammed ? programmedProblems.length : 0,
+                'completed:', showCompleted ? completedProblems.length : 0, ')');
     
    
     
@@ -2868,7 +2965,9 @@ async function reopenProblem() {
             alert('✅ Problem successfully reopened and returned to active queue');
             
             // Refresh data and return to list
-            await loadProblems();
+            programmedProblems = [];
+            completedProblems = [];
+            await loadActiveProblems();
             showListView();
         } else {
             throw new Error(response.message || 'Failed to reopen problem');
@@ -3020,7 +3119,7 @@ function showRetryNotification(attempt, maxAttempts) {
             }
         }
         
-        async function refreshData() {
+       async function refreshData() {
             const refreshBtn = document.getElementById('refreshBtn');
             
             if (refreshBtn) {
@@ -3032,13 +3131,25 @@ function showRetryNotification(attempt, maxAttempts) {
                 console.log('🔄 Refreshing dropdown options...');
                 await loadDropdownOptions();
                 
+                // V1.1.0 - Clear caches and reload active only
+                programmedProblems = [];
+                completedProblems = [];
+                
+                // Reset toggles
+                showProgrammed = false;
+                showCompleted = false;
+                const showProgrammedToggle = document.getElementById('showProgrammedToggle');
+                const showCompletedToggle = document.getElementById('showCompletedToggle');
+                if (showProgrammedToggle) showProgrammedToggle.checked = false;
+                if (showCompletedToggle) showCompletedToggle.checked = false;
+                
                 updateDataStatus('Refreshing problems...', 'loading');
-                await loadProblems();
+                await loadActiveProblems();
                 updateDataStatus('Data refreshed successfully', 'success');
                 
                 // Refresh current problem if viewing details
                 if (currentProblem && !document.getElementById('problemDetailsView').classList.contains('hidden')) {
-                    const updatedProblem = problems.find(p => p.internalId === currentProblem.internalId);
+                    const updatedProblem = activeProblems.find(p => p.internalId === currentProblem.internalId);
                     if (updatedProblem) {
                         currentProblem = updatedProblem;
                         openProblemDetailsPage(updatedProblem);
