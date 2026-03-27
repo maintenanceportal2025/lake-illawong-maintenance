@@ -2284,12 +2284,7 @@ async function loadCompletedProblems() {
 }
         
         function updatePriorityCounts() {
-            // Count only active problems (excluding completed/cancelled)
-            const activeProblems = problems.filter(problem => 
-                problem.problemStatus !== 'Completed' && 
-                problem.problemStatus !== 'Cancelled'
-            );
-            
+            // V1.1.0 - Count from activeProblems cache (active queue only)
             const counts = {
                 all: activeProblems.length,
                 urgent: activeProblems.filter(p => (p.problemPriority || 'Medium') === 'Urgent').length,
@@ -2895,11 +2890,11 @@ async function saveDetailsFromPage(e) {
         const response = await makeRequest('updateProblem', updateData);
         
         if (response.success) {
-            // Update local data
-            const problemIndex = problems.findIndex(p => p.internalId === currentProblem.internalId);
+            // V1.1.0 - Update local data in activeProblems cache
+            const problemIndex = activeProblems.findIndex(p => p.internalId === currentProblem.internalId);
             if (problemIndex !== -1) {
-                problems[problemIndex] = { 
-                    ...problems[problemIndex], 
+                activeProblems[problemIndex] = { 
+                    ...activeProblems[problemIndex], 
                     ...updateData
                 };
             }
@@ -2914,7 +2909,7 @@ async function saveDetailsFromPage(e) {
                 updateDataStatus('Problem marked as completed ✓', 'success');
             }
             
-            currentProblem = problems[problemIndex];
+            currentProblem = activeProblems[problemIndex];
         } else {
             throw new Error(response.message || 'Update failed');
         }
