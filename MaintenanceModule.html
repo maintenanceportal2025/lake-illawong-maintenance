@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.0
+  Frontend Version: V1.2.1
   Backend:          MaintenancePortal V1.5.js
   Status:           PRODUCTION
   Created:          September 2025
@@ -25,6 +25,10 @@ VERSION HISTORY:
                      Priority counts fixed to always reflect active queue only
                      Activity report updated to use activeProblems cache
                      Scheduled status added to active subset
+V1.2.1 (Mar 2026): Auto-refresh after save — re-fetches active problems
+                     on successful save, re-opens detail view with fresh
+                     activity timeline; returns to list if problem no longer
+                     active (Completed/Cancelled)
 
 AUTHENTICATION:
   Session guard checks sessionStorage for portalFieldOpsVerified key.
@@ -2900,26 +2904,29 @@ async function saveDetailsFromPage(e) {
         const response = await makeRequest('updateProblem', updateData);
         
         if (response.success) {
-            // V1.1.0 - Update local data in activeProblems cache
-            const problemIndex = activeProblems.findIndex(p => p.internalId === currentProblem.internalId);
-            if (problemIndex !== -1) {
-                activeProblems[problemIndex] = { 
-                    ...activeProblems[problemIndex], 
-                    ...updateData
-                };
+            updateDataStatus('Saved — refreshing...', 'loading');
+            saveBtn.textContent = '⏳ Refreshing...';
+            
+            // V1.2.0 - Re-fetch active problems to get fresh activity timeline
+            await loadActiveProblems();
+            
+            // Find the updated problem in the refreshed cache
+            const updatedProblem = activeProblems.find(p => p.internalId === currentProblem.internalId);
+            
+            if (updatedProblem) {
+                // Problem still active — re-open detail view with fresh data
+                currentProblem = updatedProblem;
+                openProblemDetailsPage(updatedProblem);
+                updateDataStatus('Problem updated successfully', 'success');
+                
+                if (updateData.problemStatus === 'Completed') {
+                    updateDataStatus('Problem marked as completed ✓', 'success');
+                }
+            } else {
+                // Problem no longer active (Completed/Cancelled) — return to list
+                updateDataStatus('Problem updated successfully', 'success');
+                showListView();
             }
-            
-            // Refresh views
-            applyFilters();
-            updatePriorityCounts();
-            updateDataStatus('Problem updated successfully', 'success');
-            
-            // Check if status was changed to Completed and show toast
-            if (updateData.problemStatus === 'Completed') {
-                updateDataStatus('Problem marked as completed ✓', 'success');
-            }
-            
-            currentProblem = activeProblems[problemIndex];
         } else {
             throw new Error(response.message || 'Update failed');
         }
@@ -2931,7 +2938,6 @@ async function saveDetailsFromPage(e) {
         saveBtn.disabled = false;
         saveBtn.textContent = originalText;
     }
-}
 
 async function reopenProblem() {
     if (!currentProblem) return;
