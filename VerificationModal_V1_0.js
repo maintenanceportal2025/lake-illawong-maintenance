@@ -442,47 +442,69 @@ const VerificationModal = (function() {
 /* Mobile responsive */
 @media (max-width: 480px) {
     #vmModal {
-        padding: 10px;
-        align-items: flex-start;
-        padding-top: 20px;
+        padding: 8px;
+        align-items: center;
     }
 
     .vm-content {
-        padding: 20px 16px;
-        max-height: 95vh;
+        padding: 16px 14px;
+        max-height: 98vh;
+        overflow-y: auto;
         border-radius: 8px;
     }
 
+    .vm-header {
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+    }
+
     .vm-header-icon {
-        font-size: 2rem;
-        margin-bottom: 8px;
+        font-size: 1.5rem;
+        margin-bottom: 6px;
     }
 
     .vm-title {
-        font-size: 1.4rem;
+        font-size: 1.2rem;
     }
 
     .vm-subtitle {
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+    }
+
+    .vm-text-muted {
+        font-size: 0.8rem;
+        margin-bottom: 10px;
     }
 
     .vm-method-option {
-        padding: 12px;
+        padding: 10px;
+        margin-bottom: 8px;
+    }
+
+    .vm-method-title {
+        font-size: 0.9rem;
+        margin-bottom: 4px;
     }
 
     .vm-method-input {
-        font-size: 0.9rem;
-        padding: 10px 12px;
+        font-size: 0.85rem;
+        padding: 8px 10px;
     }
 
     .vm-btn {
-        padding: 12px;
-        font-size: 0.95rem;
+        padding: 10px;
+        font-size: 0.9rem;
     }
 
     .vm-code-input {
-        font-size: 1.2rem;
-        letter-spacing: 8px;
+        font-size: 1.1rem;
+        letter-spacing: 6px;
+        padding: 10px;
+    }
+
+    .vm-timer {
+        font-size: 0.8rem;
+        margin: 8px 0;
     }
 }
 </style>
