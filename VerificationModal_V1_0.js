@@ -86,7 +86,7 @@ const VerificationModal = (function() {
        if (window.innerWidth <= 480) {
             const modal = document.getElementById('vmModal');
             alert('modal found: ' + (modal ? 'yes' : 'no'));
-            alert('content maxWidth set to: ' + content.style.maxWidth);
+           
             if (modal) {
                 modal.style.padding = '8px';
                 modal.style.alignItems = 'center';
@@ -102,6 +102,7 @@ const VerificationModal = (function() {
                 content.style.maxWidth = '100%';
                 content.style.boxSizing = 'border-box';
             }
+            alert('content maxWidth set to: ' + content.style.maxWidth);
             const header = document.querySelector('.vm-header');
             if (header) {
                 header.style.marginBottom = '12px';
