@@ -21,6 +21,8 @@
  */
 
 const LAKE_ILLAWONG_LOCATIONS = [
+    'Clubhouse',
+    'Common Areas',
     'Unit 1',
     'Unit 2',
     'Unit 3',
@@ -64,7 +66,6 @@ const LAKE_ILLAWONG_LOCATIONS = [
     'Unit 41',
     'Unit 42',
     'Unit 43',
-    'Unit 44',
-    'Clubhouse',
-    'Common Areas'
+    'Unit 44'
+    
 ];
