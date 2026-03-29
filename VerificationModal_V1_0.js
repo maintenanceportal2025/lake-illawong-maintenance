@@ -7,6 +7,7 @@
  * CREATED: February 16, 2026
  * DESIGN: Glass effect modal from Unified Design System v1.4
  * 
+ *
  * USAGE:
  * 1. Include in HTML: <script src="VerificationModal_V1_0.js"></script>
  * 2. Initialize: VerificationModal.init({ ... })
