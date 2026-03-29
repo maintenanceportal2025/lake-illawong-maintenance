@@ -83,6 +83,7 @@ const VerificationModal = (function() {
         document.getElementById('vmModal').classList.add('active');
 
         // Apply mobile styles via JavaScript (iOS Safari media query fix)
+        alert('Screen width: ' + window.innerWidth);
         if (window.innerWidth <= 480) {
             const content = document.querySelector('.vm-content');
             if (content) {
