@@ -83,8 +83,9 @@ const VerificationModal = (function() {
         document.getElementById('vmModal').classList.add('active');
 
         // Apply mobile styles via JavaScript (iOS Safari media query fix)
-        if (window.innerWidth <= 480) {
+       if (window.innerWidth <= 480) {
             const modal = document.getElementById('vmModal');
+            alert('modal found: ' + (modal ? 'yes' : 'no'));
             if (modal) {
                 modal.style.padding = '8px';
                 modal.style.alignItems = 'center';
