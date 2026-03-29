@@ -441,14 +441,45 @@ const VerificationModal = (function() {
 
 /* Mobile responsive */
 @media (max-width: 480px) {
+    #vmModal {
+        padding: 10px;
+        align-items: flex-start;
+        padding-top: 20px;
+    }
+
     .vm-content {
-        padding: 30px 20px;
+        padding: 20px 16px;
+        max-height: 95vh;
+        border-radius: 8px;
     }
-    
+
+    .vm-header-icon {
+        font-size: 2rem;
+        margin-bottom: 8px;
+    }
+
     .vm-title {
-        font-size: 1.5rem;
+        font-size: 1.4rem;
     }
-    
+
+    .vm-subtitle {
+        font-size: 0.85rem;
+    }
+
+    .vm-method-option {
+        padding: 12px;
+    }
+
+    .vm-method-input {
+        font-size: 0.9rem;
+        padding: 10px 12px;
+    }
+
+    .vm-btn {
+        padding: 12px;
+        font-size: 0.95rem;
+    }
+
     .vm-code-input {
         font-size: 1.2rem;
         letter-spacing: 8px;
