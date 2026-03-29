@@ -78,6 +78,10 @@ const VerificationModal = (function() {
             _selectMethod('sms');
         }
 
+        
+
+        document.getElementById('vmModal').classList.add('active');
+
         // Apply mobile styles via JavaScript (iOS Safari media query fix)
         if (window.innerWidth <= 480) {
             const content = document.querySelector('.vm-content');
@@ -99,8 +103,6 @@ const VerificationModal = (function() {
             const subtitle = document.querySelector('.vm-subtitle');
             if (subtitle) subtitle.style.fontSize = '0.8rem';
         }
-
-        document.getElementById('vmModal').classList.add('active');
     }
     
     // Hide modal
