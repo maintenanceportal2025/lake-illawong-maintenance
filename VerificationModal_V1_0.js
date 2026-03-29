@@ -85,37 +85,14 @@ const VerificationModal = (function() {
         // Apply mobile styles via JavaScript (iOS Safari media query fix)
        if (window.innerWidth <= 480) {
             const modal = document.getElementById('vmModal');
-            alert('modal found: ' + (modal ? 'yes' : 'no'));
-           
             if (modal) {
-                modal.style.padding = '8px';
-                modal.style.alignItems = 'center';
-                modal.style.justifyContent = 'center';
+                modal.style.cssText = 'display:flex !important; padding:8px; align-items:center; justify-content:center; position:fixed; top:0; left:0; right:0; bottom:0; background:linear-gradient(90deg,#1e40af 0%,#1e3a8a 100%); z-index:10000;';
             }
             const content = document.querySelector('.vm-content');
             if (content) {
-                content.style.padding = '16px 14px';
-                content.style.maxHeight = '95vh';
-                content.style.overflowY = 'auto';
-                content.style.borderRadius = '8px';
-                content.style.width = '100%';
-                content.style.maxWidth = '100%';
-                content.style.boxSizing = 'border-box';
+                content.style.cssText = 'padding:16px 14px; max-height:95vh; overflow-y:auto; border-radius:8px; width:100%; max-width:100%; box-sizing:border-box; background:rgba(255,255,255,0.08); backdrop-filter:blur(15px); border:1px solid rgba(255,255,255,0.15);';
             }
-            alert('content maxWidth set to: ' + content.style.maxWidth);
-            const header = document.querySelector('.vm-header');
-            if (header) {
-                header.style.marginBottom = '12px';
-                header.style.paddingBottom = '12px';
-            }
-            const icon = document.querySelector('.vm-header-icon');
-            if (icon) icon.style.fontSize = '1.5rem';
-            const title = document.querySelector('.vm-title');
-            if (title) title.style.fontSize = '1.2rem';
-            const subtitle = document.querySelector('.vm-subtitle');
-            if (subtitle) subtitle.style.fontSize = '0.8rem';
         }
-    }
     
     // Hide modal
     function hide() {
