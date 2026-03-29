@@ -83,14 +83,22 @@ const VerificationModal = (function() {
         document.getElementById('vmModal').classList.add('active');
 
         // Apply mobile styles via JavaScript (iOS Safari media query fix)
-        alert('Screen width: ' + window.innerWidth);
         if (window.innerWidth <= 480) {
+            const modal = document.getElementById('vmModal');
+            if (modal) {
+                modal.style.padding = '8px';
+                modal.style.alignItems = 'center';
+                modal.style.justifyContent = 'center';
+            }
             const content = document.querySelector('.vm-content');
             if (content) {
                 content.style.padding = '16px 14px';
-                content.style.maxHeight = '98vh';
+                content.style.maxHeight = '95vh';
                 content.style.overflowY = 'auto';
                 content.style.borderRadius = '8px';
+                content.style.width = '100%';
+                content.style.maxWidth = '100%';
+                content.style.boxSizing = 'border-box';
             }
             const header = document.querySelector('.vm-header');
             if (header) {
