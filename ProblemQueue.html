@@ -4,8 +4,14 @@ PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
 PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: v1.3.11 - AGING ALERTS & SORT TOGGLE + LOW PRIORITY STAT + PHOTO DISPLAY + BUTTON FIX + PHOTO DEBUG
-LAST UPDATED: January 19, 2026
+VERSION: v1.3.12 - SEARCH BY PID AND UNIT NUMBER
+LAST UPDATED: March 2026
+
+CHANGELOG V1.3.12:
+ - Added search box (PID and Unit Number)
+ - Search filters the displayed queue in real-time
+ - Clear button resets search and restores full queue
+ - Search works across both Current and Programmed queue types
 DESIGN SYSTEM: Lake Illawong Unified v1.4
 - Terminology: "Problem" standard (V1.4 update)
 - Header: Transparent with logo
@@ -501,6 +507,58 @@ CHANGELOG V1.1:
             font-weight: 500;
         }
 
+      /* SEARCH BOX */
+        .search-section {
+            margin: 12px 0 0 0;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #1e293b;
+            background: white;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: #1e40af;
+            box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+        }
+
+        .search-clear-btn {
+            padding: 10px 16px;
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .search-clear-btn:hover {
+            background: #e2e8f0;
+        }
+
+        .search-result-note {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 6px;
+            min-height: 18px;
+        }
+
         /* LOADING STATE */
         .loading {
             text-align: center;
@@ -882,6 +940,16 @@ CHANGELOG V1.1:
                 <button class="filter-btn" onclick="setFilter('high')">High Priority Only</button>
             </div>
 
+          <!-- SEARCH -->
+            <div class="search-section">
+                <div class="search-box">
+                    <input type="text" id="searchInput" class="search-input"
+                           placeholder="Search by PID or Unit number..."
+                           oninput="applySearch()">
+                    <button class="search-clear-btn" onclick="clearSearch()">✕ Clear</button>
+                </div>
+                <div class="search-result-note" id="searchResultNote"></div>
+            </div>
             <!-- LOADING STATE -->
             <div id="loadingState" class="loading">
                 <div class="loading-spinner"></div>
@@ -952,6 +1020,7 @@ function goBackToPortal() {
         
         let allProblems = [];
         let currentQueueType = 'current'; // NEW V1.1: Track queue type
+        let searchTerm = '';
         let sortMode = 'priority'; // NEW V1.3: 'priority' or 'age'
         let currentFilter = 'all';
         let selectedProblem = null;
@@ -1245,9 +1314,18 @@ function goBackToPortal() {
         // =====================================================================
         
         function displayQueue(problems) {
-            // Apply current filter
             let filteredProblems = problems;
-            
+
+            // Apply search filter first
+            if (searchTerm) {
+                const term = searchTerm.toLowerCase().trim();
+                filteredProblems = filteredProblems.filter(p => {
+                    const pid = getFriendlyPID(p.internalId || p.problemId).toLowerCase();
+                    const unit = String(p.unitNumber || '').toLowerCase();
+                    return pid.includes(term) || unit.includes(term);
+                });
+            }
+
             if (currentFilter === 'waiting') {
                 filteredProblems = problems.filter(p => {
                     const status = (p.problemStatus || '').toLowerCase();
@@ -1355,7 +1433,25 @@ function goBackToPortal() {
         // =====================================================================
         // FILTERING
         // =====================================================================
-        
+
+function applySearch() {
+            searchTerm = document.getElementById('searchInput').value;
+            const note = document.getElementById('searchResultNote');
+            if (searchTerm.trim()) {
+                note.textContent = 'Searching for "' + searchTerm.trim() + '"...';
+            } else {
+                note.textContent = '';
+            }
+            processQueue();
+        }
+
+        function clearSearch() {
+            searchTerm = '';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchResultNote').textContent = '';
+            processQueue();
+        }
+      
         function setFilter(filter) {
             currentFilter = filter;
             
