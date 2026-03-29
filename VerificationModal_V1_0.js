@@ -562,10 +562,13 @@ const VerificationModal = (function() {
         options[0].classList.toggle('selected', method === 'email');
         options[1].classList.toggle('selected', method === 'sms');
         
-        if (method === 'email') {
-            document.getElementById('vmEmailInput').focus();
-        } else {
-            document.getElementById('vmPhoneInput').focus();
+        // Only auto-focus on desktop - on mobile this triggers keyboard and distorts layout
+        if (window.innerWidth > 480) {
+            if (method === 'email') {
+                document.getElementById('vmEmailInput').focus();
+            } else {
+                document.getElementById('vmPhoneInput').focus();
+            }
         }
         
         _validateStep1();
