@@ -7,7 +7,6 @@
  * CREATED: February 16, 2026
  * DESIGN: Glass effect modal from Unified Design System v1.4
  * 
- *
  * USAGE:
  * 1. Include in HTML: <script src="VerificationModal_V1_0.js"></script>
  * 2. Initialize: VerificationModal.init({ ... })
@@ -77,22 +76,8 @@ const VerificationModal = (function() {
             if (emailOption) emailOption.style.display = 'none';
             _selectMethod('sms');
         }
-
-        
-
         document.getElementById('vmModal').classList.add('active');
-
-        // Apply mobile styles via JavaScript (iOS Safari media query fix)
-       if (window.innerWidth <= 480) {
-            const modal = document.getElementById('vmModal');
-            if (modal) {
-                modal.style.cssText = 'display:flex !important; padding:8px; align-items:center; justify-content:center; position:fixed; top:0; left:0; right:0; bottom:0; background:linear-gradient(90deg,#1e40af 0%,#1e3a8a 100%); z-index:10000;';
-            }
-            const content = document.querySelector('.vm-content');
-            if (content) {
-                content.style.cssText = 'padding:16px 14px; max-height:95vh; overflow-y:auto; border-radius:8px; width:100%; max-width:100%; box-sizing:border-box; background:rgba(255,255,255,0.08); backdrop-filter:blur(15px); border:1px solid rgba(255,255,255,0.15);';
-            }
-        }
+    }
     
     // Hide modal
     function hide() {
@@ -456,70 +441,17 @@ const VerificationModal = (function() {
 
 /* Mobile responsive */
 @media (max-width: 480px) {
-    #vmModal {
-        padding: 8px;
-        align-items: center;
-    }
-
     .vm-content {
-        padding: 16px 14px;
-        max-height: 98vh;
-        overflow-y: auto;
-        border-radius: 8px;
+        padding: 30px 20px;
     }
-
-    .vm-header {
-        margin-bottom: 12px;
-        padding-bottom: 12px;
-    }
-
-    .vm-header-icon {
-        font-size: 1.5rem;
-        margin-bottom: 6px;
-    }
-
+    
     .vm-title {
-        font-size: 1.2rem;
+        font-size: 1.5rem;
     }
-
-    .vm-subtitle {
-        font-size: 0.8rem;
-    }
-
-    .vm-text-muted {
-        font-size: 0.8rem;
-        margin-bottom: 10px;
-    }
-
-    .vm-method-option {
-        padding: 10px;
-        margin-bottom: 8px;
-    }
-
-    .vm-method-title {
-        font-size: 0.9rem;
-        margin-bottom: 4px;
-    }
-
-    .vm-method-input {
-        font-size: 0.85rem;
-        padding: 8px 10px;
-    }
-
-    .vm-btn {
-        padding: 10px;
-        font-size: 0.9rem;
-    }
-
+    
     .vm-code-input {
-        font-size: 1.1rem;
-        letter-spacing: 6px;
-        padding: 10px;
-    }
-
-    .vm-timer {
-        font-size: 0.8rem;
-        margin: 8px 0;
+        font-size: 1.2rem;
+        letter-spacing: 8px;
     }
 }
 </style>
