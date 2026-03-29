@@ -76,6 +76,29 @@ const VerificationModal = (function() {
             if (emailOption) emailOption.style.display = 'none';
             _selectMethod('sms');
         }
+
+        // Apply mobile styles via JavaScript (iOS Safari media query fix)
+        if (window.innerWidth <= 480) {
+            const content = document.querySelector('.vm-content');
+            if (content) {
+                content.style.padding = '16px 14px';
+                content.style.maxHeight = '98vh';
+                content.style.overflowY = 'auto';
+                content.style.borderRadius = '8px';
+            }
+            const header = document.querySelector('.vm-header');
+            if (header) {
+                header.style.marginBottom = '12px';
+                header.style.paddingBottom = '12px';
+            }
+            const icon = document.querySelector('.vm-header-icon');
+            if (icon) icon.style.fontSize = '1.5rem';
+            const title = document.querySelector('.vm-title');
+            if (title) title.style.fontSize = '1.2rem';
+            const subtitle = document.querySelector('.vm-subtitle');
+            if (subtitle) subtitle.style.fontSize = '0.8rem';
+        }
+
         document.getElementById('vmModal').classList.add('active');
     }
     
