@@ -86,6 +86,7 @@ const VerificationModal = (function() {
        if (window.innerWidth <= 480) {
             const modal = document.getElementById('vmModal');
             alert('modal found: ' + (modal ? 'yes' : 'no'));
+            alert('content maxWidth set to: ' + content.style.maxWidth);
             if (modal) {
                 modal.style.padding = '8px';
                 modal.style.alignItems = 'center';
