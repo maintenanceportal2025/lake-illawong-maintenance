@@ -1205,14 +1205,87 @@ PRIVACY FEATURES:
 </head>
 
 
-<body style="display:none">
+<body>
 
-
+<!-- ===================================================================
+     VERIFICATION VIEW - PHONE NUMBER AUTHENTICATION
+     =================================================================== -->
+<div id="verificationView" class="verification-container">
+    <div class="verification-card">
+        <!-- Initial Verification State -->
+        <div id="verificationStep">
+            <div class="verification-header">
+                <div class="verification-icon">📱</div>
+                <h1 class="verification-title">Resident Directory</h1>
+                <p class="verification-subtitle">Enter your phone number to access the directory</p>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-box-title">🔒 Secure Access</div>
+                <div class="info-box-text">
+                    We'll verify your phone number against our records. Each resident 
+                    has individual access using their registered phone number.
+                </div>
+            </div>
+            
+            <div id="verificationError" class="error-message hidden">
+                ❌ Phone number not found in our system
+            </div>
+            
+            <div class="phone-input-group">
+    <label class="phone-input-label" for="phoneVerify">Your Phone Number:</label>
+    <div class="password-input-wrapper">
+        <input type="password" 
+               id="phoneVerify" 
+               class="phone-input"
+               placeholder="e.g., 0412345678"
+               autocomplete="tel"
+               inputmode="numeric">
+        <button type="button" 
+                class="toggle-visibility-btn" 
+                id="togglePhoneVisibility"
+                onclick="togglePhoneVisibility()">
+            👁️
+        </button>
+    </div>
+</div>
+            
+            <button id="verifyBtn" class="verify-btn">
+                🔍 Verify & Access Directory
+            </button>
+            
+            <div class="help-link">
+                Don't remember your phone number?<br/>
+                <a href="mailto:management@lakeillawong.com">Contact management for assistance</a>
+            </div>
+        </div>
+        
+        <!-- Verification Success State -->
+        <div id="verificationSuccessStep" class="hidden">
+            <div class="verification-header">
+                <div class="verification-icon">✅</div>
+                <h1 class="verification-title">Access Granted</h1>
+            </div>
+            
+            <div class="verification-success">
+                <div class="verification-success-title" id="welcomeMessage">✓ Verification Successful</div>
+                <div class="verification-success-text">
+                    You are verified as:
+                </div>
+                <div class="unit-display" id="verifiedUnit">Unit 42 - Stage 1</div>
+            </div>
+            
+            <button id="continueBtn" class="continue-btn">
+                📖 View Directory
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- ===================================================================
      DIRECTORY VIEW - SHOWN AFTER VERIFICATION
      =================================================================== -->
-<div id="directoryView" class="container">
+<div id="directoryView" class="container hidden">
 
 
     <div class="container">
@@ -1232,7 +1305,7 @@ PRIVACY FEATURES:
 <div class="header-divider"></div>
 
         <!-- Back button -->
-        <button class="back-button" onclick="goBackToPortal()">← Back to Portal</button>
+        <a href="ResidentPortal.html" class="back-button">← Back to Resident Portal</a>
 
         <!-- Filter and Export Controls -->
         <section class="controls-section">
@@ -1322,63 +1395,69 @@ PRIVACY FEATURES:
     </div>
 </section>
     <script>
-	// SESSION GUARD
-function checkSession() {
-    const validKeys = [
-        'portalFieldOpsVerified',
-        'portalAdminVerified',
-        'portalZoneRepVerified',
-        'portalSysAdminVerified',
-        'lakeIllawongVerified'
-    ];
-    const hasSession = validKeys.some(key => sessionStorage.getItem(key) === 'true');
-    if (hasSession) {
-        document.body.style.display = '';
-    } else {
-        const params = new URLSearchParams(window.location.search);
-        const portal = params.get('portal');
-        const destinations = {
-            'fieldops':  'FieldOperationsPortal.html',
-            'admin':     'AdminPortal.html',
-            'zonerep':   'ZoneRepPortal.html',
-            'residents': 'ResidentPortal.html'
-        };
-        window.location.href = destinations[portal] || 'ResidentPortal.html';
-    }
-}
-checkSession();
-
-function goBackToPortal() {
-    const params = new URLSearchParams(window.location.search);
-    const portal = params.get('portal');
-    const destinations = {
-        'fieldops':  'FieldOperationsPortal.html',
-        'admin':     'AdminPortal.html',
-        'zonerep':   'ZoneRepPortal.html',
-        'residents': 'ResidentPortal.html'
-    };
-    window.location.href = destinations[portal] || 'ResidentPortal.html';
-}
 
 // ===================================================================
 // RESIDENT DIRECTORY V2.0 - PHONE VERIFICATION SYSTEM
 // ===================================================================
 
+// Verification state
+let isVerified = false;
+let verifiedUnit = null;
+let verifiedStage = null;
+let verifiedName = null;
+
+// Configuration
+const VERIFICATION_CONFIG = {
+    managementCentralUrl: 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
+};
+
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('📖 Resident Directory V3.0 - OTP Session Authentication');
-    loadResidents();
+    console.log('📱 Resident Directory V2.0 - Phone Verification System');
+    
+    // Check if already verified (session storage)
+    const verified = sessionStorage.getItem('directoryVerified');
+    const unit = sessionStorage.getItem('directoryUnit');
+    const stage = sessionStorage.getItem('directoryStage');
+    const name = sessionStorage.getItem('directoryName');
+    
+    if (verified === 'true' && unit && stage) {
+        isVerified = true;
+        verifiedUnit = unit;
+        verifiedStage = stage;
+        verifiedName = name;
+        showDirectory();
+        loadResidents(); // Load directory data
+    } else {
+        showVerification();
+    }
+    
+    setupVerificationListeners();
 });
 
 // Setup verification event listeners
-
+function setupVerificationListeners() {
+    // Verify button
+    document.getElementById('verifyBtn').addEventListener('click', handleVerification);
+    
+    // Enter key on phone input
+    document.getElementById('phoneVerify').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            handleVerification();
+        }
+    });
+    
+    // Continue button (after verification)
+    document.getElementById('continueBtn').addEventListener('click', function() {
+        showDirectory();
+        loadResidents(); // Load directory data
+    });
+}
 
 function processResidentData(residents) {
-    // Check if current user has Full Access via OTP role tags
-    const roles = JSON.parse(sessionStorage.getItem('lakeIllawongVerified_roles') || 
-                             sessionStorage.getItem('portalZoneRepVerified_roles') || 
-                             sessionStorage.getItem('portalAdminVerified_roles') || '[]');
-    const hasFullAccess = roles.includes('Directory-Full-Access');
+    // Check if current user has Full Access
+    const hasFullAccess = sessionStorage.getItem('directoryFullAccess') === 'true';
     console.log('Processing ' + residents.length + ' residents. Full Access:', hasFullAccess);
     
     return residents.map(resident => {
@@ -1428,6 +1507,161 @@ function processResidentData(residents) {
     });
 }
 
+
+
+
+
+// Handle phone verification
+function handleVerification() {
+    const phoneNumber = document.getElementById('phoneVerify').value.trim();
+    const errorDiv = document.getElementById('verificationError');
+    const verifyBtn = document.getElementById('verifyBtn');
+    
+    // Clear previous errors
+    errorDiv.classList.add('hidden');
+    
+    // Validate input
+    if (!phoneNumber) {
+        showVerificationError('Please enter your phone number');
+        return;
+    }
+    
+    // Disable button and show loading
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = '⏳ Verifying...';
+
+
+    
+    // Call ManagementCentral API to verify identity
+    makeManagementAPICall('verifyIdentity', { phoneNumber: phoneNumber }, function(response) {
+        if (response.success && response.verified) {
+    console.log('✅ Identity verified:', response.unit, response.stage);
+    console.log('🔍 Full response object:', response);  // ADD THIS
+    console.log('🏷️ RoleTags value:', response.roleTags);  // ADD THIS
+
+
+    // Store verification data
+    isVerified = true;
+    verifiedUnit = response.unit;
+    verifiedStage = response.stage;
+    verifiedName = response.name;
+    
+    // NEW - Store role tags and check for full access
+    const userRoleTags = response.roleTags ? response.roleTags.split(',').map(t => t.trim()) : [];
+    const hasFullAccess = userRoleTags.includes('Directory-Full-Access');
+    
+    // Save to session storage
+    sessionStorage.setItem('directoryVerified', 'true');
+    sessionStorage.setItem('directoryUnit', response.unit);
+    sessionStorage.setItem('directoryStage', response.stage);
+    sessionStorage.setItem('directoryName', response.name);
+    sessionStorage.setItem('directoryFullAccess', hasFullAccess.toString()); // NEW
+    
+    console.log('🔐 Access level:', hasFullAccess ? 'Full Access' : 'General Access');
+    
+    // Show success state
+    showVerificationSuccess();
+} else {
+            console.error('❌ Verification failed:', response.error);
+            showVerificationError(response.message || 'Phone number not found in our system. Please check and try again, or contact management.');
+            resetVerifyButton();
+        }
+    });
+}
+
+// Show verification success state
+function showVerificationSuccess() {
+    // Hide initial verification step
+    document.getElementById('verificationStep').classList.add('hidden');
+    
+    // Show success step
+    document.getElementById('verificationSuccessStep').classList.remove('hidden');
+    
+    // Display verified unit
+    document.getElementById('verifiedUnit').textContent = `${verifiedUnit} - ${verifiedStage}`;
+    
+    // PERSONALIZE THE WELCOME MESSAGE (CORRECTED)
+    if (verifiedName) {  // ✅ CORRECT VARIABLE
+        const firstName = verifiedName.split(' ')[0];
+        document.getElementById('welcomeMessage').textContent = `✓ Welcome back, ${firstName}!`;
+    }
+}
+
+// Show directory view
+function showDirectory() {
+    document.getElementById('verificationView').classList.add('hidden');
+    document.getElementById('directoryView').classList.remove('hidden');
+    
+    // Setup directory functionality (only once)
+    if (!window.directoryInitialized) {
+        
+        window.directoryInitialized = true;
+    }
+}
+
+// Show verification view
+function showVerification() {
+    document.getElementById('verificationView').classList.remove('hidden');
+    document.getElementById('directoryView').classList.add('hidden');
+}
+
+// Reset verify button
+function resetVerifyButton() {
+    const verifyBtn = document.getElementById('verifyBtn');
+    verifyBtn.disabled = false;
+    verifyBtn.textContent = '🔍 Verify & Access Directory';
+}
+
+// Show verification error
+function showVerificationError(message) {
+    const errorDiv = document.getElementById('verificationError');
+    errorDiv.textContent = message;
+    errorDiv.classList.remove('hidden');
+}
+
+// JSONP API call to ManagementCentral
+function makeManagementAPICall(action, params = {}, callback) {
+    const baseUrl = VERIFICATION_CONFIG.managementCentralUrl;
+    const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+    
+    // Create global callback function
+    window[callbackName] = function(data) {
+        callback(data);
+        // Clean up
+        delete window[callbackName];
+        document.head.removeChild(script);
+    };
+    
+    // Build URL with parameters
+    const urlParams = new URLSearchParams({
+        action: action,
+        callback: callbackName,
+        ...params
+    });
+    
+    // Create and execute JSONP request
+    const script = document.createElement('script');
+    script.src = `${baseUrl}?${urlParams.toString()}`;
+    script.onerror = function() {
+        console.error('ManagementCentral API connection failed');
+        callback({ 
+            success: false, 
+            error: 'Connection failed', 
+            message: 'Unable to connect to verification system. Please try again later.' 
+        });
+        delete window[callbackName];
+        document.head.removeChild(script);
+    };
+    
+    document.head.appendChild(script);
+}
+
+// ===================================================================
+// END VERIFICATION SYSTEM
+// ===================================================================
+
+
+
         // RESIDENTS DIRECTORY - WITH STAGE FILTERING & EXPORT
         let allResidents = [];
         let filteredResidents = [];
@@ -1437,6 +1671,11 @@ function processResidentData(residents) {
 
         // API Configuration
          const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
+
+		
+
+        
+
 
 async function loadResidents() {
     try {
@@ -1616,6 +1855,8 @@ function applyFilters() {
         tag.includes('resident-committee') ||
         tag.includes('resident_committee')
     );
+
+				
 } else if (currentCommitteeFilter === 'zonerep') {
     return tags.some(tag => 
         /^zonerep-\d+$/.test(tag)
@@ -1708,26 +1949,7 @@ function createResidentCard(resident, searchTerm = '') {
     const hasEmail = resident.email && resident.email.trim();
     const hidePhone = resident.hidePhone || false;
     const hideEmail = resident.hideEmail || false;
-
-    // Check for hide-contact tag
-    const tags = (resident.roleTags || '').toLowerCase().split(',').map(t => t.trim());
-    const roles = JSON.parse(sessionStorage.getItem('lakeIllawongVerified_roles') || 
-                             sessionStorage.getItem('portalZoneRepVerified_roles') || 
-                             sessionStorage.getItem('portalAdminVerified_roles') || '[]');
-    const hasFullAccess = roles.includes('Directory-Full-Access');
-    const hideContact = !hasFullAccess && tags.includes('hide-contact');
-
-    if (hideContact) {
-        return `
-        <div class="resident-card">
-            <div class="resident-header">
-                <h3 class="resident-name" style="color: #94a3b8; font-style: italic;">Withheld at Resident Request</h3>
-                <span class="unit-badge">${escapeHtml(resident.unit || 'No Unit')}</span>
-            </div>
-        </div>
-        `;
-    }
-
+    
     let displayRoles = '';
     const shouldShowRoles = shouldDisplayRoles(resident, searchTerm);
     
@@ -1798,17 +2020,12 @@ function createResidentCard(resident, searchTerm = '') {
                 <a href="${hasPhone && !hidePhone ? `tel:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
                    class="action-btn call ${(!hasPhone || hidePhone) ? 'disabled' : ''}"
                    ${(!hasPhone || hidePhone) ? 'onclick="return false;"' : ''}>
-                    📞 Call
-                </a>
-                <a href="${hasPhone && !hidePhone ? `sms:${resident.phone.replace(/[^\d+]/g, '')}` : '#'}" 
-                   class="action-btn sms ${(!hasPhone || hidePhone) ? 'disabled' : ''}"
-                   ${(!hasPhone || hidePhone) ? 'onclick="return false;"' : ''}>
-                    💬 Text
+                    Call
                 </a>
                 <a href="${hasEmail && !hideEmail ? `mailto:${resident.email}` : '#'}" 
                    class="action-btn email ${(!hasEmail || hideEmail) ? 'disabled' : ''}"
                    ${(!hasEmail || hideEmail) ? 'onclick="return false;"' : ''}>
-                    📧 Email
+                    Email
                 </a>
             </div>
         </div>
@@ -1969,7 +2186,7 @@ function shouldDisplayRoles(resident, searchTerm) {
                 }
             </style>
         </head>
-        <body style="display:none">
+        <body>
             <h1>Lake Illawong Residents Directory</h1>
             <p class="subtitle">${stageName} - Generated ${new Date().toLocaleDateString()}</p>
             <table>
