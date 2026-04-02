@@ -5,7 +5,7 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: v1.2.0 - Dynamic roles + categories, category management panel
+VERSION: v1.3.0 - Featured flag support
 LAST UPDATED: February 2026
 BACKEND API: DocumentLibrary.js (admin endpoints V1.0)
 DESIGN SYSTEM: Lake Illawong Unified v1.4
@@ -938,7 +938,15 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                             <div class="field-hint">Comma-separated keywords</div>
                         </div>
                     </div>
-                </div>
+                    <div class="form-row single">
+                        <div class="field-group">
+                            <label class="role-cb-item" id="lbl_featured" style="display:inline-flex;width:auto;">
+                                <input type="checkbox" id="fFeatured" onchange="this.closest('label').classList.toggle('checked',this.checked)">
+                                ★ Include in Frequently Opened
+                            </label>
+                            <div class="field-hint">Tick to pin this document to the top of the resident Document Library</div>
+                        </div>
+                    </div>
 
                 <!-- File Source -->
                 <div class="form-section">
@@ -1372,6 +1380,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 <th>Access</th>
                 <th>Source</th>
                 <th>Type</th>
+                <th>Featured</th>
                 <th>Date Added</th>
                 <th>Actions</th>
             </tr></thead><tbody>`;
@@ -1391,6 +1400,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 <td><div class="role-pills">${pills||'—'}</div></td>
                 <td><span class="source-badge ${srcCls}">${esc(doc.sourceType||'—')}</span></td>
                 <td><span class="filetype-badge">${esc(doc.fileType||'—')}</span></td>
+                <td style="text-align:center;">${doc.featured ? '<span style="color:#d97706;font-size:1.1rem;" title="Frequently Opened">★</span>' : '<span style="color:#e2e8f0;">☆</span>'}</td>
                 <td style="white-space:nowrap;font-size:0.8rem;">${fmtDate(doc.dateAdded)}</td>
                 <td class="actions">
                     ${doc.sourceType === 'Drive' && doc.sourceLocation ? `<button class="btn-edit" style="background:linear-gradient(135deg,#0f766e,#0d9488);" onclick="window.open('https://drive.google.com/file/d/${esc(doc.sourceLocation)}/view','_blank')">👁️ View</button>` : ''}
@@ -1592,6 +1602,9 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('fSourceLocation').value    = doc.sourceLocation || '';
         document.getElementById('fFileType').value          = doc.fileType     || 'PDF';
         document.getElementById('fTags').value              = doc.tags         || '';
+        const featuredCb = document.getElementById('fFeatured');
+        featuredCb.checked = !!doc.featured;
+        featuredCb.closest('label').classList.toggle('checked', !!doc.featured);     
         document.getElementById('btnSave').textContent      = '💾 Save Changes';
         document.getElementById('modalStatus').textContent  = '';
 
@@ -1620,6 +1633,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('fSourceHint').textContent    = 'Select a Source Type to see guidance';
         document.getElementById('fSourceLocation').placeholder = '';
         setRoleCheckboxes('');
+        const featuredCb = document.getElementById('fFeatured');
+        if (featuredCb) { featuredCb.checked = false; featuredCb.closest('label').classList.remove('checked'); }
         clearFieldErrors();
     }
 
@@ -1675,6 +1690,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             fileType:       document.getElementById('fFileType').value,
             accessRoles:    checkedRoles.join(','),
             tags:           document.getElementById('fTags').value.trim(),
+            featured:       document.getElementById('fFeatured').checked,
             addedBy:        currentUser ? currentUser.name : 'Admin'
         };
 
