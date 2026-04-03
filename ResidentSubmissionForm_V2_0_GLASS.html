@@ -448,9 +448,11 @@ DROPDOWN ENFORCEMENT LOGIC:
         ========================================================= */
         .submit-btn {
             width: 100%;
-            background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-blue-dark) 100%);
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
             color: white;
-            border: none;
             padding: 16px 24px;
             font-size: 1rem;
             font-weight: 700;
@@ -467,13 +469,15 @@ DROPDOWN ENFORCEMENT LOGIC:
         }
 
         .submit-btn:hover:not(:disabled) {
+            background: var(--glass-bg-strong);
+            border-color: var(--glass-border-hover);
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
         }
 
         .submit-btn:disabled {
-            background: rgba(255,255,255,0.12);
-            color: rgba(255,255,255,0.35);
+            background: rgba(255,255,255,0.04);
+            border-color: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.25);
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
@@ -911,7 +915,7 @@ DROPDOWN ENFORCEMENT LOGIC:
                         <input type="hidden" id="unitNumber" name="unitNumber">
                         <div class="searchable-dropdown" id="unitNumberDropdown"></div>
                     </div>
-                    <div class="field-error" id="unitNumberError">Please select a location from the list</div>
+                    <div class="field-error" id="unitNumberError">Type your unit number, then tap a result from the dropdown that appears</div>
                 </div>
 
                 <!-- REPORTED BY -->
@@ -931,7 +935,7 @@ DROPDOWN ENFORCEMENT LOGIC:
                         <input type="hidden" id="reportedBy" name="reportedBy">
                         <div class="searchable-dropdown" id="reportedByDropdown"></div>
                     </div>
-                    <div class="field-error" id="reportedByError">Please select your name from the list</div>
+                    <div class="field-error" id="reportedByError">Type the first few letters of your name, then tap a result from the dropdown that appears</div>
                 </div>
 
                 <!-- PROBLEM DESCRIPTION -->
@@ -1228,8 +1232,12 @@ DROPDOWN ENFORCEMENT LOGIC:
         function updateSubmitButton() {
             const unitOk     = document.getElementById('unitNumber').value !== '';
             const reporterOk = document.getElementById('reportedBy').value !== '';
-            document.getElementById('submitBtn').disabled = !(unitOk && reporterOk);
+            const descOk     = document.getElementById('problemDescription').value.trim() !== '';
+            document.getElementById('submitBtn').disabled = !(unitOk && reporterOk && descOk);
         }
+
+        // Watch description field so button enables when all three are satisfied
+        document.getElementById('problemDescription').addEventListener('input', updateSubmitButton);
 
         // =========================================================
         // FORM SUBMISSION
@@ -1237,9 +1245,10 @@ DROPDOWN ENFORCEMENT LOGIC:
         document.getElementById('faultForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
-            // Final guard - both hidden fields must have values
+            // Final guard - all three fields must have values
             const unitVal     = document.getElementById('unitNumber').value;
             const reporterVal = document.getElementById('reportedBy').value;
+            const descVal     = document.getElementById('problemDescription').value.trim();
             let blocked       = false;
 
             if (!unitVal) {
@@ -1248,6 +1257,9 @@ DROPDOWN ENFORCEMENT LOGIC:
             }
             if (!reporterVal) {
                 setFieldState('reportedBy', 'invalid');
+                blocked = true;
+            }
+            if (!descVal) {
                 blocked = true;
             }
             if (blocked) return;
@@ -1260,7 +1272,7 @@ DROPDOWN ENFORCEMENT LOGIC:
                 action:             'submitFault',
                 unitNumber:         unitVal,
                 reportedBy:         reporterVal,
-                problemDescription: document.getElementById('problemDescription').value
+                problemDescription: descVal
             };
 
             try {
