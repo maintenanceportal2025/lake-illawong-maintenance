@@ -4,8 +4,8 @@
 =====================================================================
 PURPOSE: Centralized viewer for all system logging activities
 PORTAL: SysAdmin Portal Module
-VERSION: v1.0.0 - Initial Implementation
-LAST UPDATED: December 1, 2025
+VERSION: v1.1.0
+LAST UPDATED: Apr 2026
 DESIGN SYSTEM: Lake Illawong Unified v1.4
 - Terminology: "Problem" standard (V1.4 update)
 - Header: Transparent with logo integration
@@ -19,7 +19,8 @@ LOG SHEETS:
 • EmailLog - All email notifications
 • SMSLog - SMS notifications (auto-created when first SMS sent)
 • SecurityLog - Password changes and security events
-• ContactUpdateLog - Resident contact updates
+- ContactUpdateLog - Resident contact updates
+- AccessLog - Portal logins and module access
 FEATURES:
 • Email activity tracking with service breakdown
 • SMS usage and cost monitoring (when active)
@@ -27,7 +28,8 @@ FEATURES:
 • Contact update history
 • System dashboard with aggregated stats
 • Date range filtering
-• Export capabilities
+- Export capabilities
+- Access log with per-person summary and raw list
 =====================================================================
 -->
 
@@ -513,6 +515,7 @@ FEATURES:
             <button class="tab-btn" onclick="switchTab('security-events')">🔐 Security Events</button>
             <button class="tab-btn" onclick="switchTab('contact-changes')">👤 Contact Changes</button>
             <button class="tab-btn" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="tab-btn" onclick="switchTab('access-log')">🔑 Access Log</button>
         </div>
 
         <!-- CONTENT AREA -->
@@ -654,6 +657,38 @@ FEATURES:
                 </div>
             </div>
 
+            <!-- TAB 6: ACCESS LOG -->
+            <div id="access-log" class="tab-content">
+                <h2 style="margin-bottom: 20px; color: #1e293b;">🔑 Access Log</h2>
+
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label class="filter-label">Date Range</label>
+                        <select class="filter-select" id="access-date-filter" onchange="loadAccessLog()">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Type</label>
+                        <select class="filter-select" id="access-type-filter" onchange="loadAccessLog()">
+                            <option value="all">All Types</option>
+                            <option value="Portal-Login">Portal Logins</option>
+                            <option value="Directory-Access">Directory Access</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="access-summary-container"></div>
+                <div id="access-log-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <div>Loading access log...</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- TAB 5: DASHBOARD -->
             <div id="dashboard" class="tab-content">
                 <h2 style="margin-bottom: 20px; color: #1e293b;">📊 System Dashboard</h2>
@@ -682,6 +717,7 @@ FEATURES:
         // =====================================================================
         
         const API_URL = 'https://script.google.com/macros/s/AKfycbyu0RdVfmlQEnr1wi5tfkPi-tGNLzKcs5H3R9DAnKXzZROwqEPhnCvpNq3CsjKGeaxXwA/exec';
+        const MGMT_URL = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec';
         
         let emailLogsData = [];
         let smsLogsData = [];
@@ -726,6 +762,9 @@ FEATURES:
                     break;
                 case 'dashboard':
                     if (!dashboardData) loadDashboard();
+                    break;
+                case 'access-log':
+                    loadAccessLog();
                     break;
             }
         }
@@ -1469,6 +1508,115 @@ FEATURES:
             const loadTime = (performance.now() / 1000).toFixed(2);
             console.log(`⚡ System Logs loaded in ${loadTime} seconds`);
         });
+// =====================================================================
+        // LOAD ACCESS LOG
+        // =====================================================================
+
+        function loadAccessLog() {
+            const days = document.getElementById('access-date-filter').value;
+            const type = document.getElementById('access-type-filter').value;
+
+            document.getElementById('access-log-container').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <div>Loading access log...</div>
+                </div>`;
+            document.getElementById('access-summary-container').innerHTML = '';
+
+            const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substring(7);
+
+            window[callbackName] = function(response) {
+                delete window[callbackName];
+                const el = document.getElementById(callbackName);
+                if (el) el.remove();
+                if (response.success) {
+                    renderAccessSummary(response.summary || []);
+                    renderAccessTable(response.data || []);
+                } else {
+                    document.getElementById('access-log-container').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon">⚠️</div>
+                            <div class="empty-title">Error Loading Access Log</div>
+                            <div class="empty-text">${response.error || 'Unknown error'}</div>
+                        </div>`;
+                }
+            };
+
+            const script = document.createElement('script');
+            script.id  = callbackName;
+            script.src = MGMT_URL + '?action=getAccessLog&callback=' + callbackName
+                       + '&days=' + encodeURIComponent(days)
+                       + '&type=' + encodeURIComponent(type);
+            script.onerror = function() {
+                delete window[callbackName];
+                document.getElementById('access-log-container').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">⚠️</div>
+                        <div class="empty-title">Connection Failed</div>
+                        <div class="empty-text">Could not reach ManagementCentral backend.</div>
+                    </div>`;
+            };
+            document.body.appendChild(script);
+        }
+
+        function renderAccessSummary(summary) {
+            const container = document.getElementById('access-summary-container');
+            if (!summary.length) {
+                container.innerHTML = '';
+                return;
+            }
+            const cards = summary.map(function(s) {
+                return `
+                    <div class="stat-card">
+                        <div class="stat-label">Unit ${s.unit || '—'}</div>
+                        <div class="stat-value" style="font-size:1.5rem;">${s.name}</div>
+                        <div class="stat-subtext">${s.count} connection${s.count !== 1 ? 's' : ''}</div>
+                    </div>`;
+            }).join('');
+            container.innerHTML = `
+                <h3 style="margin: 0 0 15px 0; color: #1e293b;">Connections by Person</h3>
+                <div class="stats-grid" style="margin-bottom:30px;">${cards}</div>`;
+        }
+
+        function renderAccessTable(entries) {
+            const container = document.getElementById('access-log-container');
+            if (!entries.length) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🔑</div>
+                        <div class="empty-title">No Access Records</div>
+                        <div class="empty-text">No access events recorded in this date range.</div>
+                    </div>`;
+                return;
+            }
+            const rows = entries.map(function(e) {
+                const typeBadge = e.type === 'Portal-Login'
+                    ? '<span class="status-badge status-success">Portal Login</span>'
+                    : '<span class="status-badge status-pending">Directory Access</span>';
+                return `
+                    <tr>
+                        <td>${formatTimestamp(e.timestamp)}</td>
+                        <td>${typeBadge}</td>
+                        <td>${e.name || '—'}</td>
+                        <td>${e.unit || '—'}</td>
+                        <td>${e.detail || '—'}</td>
+                    </tr>`;
+            }).join('');
+            container.innerHTML = `
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Name</th>
+                            <th>Unit</th>
+                            <th>Detail</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+        }
+		
     </script>
 </body>
 </html>
