@@ -4,9 +4,9 @@ LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - RESIDENTS DIRECTORY
 =====================================================================
 PURPOSE: Searchable contact directory for all residents
 PORTAL: Residents Portal, Zone Rep Portal, Admin Portal
-VERSION: 3.1
-LAST UPDATED: March 2026
-ARCHITECTURE: V4.9
+VERSION: 3.2
+LAST UPDATED: Apr 2026
+ARCHITECTURE: V5.2
 
 DESIGN SYSTEM: Lake Illawong Unified v1.4
 BACKEND API: Explorer V1.2.1 (getResidents with privacy filtering)
@@ -33,6 +33,11 @@ RELATED FILES:
 - ResidentPortal.html (navigates here directly)
 - VerificationModal_V1_0.js (OTP component)
 - ResidentDetailsUpdate.html (shares lakeIllawongVerified session)
+
+CHANGELOG:
+- V3.2 (Apr 2026): Directory access logging added. logDirectoryAccess()
+                   fires on successful verification.
+- V3.1 (Mar 2026): Prior version.
 =====================================================================
 -->
 <!DOCTYPE html>
@@ -1419,7 +1424,25 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function handleVerificationSuccess(userData) {
+    logDirectoryAccess(userData.name, userData.unit);
     loadResidents();
+}
+
+function logDirectoryAccess(name, unit) {
+    var params = new URLSearchParams(window.location.search);
+    var portal = params.get('portal') || 'Resident Portal';
+    var detail = 'Resident Directory via ' + portal;
+    var cbName = 'logcb_' + Date.now();
+    var script = document.createElement('script');
+    window[cbName] = function() { delete window[cbName]; try { document.head.removeChild(script); } catch(e){} };
+    script.onerror = function() { delete window[cbName]; try { document.head.removeChild(script); } catch(e){} };
+    script.src = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
+        + '?action=logAccess&callback=' + cbName
+        + '&type=Directory-Access'
+        + '&name=' + encodeURIComponent(name || '')
+        + '&unit=' + encodeURIComponent(unit || '')
+        + '&detail=' + encodeURIComponent(detail);
+    document.head.appendChild(script);
 }
 
 
