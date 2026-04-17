@@ -4,12 +4,12 @@ ResidentSubmissionForm.html - RESIDENT PROBLEM SUBMISSION FORM
 =====================================================================
 
 DOCUMENT INFORMATION:
-  File Name:        ResidentSubmissionForm.html
+  File Name:        ResidentSubmissionForm_V1_8_0.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.7.0
+  Frontend Version: V1.8.0
   Backend:          ResidentSubmissionForm V1.5
-  Status:           PRODUCTION
+  Status:           TEST — Not in production. For selected resident/ZoneRep testing only.
   Created:          Oct 2025
   Last Modified:    Apr 2026
 
@@ -26,6 +26,13 @@ VERSION HISTORY:
   V1.7.0 (Apr 2026): Field instruction text added above Location and Reported By
                      dropdowns — explicit guidance visible at point of entry to
                      reduce incorrect free-text entry by residents.
+  V1.8.0 (Apr 2026): Dropdown selection enforcement added. Submit button disabled
+                     until both Location and Reported By have valid dropdown
+                     selections. Visual validation feedback — green border and
+                     tick on valid selection, red border and inline error if user
+                     clicks away without selecting. Clicking outside without
+                     selecting clears the visible input and shows error. White
+                     form design unchanged from V1.7.0.
 
 AUTHENTICATION:
   No authentication required — public-facing resident form.
@@ -41,6 +48,7 @@ SYSTEM CONNECTIONS:
 PRIMARY FEATURES:
   Problem Submission:   Resident submits unit problem with description
   Searchable Dropdowns: Type-to-filter for location and reporter name
+  Dropdown Enforcement: Submit blocked until both dropdowns have valid selections
   Success Modal:        Tracking number displayed with photo email option
   Help Modal:           Step-by-step instructions for first-time users
   Fast Load:            Location dropdown populated instantly from static file
@@ -1192,6 +1200,53 @@ TECHNICAL:
         align-items: center;
     }
 }
+
+/* V1.8.0 - Validation states */
+.searchable-select input.valid {
+    border-color: #10b981;
+    background: #f0fdf4;
+}
+
+.searchable-select input.invalid {
+    border-color: #ef4444;
+    background: #fef2f2;
+}
+
+.input-wrapper {
+    position: relative;
+}
+
+.input-status-icon {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1rem;
+    pointer-events: none;
+    font-weight: 700;
+}
+
+.field-error {
+    font-size: 0.8rem;
+    color: #dc2626;
+    margin-top: 6px;
+    display: none;
+    padding-left: 2px;
+    font-weight: 500;
+}
+
+.field-error.visible {
+    display: block;
+}
+
+/* V1.8.0 - Disabled submit state */
+.submit-btn:disabled {
+    background: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
         
     </style>
 </head>
@@ -1248,14 +1303,18 @@ TECHNICAL:
     </label>
     <div class="field-hint">Type ONLY your unit number (e.g., 12 for Unit 12 or Common Areas or Clubhouse) and select from the list that appears</div>
     <div class="searchable-select" id="unitNumberContainer">
-        <input type="text" 
-               id="unitNumberInput" 
-               class="form-input" 
-               placeholder="Type to search units..."
-               autocomplete="off"
-               required>
+        <div class="input-wrapper">
+            <input type="text" 
+                   id="unitNumberInput" 
+                   class="form-input" 
+                   placeholder="Type to search units..."
+                   autocomplete="off"
+                   required>
+            <span class="input-status-icon" id="unitNumberIcon"></span>
+        </div>
         <input type="hidden" id="unitNumber" name="unitNumber" required>
         <div class="searchable-dropdown" id="unitNumberDropdown"></div>
+        <div class="field-error" id="unitNumberError">Please click back into this field and select a location from the dropdown</div>
     </div>
 </div>
 
@@ -1265,14 +1324,18 @@ TECHNICAL:
     </label>
     <div class="field-hint">Type ONLY the first 2-3 letters of your name (e.g. Jo) and select from the list that appears</div>
     <div class="searchable-select" id="reportedByContainer">
-        <input type="text" 
-               id="reportedByInput" 
-               class="form-input" 
-               placeholder="Type to search names..."
-               autocomplete="off"
-               required>
+        <div class="input-wrapper">
+            <input type="text" 
+                   id="reportedByInput" 
+                   class="form-input" 
+                   placeholder="Type to search names..."
+                   autocomplete="off"
+                   required>
+            <span class="input-status-icon" id="reportedByIcon"></span>
+        </div>
         <input type="hidden" id="reportedBy" name="reportedBy" required>
         <div class="searchable-dropdown" id="reportedByDropdown"></div>
+        <div class="field-error" id="reportedByError">Please click back into this field and select your name from the dropdown</div>
     </div>
 </div>
 
@@ -1324,6 +1387,10 @@ TECHNICAL:
         // Load dropdowns on page load
         document.addEventListener('DOMContentLoaded', function() {
             loadDropdownOptions();
+            // V1.8.0 - submit button starts disabled until all fields valid
+            document.getElementById('submitBtn').disabled = true;
+            // Update button state when description changes
+            document.getElementById('problemDescription').addEventListener('input', updateSubmitButton);
         });
 
         async function loadDropdownOptions() {
@@ -1388,24 +1455,31 @@ function setupSearchableInput(elementId) {
     const input = document.getElementById(elementId + 'Input');
     const dropdown = document.getElementById(elementId + 'Dropdown');
     const hiddenInput = document.getElementById(elementId);
-    
+
     // Show dropdown on focus
     input.addEventListener('focus', function() {
         dropdown.classList.add('active');
-        filterOptions(elementId, '');
+        filterOptions(elementId, this.value);
     });
-    
-    // Filter on input
+
+    // Filter on input — clear hidden value when typing
     input.addEventListener('input', function() {
-        const searchTerm = this.value;
-        filterOptions(elementId, searchTerm);
-        hiddenInput.value = ''; // Clear selection when typing
+        hiddenInput.value = '';
+        setFieldState(elementId, 'neutral');
+        filterOptions(elementId, this.value);
+        dropdown.classList.add('active');
+        updateSubmitButton();
     });
-    
-    // Hide dropdown when clicking outside
+
+    // Click outside — if nothing selected, clear and show error
     document.addEventListener('click', function(e) {
         if (!e.target.closest('#' + elementId + 'Container')) {
             dropdown.classList.remove('active');
+            if (input.value.trim() !== '' && hiddenInput.value === '') {
+                input.value = '';
+                filterOptions(elementId, '');
+                setFieldState(elementId, 'invalid');
+            }
         }
     });
 }
@@ -1445,11 +1519,11 @@ function selectOption(elementId, value) {
     const input = document.getElementById(elementId + 'Input');
     const dropdown = document.getElementById(elementId + 'Dropdown');
     const hiddenInput = document.getElementById(elementId);
-    
+
     // Set values
     input.value = value;
     hiddenInput.value = value;
-    
+
     // Update visual selection
     dropdown.querySelectorAll('.searchable-option').forEach(opt => {
         opt.classList.remove('selected');
@@ -1457,10 +1531,44 @@ function selectOption(elementId, value) {
             opt.classList.add('selected');
         }
     });
-    
-    // Hide dropdown
+
+    // Hide dropdown, set valid state, update submit button
     dropdown.classList.remove('active');
+    setFieldState(elementId, 'valid');
+    updateSubmitButton();
 }
+        // =========================================================
+        // V1.8.0 - VALIDATION FUNCTIONS
+        // =========================================================
+
+        function setFieldState(elementId, state) {
+            const input   = document.getElementById(elementId + 'Input');
+            const errorEl = document.getElementById(elementId + 'Error');
+            const iconEl  = document.getElementById(elementId + 'Icon');
+
+            input.classList.remove('valid', 'invalid');
+            if (iconEl) iconEl.textContent = '';
+
+            if (state === 'valid') {
+                input.classList.add('valid');
+                if (iconEl) { iconEl.textContent = '\u2713'; iconEl.style.color = '#10b981'; }
+                if (errorEl) errorEl.classList.remove('visible');
+            } else if (state === 'invalid') {
+                input.classList.add('invalid');
+                if (iconEl) { iconEl.textContent = '!'; iconEl.style.color = '#ef4444'; }
+                if (errorEl) errorEl.classList.add('visible');
+            } else {
+                if (errorEl) errorEl.classList.remove('visible');
+            }
+        }
+
+        function updateSubmitButton() {
+            const unitOk     = document.getElementById('unitNumber').value !== '';
+            const reporterOk = document.getElementById('reportedBy').value !== '';
+            const descOk     = document.getElementById('problemDescription').value.trim() !== '';
+            document.getElementById('submitBtn').disabled = !(unitOk && reporterOk && descOk);
+        }
+
         async function callScript(data) {
             return new Promise((resolve, reject) => {
                 const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
@@ -1489,6 +1597,13 @@ function selectOption(elementId, value) {
         // Form submit handler
         document.getElementById('faultForm').addEventListener('submit', async function(e) {
             e.preventDefault();
+
+            // V1.8.0 - final validation gate
+            const unitOk     = document.getElementById('unitNumber').value !== '';
+            const reporterOk = document.getElementById('reportedBy').value !== '';
+            if (!unitOk) { setFieldState('unitNumber', 'invalid'); }
+            if (!reporterOk) { setFieldState('reportedBy', 'invalid'); }
+            if (!unitOk || !reporterOk) return;
             
             const submitBtn = document.getElementById('submitBtn');
             const loading = document.getElementById('loading');
