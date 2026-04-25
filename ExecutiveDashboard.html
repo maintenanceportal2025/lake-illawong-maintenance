@@ -2998,9 +2998,20 @@ function updateComparisonChart() {
     let container = document.getElementById('comparisonChartContainer');
     if (container) container.remove();
 
+    // Always use allProblems excluding programmed items — this is a reference chart
+    const comparisonProblems = activeFilters.programmedOnly
+        ? allProblems.filter(p => p.problemStatus === 'Programmed' || p.problemStatus === 'Programmed-Completed')
+        : allProblems.filter(p => p.problemStatus !== 'Programmed' && p.problemStatus !== 'Programmed-Completed');
+
     // Determine which years to compare based on available data
     const yearCounts = {};
-    
+    comparisonProblems.forEach(p => {
+        const date = parseDate(p.timestamp);
+        if (date) {
+            const year = new Date(date).getFullYear();
+            yearCounts[year] = (yearCounts[year] || 0) + 1;
+        }
+    });
 
     // Get the two most recent years with data
     const availableYears = Object.keys(yearCounts).map(y => parseInt(y)).sort((a, b) => b - a);
@@ -3026,13 +3037,13 @@ function updateComparisonChart() {
         [year2]: { total: 0, completed: 0, urgent: 0 }
     };
     
-    filteredProblems.forEach(p => {
+    comparisonProblems.forEach(p => {
         const date = parseDate(p.timestamp);
         if (date) {
             const year = new Date(date).getFullYear();
             if (yearData[year]) {
                 yearData[year].total++;
-                if (p.problemStatus === 'Completed') yearData[year].completed++;
+                if (p.problemStatus === 'Completed' || p.problemStatus === 'Programmed-Completed') yearData[year].completed++;
                 if (['Urgent', 'High'].includes(p.problemPriority)) yearData[year].urgent++;
             }
         }
