@@ -827,6 +827,10 @@ body #pdfModal .modal-cancel {
                 <span>📁 Top 10 Categories</span>
             </label>
             <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="subCategoryToggle" onchange="toggleChart('subCategory')" style="transform: scale(1.2);" checked>
+                <span>📂 Top 10 Sub-Categories</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                 <input type="checkbox" id="zoneToggle" onchange="toggleChart('zone')" style="transform: scale(1.2);" checked>
                 <span>🗺️ Zone Distribution</span>
             </label>
@@ -1388,7 +1392,8 @@ if (typeof activeCharts === 'undefined') {
     gauge: false,      // New charts off by default
     heatmap: false,
     comparison: false,
-    units: false
+    units: false,
+    subCategory: true
 };
 }
 
@@ -2538,6 +2543,7 @@ function createComparisonChart() {
     if (activeCharts.priority) updatePriorityChart();
     if (activeCharts.status) updateStatusChart();
     if (activeCharts.category) updateCategoryChart();
+    if (activeCharts.subCategory) updateSubCategoryChart();
     if (activeCharts.zone) updateZoneChart();
     if (activeCharts.trend) updateTrendChart();
     if (activeCharts.gauge) updateGaugeChart();
@@ -2690,6 +2696,56 @@ function createComparisonChart() {
             plugins: {
                 legend: { display: false },
                 title: { display: true, text: `Top categories from ${filteredProblems.length} problems` }
+            },
+            scales: {
+                x: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+}
+    function updateSubCategoryChart() {
+    const container = document.createElement('div');
+    container.className = 'chart-card';
+    container.id = 'subCategoryChartContainer';
+    container.innerHTML = `
+        <div class="chart-header">
+            <h3>📂 Top 10 Sub-Categories</h3>
+            <button onclick="exportChart('subCategoryChart')" style="background: #3b82f6; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">📤 Export</button>
+        </div>
+        <div class="chart-container">
+            <canvas id="subCategoryChart"></canvas>
+        </div>
+    `;
+    document.getElementById('chartGrid').appendChild(container);
+    const subCategories = {};
+    filteredProblems.forEach(p => {
+        const subCategory = p.subCategory;
+        if (subCategory && subCategory.trim() !== '' && subCategory !== 'Not Set') {
+            subCategories[subCategory] = (subCategories[subCategory] || 0) + 1;
+        }
+    });
+    const sortedSubCategories = Object.entries(subCategories)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+    const ctx = document.getElementById('subCategoryChart');
+    charts.subCategory = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sortedSubCategories.map(c => c[0]),
+            datasets: [{
+                label: 'Problems',
+                data: sortedSubCategories.map(c => c[1]),
+                backgroundColor: '#8b5cf6',
+                borderRadius: 6
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                title: { display: true, text: `Top sub-categories from ${filteredProblems.length} problems` }
             },
             scales: {
                 x: { beginAtZero: true, ticks: { stepSize: 1 } }
