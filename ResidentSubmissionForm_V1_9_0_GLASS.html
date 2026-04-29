@@ -1,0 +1,1716 @@
+<!--
+=====================================================================
+ResidentSubmissionForm.html - RESIDENT PROBLEM SUBMISSION FORM
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        ResidentSubmissionForm_V1_9_0_GLASS.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Resident Module
+  Frontend Version: V1.9.0
+  Backend:          ResidentSubmissionForm V1.5
+  Status:           COLD STORAGE — Glass design variant of V1.9.0. Not deployed.
+  Created:          Oct 2025
+  Last Modified:    Apr 2026
+
+VERSION HISTORY:
+  V1.0.0 (Oct 2025): Initial release
+  V1.1.0 (Nov 2025): Searchable dropdowns replacing static select elements
+  V1.2.0 (Nov 2025): Success modal with tracking number and photo email link
+  V1.3.0 (Nov 2025): Help modal added with step-by-step submission instructions
+  V1.4.0 (Dec 2025): Back to Resident Portal button added to success modal
+  V1.5.0 (Jan 2026): Loading screen and content-hidden pattern introduced
+  V1.6.0 (Mar 2026): Locations loaded from lake-illawong-locations.js static
+                     file — eliminates unit API call, form appears immediately.
+                     Resident names still fetched dynamically from API.
+  V1.7.0 (Apr 2026): Field instruction text added above Location and Reported By
+                     dropdowns — explicit guidance visible at point of entry to
+                     reduce incorrect free-text entry by residents.
+  V1.9.0-GLASS (Apr 2026): Glass-morphism design variant of V1.9.0.
+                     All white surfaces converted to glass panels per
+                     Design System V2.0. Modal picker pattern retained
+                     from V1.9.0. Blue gradient background throughout.
+
+AUTHENTICATION:
+  No authentication required — public-facing resident form.
+  Accessible directly from ResidentPortal.html.
+
+SYSTEM CONNECTIONS:
+  Backend API:      ResidentSubmissionForm V1.5
+  Static Data:      lake-illawong-locations.js (unit and location list)
+  Data Source:      Dropdowns sheet (Reported By names), FaultLog sheet
+  Notifications:    NotificationServer V3.2
+  Dropdowns:        Locations from static file; resident names from API
+
+PRIMARY FEATURES:
+  Problem Submission:   Resident submits unit problem with description
+  Modal Picker:         Tap field to open full-screen scrollable list, no typing
+  Submit Enforcement:   Button disabled until both fields selected and description filled
+  Success Modal:        Tracking number displayed with photo email option
+  Help Modal:           Removed — form is self-explanatory with modal picker pattern
+  Fast Load:            Location list populated instantly from static file
+
+TECHNICAL:
+  Technology:     HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol:   JSONP (required for static hosting CORS compatibility)
+  Design System:  Lake Illawong Unified Design System v1.4
+  Hosting:        Netlify (auto-deployed from GitHub)
+
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lake Illawong - Submit Problem Request</title>
+    <script src="lake-illawong-locations.js"></script>
+
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --glass-bg:           rgba(255, 255, 255, 0.08);
+            --glass-bg-hover:     rgba(255, 255, 255, 0.12);
+            --glass-bg-strong:    rgba(255, 255, 255, 0.15);
+            --glass-border:       rgba(255, 255, 255, 0.15);
+            --glass-border-hover: rgba(255, 255, 255, 0.30);
+            --glass-blur:         blur(15px);
+            --glass-text:         #ffffff;
+            --glass-text-muted:   rgba(255, 255, 255, 0.70);
+            --glass-text-subtle:  rgba(255, 255, 255, 0.50);
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+           background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* UPDATED: Header section with logo and text side by side */
+        .header-section {
+            // background: #eeeeee;
+            // background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+            // padding: 20px;
+           margin-bottom: 20px;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .logo-container {
+            flex-shrink: 0;
+        }
+
+        .logo-image {
+    width: 100px;
+    height: 100px;
+    object-fit: contain;
+    background: transparent !important; /* Force transparency */
+}
+
+        .header-text {
+            flex: 1;
+            text-align: left;
+        }
+
+        .system-title {
+            font-size: 24px;
+            font-weight: 700;
+            //color: #1e293b;
+            color: white;
+            // margin: 0;
+             margin: 0 0 5px 0;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .system-subtitle {
+            font-size: 14px;
+            color: rgba(255,255,255,0.75);
+            margin: 4px 0 0 0;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* NEW: Resident Form title section */
+        .title-card {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            padding: 28px 28px 24px;
+            text-align: center;
+            max-width: 520px;
+            margin-left: auto;
+            margin-right: auto;
+            margin-bottom: 20px;
+        }
+
+        .title-card h1 {
+            font-size: 26px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            letter-spacing: -0.025em;
+            color: white;
+        }
+
+        .title-card p {
+            color: var(--glass-text-muted);
+            font-size: 16px;
+            font-weight: 400;
+        }
+
+        /* Modified: Form card section */
+        .form-card {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .form-container {
+            padding: 32px 28px;
+            background: transparent;
+        }
+
+        .info-box {
+            background: linear-gradient(135deg, rgba(245,158,11,0.18) 0%, rgba(251,191,36,0.12) 100%);
+            border: 1px solid rgba(245,158,11,0.45);
+            border-radius: 2px;
+            padding: 16px 18px;
+            margin-bottom: 28px;
+            color: rgba(255,255,255,0.92);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .info-box strong {
+            color: #fbbf24;
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 28px;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: rgba(255,255,255,0.9);
+            font-size: 15px;
+            letter-spacing: -0.025em;
+        }
+
+
+
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            font-size: 16px;
+            transition: border-color 0.2s, background 0.2s;
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            color: white;
+            font-family: inherit;
+        }
+
+        .form-input::placeholder { color: var(--glass-text-subtle); }
+
+        .form-input:focus {
+            outline: none;
+            background: var(--glass-bg-strong);
+            border-color: var(--glass-border-hover);
+        }
+
+        .form-input:hover:not(:focus) {
+            border-color: var(--glass-border-hover);
+        }
+
+        select.form-input {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 16px center;
+            background-repeat: no-repeat;
+            background-size: 16px;
+            padding-right: 48px;
+        }
+
+        textarea.form-input {
+            min-height: 130px;
+            resize: vertical;
+            line-height: 1.6;
+        }
+
+        .submit-btn {
+            width: 100%;
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 16px 24px;
+            font-size: 1rem;
+            font-weight: 700;
+            border-radius: 2px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            letter-spacing: 0.025em;
+            margin-top: 8px;
+        }
+
+        .submit-btn:hover:not(:disabled) {
+            background: var(--glass-bg-strong);
+            border-color: var(--glass-border-hover);
+            transform: translateY(-2px);
+        }
+
+        .submit-btn:disabled {
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.08);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 28px;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .loading-dots {
+            display: inline-block;
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 16px;
+        }
+
+        .loading-dots div {
+            position: absolute;
+            top: 33px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #0891b2;
+            animation: loading-dots 1.2s linear infinite;
+        }
+
+        .loading-dots div:nth-child(1) { left: 8px; animation-delay: 0s; }
+        .loading-dots div:nth-child(2) { left: 8px; animation-delay: -0.4s; }
+        .loading-dots div:nth-child(3) { left: 32px; animation-delay: -0.8s; }
+
+        @keyframes loading-dots {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+
+        .result {
+            display: none;
+            margin-top: 28px;
+            padding: 24px;
+            border-radius: 16px;
+            text-align: center;
+            font-weight: 500;
+            border-width: 1px;
+            border-style: solid;
+        }
+
+        .result.success {
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+            color: #166534;
+            border-color: #22c55e;
+        }
+
+        .result.error {
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+            color: #dc2626;
+            border-color: #fecaca;
+        }
+
+        .required {
+            color: #fca5a5;
+            font-weight: 600;
+        }
+        /* SUCCESS MODAL STYLES - MOBILE OPTIMIZED V4 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 9999;
+            overflow: hidden;
+        }
+
+        .modal-overlay.active {
+            display: block;
+        }
+
+        .modal-scroll-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+        }
+
+        .modal-content {
+            background: #e6fced;
+            min-height: 100%;
+            width: 100%;
+            padding: 30px 20px;
+        }
+
+        .modal-header {
+            background: transparent;
+            color: #047857;
+            padding: 0 0 20px 0;
+            text-align: center;
+            position: relative;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            line-height: 1.3;
+            color: #047857;
+        }
+
+        .modal-close-x {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.08);
+            border: none;
+            color: #047857;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            font-size: 1.5rem;
+            font-weight: 300;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .modal-close-x:active {
+            background: rgba(0, 0, 0, 0.12);
+            transform: scale(0.95);
+        }
+
+        .modal-body {
+            padding: 0;
+            background: transparent;
+        }
+
+        .tracking-info {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 3px solid #0891b2;
+            border-radius: 16px;
+            padding: 30px 20px;
+            margin: 0 0 30px 0;
+            text-align: center;
+        }
+
+        .tracking-label {
+            color: #0c4a6e;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+        }
+
+        .tracking-number {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #0369a1;
+            margin: 12px 0;
+            letter-spacing: 0.05em;
+            line-height: 1.2;
+            word-break: break-all;
+        }
+
+        .unit-info {
+            color: #64748b;
+            font-size: 1.1rem;
+            margin-top: 12px;
+            font-weight: 500;
+        }
+
+        .photo-section {
+            background: white;
+            border: 3px solid #0891b2;
+            border-radius: 16px;
+            padding: 24px 20px;
+            margin: 0 0 24px 0;
+        }
+
+        .photo-section strong {
+            color: #dc2626;
+            display: block;
+            margin-bottom: 16px;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .photo-section p {
+            color: #0c4a6e;
+            margin-bottom: 20px;
+            font-size: 1rem;
+            line-height: 1.6;
+            font-weight: 500;
+        }
+
+        .photo-help-text {
+            margin-top: 20px !important;
+            margin-bottom: 0 !important;
+            font-size: 0.95rem !important;
+            color: #64748b !important;
+        }
+
+        .email-photo-btn {
+            display: block;
+            width: 100%;
+            padding: 18px 24px;
+            background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .email-photo-btn:active {
+            background: linear-gradient(135deg, #0e7490 0%, #155e75 100%);
+            transform: scale(0.98);
+        }
+
+        .next-steps {
+            color: #64748b;
+            font-size: 1rem;
+            margin-top: 24px;
+            line-height: 1.7;
+            text-align: center;
+        }
+
+.close-modal-btn {
+            width: 100%;
+            background: #f1f5f9;
+            color: #475569;
+            border: 2px solid #cbd5e1;
+            padding: 16px 24px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        /* Prevent body scroll when modal is open */
+        body.modal-open {
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+        }
+
+        /* LOADING MODAL STYLES */
+        .loading-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loading-modal.active {
+            display: flex;
+        }
+
+        .loading-content {
+            background: white;
+            border-radius: 20px;
+            padding: 40px 30px;
+            text-align: center;
+            max-width: 320px;
+            margin: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 24px;
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #0891b2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 12px;
+        }
+
+        .loading-message {
+            font-size: 1rem;
+            color: #64748b;
+            line-height: 1.5;
+        }
+        /* Desktop overrides */
+        @media (min-width: 768px) {
+            .modal-scroll-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 40px 20px;
+            }
+
+            .modal-content {
+                min-height: auto;
+                max-width: 600px;
+                border-radius: 20px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                padding: 40px;
+            }
+
+            .modal-header {
+                padding: 0 0 30px 0;
+            }
+
+            .modal-body {
+                padding: 0;
+            }
+
+                .new-problem-btn,
+                .email-photo-btn {
+                width: auto;
+                display: inline-block;
+                min-width: 200px;
+            }
+
+.close-modal-btn:hover {
+                transform: translateY(-2px);
+                background: #e2e8f0;
+            }
+
+            .email-photo-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(8, 145, 178, 0.3);
+            }
+
+            .modal-close-x:hover {
+                background: rgba(0, 0, 0, 0.12);
+                transform: scale(1.05);
+            }
+        }
+
+        /* Desktop overrides */
+        @media (min-width: 768px) {
+            .modal-content {
+                min-height: auto;
+                max-width: 600px;
+                margin: 40px auto;
+                border-radius: 20px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            }
+
+            .modal-header {
+                padding: 0 0 30px 0;
+            }
+
+            .modal-body {
+                padding: 0;
+            }
+
+                .new-problem-btn,
+                .email-photo-btn {
+                width: auto;
+                display: inline-block;
+                min-width: 200px;
+            }
+
+.close-modal-btn:hover {
+                transform: translateY(-2px);
+                background: #e2e8f0;
+            }
+
+            .email-photo-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(8, 145, 178, 0.3);
+            }
+
+            .modal-close-x:hover {
+                background: rgba(0, 0, 0, 0.12);
+                transform: scale(1.05);
+            }
+        }
+
+        /* SUCCESS MODAL STYLES */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            max-width: 600px;
+            width: 100%;
+            margin: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: modalSlide 0.3s ease-out;
+        }
+
+        @keyframes modalSlide {
+            from {
+                opacity: 0;
+                transform: translateY(-30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .modal-header {
+            background: #e6fced;
+            color: #1e293b;
+            padding: 24px 30px;
+            border-radius: 20px 20px 0 0;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .modal-body {
+            padding: 32px 30px;
+        }
+
+        .tracking-info {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 2px solid #0891b2;
+            border-radius: 16px;
+            padding: 24px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .tracking-label {
+            color: #0c4a6e;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+        }
+
+        .tracking-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #0369a1;
+            margin: 8px 0;
+            letter-spacing: 0.05em;
+        }
+
+        .unit-info {
+            color: #64748b;
+            font-size: 1rem;
+            margin-top: 8px;
+        }
+
+        .photo-section {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .photo-section strong {
+            color: #1e293b;
+            display: block;
+            margin-bottom: 12px;
+            font-size: 1.05rem;
+        }
+
+        .photo-section p {
+            color: #475569;
+            margin-bottom: 16px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .email-photo-btn {
+            display: inline-block;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .email-photo-btn:hover {
+            background: linear-gradient(135deg, #0e7490 0%, #155e75 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(8, 145, 178, 0.3);
+        }
+
+        .next-steps {
+            color: #64748b;
+            font-size: 0.9rem;
+            margin-top: 20px;
+            line-height: 1.6;
+        }
+
+        .close-modal-btn:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        @media (max-width: 480px) {
+            .modal-content {
+                margin: 20px 0;
+            }
+
+            .modal-header {
+                padding: 20px;
+            }
+
+            .modal-title {
+                font-size: 1.25rem;
+            }
+
+            .modal-body {
+                padding: 24px 20px;
+            }
+
+            .tracking-number {
+                font-size: 1.5rem;
+            }
+
+            .modal-footer {
+                padding: 0 20px 24px 20px;
+            }
+        }
+
+        /* Mobile Responsive Adjustments */
+        @media (max-width: 580px) {
+            body {
+                padding: 12px;
+            }
+            
+            .header-section {
+                padding: 16px;
+                margin-bottom: 16px;
+            }
+            
+            .header-content {
+                gap: 16px;
+                padding: 0 10px;
+            }
+            
+            .logo-image {
+                width: 100px;
+                height: 100px;
+            }
+            
+            .system-title {
+                font-size: 20px;
+            }
+            
+            .system-subtitle {
+                font-size: 12px;
+            }
+            
+            .title-card {
+                padding: 32px 24px;
+                margin-bottom: 16px;
+            }
+            
+            .title-card h1 {
+                font-size: 24px;
+            }
+            
+            .form-card {
+                border-radius: 16px;
+                margin: 0;
+            }
+            
+            .form-container {
+                padding: 32px 24px;
+            }
+
+    
+
+
+
+
+        .form-input {
+                padding: 16px 18px;
+                font-size: 16px; /* Prevents zoom on iOS */
+            }
+
+            .submit-btn {
+                padding: 18px;
+                min-height: 56px;
+            }
+
+            .info-box {
+                padding: 20px;
+                font-size: 14px;
+            }
+        }
+
+        /* Very small screens */
+        @media (max-width: 380px) {
+            .header-content {
+                flex-direction: column;
+                gap: 12px;
+                text-align: center;
+            }
+            
+            .header-text {
+                text-align: center;
+            }
+            
+            .logo-image {
+                width: 110px;
+                height: 110px;
+            }
+            
+            .system-title {
+                font-size: 18px;
+            }
+        }
+
+        /* Accessibility improvements */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* Touch improvements */
+        @media (hover: none) and (pointer: coarse) {
+            .submit-btn:hover {
+                transform: none;
+                box-shadow: 0 4px 12px rgba(8, 145, 178, 0.2);
+            }
+        }
+/* Loading Screen Styles */
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    text-align: center;
+}
+
+/* Progress Ring with Tool */
+.loading-animation {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    margin: 20px auto;
+}
+
+.loading-animation::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 60px;
+    height: 60px;
+    border: 4px solid #e5e7eb;
+    border-top: 4px solid #2563eb;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-animation::after {
+    content: '🔧';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 24px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-text {
+    color: white;
+    margin-top: 15px;
+    font-size: 16px;
+    font-family: Arial, sans-serif;
+}
+
+.content-hidden {
+    display: none;
+}
+
+        /* V1.9.0 - Modal Picker Styles */
+        .picker-field {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            font-size: 16px;
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            font-family: inherit;
+            cursor: pointer;
+            text-align: left;
+            color: white;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 48px;
+        }
+
+        .picker-field:hover { border-color: var(--glass-border-hover); background: var(--glass-bg-hover); }
+
+        .picker-field.selected {
+            border-color: rgba(16, 185, 129, 0.6);
+            background: rgba(16, 185, 129, 0.12);
+        }
+
+        .picker-placeholder { color: var(--glass-text-subtle); font-size: 16px; }
+        .picker-value { font-size: 16px; color: white; font-weight: 500; }
+        .picker-arrow { font-size: 1.1rem; color: var(--glass-text-muted); flex-shrink: 0; margin-left: 10px; }
+        .picker-tick { color: #10b981; font-size: 1.2rem; font-weight: 700; flex-shrink: 0; margin-left: 10px; }
+
+        .picker-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.7);
+            z-index: 10001;
+            align-items: flex-end;
+            padding: 0 12px 12px;
+        }
+
+        .picker-modal.active { display: flex; }
+
+        .picker-modal-inner {
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            width: 100%;
+            max-height: 72vh;
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            animation: slideUp 0.25s ease-out;
+            box-shadow: 0 -4px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to   { transform: translateY(0); }
+        }
+
+        .picker-modal-header {
+            padding: 18px 20px 14px;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            background: transparent;
+        }
+
+        .picker-modal-title { font-size: 1.1rem; font-weight: 700; color: white; }
+
+        .picker-modal-search {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--glass-border);
+            flex-shrink: 0;
+        }
+
+        .picker-modal-search input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            font-size: 16px;
+            font-family: inherit;
+            background: var(--glass-bg);
+            color: white;
+            outline: none;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .picker-modal-search input:focus {
+            border-color: var(--glass-border-hover);
+            background: var(--glass-bg-strong);
+        }
+
+        .picker-modal-search input::placeholder {
+            color: var(--glass-text-subtle);
+        }
+
+        .picker-modal-close {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: rgba(255,255,255,0.7);
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+
+        .picker-modal-close:hover { background: var(--glass-bg-strong); }
+
+        .picker-modal-list {
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            flex: 1;
+        }
+
+        .picker-modal-item {
+            padding: 14px 20px;
+            font-size: 16px;
+            color: rgba(255,255,255,0.85);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            cursor: pointer;
+            transition: background 0.15s;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+        }
+
+        .picker-modal-item:hover,
+        .picker-modal-item:active { background: rgba(255,255,255,0.1); color: white; font-weight: 600; }
+        .picker-modal-item.selected { background: rgba(16,185,129,0.2); color: #6ee7b7; font-weight: 600; }
+
+        .submit-btn:disabled {
+            background: #e2e8f0;
+            color: #94a3b8;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        @media (min-width: 768px) {
+            .picker-modal { align-items: center; justify-content: center; }
+            .picker-modal-inner { border-radius: 12px; max-width: 480px; max-height: 65vh; }
+        }
+        
+    </style>
+</head>
+<body>
+    <div id="loadingScreen" class="loading-container">
+        <div class="loading-animation"></div>
+        <div class="loading-text">Preparing your form...</div>
+    </div>
+
+    
+    <div class="container content-hidden" id="mainContent">
+        <!-- UPDATED: Header section with logo and text side by side -->
+        <div class="header-section">
+            <div class="header-content">
+                <div class="logo-container">
+                    <img src="logo.png" class="logo-image" alt="Lake Illawong Residential Club">
+                </div>
+                <div class="header-text">
+                    <h1 class="system-title">PROBLEM REPORTING SYSTEM</h1>
+                    
+                   
+                    
+                </div>
+            </div>
+        </div>
+
+        <!-- Resident Form title section -->
+        <div class="title-card">
+            <h1>Resident Form</h1>
+            <p>Report problem issues for your unit or common areas</p>
+        </div>
+
+        <!-- Form section -->
+        <div class="form-card">
+            <div class="form-container">
+                <div class="info-box">
+    <strong>📌 Quick Reminders:</strong><br><br>
+    
+    • For Clubhouse/Common Areas issues, check if already reported: <strong><a href="CommonAreasQueue.html" target="_blank" style="color: #0891b2; text-decoration: none;">[View Common Area Problems]</a></strong><br><br>
+    
+    • For updates on existing problems, contact: 📧 <strong><a href="mailto:irc.mtceteam@gmail.com" style="color: #0891b2; text-decoration: none;">irc.mtceteam@gmail.com</a></strong><br><br>
+    
+    <strong>⏱️ Response time:</strong> Varies depending on urgency and nature of the problem
+</div>
+
+                <form id="faultForm">
+<div class="form-group">
+    <label class="form-label" for="unitNumber">
+        Location <span class="required">*</span>
+    </label>
+    <button type="button" class="picker-field" id="unitNumberField" onclick="openPicker('unitNumber')">
+        <span class="picker-placeholder" id="unitNumberDisplay">Tap to select your location</span>
+        <span class="picker-arrow" id="unitNumberArrow">&#9660;</span>
+    </button>
+    <input type="hidden" id="unitNumber" name="unitNumber" required>
+</div>
+
+<div class="form-group">
+    <label class="form-label" for="reportedBy">
+        Reported By <span class="required">*</span>
+    </label>
+    <button type="button" class="picker-field" id="reportedByField" onclick="openPicker('reportedBy')">
+        <span class="picker-placeholder" id="reportedByDisplay">Tap to select your name</span>
+        <span class="picker-arrow" id="reportedByArrow">&#9660;</span>
+    </button>
+    <input type="hidden" id="reportedBy" name="reportedBy" required>
+</div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="problemDescription">
+                            Problem Description <span class="required">*</span>
+                        </label>
+                        <textarea id="problemDescription" name="problemDescription" class="form-input" 
+                                  placeholder="Please provide a detailed description of the problem..." required></textarea>
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="submitBtn">
+                       <span>📤</span>
+                        Submit Request
+                    </button>
+                </form>
+
+                <div class="loading" id="loading">
+                    <div class="loading-dots">
+                        <div></div><div></div><div></div>
+                    </div>
+                    Processing your request...
+                </div>
+
+                <div class="result" id="result">
+                    <div id="resultMessage"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    
+
+    <script>
+        
+
+
+        // ResidentSubmissionForm V1.0 (old version no longer used - working with ResidentSubmissionForm V1.0.js)
+        // const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzci7eOamOWOPGojxYszMgLUqmIADOMVt_ilEbqi0F3Ai6BLOPrhcOL4RKtjyDiQa1X/exec';
+
+        // ResidentSubmissionForm V1.3 (working with ResidentSubmissionForm V1.3.js)
+        //const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwlToDSTEZFNr3xJwRejUH_2AulxAVb_49mP2SrTIpGQDvhENGL-  QvimGC5TYPnffpERw/exec';
+
+        // ResidentSubmissionForm V1.4 (working with ResidentSubmissionForm V1.4.js)
+          const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyQZ2m6zSnN0LSD1BTBNn3hK81YextFLU89_DHB8ijjFi8U51Pa8QWlpu52H7AdGaXLcA/exec';
+
+
+
+        // Load dropdowns on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDropdownOptions();
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('problemDescription').addEventListener('input', updateSubmitButton);
+        });
+
+        async function loadDropdownOptions() {
+    try {
+        console.log('Loading dropdown options...');
+
+        // Locations are static - load from shared file immediately, no API call needed
+        populateDropdown('unitNumber', LAKE_ILLAWONG_LOCATIONS);
+        console.log('Locations loaded from static file');
+
+        // Show the form immediately - no need to wait for API
+        document.getElementById('loadingScreen').style.display = 'none';
+        document.getElementById('mainContent').classList.remove('content-hidden');
+
+        // Residents are dynamic - fetch from API
+        const response = await callScript({ action: 'getDropdownOptions' });
+        const data = response.data || response;
+
+        if (data && data.reportedBy) {
+            populateDropdown('reportedBy', data.reportedBy);
+            console.log('Resident names loaded from API');
+        } else {
+            console.warn('Failed to load resident names from API');
+        }
+
+    } catch (error) {
+        console.error('Error loading resident names:', error);
+        // Form is already visible - resident dropdown just stays empty
+    }
+}
+
+        // V1.9.0 - Modal Picker Functions
+
+        // Store options for each picker
+        const pickerOptions = { unitNumber: [], reportedBy: [] };
+
+        function populateDropdown(elementId, options) {
+            pickerOptions[elementId] = options;
+            const list = document.getElementById(elementId + 'List');
+            if (!list) return;
+            list.innerHTML = '';
+            options.forEach(function(option) {
+                const item = document.createElement('div');
+                item.className = 'picker-modal-item';
+                item.textContent = option;
+                item.addEventListener('click', function() {
+                    selectPickerOption(elementId, option);
+                });
+                list.appendChild(item);
+            });
+        }
+
+        let savedScrollY = 0;
+
+        function openPicker(elementId) {
+            const modal = document.getElementById(elementId + 'Modal');
+            if (modal) {
+                savedScrollY = window.scrollY;
+                modal.classList.add('active');
+                document.body.classList.add('modal-open');
+                document.body.style.top = '-' + savedScrollY + 'px';
+                // Clear search and show all items
+                const search = document.getElementById(elementId + 'Search');
+                if (search) { search.value = ''; filterPickerList(elementId, ''); }
+                // Scroll to selected item if any
+                const selected = modal.querySelector('.picker-modal-item.selected');
+                if (selected) selected.scrollIntoView({ block: 'center' });
+            }
+        }
+
+        function closePicker(elementId) {
+            const modal = document.getElementById(elementId + 'Modal');
+            if (modal) {
+                modal.classList.remove('active');
+                document.body.classList.remove('modal-open');
+                document.body.style.top = '';
+                window.scrollTo(0, savedScrollY);
+            }
+        }
+
+        function selectPickerOption(elementId, value) {
+            // Set hidden input
+            document.getElementById(elementId).value = value;
+
+            // Update button display
+            const field   = document.getElementById(elementId + 'Field');
+            const display = document.getElementById(elementId + 'Display');
+            const arrow   = document.getElementById(elementId + 'Arrow');
+
+            display.textContent = value;
+            display.className = 'picker-value';
+            arrow.innerHTML = '<span class="picker-tick">&#10003;</span>';
+            field.classList.add('selected');
+
+            // Mark selected in list
+            const list = document.getElementById(elementId + 'List');
+            list.querySelectorAll('.picker-modal-item').forEach(function(item) {
+                item.classList.toggle('selected', item.textContent === value);
+            });
+
+            closePicker(elementId);
+            updateSubmitButton();
+        }
+
+        function updateSubmitButton() {
+            const unitOk     = document.getElementById('unitNumber').value !== '';
+            const reporterOk = document.getElementById('reportedBy').value !== '';
+            const descOk     = document.getElementById('problemDescription').value.trim() !== '';
+            document.getElementById('submitBtn').disabled = !(unitOk && reporterOk && descOk);
+        }
+
+        function filterPickerList(elementId, term) {
+            const list  = document.getElementById(elementId + 'List');
+            const items = list.querySelectorAll('.picker-modal-item');
+            const lower = term.toLowerCase();
+            items.forEach(function(item) {
+                item.style.display = item.textContent.toLowerCase().includes(lower) ? '' : 'none';
+            });
+        }
+
+        // Close picker if tapping the backdrop
+        document.addEventListener('click', function(e) {
+            ['unitNumber', 'reportedBy'].forEach(function(id) {
+                const modal = document.getElementById(id + 'Modal');
+                if (modal && modal.classList.contains('active') && e.target === modal) {
+                    closePicker(id);
+                }
+            });
+        });
+        async function callScript(data) {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+                const script = document.createElement('script');
+                const params = new URLSearchParams(data);
+                params.append('callback', callbackName);
+                
+                script.src = `${WEB_APP_URL}?${params.toString()}`;
+                
+                window[callbackName] = function(response) {
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    resolve(response);
+                };
+                
+                script.onerror = function() {
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error('Script loading failed'));
+                };
+                
+                document.head.appendChild(script);
+            });
+        }
+
+        // Form submit handler
+        document.getElementById('faultForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            const resultMessage = document.getElementById('resultMessage');
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            showLoadingModal();
+            result.style.display = 'none';
+            
+            // Collect form data
+            const formData = {
+                action: 'submitFault',
+                unitNumber: document.getElementById('unitNumber').value,
+                reportedBy: document.getElementById('reportedBy').value,
+                problemDescription: document.getElementById('problemDescription').value
+            };
+            
+            try {
+                // Submit to Google Apps Script
+                const response = await submitFault(formData);
+                
+                // Hide loading
+                hideLoadingModal();
+                
+                if (response.success) {
+                    // Show success modal instead of inline message
+                    showSuccessModal(response.friendlyPID, formData.unitNumber);
+                    
+                    // Reset form
+                    document.getElementById('faultForm').reset();
+                    // Reload dropdowns after reset
+                    loadDropdownOptions();
+                    
+                } else {
+                    // Error message
+                    result.className = 'result error';
+                    resultMessage.innerHTML = `
+                        <strong>âŒ Submission Failed</strong><br><br>
+                        ${response.message || 'Please try again or contact management.'}
+                    `;
+                }
+                
+                result.style.display = 'block';
+                
+            } catch (error) {
+                // Network error
+                hideLoadingModal();
+                result.className = 'result error';
+                result.style.display = 'block';
+                resultMessage.innerHTML = `
+                    <strong>âŒ Network Error</strong><br><br>
+                    Please check your internet connection and try again.
+                `;
+            }
+            
+            // Re-enable submit button
+            submitBtn.disabled = false;
+        });
+
+        async function submitFault(formData) {
+            return new Promise((resolve, reject) => {
+                // Create callback function name
+                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+                
+                // Create script element for JSONP
+                const script = document.createElement('script');
+                const params = new URLSearchParams(formData);
+                params.append('callback', callbackName);
+                
+                script.src = `${WEB_APP_URL}?${params.toString()}`;
+                
+                // Set up callback function
+                window[callbackName] = function(response) {
+                    // Clean up
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    resolve(response);
+                };
+                
+                // Handle errors
+                script.onerror = function() {
+                    // Clean up
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error('Network request failed'));
+                };
+                
+                // Add script to document
+                document.head.appendChild(script);
+            });
+        }
+
+        // Modal functions
+        function showSuccessModal(trackingNumber, unitNumber) {
+            const modal = document.getElementById('successModal');
+            const modalTrackingNumber = document.getElementById('modalTrackingNumber');
+            const modalUnit = document.getElementById('modalUnit');
+            const modalTrackingNumberText = document.getElementById('modalTrackingNumberText');
+            const modalEmailLink = document.getElementById('modalEmailLink');
+            
+            // Set values
+            modalTrackingNumber.textContent = trackingNumber;
+            modalUnit.textContent = unitNumber;
+            modalTrackingNumberText.textContent = trackingNumber;
+            
+            // Set email link
+            const emailSubject = `Photos ${trackingNumber}`;
+            const emailBody = `Hi,%0A%0AAttached are photos for maintenance request ${trackingNumber}%0A%0AUnit: ${unitNumber}%0A%0AThank you%0A%0A`;
+            modalEmailLink.href = `mailto:irc.mtceteam@gmail.com?subject=${emailSubject}&body=${emailBody}`;
+            
+            // Prevent body scroll
+            document.body.classList.add('modal-open');
+            
+            // Show modal
+            modal.classList.add('active');
+            
+            // Scroll modal to top
+            const scrollContainer = document.getElementById('modalScrollContainer');
+            if (scrollContainer) {
+                scrollContainer.scrollTop = 0;
+            }
+        }
+        
+        function closeSuccessModal() {
+            // Reload the page to reset form
+            window.location.reload();
+        }
+        
+// Loading modal functions
+        function showLoadingModal() {
+            const loadingModal = document.getElementById('loadingModal');
+            loadingModal.classList.add('active');
+        }
+        
+        function hideLoadingModal() {
+            const loadingModal = document.getElementById('loadingModal');
+            loadingModal.classList.remove('active');
+        }
+
+function submitAnother() {
+            // Just do what the X does
+            closeSuccessModal();
+            
+            // Also reset the form so it's empty
+            document.getElementById('maintenanceForm').reset();
+        }
+
+
+
+    </script>
+
+    <!-- Loading Modal -->
+    <div class="loading-modal" id="loadingModal">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-title">Processing Request</div>
+            <div class="loading-message">Please wait while we submit your maintenance request...</div>
+        </div>
+    </div>
+
+   <!-- Success Modal -->
+    <div class="modal-overlay" id="successModal">
+        <div class="modal-scroll-container" id="modalScrollContainer">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title">✓ Request Submitted Successfully!</div>
+                    <button class="modal-close-x" onclick="closeSuccessModal()" aria-label="Close" style="display: none;">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="tracking-info">
+                        <div class="tracking-label">Your Tracking Number</div>
+                        <div class="tracking-number" id="modalTrackingNumber"></div>
+                        <div class="unit-info">Location: <span id="modalUnit"></span></div>
+                    </div>
+
+                    <div class="photo-section">
+                        <strong>Want to add photos?</strong>
+                        
+                        <a href="#" id="modalEmailLink" class="email-photo-btn">
+                            Click to Add Photos
+                        </a>
+                        
+                        <p class="photo-help-text">
+                            You can also email photos at any time to <strong>irc.mtceteam@gmail.com</strong><br>
+                            Include tracking number <strong><span id="modalTrackingNumberText"></span></strong> in the subject line
+                        </p>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div style="display: flex; gap: 12px; margin-top: 25px; flex-wrap: wrap;">
+                        <button onclick="submitAnother()" style="flex: 1; min-width: 200px; background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 14px 24px; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px rgba(16,185,129,0.3); transition: transform 0.2s;">
+                            ➕ Submit Another Problem
+                        </button>
+                        <a href="ResidentPortal.html" style="flex: 1; min-width: 200px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; text-decoration: none; display: flex; align-items: center; justify-content: center; padding: 14px 24px; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px rgba(102,126,234,0.3); transition: transform 0.2s;">
+                            ← Back to Resident Portal
+                        </a>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Location Picker Modal -->
+    <div class="picker-modal" id="unitNumberModal">
+        <div class="picker-modal-inner">
+            <div class="picker-modal-header">
+                <span class="picker-modal-title">Select Location</span>
+                <button class="picker-modal-close" onclick="closePicker('unitNumber')">&#x2715;</button>
+            </div>
+            <div class="picker-modal-search">
+                <input type="text" id="unitNumberSearch" placeholder="Search..." autocomplete="off"
+                       oninput="filterPickerList('unitNumber', this.value)">
+            </div>
+            <div class="picker-modal-list" id="unitNumberList"></div>
+        </div>
+    </div>
+
+    <!-- Reported By Picker Modal -->
+    <div class="picker-modal" id="reportedByModal">
+        <div class="picker-modal-inner">
+            <div class="picker-modal-header">
+                <span class="picker-modal-title">Select Your Name</span>
+                <button class="picker-modal-close" onclick="closePicker('reportedBy')">&#x2715;</button>
+            </div>
+            <div class="picker-modal-search">
+                <input type="text" id="reportedBySearch" placeholder="Search..." autocomplete="off"
+                       oninput="filterPickerList('reportedBy', this.value)">
+            </div>
+            <div class="picker-modal-list" id="reportedByList"></div>
+        </div>
+    </div>
+
+
+
+</body>
+</html>
+ 
