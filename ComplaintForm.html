@@ -1,3 +1,51 @@
+<!--
+=====================================================================
+ComplaintForm.html - RESIDENT COMPLAINT SUBMISSION FORM
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        ComplaintForm.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Resident Module
+  Frontend Version: V1.0.0
+  Backend:          ComplaintsManager V1.0
+  Status:           PRODUCTION
+  Created:          May 2026
+  Last Modified:    May 2026
+
+VERSION HISTORY:
+  V1.0.0 (May 2026): Initial release.
+    OTP verification via VerificationModal_V1_0.js.
+    Name and unit pre-filled from session.
+    Category dropdown loaded dynamically from ComplaintsManager
+    (Dropdowns sheet — Complaint Category type). Hardcoded fallback
+    list if backend unavailable.
+    Fields: Category (required), Date/Time, Location, People Involved,
+    Description (required), Desired Resolution, Previous Actions,
+    Anonymous checkbox, Acknowledgement checkbox.
+    JSONP submit to ComplaintsManager V1.0 submitComplaint action.
+    Success view shows backend-generated reference number (COMP-YYYYMMDD-NNN)
+    and CAV escalation details.
+
+AUTHENTICATION:
+  OTP via VerificationModal_V1_0.js
+  Session Key: lakeIllawongVerified
+  Email and SMS verification both available (no smsOnly restriction)
+
+SYSTEM CONNECTIONS:
+  Backend: ComplaintsManager V1.0
+  URL: CONFIG.BACKEND_API
+  Notifications: MailApp via ComplaintsManager
+    - Resident confirmation email on submission
+    - Board alert email on submission
+    - Courtesy copy to Residents Committee on submission
+
+PORTAL:
+  Accessed from ResidentPortal.html
+  Back button returns to ResidentPortal.html
+
+=====================================================================
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -377,17 +425,7 @@
                     <div class="form-group">
                         <label class="form-label">Complaint Category <span class="required">*</span></label>
                         <select class="form-select" id="category" required>
-                            <option value="">Select a category...</option>
-                            <option value="Noise">Noise Disturbance</option>
-                            <option value="Maintenance">Maintenance Issue</option>
-                            <option value="Common Areas">Common Areas</option>
-                            <option value="Parking">Parking</option>
-                            <option value="Pets">Pets</option>
-                            <option value="Behavior">Resident Behavior</option>
-                            <option value="Management">Management/Administration</option>
-                            <option value="Security">Security Concern</option>
-                            <option value="Finance">Financial Matter</option>
-                            <option value="Other">Other</option>
+                            <option value="">Loading categories...</option>
                         </select>
                     </div>
 
@@ -465,14 +503,16 @@
                     <div class="success-icon">✅</div>
                     <div class="success-title">Complaint Submitted Successfully</div>
                     <div class="success-text">
-                        Your complaint has been received and logged. A member of the Residents Committee will 
-                        review your submission and contact you within 7 business days.<br><br>
-                        Reference Number: <strong id="referenceNumber"></strong>
+                        Your complaint has been received by the Board of Management.
+                        A confirmation email has been sent to you with your reference number.<br><br>
+                        Reference Number: <strong id="referenceNumber"></strong><br><br>
+                        The Board will respond within 14 days. If you are not satisfied with
+                        the response, you may contact Consumer Affairs Victoria on
+                        <strong>1300 55 81 81</strong> or visit <strong>consumer.vic.gov.au</strong>.
                     </div>
                 </div>
                 <div class="form-actions" style="margin-top: 30px;">
-                    <button class="btn btn-secondary" onclick="submitAnother()">Submit Another Complaint</button>
-                    <button class="btn btn-primary" onclick="location.href='DocumentLibrary.html'">Back to Documents</button>
+                    <button class="btn btn-primary" onclick="location.href='ResidentPortal.html'">Back to Resident Portal</button>
                 </div>
             </div>
         </div>
@@ -480,7 +520,7 @@
 
     <script>
         const CONFIG = {
-            BACKEND_API: 'YOUR_COMPLAINTS_BACKEND_URL_HERE', // TODO: Set this up
+            BACKEND_API: 'https://script.google.com/macros/s/AKfycbz062GrFYsiDAfqYx0hYgk-1CAA1CBVN_2HacPBRIpKP1AmvkpdxO8-7j3G1pr_lsJkgA/exec',
             SESSION_KEY: 'lakeIllawongVerified'
         };
 
@@ -507,6 +547,40 @@
             // Pre-fill user info
             document.getElementById('residentName').value = userData.name;
             document.getElementById('residentUnit').value = userData.unit;
+
+            // Load categories from backend
+            loadCategories();
+        }
+
+        function loadCategories() {
+            const select = document.getElementById('category');
+            select.disabled = true;
+
+            jsonpCall({ action: 'getComplaintCategories' })
+                .then(function(response) {
+                    select.innerHTML = '<option value="">Select a category...</option>';
+                    select.disabled  = false;
+                    const cats = (response.success && response.categories && response.categories.length)
+                        ? response.categories
+                        : ['Maintenance','Noise','Behaviour of a resident','Village services',
+                           'Board decision or action','Contractual matter','Safety concern','Other'];
+                    cats.forEach(function(cat) {
+                        const opt = document.createElement('option');
+                        opt.value = cat; opt.textContent = cat;
+                        select.appendChild(opt);
+                    });
+                })
+                .catch(function() {
+                    select.innerHTML = '<option value="">Select a category...</option>';
+                    select.disabled  = false;
+                    ['Maintenance','Noise','Behaviour of a resident','Village services',
+                     'Board decision or action','Contractual matter','Safety concern','Other']
+                    .forEach(function(cat) {
+                        const opt = document.createElement('option');
+                        opt.value = cat; opt.textContent = cat;
+                        select.appendChild(opt);
+                    });
+                });
         }
 
         // Character count
@@ -517,52 +591,73 @@
         }
 
         // Form submission
-        document.getElementById('complaintForm').addEventListener('submit', async function(e) {
+        document.getElementById('complaintForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
+
             const submitBtn = document.getElementById('submitBtn');
-            submitBtn.disabled = true;
+            submitBtn.disabled    = true;
             submitBtn.textContent = 'Submitting...';
-            
-            // Collect form data
+
             const formData = {
-                residentName: document.getElementById('residentName').value,
-                residentUnit: document.getElementById('residentUnit').value,
-                category: document.getElementById('category').value,
-                incidentDateTime: document.getElementById('incidentDateTime').value,
-                location: document.getElementById('location').value,
-                peopleInvolved: document.getElementById('peopleInvolved').value,
-                description: document.getElementById('description').value,
-                resolution: document.getElementById('resolution').value,
-                previousActions: document.getElementById('previousActions').value,
-                anonymous: document.getElementById('anonymous').checked,
-                submittedAt: new Date().toISOString(),
-                roleTags: currentUserData.roleTags
+                action:          'submitComplaint',
+                residentName:    document.getElementById('residentName').value,
+                unitNumber:      document.getElementById('residentUnit').value,
+                contactEmail:    currentUserData.email  || '',
+                contactMobile:   currentUserData.phone  || currentUserData.mobile || '',
+                category:        document.getElementById('category').value,
+                description:     document.getElementById('description').value,
+                desiredOutcome:  document.getElementById('resolution').value,
+                howSubmitted:    'Digital'
             };
-            
-            try {
-                // TODO: Replace with actual backend call
-                // const response = await submitComplaint(formData);
-                
-                // Simulate success for now
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                // Generate reference number
-                const refNumber = 'COMP-' + Date.now().toString().slice(-8);
-                document.getElementById('referenceNumber').textContent = refNumber;
-                
-                // Show success view
-                document.getElementById('formView').classList.add('hidden');
-                document.getElementById('successView').classList.remove('hidden');
-                
-            } catch (error) {
-                alert('Failed to submit complaint. Please try again or contact management directly.');
-                console.error('Submission error:', error);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Submit Complaint';
-            }
+
+            jsonpCall(formData)
+                .then(function(response) {
+                    if (response.success) {
+                        document.getElementById('referenceNumber').textContent = response.referenceNumber;
+                        document.getElementById('formView').classList.add('hidden');
+                        document.getElementById('successView').classList.remove('hidden');
+                    } else {
+                        alert('Submission failed: ' + (response.error || 'Please try again or contact management.'));
+                        submitBtn.disabled    = false;
+                        submitBtn.textContent = 'Submit Complaint';
+                    }
+                })
+                .catch(function() {
+                    alert('A network error occurred. Please check your connection and try again.');
+                    submitBtn.disabled    = false;
+                    submitBtn.textContent = 'Submit Complaint';
+                });
         });
+
+        function jsonpCall(params) {
+            return new Promise(function(resolve, reject) {
+                const callbackName = 'jsonp_cb_' + Math.round(100000 * Math.random());
+                const script       = document.createElement('script');
+                const urlParams    = new URLSearchParams(params);
+                urlParams.append('callback', callbackName);
+
+                script.src = CONFIG.BACKEND_API + '?' + urlParams.toString();
+
+                var timer = setTimeout(function() {
+                    cleanup(); reject(new Error('Request timed out'));
+                }, 15000);
+
+                window[callbackName] = function(response) {
+                    clearTimeout(timer); cleanup(); resolve(response);
+                };
+
+                script.onerror = function() {
+                    clearTimeout(timer); cleanup(); reject(new Error('Network request failed'));
+                };
+
+                function cleanup() {
+                    delete window[callbackName];
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+
+                document.head.appendChild(script);
+            });
+        }
 
         function resetForm() {
             if (confirm('Are you sure you want to clear all fields?')) {
@@ -571,19 +666,6 @@
                 document.getElementById('residentUnit').value = currentUserData.unit;
                 updateCharCount();
             }
-        }
-
-        function submitAnother() {
-            document.getElementById('successView').classList.add('hidden');
-            document.getElementById('formView').classList.remove('hidden');
-            resetForm();
-        }
-
-        // TODO: Backend submission function
-        async function submitComplaint(data) {
-            // This will be implemented once you have a backend endpoint
-            // Similar to how problem submissions work
-            return { success: true, referenceNumber: 'COMP-12345678' };
         }
     </script>
 </body>
