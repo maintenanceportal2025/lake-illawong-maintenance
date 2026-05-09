@@ -1,0 +1,414 @@
+<!--
+=====================================================================
+ComplaintAck.html - BOARD COMPLAINT ACKNOWLEDGEMENT LANDING PAGE
+=====================================================================
+DOCUMENT INFORMATION:
+  File Name:        ComplaintAck.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Utility / Landing Page
+  Frontend Version: V1.0.0
+  Backend:          ComplaintsManager V1.0
+  Status:           PRODUCTION
+  Created:          May 2026
+  Last Modified:    May 2026
+
+VERSION HISTORY:
+  V1.0.0 (May 2026): Initial release.
+    Single-purpose Board acknowledgement landing page.
+    Reads ?ref= parameter from URL.
+    Calls acknowledgeComplaint action via JSONP — no OTP required.
+    Three states: success (acknowledged), already actioned, error.
+    Glass-morphism design on blue gradient.
+    Link to Admin Portal provided on all outcome states.
+
+AUTHENTICATION:
+  None — reference number in URL is the access key.
+  Accessed directly from Board alert email link.
+
+SYSTEM CONNECTIONS:
+  Backend: ComplaintsManager V1.0
+  Action:  acknowledgeComplaint
+  URL:     CONFIG.BACKEND_URL
+
+PORTAL:
+  No portal dependency. Standalone landing page.
+  Link to AdminPortal.html provided on result card.
+
+TECHNICAL:
+  Technology:   HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol: JSONP
+  Design System: Lake Illawong Unified Design System v1.4 (glass variant)
+  Hosting:      Netlify
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complaint Acknowledgement - Lake Illawong</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 560px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .logo {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            line-height: 1.2;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 0.95rem;
+            color: rgba(255,255,255,0.85);
+            margin-top: 6px;
+        }
+
+        .header-divider {
+            height: 2px;
+            background: linear-gradient(90deg,
+                transparent 0%, rgba(255,255,255,0.3) 10%,
+                rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%,
+                transparent 100%);
+            border-radius: 2px;
+            margin-top: 15px;
+        }
+
+        /* Glass result card */
+        .result-card {
+            background: rgba(255,255,255,0.08);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 16px;
+            padding: 36px 32px;
+            text-align: center;
+            color: white;
+        }
+
+        .result-icon {
+            font-size: 3.5rem;
+            margin-bottom: 16px;
+            line-height: 1;
+        }
+
+        .result-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .result-message {
+            font-size: 0.95rem;
+            color: rgba(255,255,255,0.85);
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .ref-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 8px;
+            padding: 8px 18px;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-bottom: 24px;
+            font-family: monospace;
+        }
+
+        .status-pill {
+            display: inline-block;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 24px;
+        }
+
+        .status-acknowledged { background: #bbf7d0; color: #047857; }
+        .status-open         { background: #dbeafe; color: #1d4ed8; }
+        .status-responded    { background: #e9d5ff; color: #7c3aed; }
+        .status-closed       { background: #f3f4f6; color: #374151; }
+        .status-other        { background: rgba(255,255,255,0.2); color: white; }
+
+        /* Divider inside card */
+        .card-divider {
+            height: 1px;
+            background: rgba(255,255,255,0.15);
+            margin: 24px 0;
+        }
+
+        /* Admin Portal link button */
+        .btn-admin {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            padding: 12px 28px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: opacity 0.2s ease;
+        }
+
+        .btn-admin:hover {
+            opacity: 0.88;
+        }
+
+        /* Loading state */
+        .loading-text {
+            font-size: 1rem;
+            color: rgba(255,255,255,0.8);
+            margin-top: 12px;
+        }
+
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border: 4px solid rgba(255,255,255,0.2);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 480px) {
+            .logo-section { flex-direction: column; gap: 12px; }
+            .header h1 { font-size: 1.5rem; }
+            .result-card { padding: 28px 20px; }
+            .result-title { font-size: 1.2rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- Header -->
+    <div class="header">
+        <div class="logo-section">
+            <img src="logo.png" alt="Lake Illawong" class="logo">
+            <div>
+                <h1>Complaint Acknowledgement</h1>
+                <p>Lake Illawong Residential Club</p>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+    </div>
+
+    <!-- Result card — populated by JS -->
+    <div class="result-card" id="resultCard">
+        <div class="spinner"></div>
+        <div class="loading-text">Processing acknowledgement...</div>
+    </div>
+
+</div>
+
+<script>
+    // =====================================================================
+    // CONFIG
+    // =====================================================================
+    const CONFIG = {
+        BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwqg6BiKYAhLNfpawCC5d5gS2uuc_IxVmPx_Da6HIXuKgSs5zvxHNP3Kr8_ySFqVSx5BQ/exec',
+        ADMIN_PORTAL_URL: 'AdminPortal.html'
+    };
+
+    // =====================================================================
+    // INIT
+    // =====================================================================
+    document.addEventListener('DOMContentLoaded', function () {
+        const params = new URLSearchParams(window.location.search);
+        const ref    = (params.get('ref') || '').trim();
+
+        if (!ref) {
+            showError('No reference number provided.',
+                'This link appears to be incomplete. Please use the link from the Board notification email.');
+            return;
+        }
+
+        acknowledgeComplaint(ref);
+    });
+
+    // =====================================================================
+    // JSONP CALL
+    // =====================================================================
+    function acknowledgeComplaint(ref) {
+        const callbackName = 'ackCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=acknowledgeComplaint'
+            + '&ref='      + encodeURIComponent(ref)
+            + '&callback=' + callbackName;
+
+        // Timeout guard — 15 seconds
+        const timeout = setTimeout(function () {
+            cleanup(callbackName);
+            showError('Request timed out.',
+                'The server did not respond in time. Please try again, or open the Admin Portal to update the complaint status manually.');
+        }, 15000);
+
+        window[callbackName] = function (data) {
+            clearTimeout(timeout);
+            cleanup(callbackName);
+            handleResponse(data, ref);
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function () {
+            clearTimeout(timeout);
+            cleanup(callbackName);
+            showError('Could not reach the server.',
+                'There may be a network issue. Please try again, or open the Admin Portal to acknowledge the complaint manually.');
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
+
+    function cleanup(callbackName) {
+        delete window[callbackName];
+        const old = document.querySelector('script[data-ack]');
+        if (old) old.remove();
+    }
+
+    // =====================================================================
+    // RESPONSE HANDLER
+    // =====================================================================
+    function handleResponse(data, ref) {
+        if (!data.success) {
+            // Reference not found or server error
+            showError(
+                'Reference not found.',
+                'Complaint reference <strong>' + escHtml(ref) + '</strong> could not be located. '
+                + 'Please check the link in your email, or open the Admin Portal to review complaints.'
+            );
+            return;
+        }
+
+        if (data.alreadyAcknowledged) {
+            // Already beyond Open status
+            showAlreadyActioned(ref, data.status || 'Unknown');
+            return;
+        }
+
+        // Clean success — just acknowledged
+        showSuccess(ref);
+    }
+
+    // =====================================================================
+    // STATE RENDERERS
+    // =====================================================================
+    function showSuccess(ref) {
+        document.getElementById('resultCard').innerHTML = `
+            <div class="result-icon">&#10003;</div>
+            <div class="result-title">Complaint Acknowledged</div>
+            <div class="ref-badge">${escHtml(ref)}</div>
+            <div class="result-message">
+                The complaint has been marked as <strong>Acknowledged</strong>.<br>
+                A confirmation email has been sent to the resident advising them
+                that their complaint is under review and a response will follow within 14 days.
+            </div>
+            <div class="card-divider"></div>
+            <a href="${CONFIG.ADMIN_PORTAL_URL}" class="btn-admin">Open Admin Portal</a>
+        `;
+    }
+
+    function showAlreadyActioned(ref, status) {
+        const pillClass = statusPillClass(status);
+        document.getElementById('resultCard').innerHTML = `
+            <div class="result-icon">&#8505;</div>
+            <div class="result-title">Already Actioned</div>
+            <div class="ref-badge">${escHtml(ref)}</div>
+            <div class="result-message">
+                This complaint has already been actioned.<br>
+                Current status:
+            </div>
+            <div class="status-pill ${pillClass}">${escHtml(status)}</div>
+            <div class="result-message">
+                No changes have been made. Open the Admin Portal to review
+                the complaint or record a response.
+            </div>
+            <div class="card-divider"></div>
+            <a href="${CONFIG.ADMIN_PORTAL_URL}" class="btn-admin">Open Admin Portal</a>
+        `;
+    }
+
+    function showError(title, detail) {
+        document.getElementById('resultCard').innerHTML = `
+            <div class="result-icon">&#9888;</div>
+            <div class="result-title">${escHtml(title)}</div>
+            <div class="result-message">${detail}</div>
+            <div class="card-divider"></div>
+            <a href="${CONFIG.ADMIN_PORTAL_URL}" class="btn-admin">Open Admin Portal</a>
+        `;
+    }
+
+    // =====================================================================
+    // HELPERS
+    // =====================================================================
+    function statusPillClass(status) {
+        const map = {
+            'Acknowledged': 'status-acknowledged',
+            'Open':         'status-open',
+            'Responded':    'status-responded',
+            'Closed':       'status-closed'
+        };
+        return map[status] || 'status-other';
+    }
+
+    function escHtml(str) {
+        return String(str)
+            .replace(/&/g,  '&amp;')
+            .replace(/</g,  '&lt;')
+            .replace(/>/g,  '&gt;')
+            .replace(/"/g,  '&quot;');
+    }
+</script>
+</body>
+</html>
