@@ -520,8 +520,8 @@ PORTAL:
 
     <script>
         const CONFIG = {
-            BACKEND_API: 'https://script.google.com/macros/s/AKfycby3Dt5DUYcaW3hGAhpruOSAzY8Xd3x9Vj7qw7fGBLPsP5FOW7mGfnQwry6Gjnm_JAU0/exec',
-         
+            BACKEND_API: 'https://script.google.com/macros/s/AKfycbz062GrFYsiDAfqYx0hYgk-1CAA1CBVN_2HacPBRIpKP1AmvkpdxO8-7j3G1pr_lsJkgA/exec',
+            MGMT_URL:    'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
             SESSION_KEY: 'lakeIllawongVerified'
         };
 
@@ -544,13 +544,34 @@ PORTAL:
         function handleVerificationSuccess(userData) {
             currentUserData = userData;
             document.getElementById('mainContent').classList.remove('hidden');
-            
-            // Pre-fill user info
+
+            // Pre-fill name and unit from session
             document.getElementById('residentName').value = userData.name;
             document.getElementById('residentUnit').value = userData.unit;
 
-            // Load categories from backend
+            // Look up full contact details from UnitList via ManagementCentral
+            lookupContactDetails(userData.unit, userData.name);
+
+            // Load categories from backend (runs in parallel)
             loadCategories();
+        }
+
+        function lookupContactDetails(unitNumber, verifiedName) {
+            jsonpCall({ action: 'getUnitResidents', unitNumber: unitNumber }, CONFIG.MGMT_URL)
+                .then(function(response) {
+                    if (response.success && response.residents && response.residents.length > 0) {
+                        const match = response.residents.find(function(r) {
+                            return r.name === verifiedName;
+                        }) || response.residents[0];
+                        currentUserData.email = match.email || '';
+                        currentUserData.phone = match.phone || '';
+                    } else {
+                        console.warn('lookupContactDetails: no residents found for unit ' + unitNumber);
+                    }
+                })
+                .catch(function(err) {
+                    console.warn('lookupContactDetails failed: ' + err.message);
+                });
         }
 
         function loadCategories() {
@@ -630,14 +651,14 @@ PORTAL:
                 });
         });
 
-        function jsonpCall(params) {
+        function jsonpCall(params, baseUrl) {
             return new Promise(function(resolve, reject) {
                 const callbackName = 'jsonp_cb_' + Math.round(100000 * Math.random());
                 const script       = document.createElement('script');
                 const urlParams    = new URLSearchParams(params);
                 urlParams.append('callback', callbackName);
 
-                script.src = CONFIG.BACKEND_API + '?' + urlParams.toString();
+                script.src = (baseUrl || CONFIG.BACKEND_API) + '?' + urlParams.toString();
 
                 var timer = setTimeout(function() {
                     cleanup(); reject(new Error('Request timed out'));
