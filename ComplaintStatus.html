@@ -6,13 +6,17 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintStatus.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.0.0
+  Frontend Version: V1.0.1
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V1.0.1 (May 2026): Expand/collapse added to complaint cards. Detail section
+    shows desired outcome, incident date/time, location, people involved,
+    previous actions, and Board response. Toggle hidden if no detail exists.
+
   V1.0.0 (May 2026): Initial release.
     OTP verification via VerificationModal_V1_0.js.
     On verification, unit number from session used to call
@@ -313,6 +317,63 @@ TECHNICAL:
             color: rgba(255,255,255,0.9);
         }
 
+        /* Expand/collapse toggle */
+        .complaint-card {
+            cursor: pointer;
+        }
+
+        .card-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            margin-top: 12px;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.5);
+            gap: 5px;
+            user-select: none;
+        }
+
+        .card-toggle-arrow {
+            display: inline-block;
+            transition: transform 0.2s ease;
+            font-style: normal;
+        }
+
+        .complaint-card.expanded .card-toggle-arrow {
+            transform: rotate(180deg);
+        }
+
+        /* Detail section — hidden by default */
+        .complaint-detail {
+            display: none;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .complaint-card.expanded .complaint-detail {
+            display: block;
+        }
+
+        .detail-row {
+            margin-bottom: 10px;
+        }
+
+        .detail-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 3px;
+        }
+
+        .detail-value {
+            font-size: 0.88rem;
+            color: rgba(255,255,255,0.85);
+            line-height: 1.5;
+        }
+
         .hidden { display: none !important; }
 
         @media (max-width: 768px) {
@@ -371,7 +432,7 @@ TECHNICAL:
     // CONFIG
     // =====================================================================
     const CONFIG = {
-        BACKEND_URL:     'https://script.google.com/macros/s/AKfycbwqg6BiKYAhLNfpawCC5d5gS2uuc_IxVmPx_Da6HIXuKgSs5zvxHNP3Kr8_ySFqVSx5BQ/exec',
+        BACKEND_URL:     'https://script.google.com/macros/s/YOUR_COMPLAINTS_MANAGER_V1_1_URL/exec',
         SESSION_KEY:     'lakeIllawongVerified'
     };
 
@@ -477,6 +538,7 @@ TECHNICAL:
         const submitted   = formatDate(c.submittedAt);
         const responseDue = c.responseDue ? formatDate(c.responseDue) : '';
         const respondedAt = c.respondedAt ? formatDate(c.respondedAt) : '';
+        const safeRef     = escHtml(c.referenceNumber);
 
         // Meta items — only show non-empty values
         const metaItems = [];
@@ -494,11 +556,32 @@ TECHNICAL:
                </div>`
             : '';
 
+        // Detail rows — only render fields that have content
+        const detailRows = [];
+        if (c.desiredOutcome)   detailRows.push(detailRow('Desired Outcome',       c.desiredOutcome));
+        if (c.incidentDateTime) detailRows.push(detailRow('Incident Date / Time',  c.incidentDateTime));
+        if (c.location)         detailRows.push(detailRow('Location',              c.location));
+        if (c.peopleInvolved)   detailRows.push(detailRow('People Involved',       c.peopleInvolved));
+        if (c.previousActions)  detailRows.push(detailRow('Previous Actions Taken',c.previousActions));
+
+        const detailHtml = detailRows.length > 0
+            ? `<div class="complaint-detail">${detailRows.join('')}${boardResponseHtml}</div>`
+            : `<div class="complaint-detail">${boardResponseHtml}</div>`;
+
+        // If no detail rows and no board response, don't show toggle
+        const hasDetail = detailRows.length > 0 || c.boardResponse;
+        const toggleHtml = hasDetail
+            ? `<div class="card-toggle">
+                   <span>Show details</span>
+                   <span class="card-toggle-arrow">&#9660;</span>
+               </div>`
+            : '';
+
         return `
-            <div class="complaint-card">
+            <div class="complaint-card" id="card-${safeRef}" onclick="toggleCard('card-${safeRef}', ${hasDetail})">
                 <div class="complaint-card-header">
                     <div>
-                        <div class="complaint-ref">${escHtml(c.referenceNumber)}</div>
+                        <div class="complaint-ref">${safeRef}</div>
                         <div class="complaint-category">${escHtml(c.category)}</div>
                     </div>
                     <div class="status-pill ${statusClass}">${escHtml(c.status)}</div>
@@ -507,8 +590,26 @@ TECHNICAL:
                     ${metaItems.join('')}
                 </div>
                 <div class="complaint-description">${escHtml(c.description)}</div>
-                ${boardResponseHtml}
+                ${detailHtml}
+                ${toggleHtml}
             </div>`;
+    }
+
+    function detailRow(label, value) {
+        return `<div class="detail-row">
+                    <div class="detail-label">${label}</div>
+                    <div class="detail-value">${escHtml(value)}</div>
+                </div>`;
+    }
+
+    function toggleCard(cardId, hasDetail) {
+        if (!hasDetail) return;
+        const card   = document.getElementById(cardId);
+        const toggle = card.querySelector('.card-toggle span:first-child');
+        card.classList.toggle('expanded');
+        if (toggle) {
+            toggle.textContent = card.classList.contains('expanded') ? 'Hide details' : 'Show details';
+        }
     }
 
     // =====================================================================
