@@ -1,0 +1,670 @@
+<!--
+=====================================================================
+ZoneRepComplaints.html - ZONE REP COMPLAINT MONITORING
+=====================================================================
+DOCUMENT INFORMATION:
+  File Name:        ZoneRepComplaints.html
+  System:           Lake Illawong Management Central System
+  Component Type:   ZoneRep Module
+  Frontend Version: V1.0.0
+  Backend:          ComplaintsManager V1.2
+  Status:           PRODUCTION
+  Created:          May 2026
+  Last Modified:    May 2026
+
+VERSION HISTORY:
+  V1.0.0 (May 2026): Initial release.
+    Read-only complaint monitoring view for Zone Representatives.
+    Zone derived from ZoneRep-N role tag in verified session.
+    Shows complaints for all units in the ZoneRep's zone only.
+    internalNotes and peopleInvolved stripped by backend.
+    Timeline compliance flags — acknowledgement (2 business days)
+    and response (14 days) deadlines shown visually.
+    No update panel — monitoring only.
+    Back button returns to ZoneRepPortal.html.
+
+AUTHENTICATION:
+  Session inherited from ZoneRepPortal.html (portalZoneRepVerified).
+  Zone extracted from ZoneRep-N role tag in session roleTags.
+  Redirects to ZoneRepPortal.html if session absent.
+
+SYSTEM CONNECTIONS:
+  Backend: ComplaintsManager V1.2
+  Action:  getComplaintsByZone
+  URL:     CONFIG.BACKEND_URL
+
+PORTAL:
+  Launched from ZoneRepPortal.html module card.
+  Back button returns to ZoneRepPortal.html.
+
+TECHNICAL:
+  Technology:   HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol: JSONP
+  Design:       Glass-morphism — Lake Illawong Unified Design System v1.4
+  Hosting:      Netlify
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zone Complaints - Lake Illawong</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* HEADER - system standard */
+        .header { text-align: center; margin-bottom: 24px; }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .logo-image {
+            width: 110px;
+            height: 110px;
+            border-radius: 50%;
+            object-fit: cover;
+            flex-shrink: 0;
+        }
+
+        .header-text {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+        }
+
+        .header-title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: white;
+            margin: 0 0 5px 0;
+            line-height: 1.1;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header-subtitle {
+            font-size: 1rem;
+            color: rgba(255,255,255,0.9);
+            font-weight: 500;
+        }
+
+        /* BACK BUTTON - system standard */
+        .portal-back-btn {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 18px;
+            border-radius: 2px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: block;
+            margin: 0 auto 20px auto;
+            transition: background 0.2s;
+        }
+
+        .portal-back-btn:hover { background: rgba(255,255,255,0.25); }
+
+        /* SUMMARY STRIP */
+        .summary-strip {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .summary-tile {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 2px;
+            padding: 12px 16px;
+            flex: 1;
+            min-width: 100px;
+            text-align: center;
+        }
+
+        .tile-count { font-size: 1.8rem; font-weight: 700; color: white; line-height: 1; }
+        .tile-count.overdue { color: #fca5a5; }
+        .tile-label { font-size: 0.72rem; color: rgba(255,255,255,0.7); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* INFO NOTICE */
+        .info-notice {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-left: 4px solid rgba(96,165,250,0.7);
+            border-radius: 2px;
+            padding: 12px 16px;
+            margin-bottom: 14px;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.8);
+            line-height: 1.5;
+        }
+
+        /* FILTER BAR */
+        .filter-bar {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 2px;
+            padding: 12px 16px;
+            margin-bottom: 14px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-bar label { font-size: 0.82rem; font-weight: 600; color: rgba(255,255,255,0.9); white-space: nowrap; }
+
+        .filter-bar select {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 2px;
+            padding: 6px 10px;
+            font-size: 0.85rem;
+            color: white;
+            cursor: pointer;
+        }
+
+        .filter-bar select option { background: #1e3a8a; color: white; }
+
+        .btn-refresh {
+            margin-left: auto;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 7px 16px;
+            border-radius: 2px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-refresh:hover { background: rgba(255,255,255,0.25); }
+
+        /* COMPLAINT CARDS */
+        .complaint-card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-left: 4px solid rgba(255,255,255,0.25);
+            backdrop-filter: blur(10px);
+            border-radius: 2px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+
+        .complaint-card.overdue-ack        { border-left: 4px solid #ef4444; background: rgba(239,68,68,0.45);    backdrop-filter: none; }
+        .complaint-card.overdue-resp       { border-left: 4px solid #f59e0b; background: rgba(245,158,11,0.4);    backdrop-filter: none; }
+        .complaint-card.status-acknowledged{ border-left: 4px solid #10b981; background: rgba(16,185,129,0.35);   backdrop-filter: none; }
+        .complaint-card.status-responded   { border-left: 4px solid #a855f7; background: rgba(168,85,247,0.45);   backdrop-filter: none; }
+        .complaint-card.status-closed      { border-left: 4px solid #cbd5e1; background: rgba(203,213,225,0.4);   backdrop-filter: none; }
+
+        .card-summary {
+            padding: 13px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            user-select: none;
+            flex-wrap: wrap;
+        }
+
+        .card-summary:hover { background: rgba(255,255,255,0.05); }
+
+        .card-ref { font-family: monospace; font-size: 0.8rem; font-weight: 700; color: rgba(255,255,255,0.6); white-space: nowrap; }
+        .card-category { font-size: 0.92rem; font-weight: 600; color: white; flex: 1; min-width: 100px; }
+        .card-resident { font-size: 0.82rem; color: rgba(255,255,255,0.7); white-space: nowrap; }
+        .card-dates    { font-size: 0.78rem; color: rgba(255,255,255,0.45); white-space: nowrap; }
+
+        /* Overdue badges */
+        .overdue-badge { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+        .badge-ack-overdue  { background: rgba(239,68,68,0.35);   color: #fca5a5; border: 1px solid rgba(239,68,68,0.6); }
+        .badge-resp-overdue { background: rgba(245,158,11,0.3);   color: #fde68a; border: 1px solid rgba(245,158,11,0.6); }
+
+        /* Status pills */
+        .status-pill { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+        .status-open         { background: rgba(59,130,246,0.35);  color: #bfdbfe; border: 1px solid rgba(96,165,250,0.6); }
+        .status-acknowledged { background: rgba(16,185,129,0.3);   color: #6ee7b7; border: 1px solid rgba(52,211,153,0.6); }
+        .status-responded    { background: rgba(168,85,247,0.35);  color: #e9d5ff; border: 1px solid rgba(168,85,247,0.7); }
+        .status-closed       { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
+
+        .card-chevron { color: rgba(255,255,255,0.4); font-size: 0.85rem; transition: transform 0.2s; flex-shrink: 0; }
+        .complaint-card.expanded .card-chevron { transform: rotate(180deg); }
+
+        /* CARD DETAIL */
+        .card-detail { display: none; border-top: 1px solid rgba(255,255,255,0.1); padding: 0 16px 16px; }
+        .complaint-card.expanded .card-detail { display: block; }
+
+        .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin: 16px 0; }
+        .detail-field.full-width { grid-column: 1 / -1; }
+
+        .detail-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.45); margin-bottom: 3px; }
+        .detail-value { font-size: 0.88rem; color: rgba(255,255,255,0.88); line-height: 1.5; }
+
+        /* Board response block */
+        .board-response-block { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.25); border-radius: 2px; padding: 10px 12px; margin-top: 8px; }
+        .board-response-block .detail-label { color: #6ee7b7; }
+        .board-response-block .detail-value { color: rgba(255,255,255,0.88); }
+
+        /* Timeline compliance block */
+        .timeline-block {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 2px;
+            padding: 12px 14px;
+            margin-top: 12px;
+        }
+
+        .timeline-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 10px;
+        }
+
+        .timeline-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 0.82rem;
+        }
+
+        .timeline-row:last-child { margin-bottom: 0; }
+
+        .timeline-label { color: rgba(255,255,255,0.65); }
+
+        .timeline-status {
+            font-weight: 700;
+            font-size: 0.78rem;
+            padding: 2px 8px;
+            border-radius: 3px;
+        }
+
+        .timeline-ok       { background: rgba(16,185,129,0.25); color: #6ee7b7; }
+        .timeline-overdue  { background: rgba(239,68,68,0.3);   color: #fca5a5; }
+        .timeline-pending  { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+
+        /* STATES */
+        .loading-state, .empty-state, .error-state { text-align: center; padding: 48px 24px; color: rgba(255,255,255,0.6); }
+        .state-icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .state-text { font-size: 0.95rem; }
+
+        .spinner {
+            width: 36px; height: 36px;
+            border: 3px solid rgba(255,255,255,0.15);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 480px) {
+            .header-content { flex-direction: column; gap: 15px; }
+            .header-text    { align-items: center; text-align: center; }
+            .header-title   { font-size: 1.8rem; }
+            .logo-image     { width: 70px; height: 70px; }
+            .detail-grid    { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Header - system standard -->
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+            </div>
+            <div class="header-text">
+                <h1 class="header-title">Zone Complaints</h1>
+                <p class="header-subtitle" id="headerSubtitle">Lake Illawong Retirement Village</p>
+            </div>
+        </div>
+    </div>
+
+    <button class="portal-back-btn" onclick="window.location.href='ZoneRepPortal.html'">&#8592; Back to Zone Rep Portal</button>
+
+    <!-- Summary strip -->
+    <div class="summary-strip" id="summaryStrip" style="display:none">
+        <div class="summary-tile"><div class="tile-count" id="countTotal">—</div><div class="tile-label">Total</div></div>
+        <div class="summary-tile"><div class="tile-count" id="countOpen">—</div><div class="tile-label">Open</div></div>
+        <div class="summary-tile"><div class="tile-count" id="countAcknowledged">—</div><div class="tile-label">Acknowledged</div></div>
+        <div class="summary-tile"><div class="tile-count" id="countResponded">—</div><div class="tile-label">Responded</div></div>
+        <div class="summary-tile"><div class="tile-count" id="countClosed">—</div><div class="tile-label">Closed</div></div>
+        <div class="summary-tile"><div class="tile-count overdue" id="countOverdue">—</div><div class="tile-label">Overdue</div></div>
+    </div>
+
+    <!-- Info notice -->
+    <div class="info-notice" id="infoNotice" style="display:none">
+        This view shows complaints from your zone only. Timeline flags indicate whether
+        the Board has met the mandatory acknowledgement (2 business days) and response
+        (14 days) deadlines. If a complaint is overdue, raise it with the Residents
+        Committee Chair.
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+        <label for="filterStatus">Status:</label>
+        <select id="filterStatus" onchange="applyFilters()">
+            <option value="">All</option>
+            <option value="Open">Open</option>
+            <option value="Acknowledged">Acknowledged</option>
+            <option value="Responded">Responded</option>
+            <option value="Closed">Closed</option>
+        </select>
+        <label for="filterOverdue">Show:</label>
+        <select id="filterOverdue" onchange="applyFilters()">
+            <option value="">All complaints</option>
+            <option value="overdue">Overdue only</option>
+        </select>
+        <button class="btn-refresh" onclick="loadComplaints()">&#8635; Refresh</button>
+    </div>
+
+    <!-- Complaint list -->
+    <div id="complaintList">
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <div class="state-text">Loading complaints...</div>
+        </div>
+    </div>
+
+</div>
+<script>
+    const CONFIG = {
+        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwqg6BiKYAhLNfpawCC5d5gS2uuc_IxVmPx_Da6HIXuKgSs5zvxHNP3Kr8_ySFqVSx5BQ/exec',
+        SESSION_KEY:       'portalZoneRepVerified',
+        PORTAL_URL:        'ZoneRepPortal.html',
+        ACK_BUSINESS_DAYS: 2,
+        RESP_DAYS:         14
+    };
+
+    let allComplaints = [];
+    let currentZone   = '';
+
+    // =====================================================================
+    // INIT
+    // =====================================================================
+    document.addEventListener('DOMContentLoaded', function () {
+        // Check session
+        const session = sessionStorage.getItem(CONFIG.SESSION_KEY);
+        if (!session) { window.location.href = CONFIG.PORTAL_URL; return; }
+
+        // Extract zone from role tags
+        const rolesRaw = sessionStorage.getItem(CONFIG.SESSION_KEY + '_roles');
+        const roles    = rolesRaw ? JSON.parse(rolesRaw) : [];
+        const zoneTag  = roles.find(r => /^ZoneRep-\d+$/.test(r));
+
+        if (!zoneTag) {
+            showPageError('No zone assignment found in your account. Please contact the system administrator.');
+            return;
+        }
+
+        currentZone = zoneTag.replace('ZoneRep-', '');
+
+        // Personalise header subtitle
+        document.getElementById('headerSubtitle').textContent =
+            'Zone ' + currentZone + ' — Lake Illawong Retirement Village';
+
+        document.getElementById('infoNotice').style.display = 'block';
+
+        loadComplaints();
+    });
+
+    // =====================================================================
+    // LOAD
+    // =====================================================================
+    function loadComplaints() {
+        document.getElementById('complaintList').innerHTML =
+            '<div class="loading-state"><div class="spinner"></div><div class="state-text">Loading Zone ' + currentZone + ' complaints...</div></div>';
+        document.getElementById('summaryStrip').style.display = 'none';
+
+        const callbackName = 'zrcCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=getComplaintsByZone'
+            + '&zone='     + encodeURIComponent(currentZone)
+            + '&callback=' + callbackName;
+
+        const timeout = setTimeout(function () {
+            cleanup(callbackName);
+            showPageError('Server did not respond. Please try refreshing.');
+        }, 15000);
+
+        window[callbackName] = function (data) {
+            clearTimeout(timeout);
+            cleanup(callbackName);
+            handleLoaded(data);
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function () {
+            clearTimeout(timeout);
+            cleanup(callbackName);
+            showPageError('Could not reach the server. Please check your connection.');
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
+
+    function cleanup(name) { delete window[name]; }
+
+    function handleLoaded(data) {
+        if (!data.success) { showPageError(data.error || 'Failed to load complaints.'); return; }
+        allComplaints = data.complaints || [];
+        updateSummary(allComplaints);
+        applyFilters();
+    }
+
+    // =====================================================================
+    // SUMMARY
+    // =====================================================================
+    function updateSummary(complaints) {
+        const counts = { Open: 0, Acknowledged: 0, Responded: 0, Closed: 0, overdue: 0 };
+        complaints.forEach(function (c) {
+            if (counts[c.status] !== undefined) counts[c.status]++;
+            if (isOverdue(c)) counts.overdue++;
+        });
+        document.getElementById('countTotal').textContent        = complaints.length;
+        document.getElementById('countOpen').textContent         = counts.Open;
+        document.getElementById('countAcknowledged').textContent = counts.Acknowledged;
+        document.getElementById('countResponded').textContent    = counts.Responded;
+        document.getElementById('countClosed').textContent       = counts.Closed;
+        document.getElementById('countOverdue').textContent      = counts.overdue;
+        document.getElementById('summaryStrip').style.display    = 'flex';
+    }
+
+    // =====================================================================
+    // FILTERS
+    // =====================================================================
+    function applyFilters() {
+        const statusFilter  = document.getElementById('filterStatus').value;
+        const overdueFilter = document.getElementById('filterOverdue').value;
+        let filtered = allComplaints;
+        if (statusFilter)                filtered = filtered.filter(c => c.status === statusFilter);
+        if (overdueFilter === 'overdue') filtered = filtered.filter(c => isOverdue(c));
+        renderComplaints(filtered);
+    }
+
+    // =====================================================================
+    // OVERDUE LOGIC
+    // =====================================================================
+    function isAckOverdue(c) {
+        if (c.status !== 'Open') return false;
+        if (c.acknowledgedAt)    return false;
+        return businessDaysSince(new Date(c.submittedAt)) > CONFIG.ACK_BUSINESS_DAYS;
+    }
+
+    function isRespOverdue(c) {
+        if (c.status === 'Responded' || c.status === 'Closed') return false;
+        if (!c.responseDue) return false;
+        return new Date(c.responseDue) < new Date();
+    }
+
+    function isOverdue(c) { return isAckOverdue(c) || isRespOverdue(c); }
+
+    function businessDaysSince(date) {
+        const now = new Date(); let count = 0; let cursor = new Date(date);
+        cursor.setHours(0,0,0,0); now.setHours(23,59,59,999);
+        while (cursor <= now) { const day = cursor.getDay(); if (day !== 0 && day !== 6) count++; cursor.setDate(cursor.getDate() + 1); }
+        return count;
+    }
+
+    // =====================================================================
+    // RENDER
+    // =====================================================================
+    function renderComplaints(complaints) {
+        const list = document.getElementById('complaintList');
+        if (complaints.length === 0) {
+            list.innerHTML = '<div class="empty-state"><div class="state-icon">&#128196;</div><div class="state-text">No complaints in Zone ' + currentZone + ' matching the current filter.</div></div>';
+            return;
+        }
+        list.innerHTML = complaints.map(buildCard).join('');
+    }
+
+    function buildCard(c) {
+        const ackOverdue  = isAckOverdue(c);
+        const respOverdue = isRespOverdue(c);
+
+        let borderClass = '';
+        if      (ackOverdue)                  borderClass = 'overdue-ack';
+        else if (respOverdue)                 borderClass = 'overdue-resp';
+        else if (c.status === 'Responded')    borderClass = 'status-responded';
+        else if (c.status === 'Closed')       borderClass = 'status-closed';
+        else if (c.status === 'Acknowledged') borderClass = 'status-acknowledged';
+
+        const statusClass = statusPillClass(c.status);
+        const safeRef     = escHtml(c.referenceNumber);
+        const badges = [];
+        if (ackOverdue)  badges.push('<span class="overdue-badge badge-ack-overdue">Ack overdue</span>');
+        if (respOverdue) badges.push('<span class="overdue-badge badge-resp-overdue">Response overdue</span>');
+
+        const submitted = formatDate(c.submittedAt);
+
+        return `
+        <div class="complaint-card ${borderClass}" id="card-${safeRef}">
+            <div class="card-summary" onclick="toggleCard('${safeRef}')">
+                <div class="card-ref">${safeRef}</div>
+                <div class="card-category">${escHtml(c.category)}</div>
+                <div class="card-resident">${escHtml(c.residentName)} — Unit ${escHtml(c.unitNumber.replace(/^Unit\s*/i,''))}</div>
+                ${badges.join('')}
+                <span class="status-pill ${statusClass}">${escHtml(c.status)}</span>
+                <div class="card-dates">${submitted ? 'Submitted ' + submitted : ''}</div>
+                <div class="card-chevron">&#9660;</div>
+            </div>
+            <div class="card-detail">
+                ${buildDetail(c)}
+            </div>
+        </div>`;
+    }
+
+    function buildDetail(c) {
+        const ackOverdue  = isAckOverdue(c);
+        const respOverdue = isRespOverdue(c);
+
+        // Core fields
+        const fields = [
+            { label: 'Resident',           value: c.residentName,     full: false },
+            { label: 'Unit',               value: c.unitNumber.replace(/^Unit\s*/i,''), full: false },
+            { label: 'Category',           value: c.category,         full: false },
+            { label: 'Submitted',          value: formatDate(c.submittedAt), full: false },
+            { label: 'Acknowledged',       value: c.acknowledgedAt ? formatDate(c.acknowledgedAt) : 'Not yet acknowledged', full: false },
+            { label: 'Response Due',       value: c.responseDue ? formatDate(c.responseDue) : '—', full: false },
+            { label: 'Responded',          value: c.respondedAt ? formatDate(c.respondedAt) : '—', full: false },
+            { label: 'Description',        value: c.description,      full: true  },
+            { label: 'Desired Outcome',    value: c.desiredOutcome,   full: true  },
+            { label: 'Location',           value: c.location,         full: false },
+            { label: 'Incident Date/Time', value: c.incidentDateTime, full: false },
+            { label: 'Previous Actions',   value: c.previousActions,  full: true  },
+        ];
+
+        const gridItems = fields.filter(f => f.value).map(f => `
+            <div class="detail-field ${f.full ? 'full-width' : ''}">
+                <div class="detail-label">${f.label}</div>
+                <div class="detail-value">${escHtml(f.value)}</div>
+            </div>`).join('');
+
+        // Board response — shown if recorded
+        const boardHtml = c.boardResponse
+            ? `<div class="board-response-block">
+                   <div class="detail-label">Board Response</div>
+                   <div class="detail-value">${escHtml(c.boardResponse)}</div>
+               </div>` : '';
+
+        // Timeline compliance block
+        const ackStatus  = c.acknowledgedAt ? 'timeline-ok' : (ackOverdue ? 'timeline-overdue' : 'timeline-pending');
+        const ackLabel   = c.acknowledgedAt ? 'Acknowledged ' + formatDate(c.acknowledgedAt) : (ackOverdue ? 'OVERDUE' : 'Pending');
+        const respStatus = (c.status === 'Responded' || c.status === 'Closed') ? 'timeline-ok'
+                         : respOverdue ? 'timeline-overdue' : 'timeline-pending';
+        const respLabel  = (c.status === 'Responded' || c.status === 'Closed')
+                         ? 'Responded ' + (c.respondedAt ? formatDate(c.respondedAt) : '')
+                         : respOverdue ? 'OVERDUE — due ' + formatDate(c.responseDue)
+                         : 'Due ' + (c.responseDue ? formatDate(c.responseDue) : '—');
+
+        const timelineHtml = `
+            <div class="timeline-block">
+                <div class="timeline-title">Timeline Compliance</div>
+                <div class="timeline-row">
+                    <span class="timeline-label">Acknowledgement (2 business days)</span>
+                    <span class="timeline-status ${ackStatus}">${ackLabel}</span>
+                </div>
+                <div class="timeline-row">
+                    <span class="timeline-label">Board Response (14 days)</span>
+                    <span class="timeline-status ${respStatus}">${respLabel}</span>
+                </div>
+            </div>`;
+
+        return `<div class="detail-grid">${gridItems}</div>${boardHtml}${timelineHtml}`;
+    }
+
+    function toggleCard(ref) {
+        document.getElementById('card-' + ref).classList.toggle('expanded');
+    }
+
+    function showPageError(msg) {
+        document.getElementById('complaintList').innerHTML =
+            '<div class="error-state"><div class="state-icon">&#9888;&#65039;</div><div class="state-text">' + escHtml(msg) + '</div></div>';
+    }
+
+    function statusPillClass(status) {
+        return { 'Open': 'status-open', 'Acknowledged': 'status-acknowledged', 'Responded': 'status-responded', 'Closed': 'status-closed' }[status] || '';
+    }
+
+    function formatDate(str) {
+        if (!str) return '';
+        const d = new Date(str);
+        if (isNaN(d)) return str;
+        return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function escHtml(str) {
+        return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+</script>
+</body>
+</html>
