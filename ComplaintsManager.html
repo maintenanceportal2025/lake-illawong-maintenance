@@ -6,13 +6,17 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.0
+  Frontend Version: V1.0.1
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V1.0.1 (May 2026): Auto-set status to Responded when Board response saved
+    and no explicit status chosen. Only applies when current status is
+    Open or Acknowledged.
+
   V1.0.0 (May 2026): Initial release.
     Full complaint list with status/category filters.
     Overdue flags — acknowledgement (2 business days) and
@@ -927,6 +931,17 @@ TECHNICAL:
             return;
         }
 
+        // Auto-set status to Responded when a Board response is saved and
+        // the user hasn't explicitly chosen a different status in the dropdown.
+        // Only applies when current status is Open or Acknowledged.
+        let effectiveStatus = status;
+        if (boardResponse && !status) {
+            const current = allComplaints.find(c => c.referenceNumber === ref);
+            if (current && (current.status === 'Open' || current.status === 'Acknowledged')) {
+                effectiveStatus = 'Responded';
+            }
+        }
+
         btn.disabled = true;
         btn.textContent = 'Saving...';
         setFeedback(feedback, '', '');
@@ -937,7 +952,7 @@ TECHNICAL:
             + '&ref='      + encodeURIComponent(ref)
             + '&callback=' + callbackName;
 
-        if (status)        url += '&status='        + encodeURIComponent(status);
+        if (effectiveStatus) url += '&status='        + encodeURIComponent(effectiveStatus);
         if (boardResponse) url += '&boardResponse=' + encodeURIComponent(boardResponse);
         if (internalNotes) url += '&internalNotes=' + encodeURIComponent(internalNotes);
         if (notifyResident) url += '&notifyResident=true';
@@ -960,7 +975,7 @@ TECHNICAL:
                 // Update in-memory record so filters reflect new status
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
                 if (idx !== -1) {
-                    if (status)        allComplaints[idx].status        = status;
+                    if (effectiveStatus) allComplaints[idx].status       = effectiveStatus;
                     if (boardResponse) allComplaints[idx].boardResponse = boardResponse;
                     if (internalNotes) allComplaints[idx].internalNotes = internalNotes;
                 }
