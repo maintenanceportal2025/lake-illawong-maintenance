@@ -6,13 +6,16 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.1
+  Frontend Version: V1.0.2
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V1.0.2 (May 2026): Re-render card after save so status pill, border colour,
+    and update panel reflect new values immediately without page refresh.
+
   V1.0.1 (May 2026): Auto-set status to Responded when Board response saved
     and no explicit status chosen. Only applies when current status is
     Open or Acknowledged.
@@ -972,16 +975,30 @@ TECHNICAL:
 
             if (data.success) {
                 setFeedback(feedback, 'Saved successfully.', 'success');
-                // Update in-memory record so filters reflect new status
+                // Update in-memory record
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
                 if (idx !== -1) {
-                    if (effectiveStatus) allComplaints[idx].status       = effectiveStatus;
-                    if (boardResponse) allComplaints[idx].boardResponse = boardResponse;
-                    if (internalNotes) allComplaints[idx].internalNotes = internalNotes;
+                    if (effectiveStatus) allComplaints[idx].status        = effectiveStatus;
+                    if (boardResponse)   allComplaints[idx].boardResponse = boardResponse;
+                    if (internalNotes)   allComplaints[idx].internalNotes = internalNotes;
+                    // Re-render just this card so status pill and border update immediately
+                    const cardEl = document.getElementById('card-' + ref);
+                    if (cardEl) {
+                        const wasExpanded = cardEl.classList.contains('expanded');
+                        cardEl.outerHTML  = buildCard(allComplaints[idx]);
+                        if (wasExpanded) {
+                            const newCard = document.getElementById('card-' + ref);
+                            if (newCard) newCard.classList.add('expanded');
+                        }
+                        // Restore save feedback on the re-rendered card
+                        const newFeedback = document.getElementById('feedback-' + ref);
+                        if (newFeedback) setFeedback(newFeedback, 'Saved successfully.', 'success');
+                    }
                 }
                 updateSummary(allComplaints);
                 // Uncheck notify after send
-                document.getElementById('notify-' + ref).checked = false;
+                const notifyEl = document.getElementById('notify-' + ref);
+                if (notifyEl) notifyEl.checked = false;
             } else {
                 setFeedback(feedback, 'Error: ' + (data.error || 'Unknown error.'), 'error');
             }
