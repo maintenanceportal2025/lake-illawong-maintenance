@@ -6,13 +6,19 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.0.11
+  Frontend Version: V2.0.12
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.0.12 (May 2026): Fix — nested backtick template literals inside the
+    outer html template in printComplaint() caused JS parser failure,
+    silently breaking the entire script block and preventing loadComplaints()
+    from running. boardBlock and notesBlock extracted to plain string
+    variables using concatenation before the outer template literal.
+
   V2.0.11 (May 2026): Fix — stale legacy session (pre-V2.0.9, stored key
     only as 'true' without _roles) caused getStoredUserData() to return null,
     onSuccess never fired, spinner was permanent. DOMContentLoaded now clears
@@ -1128,6 +1134,13 @@ TECHNICAL:
         const statusClass = { 'Open': 'badge-open', 'Acknowledged': 'badge-acknowledged',
                               'Responded': 'badge-responded', 'Closed': 'badge-closed' }[c.status] || '';
 
+        const boardBlock = c.boardResponse
+            ? '<div class="board-response"><div class="field-label">Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
+            : '';
+        const notesBlock = c.internalNotes
+            ? '<div class="internal-notes"><div class="field-label">Internal Notes <span class="internal-label-warn">Internal — Not for distribution</span></div><div class="field-value">' + escHtml(c.internalNotes) + '</div></div>'
+            : '';
+
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
             <title>Complaint Record — ${escHtml(ref)}</title>
             <style>${printStyles()}</style></head><body>
@@ -1161,18 +1174,8 @@ TECHNICAL:
                 ${fieldRow('Responded',     c.respondedAt    ? formatDate(c.respondedAt)    : '—', false)}
                 ${fieldRow('Closed',        c.closedAt       ? formatDate(c.closedAt)       : '—', false)}
             </div>
-            ${c.boardResponse ? `
-            <div class="board-response">
-                <div class="field-label">Board Response</div>
-                <div class="field-value">${escHtml(c.boardResponse)}</div>
-            </div>` : ''}
-            ${c.internalNotes ? `
-            <div class="internal-notes">
-                <div class="field-label">Internal Notes
-                    <span class="internal-label-warn">Internal — Not for distribution</span>
-                </div>
-                <div class="field-value">${escHtml(c.internalNotes)}</div>
-            </div>` : ''}
+            ${boardBlock}
+            ${notesBlock}
             ${printFooter()}
             </body></html>`;
 
