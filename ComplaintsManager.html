@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.0.9
+  Frontend Version: V2.0.10
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.0.10 (May 2026): Print functions added. printComplaint() opens a
+    formatted single-complaint record in a new window — includes all fields,
+    Board response, and internal notes (labelled Internal — Not for
+    distribution). printRegister() prints a summary table of currently
+    filtered complaints with as-at date. btn-print and btn-print-record
+    CSS added. Print Register button added to filter toolbar. Print Record
+    button added to each card update panel.
+
   V2.0.9 (May 2026): RBAC role check added. VerificationModal_V1_0.js script
     tag added to head. DOMContentLoaded replaced with full VerificationModal
     init and handleVerificationSuccess role check. Allowed roles:
@@ -215,6 +223,33 @@ TECHNICAL:
         }
 
         .btn-refresh:hover { background: rgba(255,255,255,0.25); }
+
+        .btn-print {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 7px 16px;
+            border-radius: 2px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-print:hover { background: rgba(255,255,255,0.25); }
+
+        .btn-print-record {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: rgba(255,255,255,0.85);
+            padding: 7px 14px;
+            border-radius: 2px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-left: 8px;
+        }
+        .btn-print-record:hover { background: rgba(255,255,255,0.22); color: white; }
 
         /* COMPLAINT CARDS */
         .complaint-card {
@@ -637,6 +672,7 @@ TECHNICAL:
             <option value="overdue">Overdue only</option>
         </select>
         <button class="btn-refresh" onclick="loadComplaints()">&#8635; Refresh</button>
+        <button class="btn-print" onclick="printRegister()">&#128438; Print Register</button>
     </div>
 
     <!-- Complaint list -->
@@ -872,6 +908,7 @@ TECHNICAL:
                     <label for="notify-${safeRef}">Send response email to resident</label>
                 </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}')">Save Update</button>
+                <button class="btn-print-record" onclick="printComplaint('${safeRef}')">&#128438; Print Record</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
             </div>`;
     }
@@ -985,6 +1022,205 @@ TECHNICAL:
     function escHtml(str) {
         return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
-</script>
+
+    // ================================================================
+    // PRINT FUNCTIONS
+    // ================================================================
+
+    function printStyles() {
+        return `
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background: white; }
+            .print-header { border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 20px; }
+            .print-village { font-size: 9pt; font-weight: 700; text-transform: uppercase;
+                             letter-spacing: 1px; color: #1e3a8a; margin-bottom: 4px; }
+            .print-title   { font-size: 16pt; font-weight: 700; color: #111; margin-bottom: 4px; }
+            .print-ref     { font-size: 10pt; color: #444; }
+            .print-confidential { font-size: 8pt; font-weight: 700; text-transform: uppercase;
+                                  letter-spacing: 1px; color: #dc2626; float: right; margin-top: 6px; }
+            .status-badge  { display: inline-block; padding: 3px 10px; border-radius: 3px;
+                             font-size: 9pt; font-weight: 700; text-transform: uppercase;
+                             letter-spacing: 0.5px; margin-left: 10px; }
+            .badge-open         { background: #dbeafe; color: #1e40af; }
+            .badge-acknowledged { background: #fef3c7; color: #92400e; }
+            .badge-responded    { background: #d1fae5; color: #065f46; }
+            .badge-closed       { background: #f3f4f6; color: #374151; }
+            .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase;
+                             letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;
+                             padding-bottom: 4px; margin: 16px 0 10px; }
+            .field-grid    { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 8px; }
+            .field-full    { grid-column: 1 / -1; }
+            .field-label   { font-size: 8pt; font-weight: 700; color: #6b7280;
+                             text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px; }
+            .field-value   { font-size: 10pt; color: #111; line-height: 1.5; }
+            .field-empty   { color: #9ca3af; font-style: italic; }
+            .board-response { background: #f0fdf4; border: 1px solid #bbf7d0;
+                              border-left: 4px solid #16a34a; padding: 10px 12px;
+                              border-radius: 3px; margin-top: 12px; }
+            .board-response .field-label { color: #166534; }
+            .internal-notes { background: #fffbeb; border: 1px solid #fde68a;
+                              border-left: 4px solid #d97706; padding: 10px 12px;
+                              border-radius: 3px; margin-top: 8px; }
+            .internal-notes .field-label { color: #92400e; }
+            .internal-label-warn { font-size: 8pt; color: #92400e; font-style: italic; float: right; }
+            .print-footer  { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e5e7eb;
+                             font-size: 8pt; color: #9ca3af; display: flex;
+                             justify-content: space-between; }
+            /* Register styles */
+            table  { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 12px; }
+            thead  { background: #1e3a8a; color: white; }
+            th     { padding: 7px 8px; text-align: left; font-size: 8pt;
+                     text-transform: uppercase; letter-spacing: 0.4px; }
+            td     { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+            tr:nth-child(even) td { background: #f8fafc; }
+            .reg-overdue { color: #dc2626; font-weight: 700; }
+        `;
+    }
+
+    function printHeader(title, subtitle) {
+        return `
+            <div class="print-header">
+                <div class="print-confidential">Confidential</div>
+                <div class="print-village">Lake Illawong Retirement Village</div>
+                <div class="print-title">${title}</div>
+                <div class="print-ref">${subtitle}</div>
+            </div>`;
+    }
+
+    function printFooter() {
+        const now = new Date().toLocaleString('en-AU', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+        return `<div class="print-footer">
+            <span>Lake Illawong Retirement Village — Complaints Register</span>
+            <span>Printed ${now}</span>
+        </div>`;
+    }
+
+    function fieldRow(label, value, full) {
+        const val = value ? escHtml(value) : '<span class="field-empty">—</span>';
+        return `<div class="field-group ${full ? 'field-full' : ''}">
+            <div class="field-label">${label}</div>
+            <div class="field-value">${val}</div>
+        </div>`;
+    }
+
+    function printComplaint(ref) {
+        const c = allComplaints.find(x => x.referenceNumber === ref);
+        if (!c) { alert('Complaint record not found.'); return; }
+
+        const statusClass = { 'Open': 'badge-open', 'Acknowledged': 'badge-acknowledged',
+                              'Responded': 'badge-responded', 'Closed': 'badge-closed' }[c.status] || '';
+
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+            <title>Complaint Record — ${escHtml(ref)}</title>
+            <style>${printStyles()}</style></head><body>
+            ${printHeader(
+                'Complaint Record <span class="status-badge ' + statusClass + '">' + escHtml(c.status) + '</span>',
+                escHtml(ref)
+            )}
+            <div class="section-title">Resident Details</div>
+            <div class="field-grid">
+                ${fieldRow('Resident',  c.residentName,  false)}
+                ${fieldRow('Unit',      c.unitNumber,    false)}
+                ${fieldRow('Email',     c.contactEmail,  false)}
+                ${fieldRow('Mobile',    c.contactMobile, false)}
+            </div>
+            <div class="section-title">Complaint Details</div>
+            <div class="field-grid">
+                ${fieldRow('Category',           c.category,         false)}
+                ${fieldRow('Submitted',          formatDate(c.submittedAt), false)}
+                ${fieldRow('Incident Date/Time', c.incidentDateTime, false)}
+                ${fieldRow('Location',           c.location,         false)}
+                ${fieldRow('Description',        c.description,      true)}
+                ${fieldRow('Desired Outcome',    c.desiredOutcome,   true)}
+                ${fieldRow('People Involved',    c.peopleInvolved,   true)}
+                ${fieldRow('Previous Actions',   c.previousActions,  true)}
+            </div>
+            <div class="section-title">Timeline</div>
+            <div class="field-grid">
+                ${fieldRow('Submitted',     formatDate(c.submittedAt),    false)}
+                ${fieldRow('Acknowledged',  c.acknowledgedAt ? formatDate(c.acknowledgedAt) : 'Not yet acknowledged', false)}
+                ${fieldRow('Response Due',  c.responseDue    ? formatDate(c.responseDue)    : '—', false)}
+                ${fieldRow('Responded',     c.respondedAt    ? formatDate(c.respondedAt)    : '—', false)}
+                ${fieldRow('Closed',        c.closedAt       ? formatDate(c.closedAt)       : '—', false)}
+            </div>
+            ${c.boardResponse ? `
+            <div class="board-response">
+                <div class="field-label">Board Response</div>
+                <div class="field-value">${escHtml(c.boardResponse)}</div>
+            </div>` : ''}
+            ${c.internalNotes ? `
+            <div class="internal-notes">
+                <div class="field-label">Internal Notes
+                    <span class="internal-label-warn">Internal — Not for distribution</span>
+                </div>
+                <div class="field-value">${escHtml(c.internalNotes)}</div>
+            </div>` : ''}
+            ${printFooter()}
+            </body></html>`;
+
+        const w = window.open('', '_blank', 'width=800,height=900');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        w.print();
+    }
+
+    function printRegister() {
+        const statusFilter  = document.getElementById('filterStatus').value;
+        const overdueFilter = document.getElementById('filterOverdue').value;
+        let list = allComplaints.slice();
+        if (statusFilter)                list = list.filter(c => c.status === statusFilter);
+        if (overdueFilter === 'overdue') list = list.filter(c => isOverdue(c));
+
+        if (list.length === 0) { alert('No complaints match the current filter — nothing to print.'); return; }
+
+        const now = new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+        const filterLabel = statusFilter ? statusFilter + ' complaints' : 'All complaints';
+        const overdueLabel = overdueFilter === 'overdue' ? ' — Overdue only' : '';
+
+        const rows = list.map(c => {
+            const overdueMark = isOverdue(c) ? ' <span class="reg-overdue">OVERDUE</span>' : '';
+            return `<tr>
+                <td>${escHtml(c.referenceNumber)}</td>
+                <td>${escHtml(c.residentName)}</td>
+                <td>${escHtml(c.unitNumber.replace(/^Unit\s*/i, ''))}</td>
+                <td>${escHtml(c.category)}</td>
+                <td>${escHtml(c.status)}${overdueMark}</td>
+                <td>${formatDate(c.submittedAt)}</td>
+                <td>${c.responseDue ? formatDate(c.responseDue) : '—'}</td>
+            </tr>`;
+        }).join('');
+
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+            <title>Complaints Register — ${now}</title>
+            <style>${printStyles()}</style></head><body>
+            ${printHeader(
+                'Complaints Register',
+                filterLabel + overdueLabel + ' &nbsp;&nbsp;|&nbsp;&nbsp; as at ' + now + ' &nbsp;&nbsp;|&nbsp;&nbsp; ' + list.length + ' record' + (list.length !== 1 ? 's' : '')
+            )}
+            <table>
+                <thead><tr>
+                    <th>Reference</th>
+                    <th>Resident</th>
+                    <th>Unit</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th>Submitted</th>
+                    <th>Response Due</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            ${printFooter()}
+            </body></html>`;
+
+        const w = window.open('', '_blank', 'width=1000,height=900');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        w.print();
+    }
 </body>
 </html>
