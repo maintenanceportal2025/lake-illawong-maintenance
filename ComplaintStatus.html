@@ -6,14 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintStatus.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.0.2
+  Frontend Version: V1.0.3
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
-  V1.0.1 (May 2026): Expand/collapse added to complaint cards. Detail section
+  V1.0.3 (May 2026): Print added. printComplaint() opens a formatted
+    single-complaint record in a new window — includes all fields and
+    Board response. Internal notes never included (stripped by backend).
+    CAV escalation notice included on printed page. allComplaints array
+    populated by wrapping renderComplaints(). btn-print-record CSS added.
+    Print button added to each card with event.stopPropagation() to
+    prevent card toggle firing on click. printStyles() uses string
+    concatenation only — no template literals — to avoid parser issues.
+
+  V1.0.2 (May 2026): Expand/collapse added to complaint cards.
     shows desired outcome, incident date/time, location, people involved,
     previous actions, and Board response. Toggle hidden if no detail exists.
 
@@ -141,6 +150,21 @@ TECHNICAL:
         .back-btn:hover {
             background: rgba(255,255,255,0.15);
         }
+
+        .btn-print-record {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: rgba(255,255,255,0.85);
+            padding: 6px 14px;
+            border-radius: 2px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 12px;
+            display: inline-block;
+        }
+        .btn-print-record:hover { background: rgba(255,255,255,0.22); color: white; }
 
         /* Section heading inside card */
         .section-heading {
@@ -591,6 +615,7 @@ TECHNICAL:
                 <div class="complaint-description">${escHtml(c.description)}</div>
                 ${detailHtml}
                 ${toggleHtml}
+                <button class="btn-print-record" onclick="event.stopPropagation(); printComplaint('${safeRef}')">&#128438; Print this complaint</button>
             </div>`;
     }
 
@@ -645,6 +670,115 @@ TECHNICAL:
             .replace(/</g,  '&lt;')
             .replace(/>/g,  '&gt;')
             .replace(/"/g,  '&quot;');
+    }
+
+    // =====================================================================
+    // PRINT
+    // =====================================================================
+
+    let allComplaints = [];
+
+    // Store complaints when rendered so printComplaint() can look them up
+    const _originalRenderComplaints = renderComplaints;
+    renderComplaints = function(data) {
+        if (data.success && data.complaints) { allComplaints = data.complaints; }
+        _originalRenderComplaints(data);
+    };
+
+    function printComplaint(ref) {
+        const c = allComplaints.find(function(x) { return x.referenceNumber === ref; });
+        if (!c) { alert('Could not find complaint record. Please try again.'); return; }
+
+        const statusClass = { 'Open': 'badge-open', 'Acknowledged': 'badge-acknowledged',
+                              'Responded': 'badge-responded', 'Closed': 'badge-closed' }[c.status] || '';
+
+        const now = new Date().toLocaleString('en-AU', {
+            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+
+        var fields = '';
+        fields += fieldBlock('Reference Number', c.referenceNumber);
+        fields += fieldBlock('Category',         c.category);
+        fields += fieldBlock('Submitted',         formatDate(c.submittedAt));
+        if (c.acknowledgedAt)  fields += fieldBlock('Acknowledged',    formatDate(c.acknowledgedAt));
+        if (c.responseDue)     fields += fieldBlock('Response Due',    formatDate(c.responseDue));
+        if (c.respondedAt)     fields += fieldBlock('Board Responded', formatDate(c.respondedAt));
+        if (c.closedAt)        fields += fieldBlock('Closed',          formatDate(c.closedAt));
+        fields += fieldBlockFull('Description',      c.description);
+        if (c.desiredOutcome)  fields += fieldBlockFull('Desired Outcome',    c.desiredOutcome);
+        if (c.incidentDateTime) fields += fieldBlock('Incident Date/Time',   c.incidentDateTime);
+        if (c.location)        fields += fieldBlock('Location',              c.location);
+        if (c.peopleInvolved)  fields += fieldBlockFull('People Involved',   c.peopleInvolved);
+        if (c.previousActions) fields += fieldBlockFull('Previous Actions',  c.previousActions);
+
+        var boardBlock = c.boardResponse
+            ? '<div class="board-response"><div class="field-label">Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
+            : '<div class="no-response">No Board response has been recorded yet.</div>';
+
+        var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+            + '<title>Complaint ' + escHtml(ref) + '</title>'
+            + '<style>' + printStyles() + '</style></head><body>'
+            + '<div class="print-header">'
+            + '<div class="print-village">Lake Illawong Retirement Village</div>'
+            + '<div class="print-title">Complaint Record'
+            + ' <span class="status-badge ' + statusClass + '">' + escHtml(c.status) + '</span>'
+            + '</div>'
+            + '<div class="print-ref">' + escHtml(ref) + '</div>'
+            + '</div>'
+            + '<div class="section-title">Complaint Details</div>'
+            + '<div class="field-grid">' + fields + '</div>'
+            + boardBlock
+            + '<div class="cav-notice">You may apply for free conciliation through <strong>VicAssist Retirement Villages</strong> at vic.gov.au/retirement-village-dispute-help or contact Consumer Affairs Victoria on 1300 55 81 81.</div>'
+            + '<div class="print-footer">'
+            + '<span>Lake Illawong Retirement Village</span>'
+            + '<span>Printed ' + now + '</span>'
+            + '</div>'
+            + '</body></html>';
+
+        var w = window.open('', '_blank', 'width=800,height=900');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        w.print();
+    }
+
+    function fieldBlock(label, value) {
+        return '<div class="field-group">'
+            + '<div class="field-label">' + escHtml(label) + '</div>'
+            + '<div class="field-value">' + escHtml(value || '—') + '</div>'
+            + '</div>';
+    }
+
+    function fieldBlockFull(label, value) {
+        return '<div class="field-group field-full">'
+            + '<div class="field-label">' + escHtml(label) + '</div>'
+            + '<div class="field-value">' + escHtml(value || '—') + '</div>'
+            + '</div>';
+    }
+
+    function printStyles() {
+        return '* { margin:0; padding:0; box-sizing:border-box; }'
+            + 'body { font-family: Arial, sans-serif; font-size:11pt; color:#111; background:white; padding:24px; }'
+            + '.print-header { border-bottom:3px solid #1e3a8a; padding-bottom:12px; margin-bottom:20px; }'
+            + '.print-village { font-size:9pt; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#1e3a8a; margin-bottom:4px; }'
+            + '.print-title { font-size:16pt; font-weight:700; color:#111; margin-bottom:4px; }'
+            + '.print-ref { font-size:10pt; color:#444; }'
+            + '.status-badge { display:inline-block; padding:3px 10px; border-radius:3px; font-size:9pt; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-left:10px; }'
+            + '.badge-open { background:#dbeafe; color:#1e40af; }'
+            + '.badge-acknowledged { background:#fef3c7; color:#92400e; }'
+            + '.badge-responded { background:#d1fae5; color:#065f46; }'
+            + '.badge-closed { background:#f3f4f6; color:#374151; }'
+            + '.section-title { font-size:8pt; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#6b7280; border-bottom:1px solid #e5e7eb; padding-bottom:4px; margin:16px 0 10px; }'
+            + '.field-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-bottom:12px; }'
+            + '.field-full { grid-column:1 / -1; }'
+            + '.field-label { font-size:8pt; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px; }'
+            + '.field-value { font-size:10pt; color:#111; line-height:1.5; }'
+            + '.board-response { background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; padding:10px 12px; border-radius:3px; margin-top:8px; }'
+            + '.board-response .field-label { color:#166534; font-size:8pt; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:4px; }'
+            + '.board-response .field-value { font-size:10pt; color:#111; line-height:1.5; }'
+            + '.no-response { color:#9ca3af; font-style:italic; font-size:9pt; margin-top:8px; }'
+            + '.cav-notice { margin-top:20px; padding:10px 12px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:3px; font-size:8.5pt; color:#374151; line-height:1.5; }'
+            + '.print-footer { margin-top:20px; padding-top:10px; border-top:1px solid #e5e7eb; font-size:8pt; color:#9ca3af; display:flex; justify-content:space-between; }';
     }
 </script>
 </body>
