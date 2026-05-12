@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.0.8
+  Frontend Version: V2.0.9
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.0.9 (May 2026): RBAC role check added. VerificationModal_V1_0.js script
+    tag added to head. DOMContentLoaded replaced with full VerificationModal
+    init and handleVerificationSuccess role check. Allowed roles:
+    Complaints-Manager, Developer. Access denied screen added (CSS + HTML).
+    PORTAL_URL removed from CONFIG (no longer used).
   V2.0.0 (May 2026): Full redesign to glass-morphism — blue gradient body,
     standard header pattern (logo-container + header-text), glass panels
     throughout. JS logic unchanged from V1.0.4.
@@ -49,6 +54,7 @@ TECHNICAL:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Complaints Manager - Lake Illawong</title>
+    <script src="VerificationModal_V1_0.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -491,6 +497,72 @@ TECHNICAL:
 
         .hidden { display: none !important; }
 
+        /* ACCESS DENIED SCREEN */
+        .denied-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .denied-card {
+            background: rgba(255,255,255,0.08);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(239,68,68,0.4);
+            border-radius: 2px;
+            padding: 50px 40px;
+            width: 100%;
+            max-width: 480px;
+            text-align: center;
+        }
+        .denied-icon  { font-size: 3.5rem; margin-bottom: 20px; }
+        .denied-title { font-size: 1.8rem; color: white; font-weight: 700; margin-bottom: 16px; text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
+        .denied-detail {
+            background: rgba(239,68,68,0.15);
+            border: 1px solid rgba(239,68,68,0.4);
+            color: rgba(255,255,255,0.9);
+            padding: 14px 16px;
+            border-radius: 2px;
+            font-size: 0.875rem;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            text-align: left;
+        }
+        .denied-detail strong { color: white; }
+        .denied-msg {
+            color: rgba(255,255,255,0.75);
+            font-size: 0.875rem;
+            margin-bottom: 28px;
+            line-height: 1.6;
+        }
+        .btn-reverify {
+            width: 100%;
+            padding: 13px;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 2px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 12px;
+        }
+        .btn-reverify:hover { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.5); }
+        .btn-back-portal {
+            width: 100%;
+            padding: 11px;
+            background: transparent;
+            color: rgba(255,255,255,0.65);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 2px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-back-portal:hover { color: white; border-color: rgba(255,255,255,0.4); }
+
         @media (max-width: 480px) {
             .header-content { flex-direction: column; gap: 15px; }
             .header-text    { align-items: center; text-align: center; }
@@ -503,6 +575,25 @@ TECHNICAL:
     </style>
 </head>
 <body>
+
+<!-- ACCESS DENIED SCREEN -->
+<div id="deniedView" class="denied-container hidden">
+    <div class="denied-card">
+        <div class="denied-icon">🚫</div>
+        <div class="denied-title">Access Denied</div>
+        <div class="denied-detail">
+            Your account does not have the <strong>Complaints-Manager</strong> roleTag required for this module.<br><br>
+            Verified as: <strong id="deniedName">—</strong><br>
+            Assigned roles: <strong id="deniedRoles">None</strong>
+        </div>
+        <div class="denied-msg">
+            Contact the system administrator to discuss access requirements
+        </div>
+        <button class="btn-reverify" onclick="reVerify()">🔄 Try a Different Account</button>
+        <button class="btn-back-portal" onclick="window.location.href='AdminPortal.html'">&#8592; Back to Portal</button>
+    </div>
+</div>
+
 <div class="container">
 
     <!-- Header - system standard -->
@@ -562,6 +653,7 @@ TECHNICAL:
         BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwqg6BiKYAhLNfpawCC5d5gS2uuc_IxVmPx_Da6HIXuKgSs5zvxHNP3Kr8_ySFqVSx5BQ/exec',
         SESSION_KEY:       'portalAdminVerified',
         PORTAL_URL:        'AdminPortal.html',
+        ALLOWED_ROLES:     ['Complaints-Manager', 'Developer'],
         ACK_BUSINESS_DAYS: 2,
         RESP_DAYS:         14
     };
@@ -569,9 +661,32 @@ TECHNICAL:
     let allComplaints = [];
 
     document.addEventListener('DOMContentLoaded', function () {
-        if (!sessionStorage.getItem(CONFIG.SESSION_KEY)) { window.location.href = CONFIG.PORTAL_URL; return; }
-        loadComplaints();
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Complaints Manager',
+            moduleIcon: '📋',
+            sessionKey: CONFIG.SESSION_KEY,
+            onSuccess:  handleVerificationSuccess
+        });
+        if (!alreadyVerified) { VerificationModal.show(); }
     });
+
+    function handleVerificationSuccess(userData) {
+        const roles = userData.roleTags || [];
+        const hasAccess = CONFIG.ALLOWED_ROLES.some(r => roles.includes(r));
+        if (!hasAccess) {
+            document.getElementById('deniedName').textContent  = userData.name || 'Unknown';
+            document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
+            document.getElementById('deniedView').classList.remove('hidden');
+            return;
+        }
+        loadComplaints();
+    }
+
+    function reVerify() {
+        document.getElementById('deniedView').classList.add('hidden');
+        VerificationModal.clearVerification();
+        VerificationModal.show();
+    }
 
     function loadComplaints() {
         document.getElementById('complaintList').innerHTML =
