@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.3.1
+  Frontend Version: V1.1.0
   Backend:          ComplaintsManager V1.0
   Status:           PRODUCTION
   Created:          May 2026
@@ -511,8 +511,8 @@ PORTAL:
 
     <script>
         const CONFIG = {
-            BACKEND_API: 'https://script.google.com/macros/s/AKfycbzeNwp5yPC55jIAw4HNDya0R0-_78RLpsqcCW31t4lSyx98Q5bPRXrPdcsaSs_94PASww/exec',
-            MGMT_URL:    'https://script.google.com/macros/s/AKfycbzeNwp5yPC55jIAw4HNDya0R0-_78RLpsqcCW31t4lSyx98Q5bPRXrPdcsaSs_94PASww/exec',
+            BACKEND_API: 'https://script.google.com/macros/s/AKfycbwvJGCMKkX_j0tZ243FAGfSveqOyeiilKQn4gmljjGaaRlr8dFp7r_dszG54vmo1wxZLQ/exec',
+            MGMT_URL:    'https://script.google.com/macros/s/AKfycbwvJGCMKkX_j0tZ243FAGfSveqOyeiilKQn4gmljjGaaRlr8dFp7r_dszG54vmo1wxZLQ/exec',
             SESSION_KEY: 'lakeIllawongVerified'
         };
 
@@ -634,17 +634,6 @@ PORTAL:
                         document.getElementById('formView').classList.add('hidden');
                         document.getElementById('successView').classList.remove('hidden');
 
-                        // Fire notifications separately — do not wait for response
-                        // Keeps submitComplaint fast by avoiding UrlFetchApp blocking
-                        var notifyData = Object.assign({}, formData, {
-                            action:          'sendSubmissionNotifications',
-                            referenceNumber: response.referenceNumber,
-                            responseDue:     response.responseDue
-                        });
-                        jsonpCall(notifyData).catch(function() {
-                            console.log('Notification call did not return — notifications may still have sent');
-                        });
-
                     } else {
                         alert('Submission failed: ' + (response.error || 'Please try again or contact management.'));
                         submitBtn.disabled    = false;
@@ -669,17 +658,14 @@ PORTAL:
 
                 var timer = setTimeout(function() {
                     cleanup(); reject(new Error('Request timed out'));
-                }, 25000);
+                }, 15000);
 
                 window[callbackName] = function(response) {
                     clearTimeout(timer); cleanup(); resolve(response);
                 };
 
                 script.onerror = function() {
-                    // Apps Script returns via redirect which triggers onerror
-                    // in some browsers — do not reject here, let the timeout
-                    // handle genuine failures. Callback will still fire.
-                    console.log('JSONP script onerror fired — waiting for callback');
+                    clearTimeout(timer); cleanup(); reject(new Error('Network request failed'));
                 };
 
                 function cleanup() {
