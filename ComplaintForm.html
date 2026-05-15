@@ -7,13 +7,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.1.0
+  Frontend Version: V1.2.0
   Backend:          ComplaintsManager V1.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V1.2.0 (May 2026): jsonpCall rewritten with completed flag guard to fix
+    race condition where JSONP callback was deleted by the timeout handler
+    just before the Apps Script response arrived, causing a spurious network
+    error even though the submission had succeeded. cleanup() now deferred
+    by 100ms to allow in-flight response to be processed. Timeout retained
+    at 25 seconds. No backend change required.
+
   V1.1.0 (May 2026): Backend URL updated to new deployment.
     Anonymous checkbox removed — complaints always attributed to resident.
     Back to Documents button replaced with Back to Resident Portal.
@@ -652,24 +659,38 @@ PORTAL:
                 const script       = document.createElement('script');
                 const urlParams    = new URLSearchParams(params);
                 urlParams.append('callback', callbackName);
+                var completed      = false;
 
                 script.src = (baseUrl || CONFIG.BACKEND_API) + '?' + urlParams.toString();
 
                 var timer = setTimeout(function() {
-                    cleanup(); reject(new Error('Request timed out'));
+                    if (completed) return;
+                    completed = true;
+                    cleanup();
+                    reject(new Error('Request timed out'));
                 }, 25000);
 
                 window[callbackName] = function(response) {
-                    clearTimeout(timer); cleanup(); resolve(response);
+                    if (completed) return;
+                    completed = true;
+                    clearTimeout(timer);
+                    cleanup();
+                    resolve(response);
                 };
 
                 script.onerror = function() {
-                    clearTimeout(timer); cleanup(); reject(new Error('Network request failed'));
+                    if (completed) return;
+                    completed = true;
+                    clearTimeout(timer);
+                    cleanup();
+                    reject(new Error('Network request failed'));
                 };
 
                 function cleanup() {
-                    delete window[callbackName];
-                    if (script.parentNode) script.parentNode.removeChild(script);
+                    setTimeout(function() {
+                        delete window[callbackName];
+                        if (script.parentNode) script.parentNode.removeChild(script);
+                    }, 100);
                 }
 
                 document.head.appendChild(script);
