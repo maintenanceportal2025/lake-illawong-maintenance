@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.0.12
-  Backend:          ComplaintsManager V2.0.0
+  Frontend Version: V2.1.0
+  Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.1.0 (May 2026): Escalated status added to dropdown, CSS pill and card
+    border. Comment Log section added below Internal Notes -- displays
+    existing log (newest first) and allows Complaints Manager to add
+    timestamped attributed comments via addComment backend action.
+    Closure notification to Board/RC now fires automatically from backend.
+    Resident escalation notice fires automatically on Escalated status.
+
   V2.0.12 (May 2026): Fix — print footer colour changed from #9ca3af to
     #374151 for readability on paper.
 
@@ -49,9 +56,9 @@ AUTHENTICATION:
   Redirects to AdminPortal.html if session absent.
 
 SYSTEM CONNECTIONS:
-  : ComplaintsManager V2.0.0
+  Backend: ComplaintsManager V1.1
   Actions: getComplaints, updateComplaint
-  URL:     CONFIG._URL
+  URL:     CONFIG.BACKEND_URL
 
 PORTAL:
   Launched from AdminPortal.html.
@@ -275,6 +282,7 @@ TECHNICAL:
         .complaint-card.status-acknowledged{ border-left: 4px solid #10b981; background: rgba(16,185,129,0.35);   backdrop-filter: none; }
         .complaint-card.status-responded   { border-left: 4px solid #a855f7; background: rgba(168,85,247,0.45);   backdrop-filter: none; }
         .complaint-card.status-closed      { border-left: 4px solid #cbd5e1; background: rgba(203,213,225,0.4);   backdrop-filter: none; }
+        .complaint-card.status-escalated   { border-left: 4px solid #f97316; background: rgba(249,115,22,0.15);   backdrop-filter: none; }
 
         .card-summary {
             padding: 13px 16px;
@@ -345,6 +353,7 @@ TECHNICAL:
         .status-acknowledged { background: rgba(16,185,129,0.3);  color: #6ee7b7; border: 1px solid rgba(52,211,153,0.6); }
         .status-responded    { background: rgba(168,85,247,0.35);  color: #e9d5ff; border: 1px solid rgba(168,85,247,0.7); }
         .status-closed       { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
+        .status-escalated    { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
 
         .card-chevron {
             color: rgba(255,255,255,0.4);
@@ -694,7 +703,7 @@ TECHNICAL:
 </div>
 <script>
     const CONFIG = {
-        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbxSpk_o9Etyko64uNj3Fd0Obdq9ABK6asLgc7ZWnKBYKtbqwgdusT_owNxhVv6JV1djtQ/exec',
+        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwqg6BiKYAhLNfpawCC5d5gS2uuc_IxVmPx_Da6HIXuKgSs5zvxHNP3Kr8_ySFqVSx5BQ/exec',
         SESSION_KEY:       'portalAdminVerified',
         PORTAL_URL:        'AdminPortal.html',
         ALLOWED_ROLES:     ['Complaints-Manager', 'Developer'],
@@ -821,6 +830,7 @@ TECHNICAL:
         else if (respOverdue)                 borderClass = 'overdue-resp';
         else if (c.status === 'Responded')    borderClass = 'status-responded';
         else if (c.status === 'Closed')       borderClass = 'status-closed';
+        else if (c.status === 'Escalated')    borderClass = 'status-escalated';
         else if (c.status === 'Acknowledged') borderClass = 'status-acknowledged';
 
         const statusClass = statusPillClass(c.status);
@@ -878,6 +888,11 @@ TECHNICAL:
             ? `<div class="board-response-block"><div class="detail-label">Board Response</div><div class="detail-value">${escHtml(c.boardResponse)}</div></div>` : '';
         const notesHtml = c.internalNotes
             ? `<div class="internal-notes-block"><div class="detail-label">Internal Notes (Admin only)</div><div class="detail-value">${escHtml(c.internalNotes)}</div></div>` : '';
+        const commentLog = c.commentLog || '';
+        const commentEntries = commentLog
+            ? commentLog.split('\n').map(line => `<div class="comment-log-entry">${escHtml(line)}</div>`).join('')
+            : '<div class="comment-log-empty">No comments recorded.</div>';
+        const commentLogHtml = `<div class="comment-log-block"><div class="detail-label">Comment Log (Admin only)</div>${commentEntries}</div>`;
 
         return `<div class="detail-grid">${gridItems}</div>${boardHtml}${notesHtml}`;
     }
@@ -895,6 +910,7 @@ TECHNICAL:
                             <option value="Open">Open</option>
                             <option value="Acknowledged">Acknowledged</option>
                             <option value="Responded">Responded</option>
+                            <option value="Escalated">Escalated</option>
                             <option value="Closed">Closed</option>
                         </select>
                     </div>
@@ -911,6 +927,15 @@ TECHNICAL:
                         <textarea id="notes-${safeRef}" placeholder="Internal notes, deliberations, context...">${escHtml(c.internalNotes)}</textarea>
                     </div>
                 </div>
+                ${commentLogHtml}
+                <div class="update-row">
+                    <div class="update-field">
+                        <label for="comment-${safeRef}">Add Comment (timestamped, permanent record)</label>
+                        <textarea id="comment-${safeRef}" placeholder="Add a comment — e.g. referred to VicAssist, correspondence received..."></textarea>
+                    </div>
+                </div>
+                <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add Comment</button>
+                <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>
                 <div class="notify-row">
                     <input type="checkbox" id="notify-${safeRef}">
                     <label for="notify-${safeRef}">Send response email to resident</label>
@@ -1009,6 +1034,72 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
+
+    function addComment(ref) {
+        const comment  = (document.getElementById('comment-'        + ref).value || '').trim();
+        const btn      = document.getElementById('addcomment-'      + ref);
+        const feedback = document.getElementById('commentfeedback-' + ref);
+
+        if (!comment) { feedback.textContent = 'Please enter a comment.'; feedback.className = 'comment-feedback error'; return; }
+
+        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+
+        btn.disabled    = true;
+        btn.textContent = 'Adding...';
+        feedback.textContent = '';
+        feedback.className   = 'comment-feedback';
+
+        const callbackName = 'commentCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=addComment'
+            + '&ref='      + encodeURIComponent(ref)
+            + '&comment='  + encodeURIComponent(comment)
+            + '&userName=' + encodeURIComponent(userName)
+            + '&callback=' + callbackName;
+
+        const timeout = setTimeout(function () {
+            cleanup(callbackName);
+            btn.disabled = false; btn.textContent = 'Add Comment';
+            feedback.textContent = 'Timed out — please try again.'; feedback.className = 'comment-feedback error';
+        }, 15000);
+
+        window[callbackName] = function (data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            btn.disabled = false; btn.textContent = 'Add Comment';
+            if (data.success) {
+                feedback.textContent = 'Comment added.'; feedback.className = 'comment-feedback success';
+                document.getElementById('comment-' + ref).value = '';
+                // Prepend new entry to the log display
+                const logBlock = document.querySelector('#card-' + ref + ' .comment-log-block');
+                if (logBlock) {
+                    const emptyEl = logBlock.querySelector('.comment-log-empty');
+                    if (emptyEl) emptyEl.remove();
+                    const entry = document.createElement('div');
+                    entry.className   = 'comment-log-entry';
+                    entry.textContent = data.entry;
+                    logBlock.insertBefore(entry, logBlock.children[1]);
+                }
+                // Update allComplaints cache
+                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                if (idx !== -1) {
+                    const existing = allComplaints[idx].commentLog || '';
+                    allComplaints[idx].commentLog = existing ? data.entry + '\n' + existing : data.entry;
+                }
+            } else {
+                feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'comment-feedback error';
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function () {
+            clearTimeout(timeout); cleanup(callbackName);
+            btn.disabled = false; btn.textContent = 'Add Comment';
+            feedback.textContent = 'Network error — please try again.'; feedback.className = 'comment-feedback error';
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
+
     function setFeedback(el, msg, type) { el.textContent = msg; el.className = 'save-feedback ' + type; }
 
     function showPageError(msg) {
@@ -1017,7 +1108,7 @@ TECHNICAL:
     }
 
     function statusPillClass(status) {
-        return { 'Open': 'status-open', 'Acknowledged': 'status-acknowledged', 'Responded': 'status-responded', 'Closed': 'status-closed' }[status] || '';
+        return { 'Open': 'status-open', 'Acknowledged': 'status-acknowledged', 'Responded': 'status-responded', 'Closed': 'status-closed', 'Escalated': 'status-escalated' }[status] || '';
     }
 
     function formatDate(str) {
