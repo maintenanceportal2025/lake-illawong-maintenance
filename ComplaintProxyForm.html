@@ -1,0 +1,923 @@
+<!--
+=====================================================================
+ComplaintProxyForm_V1_0_0.html - COMPLAINTS MANAGER PROXY SUBMISSION
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        ComplaintProxyForm_V1_0_0.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Admin Module
+  Frontend Version: V1.0.0
+  Backend:          ComplaintsManager V2.0.0
+  Status:           PRODUCTION
+  Created:          May 2026
+  Last Modified:    May 2026
+
+VERSION HISTORY:
+  V1.0.0 (May 2026): Initial release.
+    Allows Complaints Manager to formally lodge a complaint on behalf
+    of a resident who submitted verbally, by email, or written form.
+    Also handles residents with no email or mobile.
+    Resident lookup by name from UnitList via ManagementCentral.
+    Pre-fills unit, email, and mobile from UnitList on selection.
+    howSubmitted field allows selection of actual submission method.
+    Submits to ComplaintsManager V2.0.0 submitComplaint action.
+    Same reference number generation and notification logic as
+    resident self-service form. RBAC: Complaints-Manager, Developer.
+
+AUTHENTICATION:
+  OTP via VerificationModal_V1_0.js
+  Session Key: portalAdminVerified
+  RBAC: Complaints-Manager, Developer roles only
+
+SYSTEM CONNECTIONS:
+  Backend:  ComplaintsManager V2.0.0
+  Lookup:   ManagementCentral V1.3 (getResidentList)
+  Notifications: NotificationServer V3.2 via ComplaintsManager V2.0.0
+
+PORTAL:
+  Accessed from AdminPortal.html or ComplaintsManager module
+  Back button returns to AdminPortal.html
+
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proxy Complaint Submission - Lake Illawong</title>
+
+    <script src="VerificationModal_V1_0.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container { max-width: 800px; margin: 0 auto; }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .logo {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0 0 5px 0;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header-subtitle {
+            font-size: 1rem;
+            color: rgba(255,255,255,0.9);
+            font-weight: 500;
+        }
+
+        .content-card {
+            background: rgba(255,255,255,0.08);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 2px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .back-btn {
+            display: inline-block;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 2px;
+            text-decoration: none;
+            margin-bottom: 20px;
+            transition: all 0.2s;
+            backdrop-filter: blur(10px);
+        }
+
+        .back-btn:hover { background: rgba(255,255,255,0.15); }
+
+        .form-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.15);
+        }
+
+        .form-title {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .form-description {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        /* Admin notice banner */
+        .admin-notice {
+            background: rgba(251,191,36,0.15);
+            border-left: 3px solid rgba(251,191,36,0.7);
+            color: rgba(255,255,255,0.95);
+            padding: 12px 16px;
+            margin-bottom: 25px;
+            font-size: 0.9rem;
+            border-radius: 2px;
+            line-height: 1.5;
+        }
+
+        .admin-notice strong { color: #fbbf24; }
+
+        .info-box {
+            background: rgba(14,165,233,0.15);
+            border-left: 3px solid rgba(14,165,233,0.6);
+            color: rgba(255,255,255,0.9);
+            padding: 12px 16px;
+            margin-bottom: 25px;
+            font-size: 0.9rem;
+            border-radius: 2px;
+            line-height: 1.5;
+        }
+
+        /* Section dividers */
+        .form-section {
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+        }
+
+        .section-heading {
+            color: rgba(255,255,255,0.6);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 15px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .form-group { margin-bottom: 20px; }
+
+        .form-label {
+            display: block;
+            color: rgba(255,255,255,0.9);
+            font-weight: 500;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+        }
+
+        .required { color: #fca5a5; margin-left: 3px; }
+
+        .form-control {
+            width: 100%;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 2px;
+            color: white;
+            font-size: 0.95rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: rgba(255,255,255,0.5);
+            background: rgba(255,255,255,0.15);
+        }
+
+        .form-control::placeholder { color: rgba(255,255,255,0.4); }
+
+        .form-control option {
+            background: #1e3a8a;
+            color: white;
+        }
+
+        .form-control:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        textarea.form-control { resize: vertical; min-height: 100px; }
+
+        /* Resident lookup */
+        .lookup-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .lookup-row .form-group { flex: 1; margin-bottom: 0; }
+
+        .lookup-btn {
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 2px;
+            color: white;
+            font-size: 0.9rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+            height: 42px;
+        }
+
+        .lookup-btn:hover { background: rgba(255,255,255,0.25); }
+
+        .lookup-results {
+            display: none;
+            margin-top: 8px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .lookup-result-item {
+            padding: 10px 14px;
+            color: rgba(255,255,255,0.9);
+            font-size: 0.9rem;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            transition: background 0.15s;
+        }
+
+        .lookup-result-item:last-child { border-bottom: none; }
+        .lookup-result-item:hover { background: rgba(255,255,255,0.12); }
+
+        .lookup-result-item .unit-tag {
+            color: rgba(255,255,255,0.5);
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+
+        /* Pre-filled read-only fields */
+        .form-control.prefilled {
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.7);
+        }
+
+        .field-hint {
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.45);
+            margin-top: 4px;
+        }
+
+        /* Char count */
+        .char-count {
+            text-align: right;
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.45);
+            margin-top: 4px;
+        }
+
+        /* Buttons */
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,0.15);
+        }
+
+        .btn-secondary {
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 2px;
+            color: white;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+
+        .btn-primary {
+            padding: 12px 32px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 2px;
+            color: white;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary:hover { background: rgba(255,255,255,0.3); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Success view */
+        .success-message {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .success-icon { font-size: 3rem; margin-bottom: 15px; }
+
+        .success-title {
+            color: white;
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .success-ref {
+            color: rgba(255,255,255,0.9);
+            font-size: 1rem;
+            margin-bottom: 20px;
+        }
+
+        .success-ref strong {
+            font-size: 1.2rem;
+            color: #fbbf24;
+        }
+
+        .success-detail {
+            color: rgba(255,255,255,0.7);
+            font-size: 0.9rem;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+
+        .btn-another {
+            padding: 12px 28px;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 2px;
+            color: white;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 10px;
+        }
+
+        .btn-another:hover { background: rgba(255,255,255,0.25); }
+
+        .hidden { display: none; }
+
+        /* Denied view */
+        .denied-card {
+            background: rgba(239,68,68,0.15);
+            border: 1px solid rgba(239,68,68,0.3);
+            border-radius: 2px;
+            padding: 30px;
+            text-align: center;
+            color: white;
+        }
+
+        .denied-card h2 { margin-bottom: 10px; }
+        .denied-card p { color: rgba(255,255,255,0.8); margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <div class="header">
+            <div class="logo-section">
+                <img src="logo.png" alt="Lake Illawong Logo" class="logo">
+                <div>
+                    <h1>Lake Illawong</h1>
+                    <div class="header-subtitle">Residential Club Management System</div>
+                </div>
+            </div>
+        </div>
+
+        <a href="AdminPortal.html" class="back-btn">← Back to Admin Portal</a>
+
+        <!-- Access Denied -->
+        <div id="deniedView" class="hidden">
+            <div class="denied-card">
+                <h2>Access Restricted</h2>
+                <p>This module requires the Complaints-Manager role.<br>
+                Logged in as: <strong id="deniedName"></strong> — Roles: <strong id="deniedRoles"></strong></p>
+                <button class="btn-secondary" onclick="reVerify()">Try Again</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="mainContent" class="hidden">
+            <div class="content-card">
+
+                <!-- Form View -->
+                <div id="formView">
+                    <div class="form-header">
+                        <div class="form-title">Proxy Complaint Submission</div>
+                        <div class="form-description">
+                            Use this form to formally lodge a complaint on behalf of a resident
+                            who submitted verbally, by email, or written form.
+                        </div>
+                    </div>
+
+                    <div class="admin-notice">
+                        <strong>Complaints Manager only.</strong> This submission will be recorded
+                        under the resident's name and unit. Notifications will be sent to the Board,
+                        Committee, and Zone Rep. The resident will receive a confirmation email
+                        only if an email address is on file.
+                    </div>
+
+                    <!-- Resident Lookup -->
+                    <div class="form-section">
+                        <div class="section-heading">Resident</div>
+
+                        <div class="form-group">
+                            <label class="form-label">Search Resident Name <span class="required">*</span></label>
+                            <div class="lookup-row">
+                                <div class="form-group">
+                                    <input type="text" id="residentSearch" class="form-control"
+                                        placeholder="Type name to search..."
+                                        autocomplete="off">
+                                </div>
+                                <button type="button" class="lookup-btn" onclick="searchResident()">Search</button>
+                            </div>
+                            <div id="lookupResults" class="lookup-results"></div>
+                        </div>
+
+                        <div id="residentFields" class="hidden">
+                            <div class="form-group">
+                                <label class="form-label">Resident Name</label>
+                                <input type="text" id="residentName" class="form-control prefilled" readonly>
+                            </div>
+
+                            <div style="display:flex; gap:16px;">
+                                <div class="form-group" style="flex:1">
+                                    <label class="form-label">Unit</label>
+                                    <input type="text" id="residentUnit" class="form-control prefilled" readonly>
+                                </div>
+                                <div class="form-group" style="flex:2">
+                                    <label class="form-label">Email</label>
+                                    <input type="text" id="residentEmail" class="form-control prefilled" readonly>
+                                    <div class="field-hint">If blank, no resident confirmation will be sent.</div>
+                                </div>
+                                <div class="form-group" style="flex:1">
+                                    <label class="form-label">Mobile</label>
+                                    <input type="text" id="residentMobile" class="form-control prefilled" readonly>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submission Details -->
+                    <div class="form-section">
+                        <div class="section-heading">Submission Details</div>
+
+                        <div style="display:flex; gap:16px;">
+                            <div class="form-group" style="flex:1">
+                                <label class="form-label">How Was This Submitted <span class="required">*</span></label>
+                                <select id="howSubmitted" class="form-control">
+                                    <option value="Verbal">Verbal</option>
+                                    <option value="Email">Email</option>
+                                    <option value="Written Form">Written Form</option>
+                                    <option value="Digital">Digital (Online)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label class="form-label">Category <span class="required">*</span></label>
+                                <select id="category" class="form-control" disabled>
+                                    <option value="">Loading categories...</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Complaint Details -->
+                    <div class="form-section">
+                        <div class="section-heading">Complaint Details</div>
+
+                        <div style="display:flex; gap:16px;">
+                            <div class="form-group" style="flex:1">
+                                <label class="form-label">Date / Time of Incident</label>
+                                <input type="text" id="incidentDateTime" class="form-control"
+                                    placeholder="e.g. 12 May 2026 at 3:00pm">
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label class="form-label">Location</label>
+                                <input type="text" id="location" class="form-control"
+                                    placeholder="e.g. Common area, Car park">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">People or Units Involved</label>
+                            <input type="text" id="peopleInvolved" class="form-control"
+                                placeholder="Names or unit numbers if known">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Description <span class="required">*</span></label>
+                            <textarea id="description" class="form-control" rows="5"
+                                maxlength="2000"
+                                placeholder="Describe the complaint in full..."
+                                oninput="updateCharCount()"></textarea>
+                            <div class="char-count"><span id="charCount">0 / 2000 characters</span></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Desired Outcome</label>
+                            <textarea id="resolution" class="form-control" rows="3"
+                                placeholder="What outcome is the resident seeking?"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Previous Actions Taken</label>
+                            <textarea id="previousActions" class="form-control" rows="3"
+                                placeholder="What steps have already been taken to resolve this?"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="btn-row">
+                        <button type="button" class="btn-secondary" onclick="resetForm()">Clear Form</button>
+                        <button type="button" class="btn-primary" id="submitBtn" onclick="submitComplaint()">
+                            Lodge Complaint
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Success View -->
+                <div id="successView" class="hidden">
+                    <div class="success-message">
+                        <div class="success-icon">✅</div>
+                        <div class="success-title">Complaint Lodged Successfully</div>
+                        <div class="success-ref">Reference Number: <strong id="referenceNumber"></strong></div>
+                        <div class="success-detail">
+                            The complaint has been formally recorded under <strong id="successName"></strong>,
+                            Unit <strong id="successUnit"></strong>.<br><br>
+                            Board, Committee, and Zone Rep have been notified.
+                            <span id="emailNote"></span>
+                        </div>
+                        <button class="btn-another" onclick="lodgeAnother()">Lodge Another</button>
+                        <a href="AdminPortal.html" class="btn-secondary" style="display:inline-block; padding:12px 28px; text-decoration:none;">
+                            Back to Admin Portal
+                        </a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            BACKEND_URL: 'https://script.google.com/macros/s/AKfycbykHtH_qXwPhcQ4jt0ZHlbCZkBYAll_r-hOjP8YMyjl0mdgbhPQOS3S9qhsSE_s87LHTQ/exec',
+            MGMT_URL:    'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
+            SESSION_KEY: 'portalAdminVerified',
+            ALLOWED_ROLES: ['Complaints-Manager', 'Developer']
+        };
+
+        let currentUser   = null;
+        let selectedResident = null;
+        let allResidents  = [];
+
+        // ---------------------------------------------------------------
+        // INITIALISATION
+        // ---------------------------------------------------------------
+
+        window.addEventListener('DOMContentLoaded', function () {
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'Proxy Complaint Submission',
+                moduleIcon: '📋',
+                sessionKey: CONFIG.SESSION_KEY,
+                onSuccess:  handleVerificationSuccess
+            });
+            if (!alreadyVerified) { VerificationModal.show(); }
+        });
+
+        function handleVerificationSuccess(userData) {
+            currentUser = userData;
+            const roles = userData.roleTags || [];
+            const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
+
+            if (!hasAccess) {
+                document.getElementById('deniedName').textContent  = userData.name  || 'Unknown';
+                document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
+                document.getElementById('deniedView').classList.remove('hidden');
+                return;
+            }
+
+            document.getElementById('mainContent').classList.remove('hidden');
+            loadCategories();
+            loadResidentList();
+        }
+
+        function reVerify() {
+            document.getElementById('deniedView').classList.add('hidden');
+            VerificationModal.clearVerification();
+            VerificationModal.show();
+        }
+
+        // ---------------------------------------------------------------
+        // RESIDENT LIST LOAD
+        // ---------------------------------------------------------------
+
+        function loadResidentList() {
+            jsonpCall({ action: 'getUnitListData' }, CONFIG.MGMT_URL)
+                .then(function(response) {
+                    if (response.success && response.residents) {
+                        allResidents = response.residents;
+                        console.log('Resident list loaded: ' + allResidents.length + ' residents');
+                    }
+                })
+                .catch(function(err) {
+                    console.warn('loadResidentList failed: ' + err.message);
+                });
+        }
+
+        // ---------------------------------------------------------------
+        // RESIDENT SEARCH & SELECTION
+        // ---------------------------------------------------------------
+
+        function searchResident() {
+            const query = document.getElementById('residentSearch').value.trim().toLowerCase();
+            if (!query) return;
+
+            const resultsEl = document.getElementById('lookupResults');
+
+            if (allResidents.length === 0) {
+                resultsEl.innerHTML = '<div class="lookup-result-item">Still loading resident list — please try again.</div>';
+                resultsEl.style.display = 'block';
+                return;
+            }
+
+            const matches = allResidents.filter(function(r) {
+                return r.residentName && r.residentName.toLowerCase().indexOf(query) !== -1;
+            });
+
+            if (matches.length === 0) {
+                resultsEl.innerHTML = '<div class="lookup-result-item">No residents found matching "' + query + '".</div>';
+                resultsEl.style.display = 'block';
+                return;
+            }
+
+            resultsEl.innerHTML = '';
+            matches.forEach(function(r) {
+                var item = document.createElement('div');
+                item.className = 'lookup-result-item';
+                item.innerHTML = r.residentName + '<span class="unit-tag">Unit ' + r.unitNumber + '</span>';
+                item.addEventListener('click', function() { selectResident(r); });
+                resultsEl.appendChild(item);
+            });
+
+            resultsEl.style.display = 'block';
+        }
+
+        // Also search on Enter key
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('residentSearch').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); searchResident(); }
+            });
+        });
+
+        function selectResident(resident) {
+            selectedResident = resident;
+
+            document.getElementById('residentName').value   = resident.residentName   || '';
+            document.getElementById('residentUnit').value   = resident.unitNumber   || '';
+            document.getElementById('residentEmail').value  = resident.email  || '';
+            document.getElementById('residentMobile').value = resident.phone  || resident.mobile || '';
+
+            document.getElementById('residentFields').classList.remove('hidden');
+            document.getElementById('lookupResults').style.display = 'none';
+            document.getElementById('residentSearch').value = resident.residentName;
+        }
+
+        // ---------------------------------------------------------------
+        // CATEGORY LOAD
+        // ---------------------------------------------------------------
+
+        function loadCategories() {
+            var select = document.getElementById('category');
+            select.disabled = true;
+
+            jsonpCall({ action: 'getComplaintCategories' }, CONFIG.BACKEND_URL)
+                .then(function(response) {
+                    select.innerHTML = '<option value="">Select a category...</option>';
+                    select.disabled  = false;
+                    var cats = (response.success && response.categories && response.categories.length)
+                        ? response.categories
+                        : ['Maintenance','Noise','Behaviour of a resident','Village services',
+                           'Board decision or action','Contractual matter','Safety concern','Other'];
+                    cats.forEach(function(cat) {
+                        var opt = document.createElement('option');
+                        opt.value = cat; opt.textContent = cat;
+                        select.appendChild(opt);
+                    });
+                })
+                .catch(function() {
+                    select.innerHTML = '<option value="">Select a category...</option>';
+                    select.disabled  = false;
+                    ['Maintenance','Noise','Behaviour of a resident','Village services',
+                     'Board decision or action','Contractual matter','Safety concern','Other']
+                    .forEach(function(cat) {
+                        var opt = document.createElement('option');
+                        opt.value = cat; opt.textContent = cat;
+                        select.appendChild(opt);
+                    });
+                });
+        }
+
+        // ---------------------------------------------------------------
+        // CHAR COUNT
+        // ---------------------------------------------------------------
+
+        function updateCharCount() {
+            var len = document.getElementById('description').value.length;
+            document.getElementById('charCount').textContent = len + ' / 2000 characters';
+        }
+
+        // ---------------------------------------------------------------
+        // SUBMIT
+        // ---------------------------------------------------------------
+
+        function submitComplaint() {
+            if (!selectedResident) {
+                alert('Please search for and select a resident before submitting.');
+                return;
+            }
+
+            var category    = document.getElementById('category').value;
+            var description = document.getElementById('description').value.trim();
+
+            if (!category) {
+                alert('Please select a complaint category.');
+                return;
+            }
+
+            if (!description) {
+                alert('Please enter a description of the complaint.');
+                return;
+            }
+
+            var submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled    = true;
+            submitBtn.textContent = 'Submitting...';
+
+            var formData = {
+                action:           'submitComplaint',
+                residentName:     selectedResident.residentName  || '',
+                unitNumber:       selectedResident.unitNumber  || '',
+                contactEmail:     selectedResident.email || selectedResident.contactEmail || '',
+                contactMobile:    selectedResident.phone || selectedResident.mobile || '',
+                category:         category,
+                description:      description,
+                desiredOutcome:   document.getElementById('resolution').value.trim(),
+                incidentDateTime: document.getElementById('incidentDateTime').value.trim(),
+                location:         document.getElementById('location').value.trim(),
+                peopleInvolved:   document.getElementById('peopleInvolved').value.trim(),
+                previousActions:  document.getElementById('previousActions').value.trim(),
+                howSubmitted:     document.getElementById('howSubmitted').value
+            };
+
+            jsonpCall(formData, CONFIG.BACKEND_URL)
+                .then(function(response) {
+                    if (response.success) {
+                        document.getElementById('referenceNumber').textContent = response.referenceNumber;
+                        document.getElementById('successName').textContent = selectedResident.residentName;
+                        document.getElementById('successUnit').textContent = selectedResident.unitNumber;
+
+                        var emailNote = '';
+                        if (!formData.contactEmail) {
+                            emailNote = 'No email address on file — resident confirmation was not sent.';
+                        } else {
+                            emailNote = 'A confirmation email has been sent to the resident.';
+                        }
+                        document.getElementById('emailNote').textContent = ' ' + emailNote;
+
+                        document.getElementById('formView').classList.add('hidden');
+                        document.getElementById('successView').classList.remove('hidden');
+                    } else {
+                        alert('Submission failed: ' + (response.error || 'Please try again.'));
+                        submitBtn.disabled    = false;
+                        submitBtn.textContent = 'Lodge Complaint';
+                    }
+                })
+                .catch(function() {
+                    alert('A network error occurred. Please check your connection and try again.');
+                    submitBtn.disabled    = false;
+                    submitBtn.textContent = 'Lodge Complaint';
+                });
+        }
+
+        // ---------------------------------------------------------------
+        // RESET / LODGE ANOTHER
+        // ---------------------------------------------------------------
+
+        function resetForm() {
+            if (confirm('Clear all fields?')) {
+                selectedResident = null;
+                document.getElementById('residentSearch').value = '';
+                document.getElementById('residentFields').classList.add('hidden');
+                document.getElementById('lookupResults').style.display = 'none';
+                document.getElementById('residentName').value   = '';
+                document.getElementById('residentUnit').value   = '';
+                document.getElementById('residentEmail').value  = '';
+                document.getElementById('residentMobile').value = '';
+                document.getElementById('howSubmitted').value   = 'Verbal';
+                document.getElementById('category').value       = '';
+                document.getElementById('incidentDateTime').value = '';
+                document.getElementById('location').value       = '';
+                document.getElementById('peopleInvolved').value = '';
+                document.getElementById('description').value   = '';
+                document.getElementById('resolution').value    = '';
+                document.getElementById('previousActions').value = '';
+                updateCharCount();
+            }
+        }
+
+        function lodgeAnother() {
+            selectedResident = null;
+            document.getElementById('residentSearch').value = '';
+            document.getElementById('residentFields').classList.add('hidden');
+            document.getElementById('lookupResults').style.display = 'none';
+            document.getElementById('residentName').value   = '';
+            document.getElementById('residentUnit').value   = '';
+            document.getElementById('residentEmail').value  = '';
+            document.getElementById('residentMobile').value = '';
+            document.getElementById('howSubmitted').value   = 'Verbal';
+            document.getElementById('category').value       = '';
+            document.getElementById('incidentDateTime').value = '';
+            document.getElementById('location').value       = '';
+            document.getElementById('peopleInvolved').value = '';
+            document.getElementById('description').value   = '';
+            document.getElementById('resolution').value    = '';
+            document.getElementById('previousActions').value = '';
+            updateCharCount();
+
+            document.getElementById('successView').classList.add('hidden');
+            document.getElementById('formView').classList.remove('hidden');
+
+            var submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled    = false;
+            submitBtn.textContent = 'Lodge Complaint';
+        }
+
+        // ---------------------------------------------------------------
+        // JSONP
+        // ---------------------------------------------------------------
+
+        function jsonpCall(params, baseUrl) {
+            return new Promise(function(resolve, reject) {
+                var callbackName = 'jsonp_cb_' + Math.round(100000 * Math.random());
+                var script       = document.createElement('script');
+                var urlParams    = new URLSearchParams(params);
+                urlParams.append('callback', callbackName);
+                var completed    = false;
+
+                script.src = (baseUrl || CONFIG.BACKEND_URL) + '?' + urlParams.toString();
+
+                var timer = setTimeout(function() {
+                    if (completed) return;
+                    completed = true;
+                    cleanup();
+                    reject(new Error('Request timed out'));
+                }, 25000);
+
+                window[callbackName] = function(response) {
+                    if (completed) return;
+                    completed = true;
+                    clearTimeout(timer);
+                    cleanup();
+                    resolve(response);
+                };
+
+                function cleanup() {
+                    setTimeout(function() {
+                        delete window[callbackName];
+                        if (script.parentNode) script.parentNode.removeChild(script);
+                    }, 100);
+                }
+
+                document.head.appendChild(script);
+            });
+        }
+    </script>
+</body>
+</html>
