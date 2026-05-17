@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.1.10
+  Frontend Version: V2.1.12
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.1.12 (May 2026): Guard added for invalid submittedAt date parsing
+    in 72-hour notice calculation. Em-dashes replaced with unicode
+    escape to avoid encoding issues.
+
+  V2.1.11 (May 2026): 72-hour Board Response notice added. Three states:
+    pending (amber, hours remaining), overdue (red, deadline passed),
+    sent (green, response on record). Informational only -- no lock.
+
   V2.1.10 (May 2026): Confirmation dialog added before Escalated status
     is saved. Lists consequences (Board/RC notification, resident email)
     and requires explicit confirmation. Cancelling resets dropdown to
@@ -575,6 +583,11 @@ TECHNICAL:
         .comment-feedback.success { color: #6ee7b7; }
         .comment-feedback.error   { color: #fca5a5; }
 
+        .response-notice { font-size: 0.8rem; font-weight: 500; padding: 6px 10px; border-radius: 2px; margin-bottom: 6px; }
+        .notice-pending  { background: rgba(251,191,36,0.12); border-left: 3px solid rgba(251,191,36,0.6); color: #fbbf24; }
+        .notice-overdue  { background: rgba(239,68,68,0.12);  border-left: 3px solid rgba(239,68,68,0.6);  color: #fca5a5; }
+        .notice-sent     { background: rgba(110,231,183,0.12); border-left: 3px solid rgba(110,231,183,0.6); color: #6ee7b7; }
+
         .activity-log-block { margin: 12px 0 8px 0; padding: 12px; background: rgba(0,0,0,0.15); border-radius: 2px; border-left: 3px solid rgba(251,191,36,0.5); }
         .activity-log-entry { font-size: 0.82rem; color: rgba(255,255,255,0.8); padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace; white-space: pre-wrap; }
         .activity-log-entry:last-child { border-bottom: none; }
@@ -961,6 +974,20 @@ TECHNICAL:
             ? activityLog.split('\n').map(line => `<div class="activity-log-entry">${escHtml(line)}</div>`).join('')
             : '<div class="activity-log-empty">No entries recorded.</div>';
         const activityLogHtml = `<div class="activity-log-block"><div class="detail-label">Activity Log (Admin only)</div>${commentEntries}</div>`;
+
+        // 72-hour Board Response notice
+        const now72       = new Date();
+        const submitted   = new Date(c.submittedAt);
+        const hoursElapsed = isNaN(submitted) ? 0 : (now72 - submitted) / (1000 * 60 * 60);
+        let responseNotice = '';
+        if (c.respondedAt) {
+            responseNotice = '<div class="response-notice notice-sent">&#10003; Board Response sent \u2014 editing this field will update the formal record.</div>';
+        } else if (!isNaN(submitted) && hoursElapsed > 72) {
+            responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour response deadline has passed \u2014 response required urgently.</div>';
+        } else if (!isNaN(submitted)) {
+            const hoursLeft = Math.ceil(72 - hoursElapsed);
+            responseNotice = '<div class="response-notice notice-pending">&#9679; Response required within 72 hours of submission \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
+        }
         return `
             <div class="detail-section-title">Update Complaint</div>
             <div class="update-panel">
@@ -980,6 +1007,7 @@ TECHNICAL:
                 <div class="update-row">
                     <div class="update-field">
                         <label for="response-${safeRef}">Board Response (sent to resident)</label>
+                        ${responseNotice}
                         <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response...">${escHtml(c.boardResponse)}</textarea>
                     </div>
                 </div>
