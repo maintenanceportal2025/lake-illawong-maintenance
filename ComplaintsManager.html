@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.1.4
+  Frontend Version: V2.1.6
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.1.6 (May 2026): Board Response and Internal Notes textareas no
+    longer pre-filled on card render -- detail view above shows current
+    values, update panel is clear and ready for new input. Placeholder
+    text updated for Internal Notes to reflect Working Notes purpose.
+
+  V2.1.5 (May 2026): Two bugs fixed. (1) closedAt and escalatedAt now
+    updated in local cache after save so detail view reflects correct
+    timestamps on card rebuild. (2) boardResponse pre-fill no longer
+    triggers spurious auto-Responded status or activity log entry when
+    saving Internal Notes only -- only a changed boardResponse fires.
+
   V2.1.4 (May 2026): Notify checkbox removed -- Board Response always
     sent to resident when present. Board Response label updated.
     Escalated field added to detail view timeline.
@@ -951,13 +962,13 @@ TECHNICAL:
                 <div class="update-row">
                     <div class="update-field">
                         <label for="response-${safeRef}">Board Response (sent to resident)</label>
-                        <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response...">${escHtml(c.boardResponse)}</textarea>
+                        <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response..."></textarea>
                     </div>
                 </div>
                 <div class="update-row">
                     <div class="update-field">
                         <label for="notes-${safeRef}">Internal Notes (not shown to resident)</label>
-                        <textarea id="notes-${safeRef}" placeholder="Internal notes, deliberations, context...">${escHtml(c.internalNotes)}</textarea>
+                        <textarea id="notes-${safeRef}" placeholder="Working notes — editable, not shown to resident..."></textarea>
                     </div>
                 </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}')">Save Update</button>
@@ -983,7 +994,10 @@ TECHNICAL:
 
     function saveUpdate(ref) {
         const status         = document.getElementById('status-'   + ref).value;
-        const boardResponse  = document.getElementById('response-' + ref).value.trim();
+        const current        = allComplaints.find(c => c.referenceNumber === ref);
+        const existingResponse = current ? (current.boardResponse || '') : '';
+        const rawResponse    = document.getElementById('response-' + ref).value.trim();
+        const boardResponse  = (rawResponse !== existingResponse) ? rawResponse : '';
         const internalNotes  = document.getElementById('notes-'    + ref).value.trim();
         const notifyResident = !!boardResponse;
         const btn            = document.getElementById('save-'     + ref);
@@ -995,7 +1009,6 @@ TECHNICAL:
 
         let effectiveStatus = status;
         if (boardResponse && !status) {
-            const current = allComplaints.find(c => c.referenceNumber === ref);
             if (current && (current.status === 'Open' || current.status === 'Acknowledged')) {
                 effectiveStatus = 'Responded';
             }
@@ -1034,6 +1047,9 @@ TECHNICAL:
                     if (effectiveStatus) allComplaints[idx].status        = effectiveStatus;
                     if (boardResponse)   allComplaints[idx].boardResponse = boardResponse;
                     if (internalNotes)   allComplaints[idx].internalNotes = internalNotes;
+                    const nowTs = new Date().toString();
+                    if (effectiveStatus === 'Closed'    && !allComplaints[idx].closedAt)    allComplaints[idx].closedAt    = nowTs;
+                    if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
                     // Update activityLog cache with auto-generated status entry
                     if (effectiveStatus) {
                         const now      = new Date();
@@ -1058,8 +1074,6 @@ TECHNICAL:
                     }
                 }
                 updateSummary(allComplaints);
-                const notifyEl = document.getElementById('notify-' + ref);
-                if (notifyEl) notifyEl.checked = false;
             } else {
                 setFeedback(feedback, 'Error: ' + (data.error || 'Unknown error.'), 'error');
             }
