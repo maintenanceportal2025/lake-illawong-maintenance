@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.1.12
+  Frontend Version: V2.1.13
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.1.13 (May 2026): Internal Notes removed entirely. Field removed
+    from detail view, update panel, save call, cache update, and print
+    output. Activity Log is the sole mechanism for admin notes.
+    Column U data in sheet preserved but no longer read or written.
+
   V2.1.12 (May 2026): Guard added for invalid submittedAt date parsing
     in 72-hour notice calculation. Em-dashes replaced with unicode
     escape to avoid encoding issues.
@@ -962,9 +967,7 @@ TECHNICAL:
 
         const boardHtml = c.boardResponse
             ? `<div class="board-response-block"><div class="detail-label">Board Response</div><div class="detail-value">${escHtml(c.boardResponse)}</div></div>` : '';
-        const notesHtml = c.internalNotes
-            ? `<div class="internal-notes-block"><div class="detail-label">Internal Notes (Admin only)</div><div class="detail-value">${escHtml(c.internalNotes)}</div></div>` : '';
-        return `<div class="detail-grid">${gridItems}</div>${boardHtml}${notesHtml}`;
+        return `<div class="detail-grid">${gridItems}</div>${boardHtml}`;
     }
 
     function buildUpdatePanel(c) {
@@ -1011,12 +1014,6 @@ TECHNICAL:
                         <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response...">${escHtml(c.boardResponse)}</textarea>
                     </div>
                 </div>
-                <div class="update-row">
-                    <div class="update-field">
-                        <label for="notes-${safeRef}">Internal Notes (not shown to resident)</label>
-                        <textarea id="notes-${safeRef}" placeholder="Internal notes, deliberations, context...">${escHtml(c.internalNotes)}</textarea>
-                    </div>
-                </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}')">Save Update</button>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
@@ -1044,12 +1041,11 @@ TECHNICAL:
         const existingResponse = current ? (current.boardResponse || '') : '';
         const rawResponse    = document.getElementById('response-' + ref).value.trim();
         const boardResponse  = (rawResponse !== existingResponse) ? rawResponse : '';
-        const internalNotes  = document.getElementById('notes-'    + ref).value.trim();
         const notifyResident = !!boardResponse;
         const btn            = document.getElementById('save-'     + ref);
         const feedback       = document.getElementById('feedback-' + ref);
 
-        if (!status && !boardResponse && !internalNotes) {
+        if (!status && !boardResponse) {
             setFeedback(feedback, 'Nothing to save — make a change first.', 'error'); return;
         }
 
@@ -1089,7 +1085,6 @@ TECHNICAL:
 
         if (effectiveStatus) url += '&status='        + encodeURIComponent(effectiveStatus);
         if (boardResponse)   url += '&boardResponse=' + encodeURIComponent(boardResponse);
-        if (internalNotes)   url += '&internalNotes=' + encodeURIComponent(internalNotes);
         if (notifyResident)  url += '&notifyResident=true';
         const saveUserName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         url += '&userName=' + encodeURIComponent(saveUserName);
@@ -1109,7 +1104,6 @@ TECHNICAL:
                 if (idx !== -1) {
                     if (effectiveStatus) allComplaints[idx].status        = effectiveStatus;
                     if (boardResponse)   allComplaints[idx].boardResponse = boardResponse;
-                    if (internalNotes)   allComplaints[idx].internalNotes = internalNotes;
                     const nowTs = new Date().toString();
                     if (effectiveStatus === 'Closed'    && !allComplaints[idx].closedAt)    allComplaints[idx].closedAt    = nowTs;
                     if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
@@ -1136,9 +1130,7 @@ TECHNICAL:
                         if (newFeedback) setFeedback(newFeedback, 'Saved successfully.', 'success');
                         if (newStatusEl) newStatusEl.value = '';
                         const newResponseEl = document.getElementById('response-' + ref);
-                        const newNotesEl    = document.getElementById('notes-'    + ref);
                         if (newResponseEl) newResponseEl.value = '';
-                        if (newNotesEl)    newNotesEl.value    = '';
                     }
                 }
                 updateSummary(allComplaints);
@@ -1341,11 +1333,11 @@ TECHNICAL:
                 <div style="color:rgba(255,255,255,0.7);font-size:0.85rem;margin-bottom:24px;">${escHtml(ref)}</div>
                 <button onclick="doPrint('${ref}', true)"  style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">
                     &#128438; Print Full Record
-                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Activity Log and Internal Notes (admin use only)</div>
+                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Activity Log (admin use only)</div>
                 </button>
                 <button onclick="doPrint('${ref}', false)" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">
                     &#128196; Print Resident Copy
-                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Excludes Activity Log and Internal Notes</div>
+                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Excludes Activity Log</div>
                 </button>
                 <button onclick="document.getElementById('printDialog').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>
             </div>`;
@@ -1364,9 +1356,6 @@ TECHNICAL:
             ? '<div class="board-response"><div class="field-label">Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
             : '';
 
-        const notesBlock = fullRecord && c.internalNotes
-            ? '<div class="internal-notes"><div class="field-label">Internal Notes <span class="internal-label-warn">Internal — Not for distribution</span></div><div class="field-value">' + escHtml(c.internalNotes) + '</div></div>'
-            : '';
 
         const activityBlock = fullRecord && c.activityLog
             ? '<div class="section-title">Activity Log</div><div class="activity-log-print">'
@@ -1418,7 +1407,6 @@ TECHNICAL:
                 ${fieldRow('Closed',        c.closedAt       ? formatDate(c.closedAt)       : '—', false)}
             </div>
             ${boardBlock}
-            ${notesBlock}
             ${activityBlock}
             ${printFooter()}
             </body></html>`;
