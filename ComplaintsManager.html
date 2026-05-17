@@ -6,18 +6,30 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.1.1
+  Frontend Version: V2.1.3
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.1.3 (May 2026): Comment Log renamed to Activity Log throughout.
+    Board Response label updated. Notify checkbox moved under Board
+    Response textarea and relabelled. Add to Activity Log section
+    moved below Save Update with visual separator. Print dialog
+    added -- Full Record (includes Activity Log + Internal Notes)
+    vs Resident Copy (excludes both). EscalatedAt added to timeline
+    in print output.
+
+  V2.1.2 (May 2026): activityLog cache updated in saveUpdate callback so
+    status change entry appears immediately in Activity Log on card
+    rebuild without requiring a page reload.
+
   V2.1.1 (May 2026): userName passed to saveUpdate for status change
     auto-logging in backend V2.0.2.
 
   V2.1.0 (May 2026): Escalated status added to dropdown, CSS pill and card
-    border. Comment Log section added below Internal Notes -- displays
+    border. Activity Log section added below Internal Notes -- displays
     existing log (newest first) and allows Complaints Manager to add
     timestamped attributed comments via addComment backend action.
     Closure notification to Board/RC now fires automatically from backend.
@@ -530,10 +542,10 @@ TECHNICAL:
         .comment-feedback.success { color: #6ee7b7; }
         .comment-feedback.error   { color: #fca5a5; }
 
-        .comment-log-block { margin: 12px 0 8px 0; padding: 12px; background: rgba(0,0,0,0.15); border-radius: 2px; border-left: 3px solid rgba(251,191,36,0.5); }
-        .comment-log-entry { font-size: 0.82rem; color: rgba(255,255,255,0.8); padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace; white-space: pre-wrap; }
-        .comment-log-entry:last-child { border-bottom: none; }
-        .comment-log-empty { font-size: 0.82rem; color: rgba(255,255,255,0.4); font-style: italic; }
+        .activity-log-block { margin: 12px 0 8px 0; padding: 12px; background: rgba(0,0,0,0.15); border-radius: 2px; border-left: 3px solid rgba(251,191,36,0.5); }
+        .activity-log-entry { font-size: 0.82rem; color: rgba(255,255,255,0.8); padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace; white-space: pre-wrap; }
+        .activity-log-entry:last-child { border-bottom: none; }
+        .activity-log-empty { font-size: 0.82rem; color: rgba(255,255,255,0.4); font-style: italic; }
 
         .btn-add-comment { display: block; width: 100%; padding: 10px 18px; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.6); border-radius: 2px; color: #fbbf24; font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-top: 8px; margin-bottom: 16px; text-align: center; }
         .btn-add-comment:hover    { background: rgba(251,191,36,0.35); }
@@ -910,11 +922,11 @@ TECHNICAL:
 
     function buildUpdatePanel(c) {
         const safeRef = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
-        const commentLog = c.commentLog || '';
-        const commentEntries = commentLog
-            ? commentLog.split('\n').map(line => `<div class="comment-log-entry">${escHtml(line)}</div>`).join('')
-            : '<div class="comment-log-empty">No comments recorded.</div>';
-        const commentLogHtml = `<div class="comment-log-block"><div class="detail-label">Comment Log (Admin only)</div>${commentEntries}</div>`;
+        const activityLog = c.activityLog || '';
+        const commentEntries = activityLog
+            ? activityLog.split('\n').map(line => `<div class="activity-log-entry">${escHtml(line)}</div>`).join('')
+            : '<div class="activity-log-empty">No comments recorded.</div>';
+        const activityLogHtml = `<div class="activity-log-block"><div class="detail-label">Activity Log (Admin only)</div>${commentEntries}</div>`;
         return `
             <div class="detail-section-title">Update Complaint</div>
             <div class="update-panel">
@@ -933,8 +945,12 @@ TECHNICAL:
                 </div>
                 <div class="update-row">
                     <div class="update-field">
-                        <label for="response-${safeRef}">Board Response (shown to resident)</label>
+                        <label for="response-${safeRef}">Board Response (emailed to resident if checkbox below is ticked)</label>
                         <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response...">${escHtml(c.boardResponse)}</textarea>
+                    </div>
+                    <div class="notify-row">
+                        <input type="checkbox" id="notify-${safeRef}">
+                        <label for="notify-${safeRef}">Send Board Response email to resident</label>
                     </div>
                 </div>
                 <div class="update-row">
@@ -943,7 +959,7 @@ TECHNICAL:
                         <textarea id="notes-${safeRef}" placeholder="Internal notes, deliberations, context...">${escHtml(c.internalNotes)}</textarea>
                     </div>
                 </div>
-                ${commentLogHtml}
+                ${activityLogHtml}
                 <div class="update-row">
                     <div class="update-field">
                         <label for="comment-${safeRef}">Add Comment (timestamped, permanent record)</label>
@@ -952,13 +968,17 @@ TECHNICAL:
                 </div>
                 <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add Comment</button>
                 <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>
-                <div class="notify-row">
-                    <input type="checkbox" id="notify-${safeRef}">
-                    <label for="notify-${safeRef}">Send response email to resident</label>
-                </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}')">Save Update</button>
-                <button class="btn-print-record" onclick="printComplaint('${safeRef}')">&#128438; Print Record</button>
+                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
+                <div class="update-row" style="margin-top:16px; border-top:1px solid rgba(255,255,255,0.1); padding-top:16px;">
+                    <div class="update-field">
+                        <label for="comment-${safeRef}">Add to Activity Log (timestamped, permanent record)</label>
+                        <textarea id="comment-${safeRef}" placeholder="Add a note — e.g. referred to VicAssist, correspondence received..."></textarea>
+                    </div>
+                </div>
+                <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add to Activity Log</button>
+                <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>
             </div>`;
     }
 
@@ -1022,6 +1042,17 @@ TECHNICAL:
                     if (effectiveStatus) allComplaints[idx].status        = effectiveStatus;
                     if (boardResponse)   allComplaints[idx].boardResponse = boardResponse;
                     if (internalNotes)   allComplaints[idx].internalNotes = internalNotes;
+                    // Update activityLog cache with auto-generated status entry
+                    if (effectiveStatus) {
+                        const now      = new Date();
+                        const pad      = n => n.toString().padStart(2, '0');
+                        const dateStr  = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+                        const timeStr  = pad(now.getHours()) + ':' + pad(now.getMinutes());
+                        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+                        const entry    = dateStr + ' ' + timeStr + ' | ' + userName + ' | Status changed to ' + effectiveStatus;
+                        const existing = allComplaints[idx].activityLog || '';
+                        allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
+                    }
                     const cardEl = document.getElementById('card-' + ref);
                     if (cardEl) {
                         const wasExpanded = cardEl.classList.contains('expanded');
@@ -1088,20 +1119,20 @@ TECHNICAL:
                 feedback.textContent = 'Comment added.'; feedback.className = 'comment-feedback success';
                 document.getElementById('comment-' + ref).value = '';
                 // Prepend new entry to the log display
-                const logBlock = document.querySelector('#card-' + ref + ' .comment-log-block');
+                const logBlock = document.querySelector('#card-' + ref + ' .activity-log-block');
                 if (logBlock) {
-                    const emptyEl = logBlock.querySelector('.comment-log-empty');
+                    const emptyEl = logBlock.querySelector('.activity-log-empty');
                     if (emptyEl) emptyEl.remove();
                     const entry = document.createElement('div');
-                    entry.className   = 'comment-log-entry';
+                    entry.className   = 'activity-log-entry';
                     entry.textContent = data.entry;
                     logBlock.insertBefore(entry, logBlock.children[1]);
                 }
                 // Update allComplaints cache
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
                 if (idx !== -1) {
-                    const existing = allComplaints[idx].commentLog || '';
-                    allComplaints[idx].commentLog = existing ? data.entry + '\n' + existing : data.entry;
+                    const existing = allComplaints[idx].activityLog || '';
+                    allComplaints[idx].activityLog = existing ? data.entry + '\n' + existing : data.entry;
                 }
             } else {
                 feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'comment-feedback error';
@@ -1223,27 +1254,68 @@ TECHNICAL:
         </div>`;
     }
 
-    function printComplaint(ref) {
+    function showPrintDialog(ref) {
+        const c = allComplaints.find(x => x.referenceNumber === ref);
+        if (!c) { alert('Complaint record not found.'); return; }
+
+        const dialog = document.createElement('div');
+        dialog.id = 'printDialog';
+        dialog.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        dialog.innerHTML = `
+            <div style="background:#1e3a8a;border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:32px;max-width:400px;width:90%;text-align:center;">
+                <div style="color:white;font-size:1.1rem;font-weight:600;margin-bottom:8px;">Print Complaint Record</div>
+                <div style="color:rgba(255,255,255,0.7);font-size:0.85rem;margin-bottom:24px;">${escHtml(ref)}</div>
+                <button onclick="doPrint('${ref}', true)"  style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">
+                    &#128438; Print Full Record
+                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Activity Log and Internal Notes (admin use only)</div>
+                </button>
+                <button onclick="doPrint('${ref}', false)" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">
+                    &#128196; Print Resident Copy
+                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Excludes Activity Log and Internal Notes</div>
+                </button>
+                <button onclick="document.getElementById('printDialog').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>
+            </div>`;
+        document.body.appendChild(dialog);
+    }
+
+    function doPrint(ref, fullRecord) {
+        document.getElementById('printDialog').remove();
         const c = allComplaints.find(x => x.referenceNumber === ref);
         if (!c) { alert('Complaint record not found.'); return; }
 
         const statusClass = { 'Open': 'badge-open', 'Acknowledged': 'badge-acknowledged',
-                              'Responded': 'badge-responded', 'Closed': 'badge-closed' }[c.status] || '';
+                              'Responded': 'badge-responded', 'Closed': 'badge-closed', 'Escalated': 'badge-escalated' }[c.status] || '';
 
         const boardBlock = c.boardResponse
             ? '<div class="board-response"><div class="field-label">Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
             : '';
-        const notesBlock = c.internalNotes
+
+        const notesBlock = fullRecord && c.internalNotes
             ? '<div class="internal-notes"><div class="field-label">Internal Notes <span class="internal-label-warn">Internal — Not for distribution</span></div><div class="field-value">' + escHtml(c.internalNotes) + '</div></div>'
+            : '';
+
+        const activityBlock = fullRecord && c.activityLog
+            ? '<div class="section-title">Activity Log</div><div class="activity-log-print">'
+              + c.activityLog.split('\n').map(line => '<div class="activity-log-entry-print">' + escHtml(line) + '</div>').join('')
+              + '</div>'
+            : '';
+
+        const residentCopyBanner = !fullRecord
+            ? '<div style="background:#fef3c7;border:1px solid #f59e0b;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#92400e;font-weight:600;">RESIDENT COPY — Administrative details withheld</div>'
             : '';
 
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
             <title>Complaint Record — ${escHtml(ref)}</title>
-            <style>${printStyles()}</style></head><body>
+            <style>${printStyles()}
+            .activity-log-print { margin: 8px 0 16px 0; padding: 10px; background: #f8fafc; border-left: 3px solid #1e3a8a; }
+            .activity-log-entry-print { font-size: 8pt; font-family: monospace; padding: 3px 0; border-bottom: 1px solid #e5e7eb; color: #374151; }
+            .activity-log-entry-print:last-child { border-bottom: none; }
+            </style></head><body>
             ${printHeader(
                 'Complaint Record <span class="status-badge ' + statusClass + '">' + escHtml(c.status) + '</span>',
                 escHtml(ref)
             )}
+            ${residentCopyBanner}
             <div class="section-title">Resident Details</div>
             <div class="field-grid">
                 ${fieldRow('Resident',  c.residentName,  false)}
@@ -1268,10 +1340,12 @@ TECHNICAL:
                 ${fieldRow('Acknowledged',  c.acknowledgedAt ? formatDate(c.acknowledgedAt) : 'Not yet acknowledged', false)}
                 ${fieldRow('Response Due',  c.responseDue    ? formatDate(c.responseDue)    : '—', false)}
                 ${fieldRow('Responded',     c.respondedAt    ? formatDate(c.respondedAt)    : '—', false)}
+                ${fieldRow('Escalated',     c.escalatedAt    ? formatDate(c.escalatedAt)    : '—', false)}
                 ${fieldRow('Closed',        c.closedAt       ? formatDate(c.closedAt)       : '—', false)}
             </div>
             ${boardBlock}
             ${notesBlock}
+            ${activityBlock}
             ${printFooter()}
             </body></html>`;
 
