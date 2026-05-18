@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.1.14
+  Frontend Version: V2.1.15
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.1.15 (May 2026): Board Response update panel now context-aware.
+    Before respondedAt -- editable textarea with existing content.
+    After respondedAt -- existing response shown read-only, new
+    append-only textarea below labelled Add to Board Response.
+    Local cache mirrors append logic on save. Backend updated to
+    ComplaintsManager V2.0.5.
+
   V2.1.14 (May 2026): Backend updated to ComplaintsManager V2.0.3.
     Closed status now triggers resident and Zone Rep notifications
     in addition to Board and RC.
@@ -596,6 +603,7 @@ TECHNICAL:
         .notice-pending  { background: rgba(251,191,36,0.12); border-left: 3px solid rgba(251,191,36,0.6); color: #fbbf24; }
         .notice-overdue  { background: rgba(239,68,68,0.12);  border-left: 3px solid rgba(239,68,68,0.6);  color: #fca5a5; }
         .notice-sent     { background: rgba(110,231,183,0.12); border-left: 3px solid rgba(110,231,183,0.6); color: #6ee7b7; }
+        .board-response-readonly { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 2px; padding: 10px 12px; color: rgba(255,255,255,0.8); font-size: 0.9rem; white-space: pre-wrap; margin-bottom: 8px; line-height: 1.5; }
 
         .activity-log-block { margin: 12px 0 8px 0; padding: 12px; background: rgba(0,0,0,0.15); border-radius: 2px; border-left: 3px solid rgba(251,191,36,0.5); }
         .activity-log-entry { font-size: 0.82rem; color: rgba(255,255,255,0.8); padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace; white-space: pre-wrap; }
@@ -1013,9 +1021,17 @@ TECHNICAL:
                 </div>
                 <div class="update-row">
                     <div class="update-field">
+                        ${c.respondedAt ? `
+                        <label>Board Response History (sent to resident)</label>
+                        <div class="board-response-readonly">${escHtml(c.boardResponse)}</div>
+                        ${responseNotice}
+                        <label for="response-${safeRef}" style="margin-top:12px; display:block;">Add to Board Response (will be emailed to resident automatically)</label>
+                        <textarea id="response-${safeRef}" placeholder="Enter additional response — will be appended to the record and emailed to resident..."></textarea>
+                        ` : `
                         <label for="response-${safeRef}">Board Response (sent to resident)</label>
                         ${responseNotice}
                         <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response...">${escHtml(c.boardResponse)}</textarea>
+                        `}
                     </div>
                 </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}')">Save Update</button>
@@ -1112,6 +1128,20 @@ TECHNICAL:
                     if (effectiveStatus === 'Closed'    && !allComplaints[idx].closedAt)    allComplaints[idx].closedAt    = nowTs;
                     if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
                     if (boardResponse && !allComplaints[idx].respondedAt) allComplaints[idx].respondedAt = nowTs;
+                    if (boardResponse) {
+                        const existing = allComplaints[idx].boardResponse || '';
+                        if (!existing) {
+                            allComplaints[idx].boardResponse = boardResponse;
+                        } else {
+                            const now2    = new Date();
+                            const pad2    = n => n.toString().padStart(2, '0');
+                            const dStr2   = now2.getFullYear() + '-' + pad2(now2.getMonth()+1) + '-' + pad2(now2.getDate());
+                            const tStr2   = pad2(now2.getHours()) + ':' + pad2(now2.getMinutes());
+                            const uName   = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+                            const sep     = '\n\n[' + dStr2 + ' ' + tStr2 + ' | ' + uName + ']\n';
+                            allComplaints[idx].boardResponse = existing + sep + boardResponse;
+                        }
+                    }
                     // Update activityLog cache with auto-generated status entry
                     if (effectiveStatus) {
                         const now      = new Date();
