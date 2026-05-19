@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.1.24
+  Frontend Version: V2.1.25
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.1.25 (May 2026): Board Response history renders [SENT] as green
+    Sent badge per entry. formatBoardResponse helper added. Board
+    Response Activity Log cache entries removed. boardResponse cache
+    includes [SENT] tag when Save and Send used. Backend V2.1.0.
+
   V2.1.24 (May 2026): Activity Log cache shows correct message based
     on save path -- Save Only shows not yet sent, Save & Send shows
     sent to resident.
@@ -644,7 +649,11 @@ TECHNICAL:
         .notice-pending  { background: rgba(251,191,36,0.12); border-left: 3px solid rgba(251,191,36,0.6); color: #fbbf24; }
         .notice-overdue  { background: rgba(239,68,68,0.12);  border-left: 3px solid rgba(239,68,68,0.6);  color: #fca5a5; }
         .notice-sent     { background: rgba(110,231,183,0.12); border-left: 3px solid rgba(110,231,183,0.6); color: #6ee7b7; }
-        .board-response-readonly { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 2px; padding: 10px 12px; color: rgba(255,255,255,0.8); font-size: 0.9rem; white-space: pre-wrap; margin-bottom: 8px; line-height: 1.5; }
+        .board-response-readonly { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 2px; padding: 10px 12px; color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 8px; line-height: 1.5; }
+        .br-entry { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06); white-space: pre-wrap; }
+        .br-entry:last-child { border-bottom: none; }
+        .br-timestamp { color: rgba(255,255,255,0.5); font-size: 0.8rem; display: block; margin-bottom: 4px; }
+        .br-sent-badge { display: inline-block; background: rgba(110,231,183,0.2); border: 1px solid rgba(110,231,183,0.5); color: #6ee7b7; font-size: 0.72rem; font-weight: 600; padding: 1px 7px; border-radius: 10px; margin-right: 8px; vertical-align: middle; }
 
         .activity-log-block { margin: 12px 0 8px 0; padding: 12px; background: rgba(0,0,0,0.15); border-radius: 2px; border-left: 3px solid rgba(251,191,36,0.5); }
         .activity-log-entry { font-size: 0.82rem; color: rgba(255,255,255,0.8); padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace; white-space: pre-wrap; }
@@ -1068,7 +1077,7 @@ TECHNICAL:
                     <div class="update-field">
                         ${c.respondedAt ? `
                         <label>Board Response</label>
-                        <div class="board-response-readonly">${escHtml(c.boardResponse)}</div>
+                        <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
                         ${responseNotice}
                         <label for="response-${safeRef}" style="margin-top:12px; display:block;">Add to Board Response</label>
                         <textarea id="response-${safeRef}" placeholder="Enter additional response to append to the record..."></textarea>
@@ -1172,8 +1181,9 @@ TECHNICAL:
                     if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
                     if (boardResponse) {
                         const existing = allComplaints[idx].boardResponse || '';
+                        const sentTag  = andSend ? ' [SENT]' : '';
                         if (!existing) {
-                            allComplaints[idx].boardResponse = boardResponse;
+                            allComplaints[idx].boardResponse = boardResponse + sentTag;
                         } else {
                             const now2  = new Date();
                             const pad2  = n => n.toString().padStart(2, '0');
@@ -1181,7 +1191,7 @@ TECHNICAL:
                             const tStr2 = pad2(now2.getHours()) + ':' + pad2(now2.getMinutes());
                             const uName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
                             const sep   = '\n\n[' + dStr2 + ' ' + tStr2 + ' | ' + uName + ']\n';
-                            allComplaints[idx].boardResponse = existing + sep + boardResponse;
+                            allComplaints[idx].boardResponse = existing + sep + boardResponse + sentTag;
                         }
                     }
                     // Update activityLog cache with auto-generated status entry
@@ -1192,21 +1202,6 @@ TECHNICAL:
                         const timeStr  = pad(now.getHours()) + ':' + pad(now.getMinutes());
                         const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
                         const entry    = dateStr + ' ' + timeStr + ' | ' + userName + ' | Status changed to ' + effectiveStatus;
-                        const existing = allComplaints[idx].activityLog || '';
-                        allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
-                    }
-                    // Update activityLog cache with Board Response save entry
-                    if (boardResponse) {
-                        const now      = new Date();
-                        const pad      = n => n.toString().padStart(2, '0');
-                        const dateStr  = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
-                        const timeStr  = pad(now.getHours()) + ':' + pad(now.getMinutes());
-                        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-                        const isFirstR = !allComplaints[idx].boardResponse || allComplaints[idx].boardResponse === boardResponse;
-                        const saveMsg  = andSend
-                            ? 'Board Response sent to resident'
-                            : 'Board Response ' + (isFirstR ? 'recorded' : 'updated') + ' (not yet sent to resident)';
-                        const entry    = dateStr + ' ' + timeStr + ' | ' + userName + ' | ' + saveMsg;
                         const existing = allComplaints[idx].activityLog || '';
                         allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
                     }
@@ -1376,6 +1371,23 @@ TECHNICAL:
         };
         script.src = url;
         document.head.appendChild(script);
+    }
+
+    function formatBoardResponse(text) {
+        if (!text) return '';
+        var parts = text.split(/\n\n(?=\[\d{4}-\d{2}-\d{2})/);
+        return parts.map(function(part) {
+            var hasSent  = part.indexOf('[SENT]') !== -1;
+            var clean    = part.replace(/\s*\[SENT\]/g, '').trim();
+            var lines    = clean.split('\n');
+            var firstLine = lines[0] || '';
+            var rest      = lines.slice(1).join('\n');
+            var isHeader  = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| /.test(firstLine);
+            var header    = isHeader ? '<span class="br-timestamp">' + escHtml(firstLine) + '</span>' : escHtml(firstLine);
+            var body      = rest ? '\n' + escHtml(rest) : '';
+            var badge     = hasSent ? '<span class="br-sent-badge">Sent</span>' : '';
+            return '<div class="br-entry">' + badge + header + body + '</div>';
+        }).join('');
     }
 
     function setFeedback(el, msg, type) { el.textContent = msg; el.className = 'save-feedback ' + type; }
