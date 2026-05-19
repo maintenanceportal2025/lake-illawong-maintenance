@@ -3,46 +3,50 @@
 LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - UPDATE MY DETAILS
 =====================================================================
 PURPOSE: Self-service contact details update for residents
-VERSION: 3.2
+VERSION: 3.3
 LAST UPDATED: May 2026
-ARCHITECTURE: V5.4
+ARCHITECTURE: V5.6
 
-DESIGN SYSTEM: Lake Illawong Unified v1.4
+DESIGN SYSTEM: Lake Illawong Unified v2.0
+- Background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)
+- Surfaces: Glass panels (rgba(255,255,255,0.08) + backdrop-filter)
 - Header: Transparent with logo, white text
-- Colors: Blue gradient primary palette (#1e40af to #1e3a8a)
-- Layout: White content cards on gradient
 - API Protocol: JSONP with proper callback cleanup
 
 AUTHENTICATION: Standalone OTP via VerificationModal_V1_0.js
 - VerificationModal.init() fires on DOMContentLoaded
-- No session -> OTP modal displays immediately
-- Session key: lakeIllawongVerified
+- Session key: lakeIllawongVerified (shared with ResidentDirectory,
+  DocumentLibrary, ComplaintForm, ComplaintStatus)
 - smsOnly: false
-- Session shared with ResidentDetailsUpdate.html, ComplaintForm.html, ComplaintStatus.html
-- Verify once -> all modules accessible for browser session
-- No session guard, no portal dependency
-- After OTP: handleVerificationSuccess() calls loadResidentFromSession()
-  which uses verified mobile to call verifyIdentity API,
-  skips to screen 3 (detail selection)
+- Verify once per browser session — all shared modules accessible
+- onSuccess: handleVerificationSuccess(userData)
+  userData contains: name, unit, roleTags (from session or fresh OTP)
+  No second verifyIdentity call — userData is sufficient
 
-SECURITY FEATURES:
+SECURITY:
 - OTP verification via VerificationModal_V1_0.js
-- Can only update own unit's details (mobile is unique identifier)
+- Resident can only update own unit (unit from OTP session)
 - Cannot update Stage or Role Tags (admin-controlled)
 - Session-based (sessionStorage clears on browser close)
 
 BACKEND DEPENDENCIES:
-- ManagementCentral V1.3 (OTP verification, verifyIdentity, updateContactDetails)
+- ManagementCentral V1.4 (updateContactDetails)
 - NotificationServer V3.2.0 (confirmation notifications)
 
 RELATED FILES:
-- ResidentPortal.html (navigates here directly)
+- ResidentPortal.html (navigates here)
 - VerificationModal_V1_0.js (OTP component)
-- ResidentDirectory.html (shares lakeIllawongVerified session)
+- ResidentDirectory.html, DocumentLibrary.html,
+  ComplaintForm.html, ComplaintStatus.html (share session)
 
 CHANGE LOG
-- V3.2 (May 2026): smsOnly changed to false — email or mobile verification
-                   now available, consistent with other resident modules.
+- V3.3 (May 2026): Full rewrite. Removed multi-step screen flow and
+                   second verifyIdentity API call. Now uses userData
+                   from VerificationModal session directly, consistent
+                   with all other resident portal modules. Glass V2.0
+                   design applied throughout.
+- V3.2 (May 2026): smsOnly changed to false.
+- V3.1 (Mar 2026): Standalone OTP authentication added.
 =====================================================================
 -->
 <!DOCTYPE html>
@@ -53,27 +57,43 @@ CHANGE LOG
     <title>Update My Details - Lake Illawong</title>
     <script src="VerificationModal_V1_0.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary-blue: #667eea;
+            --primary-blue-dark: #764ba2;
+            --primary-gradient: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            --success-green: #10b981;
+            --success-bg: #d1fae5;
+            --error-red: #ef4444;
+            --error-bg: #fee2e2;
+            --glass-bg:           rgba(255, 255, 255, 0.08);
+            --glass-bg-hover:     rgba(255, 255, 255, 0.12);
+            --glass-bg-strong:    rgba(255, 255, 255, 0.15);
+            --glass-border:       rgba(255, 255, 255, 0.15);
+            --glass-border-hover: rgba(255, 255, 255, 0.30);
+            --glass-blur:         blur(15px);
+            --glass-text:         #ffffff;
+            --glass-text-muted:   rgba(255, 255, 255, 0.70);
+            --glass-text-subtle:  rgba(255, 255, 255, 0.50);
         }
 
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                         'Helvetica Neue', Arial, sans-serif;
+            background: var(--primary-gradient);
             min-height: 100vh;
-            color: #1e293b;
+            color: var(--glass-text);
             line-height: 1.6;
         }
 
         .container {
-            max-width: 800px;
+            max-width: 600px;
             margin: 0 auto;
             padding: 20px;
         }
 
-        /* HEADER - Transparent with Logo */
+        /* HEADER */
         .header {
             background: transparent;
             text-align: center;
@@ -89,9 +109,7 @@ CHANGE LOG
             margin-bottom: 15px;
         }
 
-        .logo-container {
-            flex-shrink: 0;
-        }
+        .logo-container { flex-shrink: 0; }
 
         .logo-image {
             width: 120px;
@@ -109,1003 +127,544 @@ CHANGE LOG
         }
 
         .header-title {
-            font-size: 2.5rem;
+            font-size: 2.2rem;
             font-weight: 700;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            line-height: 1.1;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            color: white;
         }
 
         .header-subtitle {
-            font-size: 1.1rem;
-            opacity: 0.95;
+            font-size: 1rem;
             font-weight: 500;
+            color: rgba(255,255,255,0.9);
+            margin-top: 4px;
         }
 
-        /* CONTENT CARD */
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 30px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-        }
-
-        .card-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #1e293b;
-            margin-bottom: 20px;
-        }
-
-        /* STEPS INDICATOR */
-        .steps-container {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 30px;
-            padding: 0 20px;
-        }
-
-        .step {
-            flex: 1;
-            text-align: center;
-            position: relative;
-        }
-
-        .step:not(:last-child)::after {
-            content: '';
-            position: absolute;
-            top: 15px;
-            right: -50%;
-            width: 100%;
+        .header-divider {
             height: 2px;
-            background: #e2e8f0;
-            z-index: -1;
+            background: linear-gradient(90deg,
+                transparent 0%, rgba(255,255,255,0.3) 10%,
+                rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%,
+                transparent 100%);
+            border-radius: 2px;
+            margin-top: 15px;
         }
 
-        .step.active:not(:last-child)::after {
-            background: #3b82f6;
+        @media (max-width: 480px) {
+            .header-content { flex-direction: column; gap: 15px; }
+            .header-text { align-items: center; text-align: center; }
+            .header-title { font-size: 1.8rem; }
+            .logo-image { width: 70px; height: 70px; }
         }
 
-        .step-number {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background: #e2e8f0;
-            color: #94a3b8;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .step.active .step-number {
-            background: #3b82f6;
-            color: white;
-        }
-
-        .step.completed .step-number {
-            background: #10b981;
-            color: white;
-        }
-
-        .step-label {
-            font-size: 0.75rem;
-            color: #64748b;
-            font-weight: 500;
-        }
-
-        .step.active .step-label {
-            color: #3b82f6;
-            font-weight: 600;
-        }
-
-        /* FORM ELEMENTS */
-        .form-group {
+        /* GLASS PANELS */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 28px;
             margin-bottom: 20px;
         }
+
+        .glass-panel-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--glass-text);
+            margin-bottom: 6px;
+        }
+
+        .glass-panel-subtitle {
+            font-size: 0.9rem;
+            color: var(--glass-text-muted);
+            margin-bottom: 24px;
+        }
+
+        /* GREETING */
+        .greeting {
+            font-size: 1rem;
+            color: var(--glass-text-muted);
+            margin-bottom: 20px;
+        }
+
+        .greeting strong {
+            color: var(--glass-text);
+            font-weight: 600;
+        }
+
+        /* OPTION CARDS */
+        .option-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 400px) {
+            .option-grid { grid-template-columns: 1fr; }
+        }
+
+        .option-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .option-card:hover {
+            background: var(--glass-bg-hover);
+            border-color: var(--glass-border-hover);
+            transform: translateY(-2px);
+        }
+
+        .option-card.selected {
+            background: var(--glass-bg-strong);
+            border-color: rgba(255,255,255,0.5);
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.2);
+        }
+
+        .option-icon {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        .option-label {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--glass-text);
+        }
+
+        /* FORM */
+        .form-group { margin-bottom: 20px; }
 
         .form-label {
             display: block;
             font-weight: 600;
-            color: #334155;
+            color: var(--glass-text);
             margin-bottom: 8px;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .form-input {
             width: 100%;
             padding: 12px 16px;
-            border: 2px solid #e2e8f0;
+            background: rgba(255,255,255,0.12);
+            border: 1px solid var(--glass-border);
             border-radius: 8px;
             font-size: 1rem;
-            font-family: inherit;
-            transition: all 0.2s;
+            color: white;
+            transition: border-color 0.3s ease;
         }
+
+        .form-input::placeholder { color: var(--glass-text-subtle); }
 
         .form-input:focus {
             outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-
-        .form-input:disabled {
-            background: #f1f5f9;
-            cursor: not-allowed;
-        }
-
-        /* RESIDENT SELECTION */
-        .resident-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .resident-option {
-            display: flex;
-            align-items: center;
-            padding: 16px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .resident-option:hover {
-            border-color: #3b82f6;
-            background: #f8fafc;
-        }
-
-        .resident-option.selected {
-            border-color: #3b82f6;
-            background: #eff6ff;
-        }
-
-        .resident-radio {
-            margin-right: 12px;
-            width: 20px;
-            height: 20px;
-            cursor: pointer;
-        }
-
-        .resident-info {
-            flex: 1;
-        }
-
-        .resident-name {
-            font-weight: 600;
-            color: #1e293b;
-            margin-bottom: 4px;
-        }
-
-        .resident-contact {
-            font-size: 0.875rem;
-            color: #64748b;
-        }
-
-        /* DETAIL SELECTION */
-        .detail-options {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-            margin-top: 20px;
-        }
-
-        .detail-card {
-            padding: 16px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-align: center;
-        }
-
-        .detail-card:hover {
-            border-color: #3b82f6;
-            background: #f8fafc;
-        }
-
-        .detail-card.selected {
-            border-color: #3b82f6;
-            background: #eff6ff;
-        }
-
-        .detail-icon {
-            font-size: 2rem;
-            margin-bottom: 8px;
-        }
-
-        .detail-label {
-            font-weight: 600;
-            color: #1e293b;
-            margin-bottom: 4px;
-        }
-
-        .detail-value {
-            font-size: 0.875rem;
-            color: #64748b;
+            border-color: rgba(255,255,255,0.5);
+            background: rgba(255,255,255,0.15);
         }
 
         /* BUTTONS */
-        .btn-group {
-            display: flex;
-            gap: 12px;
-            margin-top: 30px;
-        }
-
-        .btn {
-            flex: 1;
-            padding: 14px 24px;
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+            color: white;
             border: none;
+            padding: 13px 28px;
             border-radius: 8px;
             font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
-            font-family: inherit;
-        }
-
-        .btn-primary {
-            background: #3b82f6;
-            color: white;
+            transition: all 0.3s ease;
+            min-height: 44px;
+            width: 100%;
         }
 
         .btn-primary:hover {
-            background: #2563eb;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59,130,246,0.3);
         }
 
         .btn-primary:disabled {
-            background: #94a3b8;
+            opacity: 0.5;
             cursor: not-allowed;
             transform: none;
         }
 
         .btn-secondary {
-            background: #e2e8f0;
-            color: #334155;
+            background: transparent;
+            color: var(--glass-text-muted);
+            border: 1px solid var(--glass-border);
+            padding: 13px 28px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 44px;
+            width: 100%;
+            margin-top: 10px;
         }
 
         .btn-secondary:hover {
-            background: #cbd5e1;
+            background: var(--glass-bg);
+            color: var(--glass-text);
         }
 
-        /* INFO BOX */
-        .info-box {
-            background: #eff6ff;
-            border-left: 4px solid #3b82f6;
-            padding: 16px;
+        /* STATUS MESSAGES */
+        .status-message {
+            padding: 14px 18px;
             border-radius: 8px;
             margin-bottom: 20px;
+            font-size: 0.9rem;
+            border-left: 4px solid;
         }
 
-        .info-box-title {
-            font-weight: 600;
-            color: #1e40af;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        .status-message.error {
+            background: rgba(239,68,68,0.15);
+            border-left-color: var(--error-red);
+            color: #fca5a5;
         }
 
-        .info-box-text {
-            font-size: 0.95rem;
-            color: #1e40af;
-            line-height: 1.5;
+        .status-message.success {
+            background: rgba(16,185,129,0.15);
+            border-left-color: var(--success-green);
+            color: #6ee7b7;
         }
 
-        /* SUCCESS MESSAGE */
-        .success-message {
-            background: #f0fdf4;
-            border: 2px solid #86efac;
-            border-radius: 12px;
-            padding: 24px;
+        /* LOADING */
+        .loading-panel {
             text-align: center;
+            padding: 40px 28px;
         }
 
-        .success-icon {
-            font-size: 4rem;
-            color: #22c55e;
-            margin-bottom: 16px;
-        }
-
-        .success-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #166534;
-            margin-bottom: 12px;
-        }
-
-        .success-text {
-            color: #15803d;
-            margin-bottom: 20px;
-            line-height: 1.6;
-        }
-
-        /* LOADING SPINNER */
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 20px;
-        }
-
-        .loading.active {
-            display: block;
-        }
-
-        .spinner {
-            border: 4px solid #e2e8f0;
-            border-top: 4px solid #3b82f6;
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.15);
+            border-top: 4px solid white;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
             animation: spin 1s linear infinite;
             margin: 0 auto 16px;
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
+            0%   { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+
+        /* SUCCESS */
+        .success-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+
+        .success-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--glass-text);
+            margin-bottom: 8px;
+        }
+
+        .success-detail {
+            font-size: 0.95rem;
+            color: var(--glass-text-muted);
+            margin-bottom: 24px;
         }
 
         /* NAVIGATION */
         .nav-links {
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin-top: 30px;
+            text-align: center;
+            margin-top: 10px;
         }
 
         .nav-link {
-            color: white;
+            color: rgba(255,255,255,0.7);
             text-decoration: none;
-            font-weight: 500;
-            padding: 10px 20px;
-            border-radius: 6px;
-            background: rgba(255, 255, 255, 0.1);
-            transition: all 0.2s;
+            font-size: 0.9rem;
+            transition: color 0.2s;
         }
 
-        .nav-link:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
+        .nav-link:hover { color: white; }
 
-        /* RESPONSIVE */
-        @media (max-width: 768px) {
-            .header-content {
-                flex-direction: column;
-                gap: 15px;
-            }
-
-            .header-text {
-                align-items: center;
-                text-align: center;
-            }
-
-            .header-title {
-                font-size: 2rem;
-            }
-
-            .logo-image {
-                width: 100px;
-                height: 100px;
-            }
-
-            .steps-container {
-                padding: 0 10px;
-            }
-
-            .step-label {
-                font-size: 0.65rem;
-            }
-
-            .detail-options {
-                grid-template-columns: 1fr;
-            }
-
-            .btn-group {
-                flex-direction: column;
-            }
-        }
-
-        /* HIDDEN SCREENS */
-        .screen {
-            display: none;
-        }
-
-        .screen.active {
-            display: block;
-        }
+        /* HIDDEN */
+        .hidden { display: none; }
     </style>
 </head>
 <body>
-
-
-<!-- ===================================================================
-     UPDATE FORM VIEW - SHOWN AFTER VERIFICATION
-     =================================================================== -->
-<div id="formView" class="container">
-
     <div class="container">
+
         <!-- HEADER -->
         <div class="header">
             <div class="header-content">
                 <div class="logo-container">
-                    <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+                    <img src="logo.png" alt="Lake Illawong Residential Club" class="logo-image">
                 </div>
                 <div class="header-text">
                     <div class="header-title">Update My Details</div>
-                    <div class="header-subtitle">Keep Your Contact Information Current</div>
+                    <div class="header-subtitle">Lake Illawong Residential Club</div>
                 </div>
+            </div>
+            <div class="header-divider"></div>
+        </div>
+
+        <!-- LOADING STATE -->
+        <div class="glass-panel" id="panelLoading">
+            <div class="loading-panel">
+                <div class="loading-spinner"></div>
+                <div style="color: var(--glass-text-muted); font-size: 0.95rem;">Loading...</div>
             </div>
         </div>
 
-        <!-- STEPS INDICATOR -->
-        <div class="steps-container">
-            <div class="step active" id="step1">
-                <div class="step-number">1</div>
-                <div class="step-label">Unit Number</div>
-            </div>
-            <div class="step" id="step2">
-                <div class="step-number">2</div>
-                <div class="step-label">Select Resident</div>
-            </div>
-            <div class="step" id="step3">
-                <div class="step-number">3</div>
-                <div class="step-label">Choose Detail</div>
-            </div>
-            <div class="step" id="step4">
-                <div class="step-number">4</div>
-                <div class="step-label">Update & Submit</div>
-            </div>
-        </div>
+        <!-- MAIN FORM -->
+        <div class="glass-panel hidden" id="panelForm">
+            <div class="glass-panel-title">Contact Details</div>
+            <div class="glass-panel-subtitle" id="greeting"></div>
 
-        <!-- SCREEN 1: ENTER UNIT NUMBER -->
-        <div class="card screen active" id="screen1">
-            <h2 class="card-title">Enter Your Unit Number</h2>
-            
-            <div class="info-box">
-                <div class="info-box-title">
-                    <span>ℹ️</span>
-                    <span>Quick & Easy Updates</span>
-                </div>
-                <div class="info-box-text">
-                    Update your phone number or email address in just a few simple steps. Changes are saved immediately.
-                </div>
-            </div>
+            <div id="statusMessage" class="status-message hidden"></div>
 
             <div class="form-group">
-                <label class="form-label" for="unitNumber">Unit Number</label>
-                <input 
-                    type="text" 
-                    id="unitNumber" 
-                    class="form-input" 
-                    placeholder="e.g., Unit 9"
-                    autocomplete="off"
-                >
+                <div class="form-label">What would you like to update?</div>
+                <div class="option-grid">
+                    <div class="option-card" id="optionEmail" onclick="selectOption('email')">
+                        <div class="option-icon">&#128231;</div>
+                        <div class="option-label">Email Address</div>
+                    </div>
+                    <div class="option-card" id="optionPhone" onclick="selectOption('phone')">
+                        <div class="option-icon">&#128241;</div>
+                        <div class="option-label">Phone Number</div>
+                    </div>
+                </div>
             </div>
 
-            <div class="btn-group">
-                <button class="btn btn-secondary" onclick="window.location.href='ResidentPortal.html'">
-                    Cancel
-                </button>
-                <button class="btn btn-primary" onclick="lookupUnit()">
-                    Continue
-                </button>
+            <div class="form-group hidden" id="inputGroup">
+                <label class="form-label" id="inputLabel" for="newValue">New value</label>
+                <input
+                    type="text"
+                    id="newValue"
+                    class="form-input"
+                    placeholder=""
+                    autocomplete="off">
+            </div>
+
+            <button class="btn-primary hidden" id="btnSubmit" onclick="submitUpdate()">Save Changes</button>
+            <button class="btn-secondary" onclick="window.location.href='ResidentPortal.html'">Back to Resident Portal</button>
+        </div>
+
+        <!-- SUCCESS STATE -->
+        <div class="glass-panel hidden" id="panelSuccess">
+            <div style="text-align: center;">
+                <div class="success-icon">&#10003;</div>
+                <div class="success-title">Details Updated</div>
+                <div class="success-detail" id="successDetail"></div>
+                <button class="btn-primary" onclick="resetForm()">Update Another</button>
+                <button class="btn-secondary" onclick="window.location.href='ResidentPortal.html'">Back to Resident Portal</button>
             </div>
         </div>
 
-        <!-- SCREEN 2: SELECT RESIDENT -->
-        <div class="card screen" id="screen2">
-            <h2 class="card-title">Select Resident</h2>
-            
-            <div class="info-box">
-                <div class="info-box-title">
-                    <span>👤</span>
-                    <span>Multiple Residents</span>
-                </div>
-                <div class="info-box-text">
-                    This unit has multiple residents. Please select the person whose details you want to update.
-                </div>
-            </div>
-
-            <div id="residentList" class="resident-list">
-                <!-- Populated dynamically -->
-            </div>
-
-            <div class="btn-group">
-                <button class="btn btn-secondary" onclick="goToScreen(1)">
-                    Back
-                </button>
-                <button class="btn btn-primary" id="selectResidentBtn" disabled onclick="selectResident()">
-                    Continue
-                </button>
-            </div>
-        </div>
-
-        <!-- SCREEN 3: CHOOSE DETAIL TO UPDATE -->
-        <div class="card screen" id="screen3">
-            <h2 class="card-title">What Would You Like to Update?</h2>
-            
-            <div class="info-box">
-                <div class="info-box-title">
-                    <span>📝</span>
-                    <span>Current Information</span>
-                </div>
-                <div class="info-box-text">
-                    Select the contact detail you want to change. Your current information is shown below.
-                </div>
-            </div>
-
-            <div class="detail-options" id="detailOptions">
-                <!-- Populated dynamically -->
-            </div>
-
-            <div class="btn-group">
-                <button class="btn btn-secondary" onclick="goToScreen(2)">
-                    Back
-                </button>
-                <button class="btn btn-primary" id="selectDetailBtn" disabled onclick="selectDetail()">
-                    Continue
-                </button>
-            </div>
-        </div>
-
-        <!-- SCREEN 4: ENTER NEW VALUE -->
-        <div class="card screen" id="screen4">
-            <h2 class="card-title">Enter New Information</h2>
-            
-            <div class="info-box">
-                <div class="info-box-title">
-                    <span>✏️</span>
-                    <span id="updateTypeLabel">Update Information</span>
-                </div>
-                <div class="info-box-text" id="currentValueText">
-                    <!-- Populated dynamically -->
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label" id="newValueLabel">New Value</label>
-                <input 
-                    type="text" 
-                    id="newValue" 
-                    class="form-input" 
-                    placeholder="Enter new value"
-                >
-            </div>
-
-            <div class="btn-group">
-                <button class="btn btn-secondary" onclick="goToScreen(3)">
-                    Back
-                </button>
-                <button class="btn btn-primary" onclick="submitUpdate()">
-                    Update Details
-                </button>
-            </div>
-        </div>
-
-        <!-- SCREEN 5: SUCCESS -->
-        <div class="card screen" id="screen5">
-            <div class="success-message">
-                <div class="success-icon">✅</div>
-                <h2 class="success-title">Details Updated Successfully!</h2>
-                <div class="success-text">
-                    Your contact information has been updated in our system.
-                    <br><br>
-                    <strong id="confirmationText"><!-- Populated dynamically --></strong>
-                    <br><br>
-                    A confirmation email has been sent to the updated address.
-                </div>
-                
-            </div>
-        </div>
-
-        <!-- LOADING -->
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <div>Processing your request...</div>
-        </div>
-
-        <!-- NAVIGATION -->
         <div class="nav-links">
-            <a href="ResidentPortal.html" class="nav-link">← Back to Resident Portal</a>
+            <a href="ResidentPortal.html" class="nav-link">&#8592; Back to Resident Portal</a>
         </div>
+
     </div>
 
     <script>
+// =====================================================================
+// UPDATE MY DETAILS V3.3
+// =====================================================================
+// Authentication: VerificationModal V1.0, session key lakeIllawongVerified
+// No second API call post-OTP — unit and name come from userData directly.
+// Backend: ManagementCentral V1.4 updateContactDetails action.
+// =====================================================================
 
-// ===================================================================
-// RESIDENT DETAILS UPDATE V3.0 - STANDALONE OTP AUTHENTICATION
-// ===================================================================
+const API_URL = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec';
 
-// API
-const API_URL_MGMT = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec';
+let currentUnit = null;
+let currentName = null;
+let selectedOption = null; // 'email' or 'phone'
 
-// Initialize verification on page load
+// ---------------------------------------------------------------
+// INITIALISATION
+// ---------------------------------------------------------------
+
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🏠 Resident Details Update V3.0 - Standalone OTP Authentication');
-
     const alreadyVerified = VerificationModal.init({
         moduleName: 'Update My Details',
-        moduleIcon: '🏠',
+        moduleIcon: '&#127968;',
         sessionKey: 'lakeIllawongVerified',
         smsOnly: false,
         onSuccess: handleVerificationSuccess
     });
 
     if (!alreadyVerified) {
+        showPanel('panelLoading');
         VerificationModal.show();
     }
 });
 
 function handleVerificationSuccess(userData) {
-    const unit = userData.unit;
-    const name = userData.name;
-    if (unit) {
-        loadResidentFromSession(unit, name);
-    }
+    currentUnit = userData.unit;
+    currentName = userData.name ? userData.name.split(' ')[0] : 'Resident';
+
+    document.getElementById('greeting').textContent =
+        'Hello ' + currentName + '. Select what you would like to update below.';
+
+    showPanel('panelForm');
 }
 
-// Load resident details using unit from session
-function loadResidentFromSession(unit, name) {
-    showLoading(true);
-    
-    const phone = sessionStorage.getItem('lakeIllawongVerified_identifier');
-    
-    if (!phone) {
-        alert('Unable to load your details. Please return to the portal and verify again.');
-        showLoading(false);
+// ---------------------------------------------------------------
+// OPTION SELECTION
+// ---------------------------------------------------------------
+
+function selectOption(type) {
+    selectedOption = type;
+
+    document.getElementById('optionEmail').classList.toggle('selected', type === 'email');
+    document.getElementById('optionPhone').classList.toggle('selected', type === 'phone');
+
+    const inputGroup = document.getElementById('inputGroup');
+    const inputLabel = document.getElementById('inputLabel');
+    const input      = document.getElementById('newValue');
+    const btnSubmit  = document.getElementById('btnSubmit');
+
+    inputLabel.textContent = type === 'email' ? 'New Email Address' : 'New Phone Number';
+    input.type        = type === 'email' ? 'email' : 'tel';
+    input.placeholder = type === 'email' ? 'example@email.com' : '0412 345 678';
+    input.value = '';
+
+    inputGroup.classList.remove('hidden');
+    btnSubmit.classList.remove('hidden');
+
+    clearStatus();
+    input.focus();
+}
+
+// ---------------------------------------------------------------
+// SUBMISSION
+// ---------------------------------------------------------------
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && selectedOption) submitUpdate();
+});
+
+function submitUpdate() {
+    const newValue = document.getElementById('newValue').value.trim();
+
+    if (!selectedOption) {
+        showStatus('Please select what you want to update.', 'error');
         return;
     }
-    
-    const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-    
+
+    if (!newValue) {
+        showStatus('Please enter a new value.', 'error');
+        return;
+    }
+
+    if (selectedOption === 'email' && !validateEmail(newValue)) {
+        showStatus('Please enter a valid email address.', 'error');
+        return;
+    }
+
+    if (selectedOption === 'phone' && !validatePhone(newValue)) {
+        showStatus('Please enter a valid phone number.', 'error');
+        return;
+    }
+
+    const btnSubmit = document.getElementById('btnSubmit');
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = 'Saving...';
+    clearStatus();
+
+    const callbackName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    const script = document.createElement('script');
+
     window[callbackName] = function(response) {
         delete window[callbackName];
-        document.head.removeChild(script);
-        
-        if (response.success && response.verified) {
-            currentUnit = response.unit;
-            selectedResident = {
-                name: response.name,
-                email: response.email,
-                phone: response.phone
-            };
-            displayDetailOptions();
-            goToScreen(3);
+        try { document.head.removeChild(script); } catch(e) {}
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = 'Save Changes';
+
+        if (response.success) {
+            const label = selectedOption === 'email' ? 'Email address' : 'Phone number';
+            document.getElementById('successDetail').textContent =
+                label + ' updated to: ' + newValue;
+            showPanel('panelSuccess');
         } else {
-            alert('Unable to load your details. Please try again or contact management.');
+            showStatus('Unable to save changes: ' + (response.error || 'Please try again.'), 'error');
         }
-        showLoading(false);
     };
-    
-    const script = document.createElement('script');
-    script.src = `${API_URL_MGMT}?action=verifyIdentity&phoneNumber=${encodeURIComponent(phone)}&callback=${callbackName}`;
+
     script.onerror = function() {
-        console.error('API connection failed');
-        showLoading(false);
         delete window[callbackName];
-        document.head.removeChild(script);
+        try { document.head.removeChild(script); } catch(e) {}
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = 'Save Changes';
+        showStatus('Connection error. Please try again.', 'error');
     };
+
+    const params = new URLSearchParams({
+        action: 'updateContactDetails',
+        unitNumber: currentUnit,
+        residentName: currentName,
+        detailType: selectedOption,
+        newValue: newValue,
+        callback: callbackName
+    });
+
+    script.src = API_URL + '?' + params.toString();
     document.head.appendChild(script);
 }
 
-// ===================================================================
-// EXISTING UPDATE FORM CODE CONTINUES BELOW...
-// ===================================================================
-// (Keep all your existing form submission, validation, update logic)
+// ---------------------------------------------------------------
+// RESET
+// ---------------------------------------------------------------
 
-        // Configuration
-       const API_URL = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec';
-        
-        // State Management
-        let currentUnit = null;
-        let selectedResident = null;
-        let selectedDetail = null;
-        let unitResidents = [];
+function resetForm() {
+    selectedOption = null;
+    document.getElementById('newValue').value = '';
+    document.getElementById('inputGroup').classList.add('hidden');
+    document.getElementById('btnSubmit').classList.add('hidden');
+    document.getElementById('optionEmail').classList.remove('selected');
+    document.getElementById('optionPhone').classList.remove('selected');
+    clearStatus();
+    showPanel('panelForm');
+}
 
-        // Initialize
-        console.log('🏠 Update My Details Module v1.0 - Initialized');
+// ---------------------------------------------------------------
+// HELPERS
+// ---------------------------------------------------------------
 
-        // Step Management
-        function goToScreen(screenNum) {
-            // Hide all screens
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            
-            // Show target screen
-            document.getElementById(`screen${screenNum}`).classList.add('active');
-            
-            // Update step indicators
-            for (let i = 1; i <= 4; i++) {
-                const step = document.getElementById(`step${i}`);
-                step.classList.remove('active', 'completed');
-                
-                if (i < screenNum) {
-                    step.classList.add('completed');
-                } else if (i === screenNum) {
-                    step.classList.add('active');
-                }
-            }
-        }
+function showPanel(id) {
+    ['panelLoading', 'panelForm', 'panelSuccess'].forEach(function(p) {
+        document.getElementById(p).classList.add('hidden');
+    });
+    document.getElementById(id).classList.remove('hidden');
+}
 
-        // API Call with JSONP
-        function callAPI(action, params) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                
-                window[callbackName] = function(response) {
-                    delete window[callbackName];
-                    const script = document.getElementById(callbackName);
-                    if (script) script.remove();
-                    resolve(response);
-                };
+function showStatus(msg, type) {
+    const el = document.getElementById('statusMessage');
+    el.textContent = msg;
+    el.className = 'status-message ' + type;
+    el.classList.remove('hidden');
+}
 
-                const queryParams = new URLSearchParams({
-                    action: action,
-                    callback: callbackName,
-                    ...params
-                });
+function clearStatus() {
+    const el = document.getElementById('statusMessage');
+    el.classList.add('hidden');
+    el.textContent = '';
+}
 
-                const script = document.createElement('script');
-                script.id = callbackName;
-                script.src = `${API_URL}?${queryParams.toString()}`;
-                script.onerror = () => {
-                    delete window[callbackName];
-                    reject(new Error('API call failed'));
-                };
-                
-                document.body.appendChild(script);
-            });
-        }
+function validateEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
-        // STEP 1: Lookup Unit
-        async function lookupUnit() {
-            const unitInput = document.getElementById('unitNumber').value.trim();
-            
-            if (!unitInput) {
-                alert('Please enter your unit number');
-                return;
-            }
-
-            showLoading(true);
-
-            try {
-                const response = await callAPI('getUnitResidents', { unitNumber: unitInput });
-                
-                if (!response.success) {
-                    alert('Unit not found. Please check your unit number and try again.');
-                    showLoading(false);
-                    return;
-                }
-
-                if (response.residents.length === 0) {
-                    alert('No residents found for this unit. Please contact the office.');
-                    showLoading(false);
-                    return;
-                }
-
-                currentUnit = unitInput;
-                unitResidents = response.residents;
-                
-                displayResidents();
-                goToScreen(2);
-                showLoading(false);
-
-            } catch (error) {
-                console.error('Error looking up unit:', error);
-                alert('Error connecting to server. Please try again.');
-                showLoading(false);
-            }
-        }
-
-        // Display Residents
-        function displayResidents() {
-            const container = document.getElementById('residentList');
-            container.innerHTML = '';
-
-            unitResidents.forEach((resident, index) => {
-                const div = document.createElement('div');
-                div.className = 'resident-option';
-                div.onclick = () => selectResidentOption(index);
-                
-                div.innerHTML = `
-                    <input type="radio" name="resident" class="resident-radio" id="resident${index}">
-                    <div class="resident-info">
-                        <div class="resident-name">${resident.name}</div>
-                        <div class="resident-contact">
-                            ${resident.email ? `📧 ${resident.email}` : ''}
-                            ${resident.email && resident.phone ? ' • ' : ''}
-                            ${resident.phone ? `📱 ${resident.phone}` : ''}
-                        </div>
-                    </div>
-                `;
-                
-                container.appendChild(div);
-            });
-        }
-
-        // Select Resident Option
-        function selectResidentOption(index) {
-            // Clear previous selection
-            document.querySelectorAll('.resident-option').forEach(opt => {
-                opt.classList.remove('selected');
-            });
-            
-            // Set new selection
-            document.querySelectorAll('.resident-option')[index].classList.add('selected');
-            document.getElementById(`resident${index}`).checked = true;
-            document.getElementById('selectResidentBtn').disabled = false;
-            
-            selectedResident = unitResidents[index];
-        }
-
-        // STEP 2: Confirm Resident Selection
-        function selectResident() {
-            if (!selectedResident) {
-                alert('Please select a resident');
-                return;
-            }
-
-            displayDetailOptions();
-            goToScreen(3);
-        }
-
-        // Display Detail Options
-        function displayDetailOptions() {
-            const container = document.getElementById('detailOptions');
-            container.innerHTML = '';
-
-            const options = [
-                {
-                    type: 'email',
-                    icon: '📧',
-                    label: 'Email Address',
-                    value: selectedResident.email || 'Not set',
-                    field: 'email'
-                },
-                {
-                    type: 'phone',
-                    icon: '📱',
-                    label: 'Phone Number',
-                    value: selectedResident.phone || 'Not set',
-                    field: 'phone'
-                }
-            ];
-
-            options.forEach((option, index) => {
-                const div = document.createElement('div');
-                div.className = 'detail-card';
-                div.onclick = () => selectDetailOption(option);
-                
-                div.innerHTML = `
-                    <div class="detail-icon">${option.icon}</div>
-                    <div class="detail-label">${option.label}</div>
-                    <div class="detail-value">${option.value}</div>
-                `;
-                
-                container.appendChild(div);
-            });
-        }
-
-        // Select Detail Option
-        function selectDetailOption(option) {
-            // Clear previous selection
-            document.querySelectorAll('.detail-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-            
-            // Set new selection
-            event.target.closest('.detail-card').classList.add('selected');
-            document.getElementById('selectDetailBtn').disabled = false;
-            
-            selectedDetail = option;
-        }
-
-        // STEP 3: Confirm Detail Selection
-        function selectDetail() {
-            if (!selectedDetail) {
-                alert('Please select a detail to update');
-                return;
-            }
-
-            // Update screen 4 with selected detail info
-            document.getElementById('updateTypeLabel').textContent = `Update ${selectedDetail.label}`;
-            document.getElementById('currentValueText').textContent = 
-                `Current ${selectedDetail.label.toLowerCase()}: ${selectedDetail.value}`;
-            document.getElementById('newValueLabel').textContent = `New ${selectedDetail.label}`;
-            
-            // Set input type based on detail type
-            const input = document.getElementById('newValue');
-            input.type = selectedDetail.type === 'email' ? 'email' : 'tel';
-            input.value = '';
-            input.placeholder = selectedDetail.type === 'email' ? 
-                'example@email.com' : '0412 345 678';
-
-            goToScreen(4);
-        }
-
-        // STEP 4: Submit Update
-        
-async function submitUpdate() {
-            const newValue = document.getElementById('newValue').value.trim();
-            
-            if (!newValue) {
-                alert('Please enter a new value');
-                return;
-            }
-
-            // Validate based on type
-            if (selectedDetail.type === 'email' && !validateEmail(newValue)) {
-                alert('Please enter a valid email address');
-                return;
-            }
-
-            if (selectedDetail.type === 'phone' && !validatePhone(newValue)) {
-                alert('Please enter a valid phone number');
-                return;
-            }
-
-            showLoading(true);
-
-            try {
-                const response = await callAPI('updateContactDetails', {
-                    unitNumber: currentUnit,
-                    residentName: selectedResident.name,
-                    detailType: selectedDetail.field,
-                    newValue: newValue,
-                    oldValue: selectedDetail.value
-                });
-
-                if (response.success) {
-                    document.getElementById('confirmationText').textContent = 
-                        `${selectedDetail.label} updated to: ${newValue}`;
-                    goToScreen(5);
-                } else {
-                    alert('Error updating details: ' + (response.error || 'Unknown error'));
-                }
-
-                showLoading(false);
-
-            } catch (error) {
-                console.error('Error submitting update:', error);
-                alert('Error connecting to server. Please try again.');
-                showLoading(false);
-            }
-        }
-
-        // Validation Functions
-        function validateEmail(email) {
-            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-        }
-
-        function validatePhone(phone) {
-            // Basic phone validation - adjust as needed
-            return /^[\d\s\-\(\)\+]+$/.test(phone) && phone.replace(/\D/g, '').length >= 8;
-        }
-
-        // Loading State
-        function showLoading(show) {
-            const loading = document.getElementById('loading');
-            const screens = document.querySelectorAll('.screen');
-            
-            if (show) {
-                loading.classList.add('active');
-                screens.forEach(s => s.style.display = 'none');
-            } else {
-                loading.classList.remove('active');
-                screens.forEach(s => s.style.display = '');
-            }
-        }
-
-        // Enter key support
-        document.getElementById('unitNumber').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') lookupUnit();
-        });
-
-        document.getElementById('newValue').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') submitUpdate();
-        });
+function validatePhone(phone) {
+    return /^[\d\s\-\(\)\+]+$/.test(phone) && phone.replace(/\D/g, '').length >= 8;
+}
 
     </script>
 </body>
