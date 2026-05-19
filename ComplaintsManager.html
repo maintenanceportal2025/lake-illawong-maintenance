@@ -6,13 +6,19 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.1.20
+  Frontend Version: V2.1.21
   Backend:          ComplaintsManager V1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.1.21 (May 2026): Send to Resident button added (green, explicit
+    Board action). Board Response no longer auto-emails on save.
+    Confirmation dialog before send. 72-hour notice updated to reflect
+    explicit send model. respondedAt set in cache only on confirmed
+    send. Backend updated to ComplaintsManager V2.0.7.
+
   V2.1.20 (May 2026): Board Response detail pane removed entirely.
     Board Response History renamed to Board Response -- single source
     of truth showing all entries with timestamps in update panel.
@@ -633,6 +639,12 @@ TECHNICAL:
         .activity-log-entry:last-child { border-bottom: none; }
         .activity-log-empty { font-size: 0.82rem; color: rgba(255,255,255,0.4); font-style: italic; }
 
+        .btn-send-resident { padding: 10px 20px; background: rgba(110,231,183,0.15); border: 1px solid rgba(110,231,183,0.5); border-radius: 2px; color: #6ee7b7; font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-left: 8px; }
+        .btn-send-resident:hover { background: rgba(110,231,183,0.25); }
+        .btn-send-resident:disabled { opacity: 0.5; cursor: not-allowed; }
+        .send-feedback { display: inline-block; margin-left: 10px; font-size: 0.82rem; font-weight: 600; }
+        .send-feedback.success { color: #6ee7b7; }
+        .send-feedback.error   { color: #fca5a5; }
         .btn-add-comment { display: block; width: 100%; padding: 10px 18px; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.6); border-radius: 2px; color: #fbbf24; font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-top: 8px; margin-bottom: 16px; text-align: center; }
         .btn-add-comment:hover    { background: rgba(251,191,36,0.35); }
         .btn-add-comment:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -1043,21 +1055,23 @@ TECHNICAL:
                 <div class="update-row">
                     <div class="update-field">
                         ${c.respondedAt ? `
-                        <label>Board Response (sent to resident)</label>
+                        <label>Board Response</label>
                         <div class="board-response-readonly">${escHtml(c.boardResponse)}</div>
                         ${responseNotice}
-                        <label for="response-${safeRef}" style="margin-top:12px; display:block;">Add to Board Response (will be emailed to resident automatically)</label>
-                        <textarea id="response-${safeRef}" placeholder="Enter additional response — will be appended to the record and emailed to resident..."></textarea>
+                        <label for="response-${safeRef}" style="margin-top:12px; display:block;">Add to Board Response</label>
+                        <textarea id="response-${safeRef}" placeholder="Enter additional response to append to the record..."></textarea>
                         ` : `
-                        <label for="response-${safeRef}">Board Response (sent to resident)</label>
+                        <label for="response-${safeRef}">Board Response</label>
                         ${responseNotice}
                         <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response..."></textarea>
                         `}
                     </div>
                 </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}')">Save Update</button>
+                <button class="btn-send-resident" id="send-${safeRef}" onclick="sendToResident('${safeRef}')">&#9993; Send to Resident</button>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
+                <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
                 <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:16px;">
                     ${activityLogHtml}
                     <div class="update-row">
@@ -1144,7 +1158,6 @@ TECHNICAL:
                     const nowTs = new Date().toString();
                     if (effectiveStatus === 'Closed'    && !allComplaints[idx].closedAt)    allComplaints[idx].closedAt    = nowTs;
                     if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
-                    if (boardResponse && !allComplaints[idx].respondedAt) allComplaints[idx].respondedAt = nowTs;
                     if (boardResponse) {
                         const existing = allComplaints[idx].boardResponse || '';
                         if (!existing) {
@@ -1261,6 +1274,78 @@ TECHNICAL:
             clearTimeout(timeout); cleanup(callbackName);
             btn.disabled = false; btn.textContent = 'Add Comment';
             feedback.textContent = 'Network error — please try again.'; feedback.className = 'comment-feedback error';
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
+
+    function sendToResident(ref) {
+        const current  = allComplaints.find(c => c.referenceNumber === ref);
+        if (!current || !current.boardResponse) {
+            alert('No Board Response recorded yet. Save a Board Response before sending.');
+            return;
+        }
+        if (!current.contactEmail) {
+            alert('No email address on file for this resident. Cannot send.');
+            return;
+        }
+
+        const btn      = document.getElementById('send-'        + ref);
+        const feedback = document.getElementById('sendfeedback-' + ref);
+        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+
+        if (!confirm('Send the current Board Response to ' + current.residentName + ' at ' + current.contactEmail + '?\n\nThis will email the full Board Response record to the resident.')) return;
+
+        btn.disabled    = true;
+        btn.textContent = 'Sending...';
+        feedback.textContent = '';
+        feedback.className   = 'send-feedback';
+
+        const callbackName = 'sendCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=sendBoardResponse'
+            + '&ref='      + encodeURIComponent(ref)
+            + '&userName=' + encodeURIComponent(userName)
+            + '&callback=' + callbackName;
+
+        const timeout = setTimeout(function() {
+            cleanup(callbackName);
+            btn.disabled = false; btn.textContent = '✉ Send to Resident';
+            feedback.textContent = 'Timed out — please try again.'; feedback.className = 'send-feedback error';
+        }, 20000);
+
+        window[callbackName] = function(data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            btn.disabled = false; btn.textContent = '✉ Send to Resident';
+            if (data.success) {
+                feedback.textContent = 'Sent successfully.'; feedback.className = 'send-feedback success';
+                // Update respondedAt in cache
+                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                if (idx !== -1 && !allComplaints[idx].respondedAt) {
+                    allComplaints[idx].respondedAt = new Date().toString();
+                    // Rebuild card to show green notice
+                    const cardEl = document.getElementById('card-' + ref);
+                    if (cardEl) {
+                        const newCard = document.createElement('div');
+                        newCard.innerHTML = buildCard(allComplaints[idx]);
+                        cardEl.replaceWith(newCard.firstElementChild);
+                        const newDetail = document.getElementById('card-' + ref);
+                        if (newDetail) {
+                            const detailEl = newDetail.querySelector('.card-detail');
+                            if (detailEl) detailEl.style.display = 'block';
+                        }
+                    }
+                }
+            } else {
+                feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'send-feedback error';
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function() {
+            clearTimeout(timeout); cleanup(callbackName);
+            btn.disabled = false; btn.textContent = '✉ Send to Resident';
+            feedback.textContent = 'Network error.'; feedback.className = 'send-feedback error';
         };
         script.src = url;
         document.head.appendChild(script);
