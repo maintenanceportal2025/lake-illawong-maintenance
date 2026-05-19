@@ -466,9 +466,7 @@ CHANGE LOG
             </div>
         </div>
 
-        <div class="nav-links">
-            <a href="ResidentPortal.html" class="nav-link">&#8592; Back to Resident Portal</a>
-        </div>
+
 
     </div>
 
@@ -487,6 +485,7 @@ let currentUnit = null;
 let currentName = null;     // full name — used for API call
 let currentFirstName = null; // display only
 let selectedOption = null;  // 'email' or 'phone'
+let currentOldValue = null;  // current value from sheet, for audit log
 
 // ---------------------------------------------------------------
 // INITIALISATION
@@ -524,6 +523,7 @@ function handleVerificationSuccess(userData) {
 
 function selectOption(type) {
     selectedOption = type;
+    currentOldValue = null;
 
     document.getElementById('optionEmail').classList.toggle('selected', type === 'email');
     document.getElementById('optionPhone').classList.toggle('selected', type === 'phone');
@@ -543,6 +543,40 @@ function selectOption(type) {
 
     clearStatus();
     input.focus();
+
+    // Fetch current value for audit log oldValue
+    fetchCurrentValue(type);
+}
+
+function fetchCurrentValue(type) {
+    const callbackName = 'jsonp_cur_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    const script = document.createElement('script');
+
+    window[callbackName] = function(response) {
+        delete window[callbackName];
+        try { document.head.removeChild(script); } catch(e) {}
+        if (response.success && response.residents && response.residents.length > 0) {
+            const resident = response.residents.find(function(r) {
+                return r.name === currentName;
+            }) || response.residents[0];
+            currentOldValue = type === 'email' ? (resident.email || '') : (resident.phone || '');
+        }
+    };
+
+    script.onerror = function() {
+        delete window[callbackName];
+        try { document.head.removeChild(script); } catch(e) {}
+        // Non-fatal — oldValue will be empty string if fetch fails
+    };
+
+    const params = new URLSearchParams({
+        action: 'getUnitResidents',
+        unitNumber: currentUnit,
+        callback: callbackName
+    });
+
+    script.src = API_URL + '?' + params.toString();
+    document.head.appendChild(script);
 }
 
 // ---------------------------------------------------------------
@@ -614,6 +648,7 @@ function submitUpdate() {
         residentName: currentName,
         detailType: selectedOption,
         newValue: newValue,
+        oldValue: currentOldValue || '',
         callback: callbackName
     });
 
