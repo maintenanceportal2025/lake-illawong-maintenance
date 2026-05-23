@@ -4,7 +4,7 @@
 =====================================================================
 PURPOSE: Centralized viewer for all system logging activities
 PORTAL: SysAdmin Portal Module
-VERSION: v1.3.1
+VERSION: v1.3.2
 LAST UPDATED: May 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Glass-morphism applied to all UI panels, stats, filter bars, tab nav
@@ -805,6 +805,17 @@ VERSION HISTORY:
             return { from: from || '', to: to || '' };
         }
 
+        // Calculate days between the two date picker values for backend
+        function getDays(fromId, toId, rangeSelectId) {
+            const rangeVal = document.getElementById(rangeSelectId).value;
+            if (rangeVal !== 'custom') return parseInt(rangeVal);
+            const from = document.getElementById(fromId).value;
+            const to   = document.getElementById(toId).value;
+            if (!from || !to) return 30;
+            const diff = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+            return Math.min(Math.max(diff, 1), 90);
+        }
+
         // Apply a preset number of days: populate the date pickers then reload
         function applyPreset(days, fromId, toId, loadFn) {
             if (days === 'custom') { loadFn(); return; }
@@ -837,6 +848,7 @@ VERSION HISTORY:
         async function loadEmailLogs() {
             const container = document.getElementById('email-logs-container');
             const { from, to } = getDateRange('email-date-from', 'email-date-to');
+            const days = getDays('email-date-from', 'email-date-to', 'email-range-select');
             
             container.innerHTML = `
                 <div class="loading">
@@ -846,7 +858,7 @@ VERSION HISTORY:
             `;
             
             try {
-                const response = await callAPI('getEmailLogs', { from: from, to: to });
+                const response = await callAPI('getEmailLogs', { days: days });
                 
                 if (!response.success) {
                     throw new Error(response.error || 'Failed to load email logs');
@@ -965,6 +977,7 @@ VERSION HISTORY:
         async function loadSMSLogs() {
             const container = document.getElementById('sms-logs-container');
             const { from, to } = getDateRange('sms-date-from', 'sms-date-to');
+            const days = getDays('sms-date-from', 'sms-date-to', 'sms-range-select');
             
             container.innerHTML = `
                 <div class="loading">
@@ -974,7 +987,7 @@ VERSION HISTORY:
             `;
             
             try {
-                const response = await callAPI('getSMSLogs', { from: from, to: to });
+                const response = await callAPI('getSMSLogs', { days: days });
                 
                 if (!response.success) {
                     throw new Error(response.error || 'Failed to load SMS logs');
@@ -1142,6 +1155,7 @@ VERSION HISTORY:
         async function loadContactLogs() {
             const container = document.getElementById('contact-logs-container');
             const { from, to } = getDateRange('contact-date-from', 'contact-date-to');
+            const days = getDays('contact-date-from', 'contact-date-to', 'contact-range-select');
             
             container.innerHTML = `
                 <div class="loading">
@@ -1151,7 +1165,7 @@ VERSION HISTORY:
             `;
             
             try {
-                const response = await callAPI('getContactLogs', { from: from, to: to });
+                const response = await callAPI('getContactLogs', { days: days });
                 
                 if (!response.success) {
                     throw new Error(response.error || 'Failed to load contact logs');
@@ -1429,6 +1443,7 @@ VERSION HISTORY:
 
         function loadAccessLog() {
             const { from, to } = getDateRange('access-date-from', 'access-date-to');
+            const days = getDays('access-date-from', 'access-date-to', 'access-range-select');
             const type = document.getElementById('access-type-filter').value;
 
             document.getElementById('access-log-container').innerHTML = `
@@ -1458,8 +1473,7 @@ VERSION HISTORY:
             const script = document.createElement('script');
             script.id  = callbackName;
             script.src = MGMT_URL + '?action=getAccessLog&callback=' + callbackName
-                       + '&from=' + encodeURIComponent(from)
-                       + '&to='   + encodeURIComponent(to)
+                       + '&days=' + encodeURIComponent(days)
                        + '&type=' + encodeURIComponent(type);
             script.onerror = function() {
                 delete window[callbackName];
