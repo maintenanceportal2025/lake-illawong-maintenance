@@ -4,8 +4,14 @@ PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
 PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: V1.4.0 - Glass-morphism conversion (Design System V2.0)
-LAST UPDATED: March 2026
+VERSION: V1.4.1
+LAST UPDATED: May 2026
+
+CHANGELOG V1.4.1:
+ - FIXED: "Open in Maintenance Module" button now stores PID in sessionStorage
+   before navigating, so the search survives any auth redirect
+ - Changed to direct navigation to MaintenanceModule.html (not via portal)
+ - MaintenanceModule reads 'pendingSearch' from sessionStorage on load
 
 CHANGELOG V1.3.12:
  - Added search box (PID and Unit Number)
@@ -1632,9 +1638,18 @@ function applySearch() {
             const pidForURL = friendlyPID.replace(/\s+/g, '');
             // Extract just the number (e.g., "PID160113" → "160113")
             const searchNumber = pidForURL.replace(/^PID/i, '');
-            // Use ?search= parameter to match email link behavior
-            const url = `MaintenanceModule.html?search=${encodeURIComponent(searchNumber)}`;
             
+            // Store in sessionStorage so search survives any auth redirect.
+            // MaintenanceModule reads 'pendingSearch' on load and applies it
+            // even if the ?search= URL param was stripped during auth flow.
+            try {
+                sessionStorage.setItem('pendingSearch', searchNumber);
+            } catch(e) {
+                // sessionStorage unavailable - URL param will be the fallback
+            }
+            
+            // Navigate directly to MaintenanceModule with ?search= param
+            const url = `MaintenanceModule.html?search=${encodeURIComponent(searchNumber)}`;
             window.location.href = url;
         }
 
