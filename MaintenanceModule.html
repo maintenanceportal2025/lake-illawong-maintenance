@@ -7,11 +7,11 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.2
+  Frontend Version: V1.2.3
   Backend:          MaintenancePortal V1.5.js
   Status:           PRODUCTION
   Created:          September 2025
-  Last Modified:    March 2026
+  Last Modified:    May 2026
 
 VERSION HISTORY:
   V1.0.0 (Sep 2025): Production release - unified system integration
@@ -25,6 +25,10 @@ VERSION HISTORY:
                      Priority counts fixed to always reflect active queue only
                      Activity report updated to use activeProblems cache
                      Scheduled status added to active subset
+V1.2.3 (May 2026): sessionStorage fallback in captureSearchParameter()
+                     Supports ProblemQueue 'Open in Maintenance Module' button
+                     surviving auth redirect — reads 'pendingSearch' key set by
+                     ProblemQueue V1.4.1 before navigating
 V1.2.1 (Mar 2026): Auto-refresh after save — re-fetches active problems
                      on successful save, re-opens detail view with fresh
                      activity timeline; returns to list if problem no longer
@@ -124,7 +128,7 @@ TECHNICAL:
         rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%,
         transparent 100%);
     border-radius: 2px;
-    margin: 20px 0 40px 0;
+    margin: 20px 0;
 }
 
 /* Mobile responsive header - Unified Design System v1.4 */
@@ -1607,30 +1611,44 @@ let sortNewestFirst = false; // Default: Oldest first (current behavior)
             initializeSystem();
         });
 
-        // NEW FUNCTION: Capture search parameter from URL
+        // Capture search parameter from URL or sessionStorage.
+        // sessionStorage fallback handles the case where ProblemQueue navigates here
+        // via auth redirect which strips the ?search= URL parameter.
+        // ProblemQueue V1.4.1 writes 'pendingSearch' to sessionStorage before navigating.
         function captureSearchParameter() {
             const urlParams = new URLSearchParams(window.location.search);
             const searchParam = urlParams.get('search');
             
-            console.log('🔒 Raw URL search params:', window.location.search);
-            console.log('🔒 URLSearchParams object:', urlParams);
-            console.log('🔒 Raw search parameter:', searchParam);
-            
             if (searchParam) {
-                // Decode URL-encoded spaces and special characters
+                // URL param present — use it directly
                 const decodedParam = decodeURIComponent(searchParam);
-                console.log('🔒 Decoded search parameter:', decodedParam);
-                console.log('🔒 Parameter length:', decodedParam.length);
-                console.log('🔒 Parameter characters:', decodedParam.split('').map(c => `'${c}'`));
-                
+                console.log('Found search parameter (URL):', decodedParam);
                 pendingSearchParam = decodedParam;
                 
-                // Clean the URL (remove the search parameter from browser address bar)
-                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+                // Clear any sessionStorage entry to avoid double-apply
+                try { sessionStorage.removeItem('pendingSearch'); } catch(e) {}
+                
+                // Clean the URL
+                const newUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
                 window.history.replaceState({}, document.title, newUrl);
+                
             } else {
-                console.log('🔒 No search parameter found in URL');
+                // No URL param — fall back to sessionStorage (set by ProblemQueue V1.4.1)
+                try {
+                    const storedSearch = sessionStorage.getItem('pendingSearch');
+                    if (storedSearch) {
+                        console.log('Found pending search in sessionStorage:', storedSearch);
+                        pendingSearchParam = storedSearch;
+                        // Consume immediately so it does not fire on future page loads
+                        sessionStorage.removeItem('pendingSearch');
+                    } else {
+                        console.log('No search parameter found in URL or sessionStorage');
+                    }
+                } catch(e) {
+                    console.log('sessionStorage unavailable');
+                }
             }
+        }
         }
        
         
