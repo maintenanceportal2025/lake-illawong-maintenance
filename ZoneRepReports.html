@@ -1,0 +1,1686 @@
+<!--
+=====================================================================
+LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - ZONE REP REPORTS
+=====================================================================
+PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
+         4 reports relevant to zone representative role.
+PORTAL: ZoneRep Portal
+FILE: ZoneRepReports.html
+VERSION: V1.0.0
+LAST UPDATED: May 2026
+DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
+AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
+DEPENDENCIES:
+  - Explorer_V1_2.js backend (getFaultLogData, getLegacyLogData)
+  - Chart.js 4.4.0 (cdn.jsdelivr.net)
+  - jsPDF (unpkg)
+  - html2canvas (unpkg)
+
+REPORTS (cut-down from full Reports Hub):
+  1. Unit Problem History  (current + legacy)
+  2. Open Problems         (filterable by zone/priority)
+  3. By Zone              (zone summary with chart)
+  4. Keyword Search       (both logs)
+
+VERSION HISTORY:
+  V1.0.0 (May 2026): Initial release. Derived from ReportsHub V1.1.1.
+                     Cut down to 4 ZoneRep-relevant reports.
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zone Reports - Lake Illawong</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/html2canvas@latest/dist/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --glass-bg:           rgba(255,255,255,0.08);
+            --glass-bg-hover:     rgba(255,255,255,0.12);
+            --glass-bg-strong:    rgba(255,255,255,0.18);
+            --glass-border:       rgba(255,255,255,0.15);
+            --glass-border-hover: rgba(255,255,255,0.30);
+            --glass-blur:         blur(15px);
+            --glass-text:         #ffffff;
+            --glass-text-muted:   rgba(255,255,255,0.70);
+            --glass-text-subtle:  rgba(255,255,255,0.50);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        /* ── HEADER ─────────────────────────────────────────── */
+        .header { text-align: center; margin-bottom: 24px; color: white; }
+
+        .header-content {
+            display: flex; align-items: center;
+            justify-content: center; gap: 20px; margin-bottom: 15px;
+        }
+
+        .logo-image {
+            width: 110px; height: 110px;
+            border-radius: 50%; object-fit: cover; padding: 5px;
+        }
+
+        .header-text { display: flex; flex-direction: column; align-items: flex-start; }
+
+        .header-title {
+            font-size: 2.2rem; font-weight: 700; color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3); margin-bottom: 4px;
+        }
+
+        .header-subtitle { font-size: 1rem; color: rgba(255,255,255,0.9); font-weight: 500; }
+
+        .header-divider {
+            height: 2px; margin-top: 15px;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%,
+                rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+        }
+
+        /* ── BACK BUTTON ────────────────────────────────────── */
+        .back-btn {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            color: white; padding: 10px 22px; border-radius: 2px;
+            font-weight: 600; cursor: pointer; margin-bottom: 16px;
+            font-size: 0.9rem; transition: all 0.2s; min-height: 44px;
+        }
+        .back-btn:hover { background: var(--glass-bg-hover); border-color: var(--glass-border-hover); }
+
+        /* ── LAYOUT ─────────────────────────────────────────── */
+        .layout { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+
+        /* ── CATALOGUE PANEL ────────────────────────────────── */
+        .catalogue {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px; padding: 20px;
+            position: sticky; top: 20px;
+        }
+
+        .catalogue-title {
+            font-size: 0.72rem; font-weight: 700; color: var(--glass-text-muted);
+            text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px;
+        }
+
+        .data-status {
+            background: var(--glass-bg); border: 1px solid var(--glass-border);
+            border-radius: 2px; padding: 10px 12px; margin-bottom: 16px;
+            font-size: 0.78rem; color: var(--glass-text-muted); line-height: 1.6;
+        }
+
+        .data-status .status-dot {
+            display: inline-block; width: 8px; height: 8px;
+            border-radius: 50%; margin-right: 6px; vertical-align: middle;
+        }
+        .status-dot.loaded  { background: #34d399; }
+        .status-dot.loading { background: #fbbf24; }
+        .status-dot.error   { background: #f87171; }
+
+        .report-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px; border-radius: 2px; cursor: pointer;
+            border: 1px solid transparent; margin-bottom: 4px;
+            transition: all 0.2s; color: var(--glass-text-muted);
+            font-size: 0.88rem; font-weight: 500;
+        }
+
+        .report-item:hover {
+            background: var(--glass-bg-hover);
+            border-color: var(--glass-border);
+            color: var(--glass-text);
+        }
+
+        .report-item.active {
+            background: rgba(255,255,255,0.92);
+            border-color: rgba(255,255,255,0.9);
+            color: #1e293b; font-weight: 600;
+        }
+
+        .report-icon { font-size: 1.1rem; flex-shrink: 0; }
+
+        .catalogue-divider {
+            height: 1px; background: var(--glass-border);
+            margin: 12px 0;
+        }
+
+        /* ── REPORT PANEL ───────────────────────────────────── */
+        .report-panel {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px; padding: 28px; min-height: 500px;
+        }
+
+        .report-heading {
+            font-size: 1.3rem; font-weight: 700;
+            color: var(--glass-text); margin-bottom: 6px;
+        }
+
+        .report-subheading {
+            font-size: 0.85rem; color: var(--glass-text-muted);
+            margin-bottom: 24px; line-height: 1.5;
+        }
+
+        /* ── FILTER ROW ─────────────────────────────────────── */
+        .filter-row {
+            display: flex; gap: 14px; flex-wrap: wrap;
+            align-items: center; margin-bottom: 20px;
+        }
+
+        .filter-group { display: flex; align-items: center; gap: 8px; }
+
+        .filter-label {
+            font-size: 0.75rem; color: var(--glass-text-muted);
+            font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.05em; white-space: nowrap;
+        }
+
+        .glass-select, .glass-input {
+            background: rgba(30,64,175,0.7);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px; color: white;
+            padding: 7px 12px; font-size: 0.85rem;
+            min-height: 36px; cursor: pointer;
+        }
+
+        .glass-select option { background: #1e3a8a; }
+
+        .glass-input { cursor: text; }
+        .glass-input::placeholder { color: rgba(255,255,255,0.45); }
+        .glass-input:focus { outline: none; border-color: var(--glass-border-hover); }
+
+        /* ── RUN BUTTON ─────────────────────────────────────── */
+        .run-btn {
+            background: rgba(255,255,255,0.92);
+            border: none; border-radius: 2px;
+            color: #1e293b; padding: 8px 22px;
+            font-weight: 700; font-size: 0.88rem;
+            cursor: pointer; min-height: 36px; transition: all 0.2s;
+        }
+        .run-btn:hover { background: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+
+        /* ── PDF BUTTON ─────────────────────────────────────── */
+        .pdf-btn {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px; color: var(--glass-text-muted);
+            padding: 8px 18px; font-weight: 600; font-size: 0.85rem;
+            cursor: pointer; min-height: 36px; transition: all 0.2s;
+        }
+        .pdf-btn:hover { background: var(--glass-bg-hover); color: white; border-color: var(--glass-border-hover); }
+
+        /* ── RESULTS AREA ───────────────────────────────────── */
+        .results-area { margin-top: 8px; }
+
+        /* ── STATS STRIP ────────────────────────────────────── */
+        .stats-strip {
+            display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
+        }
+
+        .stat-pill {
+            background: var(--glass-bg); border: 1px solid var(--glass-border);
+            border-radius: 2px; padding: 10px 16px; text-align: center; flex: 1; min-width: 100px;
+        }
+
+        .stat-pill-value { font-size: 1.6rem; font-weight: 700; color: white; line-height: 1; }
+        .stat-pill-label { font-size: 0.72rem; color: var(--glass-text-muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        /* ── DATA TABLE ─────────────────────────────────────── */
+        .table-wrap {
+            background: white; border-radius: 2px; overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+
+        .data-table thead { background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%); }
+
+        .data-table th {
+            padding: 9px 10px; text-align: left; font-weight: 600;
+            color: white; font-size: 0.72rem; text-transform: uppercase;
+            letter-spacing: 0.05em; white-space: nowrap;
+        }
+
+        .data-table td {
+            padding: 8px 10px; border-bottom: 1px solid #f1f5f9;
+            color: #374151; vertical-align: middle;
+        }
+
+        .data-table tbody tr:hover { background: #f8fafc; }
+
+        /* ── STATUS BADGE ───────────────────────────────────── */
+        .badge {
+            padding: 2px 8px; border-radius: 10px; font-size: 0.70rem;
+            font-weight: 600; display: inline-block; text-transform: uppercase; white-space: nowrap;
+        }
+        .badge-completed  { background: #d1fae5; color: #065f46; }
+        .badge-open       { background: #dbeafe; color: #1e40af; }
+        .badge-inprogress { background: #fef3c7; color: #92400e; }
+        .badge-cancelled  { background: #f3f4f6; color: #6b7280; }
+        .badge-high       { background: #fee2e2; color: #991b1b; }
+        .badge-medium     { background: #fef3c7; color: #92400e; }
+        .badge-low        { background: #d1fae5; color: #065f46; }
+
+        /* ── CHART CONTAINER ────────────────────────────────── */
+        .chart-wrap {
+            background: white; border-radius: 2px;
+            padding: 20px; margin-bottom: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .chart-title {
+            font-size: 0.85rem; font-weight: 700; color: #1e293b;
+            margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+
+        /* ── EMPTY / LOADING ────────────────────────────────── */
+        .placeholder {
+            text-align: center; padding: 80px 20px;
+            color: var(--glass-text-muted);
+        }
+
+        .placeholder-icon { font-size: 3.5rem; margin-bottom: 16px; opacity: 0.5; }
+        .placeholder-title { font-size: 1.1rem; font-weight: 600; color: var(--glass-text); margin-bottom: 8px; }
+        .placeholder-text { font-size: 0.88rem; line-height: 1.6; max-width: 400px; margin: 0 auto; }
+
+        .loading-spinner {
+            border: 3px solid rgba(255,255,255,0.15);
+            border-top: 3px solid rgba(255,255,255,0.8);
+            border-radius: 50%; width: 36px; height: 36px;
+            animation: spin 1s linear infinite; margin: 0 auto 14px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── KEYWORD HIGHLIGHT ──────────────────────────────── */
+        .highlight { background: #fef08a; color: #713f12; border-radius: 2px; padding: 0 2px; }
+
+        /* ── RESPONSIVE ─────────────────────────────────────── */
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .catalogue { position: static; }
+            .header-content { flex-direction: column; text-align: center; }
+            .header-text { align-items: center; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+            </div>
+            <div class="header-text">
+                <div class="header-title">&#128196; Zone Reports</div>
+                <div class="header-subtitle">On-Demand Report Generation</div>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+    </div>
+
+    <button class="back-btn" onclick="window.location.href='ZoneRepPortal.html'">&#8592; Back to Portal</button>
+
+    <div class="layout">
+
+        <!-- ── CATALOGUE ─────────────────────────────── -->
+        <div class="catalogue">
+            <div class="catalogue-title">Report Catalogue</div>
+
+            <div class="data-status" id="dataStatus">
+                <span class="status-dot loading"></span>
+                <span id="dataStatusText">Loading data...</span>
+            </div>
+
+            <div class="report-item active" onclick="selectReport('unit-history')" id="cat-unit-history">
+                <span class="report-icon">🏠</span>Unit Problem History
+            </div>
+            <div class="report-item" onclick="selectReport('open-problems')" id="cat-open-problems">
+                <span class="report-icon">🔓</span>Open Problems
+            </div>
+
+            <div class="catalogue-divider"></div>
+
+            <div class="report-item" onclick="selectReport('by-zone')" id="cat-by-zone">
+                <span class="report-icon">🗺️</span>By Zone
+            </div>
+            <div class="report-item" onclick="selectReport('keyword-search')" id="cat-keyword-search">
+                <span class="report-icon">🔍</span>Keyword Search
+            </div>
+        </div>
+
+        <!-- ── REPORT PANEL ───────────────────────────── -->
+        <div class="report-panel" id="reportPanel">
+            <div class="placeholder">
+                <div class="placeholder-icon">📊</div>
+                <div class="placeholder-title">Select a Report</div>
+                <div class="placeholder-text">Choose a report from the catalogue on the left. Data loads once and is cached for the session — subsequent reports are instant.</div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+// =====================================================================
+// CONFIGURATION
+// =====================================================================
+const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
+
+// =====================================================================
+// DATA CACHE
+// =====================================================================
+let currentData    = null;  // FaultLog records — Programmed excluded
+let legacyData     = null;  // LegacyLog records — Programmed excluded
+let allData        = null;  // Combined — Programmed excluded
+let programmedData = null;  // Programmed + Programmed-Completed (current only)
+let dataLoaded     = false;
+let activeReport   = null;
+let activeChart    = null;
+
+function isProgrammed(p) {
+    const s = (p.problemStatus || '').toLowerCase();
+    return s === 'programmed' || s === 'programmed-completed';
+}
+
+// =====================================================================
+// DATA LOADING (JSONP)
+// =====================================================================
+function makeRequest(action) {
+    return new Promise((resolve, reject) => {
+        const cbName = 'rh_cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
+        const script = document.createElement('script');
+        const timeout = setTimeout(() => {
+            delete window[cbName];
+            if (script.parentNode) script.parentNode.removeChild(script);
+            reject(new Error('Timeout: ' + action));
+        }, 30000);
+
+        window[cbName] = (data) => {
+            clearTimeout(timeout);
+            delete window[cbName];
+            if (script.parentNode) script.parentNode.removeChild(script);
+            resolve(data);
+        };
+
+        script.src = API_URL + '?action=' + action + '&callback=' + cbName;
+        document.body.appendChild(script);
+    });
+}
+
+async function loadAllData() {
+    setDataStatus('loading', 'Loading FaultLog...');
+    try {
+        const [cr, lr] = await Promise.all([
+            makeRequest('getFaultLogData'),
+            makeRequest('getLegacyLogData')
+        ]);
+
+        const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
+        const rawLegacy  = (lr && lr.success) ? (lr.data || []) : [];
+
+        // Split programmed works out into their own pool
+        programmedData = rawCurrent.filter(isProgrammed);
+        currentData    = rawCurrent.filter(p => !isProgrammed(p));
+        legacyData     = rawLegacy.filter(p => !isProgrammed(p));
+        allData        = [...currentData, ...legacyData];
+        dataLoaded     = true;
+
+        setDataStatus('loaded',
+            `&#10003; ${currentData.length} current + ${legacyData.length} legacy + ${programmedData.length} programmed loaded`);
+
+        // Auto-run the default report
+        runCurrentReport();
+
+    } catch (err) {
+        setDataStatus('error', '&#9888; Failed to load data. Check connection.');
+        console.error('ReportsHub load error:', err);
+    }
+}
+
+function setDataStatus(state, text) {
+    const dot  = document.querySelector('.status-dot');
+    const span = document.getElementById('dataStatusText');
+    dot.className  = 'status-dot ' + state;
+    span.innerHTML = text;
+}
+
+// =====================================================================
+// CATALOGUE NAVIGATION
+// =====================================================================
+let currentReportId = 'unit-history';
+
+function selectReport(reportId) {
+    // Update catalogue active state
+    document.querySelectorAll('.report-item').forEach(el => el.classList.remove('active'));
+    document.getElementById('cat-' + reportId).classList.add('active');
+    currentReportId = reportId;
+
+    if (!dataLoaded) {
+        showPanel(`
+            <div class="placeholder">
+                <div class="loading-spinner"></div>
+                <div class="placeholder-title">Loading data...</div>
+                <div class="placeholder-text">Please wait while records are fetched.</div>
+            </div>`);
+        return;
+    }
+    runCurrentReport();
+}
+
+function runCurrentReport() {
+    // Destroy any existing chart
+    if (activeChart) { activeChart.destroy(); activeChart = null; }
+
+    switch (currentReportId) {
+        case 'unit-history':      renderUnitHistoryForm();   break;
+        case 'open-problems':     renderOpenProblems();       break;
+        case 'by-zone':           renderByZone();             break;
+        case 'keyword-search':    renderKeywordForm();        break;
+    }
+}
+
+function showPanel(html) {
+    document.getElementById('reportPanel').innerHTML = html;
+}
+
+// =====================================================================
+// HELPERS
+// =====================================================================
+function fmt(dateStr) {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (isNaN(d)) return dateStr;
+    return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function statusBadge(s) {
+    if (!s) return '';
+    const map = {
+        'completed':   'badge-completed',
+        'reported':    'badge-open',
+        'in progress': 'badge-inprogress',
+        'assigned':    'badge-inprogress',
+        'cancelled':   'badge-cancelled'
+    };
+    const cls = map[s.toLowerCase()] || 'badge-open';
+    return `<span class="badge ${cls}">${s}</span>`;
+}
+
+function priorityBadge(p) {
+    if (!p) return '—';
+    const map = { 'high': 'badge-high', 'medium': 'badge-medium', 'low': 'badge-low' };
+    const cls = map[p.toLowerCase()] || '';
+    return `<span class="badge ${cls}">${p}</span>`;
+}
+
+function monthLabel(dateStr) {
+    const d = new Date(dateStr);
+    return isNaN(d) ? null : d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' });
+}
+
+function normaliseUnit(u) {
+    return (u || '').toString().toUpperCase().replace(/^UNIT\s*/i, '').trim();
+}
+
+function isCompleted(p) { return (p.problemStatus || '').toLowerCase() === 'completed'; }
+function isOpen(p) { return !isCompleted(p) && (p.problemStatus || '').toLowerCase() !== 'cancelled'; }
+
+// =====================================================================
+// REPORT 1 — UNIT PROBLEM HISTORY
+// =====================================================================
+function renderUnitHistoryForm() {
+    showPanel(`
+        <div class="report-heading">🏠 Unit Problem History</div>
+        <div class="report-subheading">Full problem history for a single unit across current and legacy records.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Unit</span>
+                <input type="text" id="uhUnit" class="glass-input" placeholder="e.g. 34" style="width:100px;"
+                    onkeydown="if(event.key==='Enter') runUnitHistory()">
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="uhDataset" class="glass-select">
+                    <option value="all">Current + Legacy</option>
+                    <option value="current">Current only</option>
+                    <option value="legacy">Legacy only</option>
+                </select>
+            </div>
+            <button class="run-btn" onclick="runUnitHistory()">Run Report</button>
+            <button class="pdf-btn" id="uhPdfBtn" onclick="exportUnitHistoryPDF()" style="display:none;">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="uhResults">
+            <div class="placeholder">
+                <div class="placeholder-icon">🏠</div>
+                <div class="placeholder-text">Enter a unit number and click Run Report.</div>
+            </div>
+        </div>`);
+}
+
+let uhData = [];
+
+function runUnitHistory() {
+    const unit    = document.getElementById('uhUnit').value.trim();
+    const dataset = document.getElementById('uhDataset').value;
+    if (!unit) { alert('Please enter a unit number.'); return; }
+    if (!dataLoaded) { alert('Data is still loading — please wait a moment and try again.'); return; }
+
+    const search = normaliseUnit(unit);
+    const pool   = dataset === 'current' ? (currentData || [])
+                 : dataset === 'legacy'  ? (legacyData  || [])
+                 : (allData || []);
+
+    uhData = pool.filter(p => normaliseUnit(p.unitNumber) === search)
+                 .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    const el = document.getElementById('uhResults');
+
+    if (!uhData.length) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔍</div>
+            <div class="placeholder-title">No Records Found</div>
+            <div class="placeholder-text">Unit ${unit} has no problems recorded in the selected dataset.</div></div>`;
+        document.getElementById('uhPdfBtn').style.display = 'none';
+        return;
+    }
+
+    const open      = uhData.filter(isOpen).length;
+    const completed = uhData.filter(isCompleted).length;
+    const resName   = uhData[0].unitPrimaryName || '—';
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${uhData.length}</div><div class="stat-pill-label">Total</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${open}</div><div class="stat-pill-label">Open</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${completed}</div><div class="stat-pill-label">Completed</div></div>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr>
+                    <th>Date</th><th>ID</th><th>Category</th><th>Description</th>
+                    <th>Priority</th><th>Status</th><th>Assigned To</th>
+                </tr></thead>
+                <tbody>
+                    ${uhData.map(p => `<tr>
+                        <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
+                        <td style="white-space:nowrap;font-size:0.75rem;color:#6b7280">${p.internalId || '—'}</td>
+                        <td>${p.category || '—'}${p.subCategory ? '<br><span style="font-size:0.75rem;color:#6b7280">'+p.subCategory+'</span>' : ''}</td>
+                        <td>${p.problemDescription || '—'}</td>
+                        <td>${priorityBadge(p.problemPriority)}</td>
+                        <td>${statusBadge(p.problemStatus)}</td>
+                        <td>${p.assignedTo || '—'}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>`;
+
+    document.getElementById('uhPdfBtn').style.display = '';
+}
+
+async function exportUnitHistoryPDF() {
+    if (!uhData.length) return;
+    const unit    = document.getElementById('uhUnit').value.trim();
+    const resName = uhData[0].unitPrimaryName || '—';
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l', 'mm', 'a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+    let y = 15;
+
+    // Header
+    pdf.setFillColor(30, 64, 175);
+    pdf.rect(0, 0, pw, 28, 'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(14); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong Residential Club — Problem History Report', pw/2, 12, {align:'center'});
+    pdf.setFontSize(10); pdf.setFont('helvetica','normal');
+    pdf.text(`Unit ${unit}  |  ${resName}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    y = 36;
+    // Stats
+    const open = uhData.filter(isOpen).length;
+    const comp = uhData.filter(isCompleted).length;
+    pdf.setTextColor(30,41,59); pdf.setFontSize(9); pdf.setFont('helvetica','bold');
+    pdf.text(`Total: ${uhData.length}   Open: ${open}   Completed: ${comp}`, 14, y);
+    y += 8;
+
+    // Table header
+    const cols = ['Date','ID','Category','Sub-Cat','Description','Priority','Status','Assigned To'];
+    const widths = [22,28,25,22,70,20,24,26];
+    pdf.setFillColor(30,64,175);
+    pdf.rect(14, y, pw-28, 7, 'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
+    let x = 14;
+    cols.forEach((c,i) => { pdf.text(c, x+1, y+5); x += widths[i]; });
+    y += 7;
+
+    // Table rows
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    uhData.forEach((p, idx) => {
+        if (y > ph - 20) { pdf.addPage(); y = 15; }
+        pdf.setFillColor(idx % 2 === 0 ? 248 : 255, idx % 2 === 0 ? 250 : 255, idx % 2 === 0 ? 252 : 255);
+        pdf.rect(14, y, pw-28, 6, 'F');
+        x = 14;
+        const row = [
+            fmt(p.timestamp), p.internalId||'—', p.category||'—', p.subCategory||'—',
+            (p.problemDescription||'—').substring(0,55), p.problemPriority||'—',
+            p.problemStatus||'—', p.assignedTo||'—'
+        ];
+        row.forEach((v,i) => { pdf.setFontSize(7); pdf.text(String(v), x+1, y+4.2); x += widths[i]; });
+        y += 6;
+    });
+
+    // Footer
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text(`Lake Illawong Management Central System — Confidential`, pw/2, ph-5, {align:'center'});
+
+    pdf.save(`Unit_${unit}_Problem_History_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT 2 — OPEN PROBLEMS
+// =====================================================================
+function renderOpenProblems() {
+    const zones = [...new Set(currentData.map(p=>p.zone).filter(Boolean))].sort();
+    const people = [...new Set(currentData.map(p=>p.assignedTo).filter(Boolean))].sort();
+
+    showPanel(`
+        <div class="report-heading">🔓 Open Problems</div>
+        <div class="report-subheading">All currently open problems from the active FaultLog, filterable by zone, priority and assigned person.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="opZone" class="glass-select">
+                    <option value="all">All Zones</option>
+                    ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Priority</span>
+                <select id="opPriority" class="glass-select">
+                    <option value="all">All Priorities</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Assigned To</span>
+                <select id="opPerson" class="glass-select">
+                    <option value="all">Anyone</option>
+                    <option value="unassigned">Unassigned</option>
+                    ${people.map(p=>`<option value="${p}">${p}</option>`).join('')}
+                </select>
+            </div>
+            <button class="run-btn" onclick="runOpenProblems()">Run Report</button>
+            <button class="pdf-btn" id="opPdfBtn" onclick="exportOpenPDF()" style="display:none;">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="opResults">
+            <div class="placeholder"><div class="placeholder-icon">🔓</div>
+            <div class="placeholder-text">Set filters and click Run Report.</div></div>
+        </div>`);
+}
+
+let opData = [];
+
+function runOpenProblems() {
+    if (!dataLoaded) return;
+    const zone     = document.getElementById('opZone').value;
+    const priority = document.getElementById('opPriority').value;
+    const person   = document.getElementById('opPerson').value;
+
+    opData = currentData.filter(p => {
+        if (!isOpen(p)) return false;
+        if (zone !== 'all' && p.zone !== zone) return false;
+        if (priority !== 'all' && (p.problemPriority||'') !== priority) return false;
+        if (person === 'unassigned' && p.assignedTo) return false;
+        if (person !== 'all' && person !== 'unassigned' && p.assignedTo !== person) return false;
+        return true;
+    }).sort((a,b) => {
+        const po = {High:0, Medium:1, Low:2};
+        return (po[a.problemPriority]||3) - (po[b.problemPriority]||3);
+    });
+
+    const el = document.getElementById('opResults');
+    if (!opData.length) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">✅</div>
+            <div class="placeholder-title">No Open Problems</div>
+            <div class="placeholder-text">No problems match the selected filters.</div></div>`;
+        document.getElementById('opPdfBtn').style.display = 'none';
+        return;
+    }
+
+    const high   = opData.filter(p=>(p.problemPriority||'').toLowerCase()==='high').length;
+    const unasgn = opData.filter(p=>!p.assignedTo).length;
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${opData.length}</div><div class="stat-pill-label">Open</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${high}</div><div class="stat-pill-label">High Priority</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${unasgn}</div><div class="stat-pill-label">Unassigned</div></div>
+        </div>
+        <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>Reported</th><th>Unit</th><th>Zone</th><th>Category</th><th>Description</th><th>Priority</th><th>Status</th><th>Assigned To</th></tr></thead>
+            <tbody>
+                ${opData.map(p=>`<tr>
+                    <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
+                    <td>${p.unitNumber||'—'}</td>
+                    <td>${p.zone||'—'}</td>
+                    <td>${p.category||'—'}</td>
+                    <td>${p.problemDescription||'—'}</td>
+                    <td>${priorityBadge(p.problemPriority)}</td>
+                    <td>${statusBadge(p.problemStatus)}</td>
+                    <td>${p.assignedTo||'Unassigned'}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+    document.getElementById('opPdfBtn').style.display = '';
+}
+
+async function exportOpenPDF() {
+    if (!opData.length) return;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l','mm','a4');
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(14); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong — Open Problems Report', pw/2, 12, {align:'center'});
+    pdf.setFontSize(10); pdf.setFont('helvetica','normal');
+    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}  |  ${opData.length} records`, pw/2, 21, {align:'center'});
+
+    let y = 36;
+    const cols   = ['Reported','Unit','Zone','Category','Description','Priority','Status','Assigned To'];
+    const widths = [22,16,22,28,72,20,22,26];
+
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
+    let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
+
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    opData.forEach((p,idx)=>{
+        if (y > ph-20) { pdf.addPage(); y=15; }
+        pdf.setFillColor(idx%2===0?248:255, idx%2===0?250:255, idx%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',p.category||'—',
+         (p.problemDescription||'').substring(0,60),p.problemPriority||'—',
+         p.problemStatus||'—',p.assignedTo||'Unassigned'
+        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
+        y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`Open_Problems_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT 3 & 4 — MONTH-ON-MONTH (shared renderer, mode param)
+// =====================================================================
+function renderMoMReported() { renderMoM('reported'); }
+function renderMoMCompleted() { renderMoM('completed'); }
+
+function renderMoM(mode) {
+    const title = mode === 'reported' ? 'Month-on-Month Problems Reported' : 'Month-on-Month Problems Completed';
+    const icon  = mode === 'reported' ? '📈' : '📉';
+    const desc  = mode === 'reported'
+        ? 'Number of problems reported per month across all datasets.'
+        : 'Number of problems completed per month across all datasets.';
+
+    const months = getLast12MonthLabels();
+
+    showPanel(`
+        <div class="report-heading">${icon} ${title}</div>
+        <div class="report-subheading">${desc}</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="momDataset" class="glass-select" onchange="runMoM('${mode}')">
+                    <option value="all">Current + Legacy</option>
+                    <option value="current">Current only</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Months</span>
+                <select id="momMonths" class="glass-select" onchange="runMoM('${mode}')">
+                    <option value="12">Last 12 months</option>
+                    <option value="24">Last 24 months</option>
+                    <option value="all">All time</option>
+                </select>
+            </div>
+            <button class="pdf-btn" onclick="exportMoMPDF('${mode}')">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="momResults"></div>`);
+
+    runMoM(mode);
+}
+
+let momChartData = {};
+
+function runMoM(mode) {
+    if (!dataLoaded) return;
+    const dataset = document.getElementById('momDataset').value;
+    const months  = document.getElementById('momMonths').value;
+    const pool    = dataset === 'current' ? currentData : allData;
+
+    // Build monthly counts
+    const counts = {};
+    pool.forEach(p => {
+        let dateStr = mode === 'reported' ? p.timestamp
+                    : (isCompleted(p) ? p.completionDate : null);
+        if (!dateStr) return;
+        const d = new Date(dateStr);
+        if (isNaN(d)) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        counts[key] = (counts[key]||0) + 1;
+    });
+
+    let keys = Object.keys(counts).sort();
+    if (months !== 'all') {
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - parseInt(months));
+        keys = keys.filter(k => new Date(k+'-01') >= cutoff);
+    }
+
+    const labels = keys.map(k => {
+        const [y,m] = k.split('-');
+        return new Date(y, m-1).toLocaleDateString('en-AU',{month:'short',year:'numeric'});
+    });
+    const values = keys.map(k => counts[k]);
+    momChartData = { labels, values, mode, keys, counts };
+
+    const total = values.reduce((a,b)=>a+b,0);
+    const avg   = keys.length ? Math.round(total/keys.length) : 0;
+    const peak  = Math.max(...values, 0);
+    const peakMonth = labels[values.indexOf(peak)] || '—';
+
+    const el = document.getElementById('momResults');
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">Total</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${avg}</div><div class="stat-pill-label">Monthly Avg</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${peak}</div><div class="stat-pill-label">Peak Month</div></div>
+            <div class="stat-pill"><div class="stat-pill-value" style="font-size:1rem;">${peakMonth}</div><div class="stat-pill-label">Peak Period</div></div>
+        </div>
+        <div class="chart-wrap">
+            <div class="chart-title">${mode === 'reported' ? 'Problems Reported' : 'Problems Completed'} by Month</div>
+            <canvas id="momChart" height="120"></canvas>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
+            <thead><tr><th>Month</th><th>Count</th></tr></thead>
+            <tbody>
+                ${keys.map((k,i)=>`<tr>
+                    <td>${labels[i]}</td>
+                    <td><strong>${values[i]}</strong></td>
+                </tr>`).reverse().join('')}
+            </tbody>
+        </table></div>`;
+
+    // Chart
+    if (activeChart) { activeChart.destroy(); activeChart = null; }
+    const ctx = document.getElementById('momChart').getContext('2d');
+    activeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: mode === 'reported' ? 'Reported' : 'Completed',
+                data: values,
+                backgroundColor: mode === 'reported'
+                    ? 'rgba(59,130,246,0.7)' : 'rgba(16,185,129,0.7)',
+                borderColor: mode === 'reported'
+                    ? 'rgba(59,130,246,1)' : 'rgba(16,185,129,1)',
+                borderWidth: 1, borderRadius: 3
+            }]
+        },
+        options: {
+            responsive: true, plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+async function exportMoMPDF(mode) {
+    const chartCanvas = document.getElementById('momChart');
+    if (!chartCanvas) return;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l','mm','a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(14); pdf.setFont('helvetica','bold');
+    const title = mode==='reported' ? 'Month-on-Month Problems Reported' : 'Month-on-Month Problems Completed';
+    pdf.text(`Lake Illawong — ${title}`, pw/2, 12, {align:'center'});
+    pdf.setFontSize(10); pdf.setFont('helvetica','normal');
+    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    // Embed chart
+    const chartImg = chartCanvas.toDataURL('image/png');
+    pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 90);
+
+    // Table
+    let y = 134;
+    const { labels, values, keys } = momChartData;
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,60,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
+    pdf.text('Month', 16, y+5); pdf.text('Count', 46, y+5); y+=7;
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    [...keys].reverse().forEach((k,i)=>{
+        if (y > ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255, i%2===0?250:255, i%2===0?252:255);
+        pdf.rect(14,y,60,6,'F');
+        pdf.setFontSize(8);
+        pdf.text(labels[labels.length-1-i], 16, y+4.2);
+        pdf.text(String(values[values.length-1-i]), 46, y+4.2);
+        y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`MoM_${mode}_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT 5 — BY CATEGORY
+// =====================================================================
+function renderByCategory() {
+    showPanel(`
+        <div class="report-heading">🏷️ Problems by Category</div>
+        <div class="report-subheading">Breakdown of problems by category and sub-category.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="catDataset" class="glass-select" onchange="runByCategory()">
+                    <option value="current">Current only</option>
+                    <option value="all">Current + Legacy</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Status</span>
+                <select id="catStatus" class="glass-select" onchange="runByCategory()">
+                    <option value="all">All</option>
+                    <option value="open">Open only</option>
+                    <option value="completed">Completed only</option>
+                </select>
+            </div>
+            <button class="pdf-btn" onclick="exportCategoryPDF()">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="catResults"></div>`);
+
+    runByCategory();
+}
+
+let catReportData = {};
+
+function runByCategory() {
+    if (!dataLoaded) return;
+    const dataset = document.getElementById('catDataset').value;
+    const status  = document.getElementById('catStatus').value;
+    const pool    = dataset === 'current' ? currentData : allData;
+
+    let filtered = pool;
+    if (status === 'open')      filtered = pool.filter(isOpen);
+    if (status === 'completed') filtered = pool.filter(isCompleted);
+
+    // Group by category then sub-category
+    const cats = {};
+    filtered.forEach(p => {
+        const cat    = p.category    || 'Uncategorised';
+        const subcat = p.subCategory || '—';
+        if (!cats[cat]) cats[cat] = { total: 0, subs: {} };
+        cats[cat].total++;
+        cats[cat].subs[subcat] = (cats[cat].subs[subcat]||0) + 1;
+    });
+    catReportData = { cats, total: filtered.length };
+
+    const sorted = Object.entries(cats).sort((a,b)=>b[1].total-a[1].total);
+    const labels = sorted.map(([k])=>k);
+    const values = sorted.map(([,v])=>v.total);
+
+    const el = document.getElementById('catResults');
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${filtered.length}</div><div class="stat-pill-label">Total Problems</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${sorted.length}</div><div class="stat-pill-label">Categories</div></div>
+        </div>
+        <div class="chart-wrap">
+            <div class="chart-title">Problems by Category</div>
+            <canvas id="catChart" height="100"></canvas>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
+            <thead><tr><th>Category</th><th>Sub-Category</th><th>Count</th><th>% of Total</th></tr></thead>
+            <tbody>
+                ${sorted.map(([cat,v])=>
+                    Object.entries(v.subs).sort((a,b)=>b[1]-a[1]).map(([ sub, cnt], si) => `<tr>
+                        ${si===0 ? `<td rowspan="${Object.keys(v.subs).length}" style="font-weight:600;vertical-align:top;border-right:2px solid #e5e7eb">${cat}<br><span style="font-size:0.75rem;color:#6b7280">${v.total} total</span></td>` : ''}
+                        <td>${sub}</td>
+                        <td><strong>${cnt}</strong></td>
+                        <td>${Math.round(cnt/filtered.length*100)}%</td>
+                    </tr>`).join('')
+                ).join('')}
+            </tbody>
+        </table></div>`;
+
+    if (activeChart) { activeChart.destroy(); activeChart = null; }
+    const ctx = document.getElementById('catChart').getContext('2d');
+    activeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                backgroundColor: labels.map((_,i)=>`hsla(${210+i*25},70%,55%,0.75)`),
+                borderRadius: 3
+            }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+async function exportCategoryPDF() {
+    const chartCanvas = document.getElementById('catChart');
+    if (!chartCanvas) return;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p','mm','a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong — Problems by Category', pw/2, 12, {align:'center'});
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}  |  ${catReportData.total} problems`, pw/2, 21, {align:'center'});
+
+    const chartImg = chartCanvas.toDataURL('image/png');
+    pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
+
+    let y = 124;
+    const sorted = Object.entries(catReportData.cats).sort((a,b)=>b[1].total-a[1].total);
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
+    pdf.text('Category', 16, y+5); pdf.text('Sub-Category', 70, y+5);
+    pdf.text('Count', 142, y+5); pdf.text('%', 158, y+5); y+=7;
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    let rowIdx = 0;
+    sorted.forEach(([cat,v])=>{
+        Object.entries(v.subs).sort((a,b)=>b[1]-a[1]).forEach(([sub,cnt])=>{
+            if (y > ph-15) { pdf.addPage(); y=15; }
+            pdf.setFillColor(rowIdx%2===0?248:255, rowIdx%2===0?250:255, rowIdx%2===0?252:255);
+            pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
+            pdf.text(cat, 16, y+4.2); pdf.text(sub, 70, y+4.2);
+            pdf.text(String(cnt), 142, y+4.2);
+            pdf.text(Math.round(cnt/catReportData.total*100)+'%', 158, y+4.2);
+            y+=6; rowIdx++;
+        });
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`By_Category_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT 6 — BY ZONE
+// =====================================================================
+function renderByZone() {
+    showPanel(`
+        <div class="report-heading">🗺️ Problems by Zone</div>
+        <div class="report-subheading">Summary of reported and open problems per zone.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="zoneDataset" class="glass-select" onchange="runByZone()">
+                    <option value="current">Current only</option>
+                    <option value="all">Current + Legacy</option>
+                </select>
+            </div>
+            <button class="pdf-btn" onclick="exportZonePDF()">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="zoneResults"></div>`);
+    runByZone();
+}
+
+let zoneReportData = {};
+
+function runByZone() {
+    if (!dataLoaded) return;
+    const dataset = document.getElementById('zoneDataset').value;
+    const pool    = dataset === 'current' ? currentData : allData;
+
+    const zones = {};
+    pool.forEach(p => {
+        const z = p.zone || 'Unknown';
+        if (!zones[z]) zones[z] = { total:0, open:0, completed:0, high:0 };
+        zones[z].total++;
+        if (isOpen(p))      zones[z].open++;
+        if (isCompleted(p)) zones[z].completed++;
+        if ((p.problemPriority||'').toLowerCase()==='high') zones[z].high++;
+    });
+    zoneReportData = zones;
+
+    const sorted  = Object.entries(zones).sort((a,b)=>b[1].total-a[1].total);
+    const labels  = sorted.map(([k])=>k);
+    const totals  = sorted.map(([,v])=>v.total);
+    const opens   = sorted.map(([,v])=>v.open);
+
+    const el = document.getElementById('zoneResults');
+    el.innerHTML = `
+        <div class="chart-wrap">
+            <div class="chart-title">Total vs Open by Zone</div>
+            <canvas id="zoneChart" height="110"></canvas>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
+            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>High Priority</th></tr></thead>
+            <tbody>
+                ${sorted.map(([z,v])=>`<tr>
+                    <td><strong>${z}</strong></td>
+                    <td>${v.total}</td>
+                    <td>${v.open}</td>
+                    <td>${v.completed}</td>
+                    <td>${v.high}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+
+    if (activeChart) { activeChart.destroy(); activeChart = null; }
+    const ctx = document.getElementById('zoneChart').getContext('2d');
+    activeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Total', data: totals, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 3 },
+                { label: 'Open',  data: opens,  backgroundColor: 'rgba(239,68,68,0.7)',  borderRadius: 3 }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+async function exportZonePDF() {
+    const chartCanvas = document.getElementById('zoneChart');
+    if (!chartCanvas) return;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l','mm','a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong — Problems by Zone', pw/2, 12, {align:'center'});
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    const chartImg = chartCanvas.toDataURL('image/png');
+    pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
+
+    let y = 124;
+    const sorted = Object.entries(zoneReportData).sort((a,b)=>b[1].total-a[1].total);
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
+    pdf.text('Zone',16,y+5); pdf.text('Total',60,y+5); pdf.text('Open',90,y+5);
+    pdf.text('Completed',120,y+5); pdf.text('High Priority',162,y+5); y+=7;
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    sorted.forEach(([z,v],i)=>{
+        if (y>ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
+        pdf.text(z,16,y+4.2); pdf.text(String(v.total),60,y+4.2);
+        pdf.text(String(v.open),90,y+4.2); pdf.text(String(v.completed),120,y+4.2);
+        pdf.text(String(v.high),162,y+4.2); y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`By_Zone_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT 7 — KEYWORD SEARCH
+// =====================================================================
+function renderKeywordForm() {
+    showPanel(`
+        <div class="report-heading">🔍 Keyword Search</div>
+        <div class="report-subheading">Search problem descriptions across current and legacy records. Useful for finding all instances of a specific issue (e.g. "wood rot", "leak", "fence").</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Keyword</span>
+                <input type="text" id="kwInput" class="glass-input" placeholder="e.g. wood rot"
+                    style="width:200px" onkeydown="if(event.key==='Enter') runKeywordSearch()">
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Search In</span>
+                <select id="kwField" class="glass-select">
+                    <option value="description">Description only</option>
+                    <option value="all-fields">Description + Category + Comments</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="kwDataset" class="glass-select">
+                    <option value="all">Current + Legacy</option>
+                    <option value="current">Current only</option>
+                </select>
+            </div>
+            <button class="run-btn" onclick="runKeywordSearch()">Search</button>
+            <button class="pdf-btn" id="kwPdfBtn" onclick="exportKeywordPDF()" style="display:none;">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="kwResults">
+            <div class="placeholder"><div class="placeholder-icon">🔍</div>
+            <div class="placeholder-text">Enter a keyword and click Search. Searches both current and legacy logs.</div></div>
+        </div>`);
+}
+
+let kwData = []; let kwTerm = '';
+
+function runKeywordSearch() {
+    kwTerm = (document.getElementById('kwInput').value || '').trim().toLowerCase();
+    if (!kwTerm) { alert('Please enter a keyword to search.'); return; }
+    if (!dataLoaded) { alert('Data is still loading — please wait a moment and try again.'); return; }
+    const field   = document.getElementById('kwField').value;
+    const dataset = document.getElementById('kwDataset').value;
+    const pool    = dataset === 'current' ? currentData : allData;
+
+    kwData = pool.filter(p => {
+        if (field === 'all-fields') {
+            return [p.problemDescription, p.category, p.subCategory, p.comments]
+                .some(f => (f||'').toLowerCase().includes(kwTerm));
+        }
+        return (p.problemDescription||'').toLowerCase().includes(kwTerm);
+    }).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    const el = document.getElementById('kwResults');
+    if (!kwData.length) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🔍</div>
+            <div class="placeholder-title">No Matches</div>
+            <div class="placeholder-text">"${kwTerm}" was not found in the selected records.</div></div>`;
+        document.getElementById('kwPdfBtn').style.display = 'none';
+        return;
+    }
+
+    function hl(text) {
+        if (!text) return '—';
+        const re = new RegExp('(' + kwTerm.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')', 'gi');
+        return text.replace(re, '<span class="highlight">$1</span>');
+    }
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${kwData.length}</div><div class="stat-pill-label">Matches</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${kwData.filter(isOpen).length}</div><div class="stat-pill-label">Open</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${kwData.filter(isCompleted).length}</div><div class="stat-pill-label">Completed</div></div>
+        </div>
+        <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>Date</th><th>Unit</th><th>Zone</th><th>Description</th><th>Category</th><th>Status</th></tr></thead>
+            <tbody>
+                ${kwData.map(p=>`<tr>
+                    <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
+                    <td>${p.unitNumber||'—'}</td>
+                    <td>${p.zone||'—'}</td>
+                    <td>${hl(p.problemDescription)}</td>
+                    <td>${p.category||'—'}</td>
+                    <td>${statusBadge(p.problemStatus)}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+    document.getElementById('kwPdfBtn').style.display = '';
+}
+
+async function exportKeywordPDF() {
+    if (!kwData.length) return;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l','mm','a4');
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+    pdf.text(`Lake Illawong — Keyword Search: "${kwTerm}"`, pw/2, 12, {align:'center'});
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`${kwData.length} matches  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    let y = 36;
+    const cols   = ['Date','Unit','Zone','Description','Category','Status'];
+    const widths = [22,16,22,120,34,28];
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
+    let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    kwData.forEach((p,i)=>{
+        if (y>ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',
+         (p.problemDescription||'').substring(0,80),p.category||'—',p.problemStatus||'—'
+        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
+        y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`Keyword_${kwTerm.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT 8 — WORK BY PERSON
+// =====================================================================
+function renderWorkByPersonForm() {
+    const people = [...new Set(currentData.map(p=>p.assignedTo).filter(Boolean))].sort();
+
+    showPanel(`
+        <div class="report-heading">👷 Work by Person</div>
+        <div class="report-subheading">Problems assigned to and completed by a specific person in a date range.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Person</span>
+                <select id="wpPerson" class="glass-select">
+                    ${people.map(p=>`<option value="${p}">${p}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">From</span>
+                <input type="date" id="wpFrom" class="glass-input">
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">To</span>
+                <input type="date" id="wpTo" class="glass-input">
+            </div>
+            <button class="run-btn" onclick="runWorkByPerson()">Run Report</button>
+            <button class="pdf-btn" id="wpPdfBtn" onclick="exportWorkPDF()" style="display:none;">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="wpResults">
+            <div class="placeholder"><div class="placeholder-icon">👷</div>
+            <div class="placeholder-text">Select a person and date range, then click Run Report.</div></div>
+        </div>`);
+
+    // Default date range — last 30 days
+    const to = new Date(); const from = new Date();
+    from.setDate(from.getDate()-29);
+    document.getElementById('wpFrom').value = from.toISOString().split('T')[0];
+    document.getElementById('wpTo').value   = to.toISOString().split('T')[0];
+}
+
+let wpData = [];
+
+function runWorkByPerson() {
+    if (!dataLoaded) { alert('Data is still loading — please wait a moment and try again.'); return; }
+    const person = document.getElementById('wpPerson').value;
+    const from   = new Date(document.getElementById('wpFrom').value);
+    const to     = new Date(document.getElementById('wpTo').value);
+    to.setHours(23,59,59);
+
+    if (isNaN(from) || isNaN(to)) { alert('Please set a valid date range.'); return; }
+
+    wpData = currentData.filter(p => {
+        if (p.assignedTo !== person) return false;
+        const d = new Date(p.timestamp);
+        return !isNaN(d) && d >= from && d <= to;
+    }).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+
+    const el = document.getElementById('wpResults');
+    if (!wpData.length) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">👷</div>
+            <div class="placeholder-title">No Records</div>
+            <div class="placeholder-text">${person} has no assigned problems in the selected date range.</div></div>`;
+        document.getElementById('wpPdfBtn').style.display = 'none';
+        return;
+    }
+
+    const completed = wpData.filter(isCompleted).length;
+    const open      = wpData.filter(isOpen).length;
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${wpData.length}</div><div class="stat-pill-label">Assigned</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${completed}</div><div class="stat-pill-label">Completed</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${open}</div><div class="stat-pill-label">Still Open</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${completed && wpData.length ? Math.round(completed/wpData.length*100) : 0}%</div><div class="stat-pill-label">Completion Rate</div></div>
+        </div>
+        <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>Reported</th><th>Completed</th><th>Unit</th><th>Zone</th><th>Description</th><th>Category</th><th>Priority</th><th>Status</th></tr></thead>
+            <tbody>
+                ${wpData.map(p=>`<tr>
+                    <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
+                    <td style="white-space:nowrap">${isCompleted(p)?fmt(p.completionDate):'—'}</td>
+                    <td>${p.unitNumber||'—'}</td>
+                    <td>${p.zone||'—'}</td>
+                    <td>${p.problemDescription||'—'}</td>
+                    <td>${p.category||'—'}</td>
+                    <td>${priorityBadge(p.problemPriority)}</td>
+                    <td>${statusBadge(p.problemStatus)}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+    document.getElementById('wpPdfBtn').style.display = '';
+}
+
+async function exportWorkPDF() {
+    if (!wpData.length) return;
+    const person = document.getElementById('wpPerson').value;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l','mm','a4');
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+    pdf.text(`Lake Illawong — Work by Person: ${person}`, pw/2, 12, {align:'center'});
+    const comp = wpData.filter(isCompleted).length;
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`${wpData.length} assigned  |  ${comp} completed  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    let y = 36;
+    const cols   = ['Reported','Completed','Unit','Zone','Description','Category','Priority','Status'];
+    const widths = [22,22,16,20,90,28,20,22];
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
+    let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    wpData.forEach((p,i)=>{
+        if (y>ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        [fmt(p.timestamp),isCompleted(p)?fmt(p.completionDate):'—',
+         p.unitNumber||'—',p.zone||'—',(p.problemDescription||'').substring(0,65),
+         p.category||'—',p.problemPriority||'—',p.problemStatus||'—'
+        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
+        y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`Work_${person.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT 9 — PROGRAMMED WORKS
+// =====================================================================
+function renderProgrammedWorks() {
+    const zones  = [...new Set(programmedData.map(p=>p.zone).filter(Boolean))].sort();
+    const people = [...new Set(programmedData.map(p=>p.assignedTo).filter(Boolean))].sort();
+    const cats   = [...new Set(programmedData.map(p=>p.category).filter(Boolean))].sort();
+
+    showPanel(`
+        <div class="report-heading">📋 Programmed Works</div>
+        <div class="report-subheading">Planned and scheduled works — Programmed and Programmed-Completed status. Excluded from all other reports.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Status</span>
+                <select id="pwStatus" class="glass-select" onchange="runProgrammedWorks()">
+                    <option value="all">All</option>
+                    <option value="Programmed">Programmed (open)</option>
+                    <option value="Programmed-Completed">Programmed-Completed</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="pwZone" class="glass-select" onchange="runProgrammedWorks()">
+                    <option value="all">All Zones</option>
+                    ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Category</span>
+                <select id="pwCategory" class="glass-select" onchange="runProgrammedWorks()">
+                    <option value="all">All Categories</option>
+                    ${cats.map(c=>`<option value="${c}">${c}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Assigned To</span>
+                <select id="pwPerson" class="glass-select" onchange="runProgrammedWorks()">
+                    <option value="all">Anyone</option>
+                    ${people.map(p=>`<option value="${p}">${p}</option>`).join('')}
+                </select>
+            </div>
+            <button class="pdf-btn" onclick="exportProgrammedPDF()">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="pwResults"></div>`);
+
+    runProgrammedWorks();
+}
+
+let pwData = [];
+
+function runProgrammedWorks() {
+    if (!dataLoaded) return;
+    const status   = document.getElementById('pwStatus').value;
+    const zone     = document.getElementById('pwZone').value;
+    const category = document.getElementById('pwCategory').value;
+    const person   = document.getElementById('pwPerson').value;
+
+    pwData = programmedData.filter(p => {
+        if (status !== 'all' && p.problemStatus !== status) return false;
+        if (zone !== 'all' && p.zone !== zone) return false;
+        if (category !== 'all' && p.category !== category) return false;
+        if (person !== 'all' && p.assignedTo !== person) return false;
+        return true;
+    }).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    const el = document.getElementById('pwResults');
+    if (!pwData.length) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">📋</div>
+            <div class="placeholder-title">No Records</div>
+            <div class="placeholder-text">No programmed works match the selected filters.</div></div>`;
+        return;
+    }
+
+    const open = pwData.filter(p=>p.problemStatus==='Programmed').length;
+    const comp = pwData.filter(p=>p.problemStatus==='Programmed-Completed').length;
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${pwData.length}</div><div class="stat-pill-label">Total</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${open}</div><div class="stat-pill-label">Programmed</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${comp}</div><div class="stat-pill-label">Completed</div></div>
+        </div>
+        <div class="table-wrap"><table class="data-table">
+            <thead><tr>
+                <th>Date</th><th>Unit</th><th>Zone</th><th>Category</th>
+                <th>Description</th><th>Assigned To</th><th>Status</th><th>Completed</th>
+            </tr></thead>
+            <tbody>
+                ${pwData.map(p=>`<tr>
+                    <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
+                    <td>${p.unitNumber||'—'}</td>
+                    <td>${p.zone||'—'}</td>
+                    <td>${p.category||'—'}${p.subCategory?'<br><span style="font-size:0.75rem;color:#6b7280">'+p.subCategory+'</span>':''}</td>
+                    <td>${p.problemDescription||'—'}</td>
+                    <td>${p.assignedTo||'—'}</td>
+                    <td><span class="badge ${p.problemStatus==='Programmed-Completed'?'badge-completed':'badge-inprogress'}">${p.problemStatus}</span></td>
+                    <td style="white-space:nowrap">${p.problemStatus==='Programmed-Completed'?fmt(p.completionDate):'—'}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+}
+
+async function exportProgrammedPDF() {
+    if (!pwData.length) return;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l','mm','a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong — Programmed Works', pw/2, 12, {align:'center'});
+    const open = pwData.filter(p=>p.problemStatus==='Programmed').length;
+    const comp = pwData.filter(p=>p.problemStatus==='Programmed-Completed').length;
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`${pwData.length} records  |  ${open} open  |  ${comp} completed  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    let y = 36;
+    const cols   = ['Date','Unit','Zone','Category','Description','Assigned To','Status','Completed'];
+    const widths = [22,16,22,28,80,30,36,22];
+
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
+    let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
+
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    pwData.forEach((p,i)=>{
+        if (y>ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',p.category||'—',
+         (p.problemDescription||'').substring(0,65),p.assignedTo||'—',
+         p.problemStatus||'—',
+         p.problemStatus==='Programmed-Completed'?fmt(p.completionDate):'—'
+        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
+        y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`Programmed_Works_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// HELPERS
+// =====================================================================
+function getLast12MonthLabels() {
+    const labels = [];
+    for (let i=11; i>=0; i--) {
+        const d = new Date(); d.setMonth(d.getMonth()-i);
+        labels.push(d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}));
+    }
+    return labels;
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    // Show default report form immediately (no data needed for UI)
+    renderUnitHistoryForm();
+    // Load data
+    loadAllData();
+});
+</script>
+</body>
+</html>
