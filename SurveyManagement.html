@@ -4,9 +4,9 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.0.0 (Glass-morphism conversion)
-LAST UPDATED: January 27, 2026
-BACKEND API: SurveyModule.js V1.4.0
+VERSION: 2.0.1 (Batched question updates — URL length limit fix for edit path)
+LAST UPDATED: May 25, 2026
+BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
 - Custom rating labels support
 - Conditional branching/skip logic support
@@ -14,13 +14,24 @@ ENHANCEMENTS:
 - Branching rules editor
 - Enhanced preview with branching simulation
 
-CHANGES IN V1.9.0:
+CHANGES IN V2.0.1:
+- FIXED: Survey update failure (HTTP 400) when editing surveys with 16+ questions
+- CHANGED: Update path now uses 3-step batched flow (metadata → clear → add batches)
+  matching the fix applied to V1.7.3 and SurveyModule V1.4.2
+- NEW: updateSurveyInBatches() — 3-step async update flow:
+  updateSurvey (metadata only) -> clearSurveyQuestions -> addSurveyQuestions batches
+- NEW: addQuestionsInBatches() — splits questions into chunks of 8, sends sequentially
+- NEW: updateSaveStatus(), onSaveSuccess(), onSaveError() — shared state helpers
+- CHANGED: Create path refactored to use addQuestionsInBatches() helper (batch size 8)
+- REMOVED: Temporary debug console.log statement
+
+CHANGES IN V1.9.0 (glass-morphism base):
 - NEW: Custom rating labels support
 - NEW: 3 rating scale types (1-5 satisfaction, 0-10 NPS, custom labels)
 - NEW: Custom label editor for rating questions
 - NEW: Preview shows custom rating labels
 
-CHANGES IN V1.8.0:
+CHANGES IN V1.8.0 (glass-morphism base):
 - NEW: Conditional branching/skip logic support
 - NEW: Question flow visualization in editor
 - NEW: Branching rules configuration UI
@@ -2645,7 +2656,6 @@ CHANGES IN V1.8.0:
                 }
 
                 questions.push(question);
-console.log('Question collected:', question); // TEMPORARY DEBUG
             }
 
             if (questions.length === 0) {
@@ -2677,20 +2687,8 @@ console.log('Question collected:', question); // TEMPORARY DEBUG
             `;
 
             if (isUpdate) {
-                // UPDATE: Use existing logic
+                // UPDATE PATH: metadata -> clearSurveyQuestions -> addSurveyQuestions batches
                 const surveyData = {
-                    title: title,
-                    description: document.getElementById('surveyDescription').value.trim(),
-                    questions: questions,
-                    settings: {
-                        targetAudience: 'All Residents',
-                        isAnonymous: document.getElementById('isAnonymous').checked,
-                        allowMultipleResponses: true,
-                        thankYouMessage: document.getElementById('thankYouMessage').value.trim(),
-                        confirmationMessage: document.getElementById('confirmationMessage').value.trim(),
-                        allowAnotherResponse: document.getElementById('allowAnotherResponse').checked,
-                        showResponseSummary: document.getElementById('showResponseSummary').checked
-                    },
                     surveyId: currentEditingSurveyId,
                     updates: {
                         title: title,
@@ -2701,40 +2699,13 @@ console.log('Question collected:', question); // TEMPORARY DEBUG
                         showResponseSummary: document.getElementById('showResponseSummary').checked
                     }
                 };
-
-                callAPI('updateSurvey', surveyData, function(result) {
-                    if (result.success) {
-                        saveBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-                        saveBtn.style.cursor = 'pointer';
-                        saveBtn.innerHTML = '✅ Changes Saved!';
-                        
-                        messageDiv.innerHTML = '<div style="background: #d1fae5; border: 2px solid #10b981; color: #047857; padding: 15px; border-radius: 8px;">✅ Survey updated successfully!</div>';
-                        
-                        setTimeout(() => {
-                            currentEditingSurveyId = null;
-                            resetCreateForm();
-                            showView('list');
-                        }, 2000);
-                    } else {
-                        saveBtn.disabled = false;
-                        saveBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
-                        saveBtn.style.cursor = 'pointer';
-                        saveBtn.innerHTML = '❌ Save Failed';
-                        
-                        messageDiv.innerHTML = `<div class="error-message">❌ Error: ${result.message || result.error}</div>`;
-                        
-                        setTimeout(() => {
-                            saveBtn.style.background = '';
-                            saveBtn.innerHTML = originalBtnText;
-                        }, 3000);
-                    }
-                });
+                updateSurveyInBatches(surveyData, questions, saveBtn, originalBtnText, messageDiv);
             } else {
-                // CREATE: Two-step process with batching
+                // CREATE PATH: create survey (no questions) -> addSurveyQuestions batches
                 const surveyOnlyData = {
                     title: title,
                     description: document.getElementById('surveyDescription').value.trim(),
-                    questions: [], // No questions in first call
+                    questions: [],
                     settings: {
                         targetAudience: 'All Residents',
                         isAnonymous: document.getElementById('isAnonymous').checked,
@@ -2746,100 +2717,144 @@ console.log('Question collected:', question); // TEMPORARY DEBUG
                     },
                     createdBy: 'Admin'
                 };
-                
-                // Step 1: Create survey without questions
+
                 callAPI('createSurvey', surveyOnlyData, function(result) {
-                    if (!result.success) {
-                        saveBtn.disabled = false;
-                        saveBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
-                        saveBtn.style.cursor = 'pointer';
-                        saveBtn.innerHTML = '❌ Save Failed';
-                        messageDiv.innerHTML = `<div class="error-message">❌ Error: ${result.message || result.error}</div>`;
-                        
-                        setTimeout(() => {
-                            saveBtn.style.background = '';
-                            saveBtn.innerHTML = originalBtnText;
-                        }, 3000);
-                        return;
-                    }
-                    
-                    const newSurveyId = result.surveyId;
-                    
-                    // Step 2: Add questions in batches of 5
-                    if (questions.length === 0) {
-                        // No questions to add
-                        saveBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-                        saveBtn.style.cursor = 'pointer';
-                        saveBtn.innerHTML = '✅ Survey Created!';
-                        messageDiv.innerHTML = '<div style="background: #d1fae5; border: 2px solid #10b981; color: #047857; padding: 15px; border-radius: 8px;">✅ Survey created successfully!</div>';
-                        
-                        setTimeout(() => {
-                            currentEditingSurveyId = null;
-                            resetCreateForm();
-                            showView('list');
-                        }, 2000);
-                        return;
-                    }
-                    
-                    const batchSize = 5;
-                    let batchIndex = 0;
-                    
-                    function addNextBatch() {
-                        const start = batchIndex * batchSize;
-                        const end = Math.min(start + batchSize, questions.length);
-                        const batch = questions.slice(start, end);
-                        
-                        if (batch.length === 0) {
-                            // All done!
-                            saveBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-                            saveBtn.style.cursor = 'pointer';
-                            saveBtn.innerHTML = '✅ Survey Created!';
-                            
-                            messageDiv.innerHTML = `<div style="background: #d1fae5; border: 2px solid #10b981; color: #047857; padding: 15px; border-radius: 8px;">✅ Survey created successfully with ${questions.length} questions!</div>`;
-                            
-                            setTimeout(() => {
-                                currentEditingSurveyId = null;
-                                resetCreateForm();
-                                showView('list');
-                            }, 2000);
-                            return;
-                        }
-                        
-                        // Update progress
-                        saveBtn.innerHTML = `
-                            <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                                <div style="width: 16px; height: 16px; border: 3px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-                                <span>Adding questions ${Math.min(end, questions.length)}/${questions.length}...</span>
-                            </div>
-                        `;
-                        
-                        callAPI('addSurveyQuestions', {
-                            surveyId: newSurveyId,
-                            questions: batch,
-                            startOrder: start + 1
-                        }, function(batchResult) {
+                    if (result.success) {
+                        const newSurveyId = result.surveyId;
+                        updateSaveStatus(messageDiv, saveBtn, 'saving', 'Survey created — adding questions...');
+                        addQuestionsInBatches(newSurveyId, questions, 8, function(batchResult) {
                             if (batchResult.success) {
-                                batchIndex++;
-                                addNextBatch();
+                                onSaveSuccess(saveBtn, messageDiv, false);
                             } else {
-                                saveBtn.disabled = false;
-                                saveBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
-                                saveBtn.style.cursor = 'pointer';
-                                saveBtn.innerHTML = '❌ Save Failed';
-                                messageDiv.innerHTML = `<div class="error-message">❌ Error adding questions: ${batchResult.error}</div>`;
-                                
-                                setTimeout(() => {
-                                    saveBtn.style.background = '';
-                                    saveBtn.innerHTML = originalBtnText;
-                                }, 3000);
+                                onSaveError(saveBtn, messageDiv, originalBtnText, batchResult.message || batchResult.error);
                             }
                         });
+                    } else {
+                        onSaveError(saveBtn, messageDiv, originalBtnText, result.message || result.error);
                     }
-                    
-                    // Start adding questions
-                    addNextBatch();
                 });
             }
+        }
+
+        // BATCHED UPDATE FLOW
+        function updateSurveyInBatches(surveyData, questions, saveBtn, originalBtnText, messageDiv) {
+            updateSaveStatus(messageDiv, saveBtn, 'saving', 'Updating survey details...');
+
+            callAPI('updateSurvey', surveyData, function(metaResult) {
+                if (!metaResult.success) {
+                    onSaveError(saveBtn, messageDiv, originalBtnText, metaResult.message || metaResult.error);
+                    return;
+                }
+
+                updateSaveStatus(messageDiv, saveBtn, 'saving', 'Clearing old questions...');
+
+                const callbackName = 'clearCallback_' + Date.now();
+                window[callbackName] = function(clearResult) {
+                    delete window[callbackName];
+                    if (!clearResult.success) {
+                        onSaveError(saveBtn, messageDiv, originalBtnText, clearResult.message || clearResult.error);
+                        return;
+                    }
+
+                    updateSaveStatus(messageDiv, saveBtn, 'saving', `Adding ${questions.length} questions...`);
+                    addQuestionsInBatches(surveyData.surveyId, questions, 8, function(batchResult) {
+                        if (batchResult.success) {
+                            onSaveSuccess(saveBtn, messageDiv, true);
+                        } else {
+                            onSaveError(saveBtn, messageDiv, originalBtnText, batchResult.message || batchResult.error);
+                        }
+                    });
+                };
+
+                const script = document.createElement('script');
+                script.src = `${SURVEY_API_URL}?action=clearSurveyQuestions&surveyId=${encodeURIComponent(surveyData.surveyId)}&callback=${callbackName}`;
+                script.onerror = function() {
+                    onSaveError(saveBtn, messageDiv, originalBtnText, 'Network error clearing questions');
+                    delete window[callbackName];
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+        // ADD QUESTIONS IN BATCHES
+        function addQuestionsInBatches(surveyId, questions, batchSize, onComplete) {
+            const batches = [];
+            for (let i = 0; i < questions.length; i += batchSize) {
+                batches.push(questions.slice(i, i + batchSize));
+            }
+
+            let batchIndex = 0;
+
+            function sendNextBatch() {
+                if (batchIndex >= batches.length) {
+                    onComplete({ success: true });
+                    return;
+                }
+
+                const batch = batches[batchIndex];
+                const startOrder = batchIndex * batchSize + 1;
+                batchIndex++;
+
+                callAPI('addSurveyQuestions', {
+                    surveyId: surveyId,
+                    questions: batch,
+                    startOrder: startOrder
+                }, function(result) {
+                    if (result.success) {
+                        sendNextBatch();
+                    } else {
+                        onComplete({ success: false, message: result.message || result.error });
+                    }
+                });
+            }
+
+            sendNextBatch();
+        }
+
+        // SAVE STATE HELPERS
+        function updateSaveStatus(messageDiv, saveBtn, type, text) {
+            const spinner = `<div style="width:20px;height:20px;border:3px solid #bae6fd;border-top-color:#0369a1;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></div>`;
+            messageDiv.innerHTML = `
+                <div style="background:#f0f9ff;border:2px solid #bae6fd;color:#0369a1;padding:15px;border-radius:8px;display:flex;align-items:center;gap:10px;">
+                    ${spinner}<div>${text}</div>
+                </div>`;
+        }
+
+        function onSaveSuccess(saveBtn, messageDiv, isUpdate) {
+            saveBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+            saveBtn.style.cursor = 'pointer';
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+                    <span>&#x2705;</span><span>${isUpdate ? 'Changes Saved!' : 'Survey Created!'}</span>
+                </div>`;
+            messageDiv.innerHTML = `
+                <div style="background:#d1fae5;border:2px solid #10b981;color:#047857;padding:15px;border-radius:8px;">
+                    &#x2705; Survey ${isUpdate ? 'updated' : 'created'} successfully!
+                </div>`;
+            setTimeout(() => {
+                currentEditingSurveyId = null;
+                resetCreateForm();
+                showView('list');
+            }, 2000);
+        }
+
+        function onSaveError(saveBtn, messageDiv, originalBtnText, errorText) {
+            saveBtn.disabled = false;
+            saveBtn.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+            saveBtn.style.cursor = 'pointer';
+            saveBtn.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+                    <span>&#x274C;</span><span>Save Failed</span>
+                </div>`;
+            messageDiv.innerHTML = `
+                <div style="background:#fee2e2;border:2px solid #ef4444;color:#dc2626;padding:15px;border-radius:8px;">
+                    &#x274C; Error: ${errorText}
+                </div>`;
+            setTimeout(() => {
+                saveBtn.style.background = '';
+                saveBtn.innerHTML = originalBtnText;
+            }, 3000);
         }
 
         // CHANGE SURVEY STATUS
