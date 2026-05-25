@@ -4,7 +4,7 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.0.1 (Batched question updates — URL length limit fix for edit path)
+VERSION: 2.0.2 (Duplicate survey)
 LAST UPDATED: May 25, 2026
 BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
@@ -13,6 +13,13 @@ ENHANCEMENTS:
 - Question flow visualization
 - Branching rules editor
 - Enhanced preview with branching simulation
+
+CHANGES IN V2.0.2:
+- NEW: Duplicate Survey — copies metadata and all questions into a new Draft
+- NEW: duplicateSurvey() — 3-step flow: getSurveyDetails -> createSurvey -> addQuestionsInBatches
+- Duplicate button added to each survey card's Actions dropdown
+- New survey always created as Draft regardless of original status
+- Title prefixed with "Copy of ..."
 
 CHANGES IN V2.0.1:
 - FIXED: Survey update failure (HTTP 400) when editing surveys with 16+ questions
@@ -1614,6 +1621,9 @@ CHANGES IN V1.8.0 (glass-morphism base):
                                 </button>
                                 <button onclick="viewResults('${survey.surveyId}'); this.closest('.dropdown-menu').classList.remove('show');">
                                     📈 View Results
+                                </button>
+                                <button onclick="duplicateSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', this); this.closest('.dropdown-menu').classList.remove('show');">
+                                    📋 Duplicate Survey
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 <button onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', ${survey.totalResponses}); this.closest('.dropdown-menu').classList.remove('show');"
@@ -3756,6 +3766,111 @@ function renderResults(data) {
 }
 
         // DELETE SURVEY FUNCTIONS
+        // DUPLICATE SURVEY
+        function duplicateSurvey(surveyId, surveyTitle, buttonElement) {
+
+            if (!confirm(`Duplicate "${surveyTitle}"?\n\nA new Draft copy will be created titled "Copy of ${surveyTitle}".`)) {
+                return;
+            }
+
+            // Show progress on button
+            const originalText = buttonElement.innerHTML;
+            buttonElement.disabled = true;
+            buttonElement.innerHTML = '⏳ Duplicating...';
+
+            // Step 1: Fetch full survey details
+            const callbackName = 'duplicateLoadCallback_' + Date.now();
+            window[callbackName] = function(data) {
+                delete window[callbackName];
+
+                if (!data.success) {
+                    buttonElement.disabled = false;
+                    buttonElement.innerHTML = originalText;
+                    alert('❌ Error loading survey: ' + (data.message || data.error));
+                    return;
+                }
+
+                const survey = data.survey;
+
+                // Step 2: Create new survey (metadata only, no questions)
+                const newSurveyData = {
+                    title: 'Copy of ' + survey.title,
+                    description: survey.description || '',
+                    questions: [],
+                    settings: {
+                        targetAudience: 'All Residents',
+                        isAnonymous: survey.isAnonymous || false,
+                        allowMultipleResponses: true,
+                        thankYouMessage: survey.thankYouMessage || '',
+                        confirmationMessage: survey.confirmationMessage || '',
+                        allowAnotherResponse: survey.allowAnotherResponse || false,
+                        showResponseSummary: survey.showResponseSummary || false
+                    },
+                    createdBy: 'Admin'
+                };
+
+                buttonElement.innerHTML = '⏳ Creating copy...';
+
+                callAPI('createSurvey', newSurveyData, function(createResult) {
+                    if (!createResult.success) {
+                        buttonElement.disabled = false;
+                        buttonElement.innerHTML = originalText;
+                        alert('❌ Error creating survey copy: ' + (createResult.message || createResult.error));
+                        return;
+                    }
+
+                    const newSurveyId = createResult.surveyId;
+
+                    // Step 3: Add questions in batches if any exist
+                    if (!survey.questions || survey.questions.length === 0) {
+                        buttonElement.disabled = false;
+                        buttonElement.innerHTML = originalText;
+                        alert('✅ Survey duplicated successfully!');
+                        loadSurveys();
+                        return;
+                    }
+
+                    buttonElement.innerHTML = '⏳ Copying questions...';
+
+                    // Strip question IDs so backend generates fresh ones
+                    const questions = survey.questions.map(q => ({
+                        questionText: q.questionText,
+                        questionType: q.questionType,
+                        isRequired: q.isRequired,
+                        helpText: q.helpText || '',
+                        options: q.optionsArray || q.options || [],
+                        ratingMin: q.ratingMin,
+                        ratingMax: q.ratingMax,
+                        conditionalLogic: q.conditionalLogic || 'none',
+                        conditionRules: q.conditionRules || [],
+                        skipTarget: q.skipTarget || ''
+                    }));
+
+                    addQuestionsInBatches(newSurveyId, questions, 8, function(batchResult) {
+                        buttonElement.disabled = false;
+                        buttonElement.innerHTML = originalText;
+                        if (batchResult.success) {
+                            alert('✅ Survey duplicated successfully!');
+                            loadSurveys();
+                        } else {
+                            alert('⚠️ Survey created but some questions may not have copied: ' + (batchResult.message || batchResult.error));
+                            loadSurveys();
+                        }
+                    });
+                });
+            };
+
+            const script = document.createElement('script');
+            script.src = `${SURVEY_API_URL}?action=getSurveyDetails&surveyId=${encodeURIComponent(surveyId)}&callback=${callbackName}`;
+            script.onerror = function() {
+                delete window[callbackName];
+                buttonElement.disabled = false;
+                buttonElement.innerHTML = originalText;
+                alert('❌ Network error loading survey');
+            };
+            document.head.appendChild(script);
+        }
+
         function confirmDeleteSurvey(surveyId, surveyTitle, responseCount) {
             if (responseCount > 0) {
                 if (confirm(`Cannot delete "${surveyTitle}" because it has ${responseCount} response(s). Would you like to archive it instead?`)) {
