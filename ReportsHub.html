@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.0.0
+VERSION: V1.1.0
 LAST UPDATED: May 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -386,6 +386,12 @@ VERSION HISTORY:
             <div class="report-item" onclick="selectReport('work-by-person')" id="cat-work-by-person">
                 <span class="report-icon">👷</span>Work by Person
             </div>
+
+            <div class="catalogue-divider"></div>
+
+            <div class="report-item" onclick="selectReport('programmed-works')" id="cat-programmed-works">
+                <span class="report-icon">📋</span>Programmed Works
+            </div>
         </div>
 
         <!-- ── REPORT PANEL ───────────────────────────── -->
@@ -409,12 +415,18 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9
 // =====================================================================
 // DATA CACHE
 // =====================================================================
-let currentData  = null;  // FaultLog records
-let legacyData   = null;  // LegacyLog records
-let allData      = null;  // Combined
-let dataLoaded   = false;
-let activeReport = null;
-let activeChart  = null;
+let currentData    = null;  // FaultLog records — Programmed excluded
+let legacyData     = null;  // LegacyLog records — Programmed excluded
+let allData        = null;  // Combined — Programmed excluded
+let programmedData = null;  // Programmed + Programmed-Completed (current only)
+let dataLoaded     = false;
+let activeReport   = null;
+let activeChart    = null;
+
+function isProgrammed(p) {
+    const s = (p.problemStatus || '').toLowerCase();
+    return s === 'programmed' || s === 'programmed-completed';
+}
 
 // =====================================================================
 // DATA LOADING (JSONP)
@@ -449,14 +461,18 @@ async function loadAllData() {
             makeRequest('getLegacyLogData')
         ]);
 
-        currentData = (cr && cr.success) ? (cr.data || []) : [];
-        legacyData  = (lr && lr.success) ? (lr.data || []) : [];
-        allData     = [...currentData, ...legacyData];
-        dataLoaded  = true;
+        const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
+        const rawLegacy  = (lr && lr.success) ? (lr.data || []) : [];
 
-        const total = allData.length;
+        // Split programmed works out into their own pool
+        programmedData = rawCurrent.filter(isProgrammed);
+        currentData    = rawCurrent.filter(p => !isProgrammed(p));
+        legacyData     = rawLegacy.filter(p => !isProgrammed(p));
+        allData        = [...currentData, ...legacyData];
+        dataLoaded     = true;
+
         setDataStatus('loaded',
-            `&#10003; ${currentData.length} current + ${legacyData.length} legacy records loaded`);
+            `&#10003; ${currentData.length} current + ${legacyData.length} legacy + ${programmedData.length} programmed loaded`);
 
         // Auto-run the default report
         runCurrentReport();
@@ -502,14 +518,15 @@ function runCurrentReport() {
     if (activeChart) { activeChart.destroy(); activeChart = null; }
 
     switch (currentReportId) {
-        case 'unit-history':   renderUnitHistoryForm();  break;
-        case 'open-problems':  renderOpenProblems();      break;
-        case 'mom-reported':   renderMoMReported();       break;
-        case 'mom-completed':  renderMoMCompleted();      break;
-        case 'by-category':    renderByCategory();        break;
-        case 'by-zone':        renderByZone();            break;
-        case 'keyword-search': renderKeywordForm();       break;
-        case 'work-by-person': renderWorkByPersonForm();  break;
+        case 'unit-history':      renderUnitHistoryForm();   break;
+        case 'open-problems':     renderOpenProblems();       break;
+        case 'mom-reported':      renderMoMReported();        break;
+        case 'mom-completed':     renderMoMCompleted();       break;
+        case 'by-category':       renderByCategory();         break;
+        case 'by-zone':           renderByZone();             break;
+        case 'keyword-search':    renderKeywordForm();        break;
+        case 'work-by-person':    renderWorkByPersonForm();   break;
+        case 'programmed-works':  renderProgrammedWorks();    break;
     }
 }
 
@@ -1525,6 +1542,148 @@ async function exportWorkPDF() {
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
     pdf.save(`Work_${person.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT 9 — PROGRAMMED WORKS
+// =====================================================================
+function renderProgrammedWorks() {
+    const zones  = [...new Set(programmedData.map(p=>p.zone).filter(Boolean))].sort();
+    const people = [...new Set(programmedData.map(p=>p.assignedTo).filter(Boolean))].sort();
+    const cats   = [...new Set(programmedData.map(p=>p.category).filter(Boolean))].sort();
+
+    showPanel(`
+        <div class="report-heading">📋 Programmed Works</div>
+        <div class="report-subheading">Planned and scheduled works — Programmed and Programmed-Completed status. Excluded from all other reports.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Status</span>
+                <select id="pwStatus" class="glass-select" onchange="runProgrammedWorks()">
+                    <option value="all">All</option>
+                    <option value="Programmed">Programmed (open)</option>
+                    <option value="Programmed-Completed">Programmed-Completed</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="pwZone" class="glass-select" onchange="runProgrammedWorks()">
+                    <option value="all">All Zones</option>
+                    ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Category</span>
+                <select id="pwCategory" class="glass-select" onchange="runProgrammedWorks()">
+                    <option value="all">All Categories</option>
+                    ${cats.map(c=>`<option value="${c}">${c}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Assigned To</span>
+                <select id="pwPerson" class="glass-select" onchange="runProgrammedWorks()">
+                    <option value="all">Anyone</option>
+                    ${people.map(p=>`<option value="${p}">${p}</option>`).join('')}
+                </select>
+            </div>
+            <button class="pdf-btn" onclick="exportProgrammedPDF()">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="pwResults"></div>`);
+
+    runProgrammedWorks();
+}
+
+let pwData = [];
+
+function runProgrammedWorks() {
+    const status   = document.getElementById('pwStatus').value;
+    const zone     = document.getElementById('pwZone').value;
+    const category = document.getElementById('pwCategory').value;
+    const person   = document.getElementById('pwPerson').value;
+
+    pwData = programmedData.filter(p => {
+        if (status !== 'all' && p.problemStatus !== status) return false;
+        if (zone !== 'all' && p.zone !== zone) return false;
+        if (category !== 'all' && p.category !== category) return false;
+        if (person !== 'all' && p.assignedTo !== person) return false;
+        return true;
+    }).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    const el = document.getElementById('pwResults');
+    if (!pwData.length) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">📋</div>
+            <div class="placeholder-title">No Records</div>
+            <div class="placeholder-text">No programmed works match the selected filters.</div></div>`;
+        return;
+    }
+
+    const open = pwData.filter(p=>p.problemStatus==='Programmed').length;
+    const comp = pwData.filter(p=>p.problemStatus==='Programmed-Completed').length;
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${pwData.length}</div><div class="stat-pill-label">Total</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${open}</div><div class="stat-pill-label">Programmed</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${comp}</div><div class="stat-pill-label">Completed</div></div>
+        </div>
+        <div class="table-wrap"><table class="data-table">
+            <thead><tr>
+                <th>Date</th><th>Unit</th><th>Zone</th><th>Category</th>
+                <th>Description</th><th>Assigned To</th><th>Status</th><th>Completed</th>
+            </tr></thead>
+            <tbody>
+                ${pwData.map(p=>`<tr>
+                    <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
+                    <td>${p.unitNumber||'—'}</td>
+                    <td>${p.zone||'—'}</td>
+                    <td>${p.category||'—'}${p.subCategory?'<br><span style="font-size:0.75rem;color:#6b7280">'+p.subCategory+'</span>':''}</td>
+                    <td>${p.problemDescription||'—'}</td>
+                    <td>${p.assignedTo||'—'}</td>
+                    <td><span class="badge ${p.problemStatus==='Programmed-Completed'?'badge-completed':'badge-inprogress'}">${p.problemStatus}</span></td>
+                    <td style="white-space:nowrap">${p.problemStatus==='Programmed-Completed'?fmt(p.completionDate):'—'}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+}
+
+async function exportProgrammedPDF() {
+    if (!pwData.length) return;
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l','mm','a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong — Programmed Works', pw/2, 12, {align:'center'});
+    const open = pwData.filter(p=>p.problemStatus==='Programmed').length;
+    const comp = pwData.filter(p=>p.problemStatus==='Programmed-Completed').length;
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`${pwData.length} records  |  ${open} open  |  ${comp} completed  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    let y = 36;
+    const cols   = ['Date','Unit','Zone','Category','Description','Assigned To','Status','Completed'];
+    const widths = [22,16,22,28,80,30,36,22];
+
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
+    let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
+
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    pwData.forEach((p,i)=>{
+        if (y>ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',p.category||'—',
+         (p.problemDescription||'').substring(0,65),p.assignedTo||'—',
+         p.problemStatus||'—',
+         p.problemStatus==='Programmed-Completed'?fmt(p.completionDate):'—'
+        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
+        y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`Programmed_Works_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
