@@ -6,13 +6,22 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintStatus.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.1.5
+  Frontend Version: V1.1.7
   Backend:          ComplaintsManager V2.2.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V1.1.7 (May 2026): formatBoardResponse() added -- matches ComplaintsManager
+    implementation. Board response entries render with green Sent pill
+    and timestamp formatting instead of raw [SENT] text. br-entry,
+    br-timestamp, br-sent-badge CSS added.
+
+  V1.1.6 (May 2026): Status-coded left border added to complaint cards,
+    mirroring pill colours -- matches ComplaintsManager pattern exactly.
+    cardClass applied from statusPillClass value.
+
   V1.1.5 (May 2026): Fix -- boardResponseHtml and nrnHtml moved inside
     single complaint-detail wrapper div so Show/Hide toggle controls
     all expandable content. Previously board response and NRN notice
@@ -335,7 +344,6 @@ TECHNICAL:
             font-size: 0.88rem;
             color: rgba(255,255,255,0.88);
             line-height: 1.5;
-            white-space: pre-wrap;
         }
 
         /* Non-Resolution Notice */
@@ -396,7 +404,18 @@ TECHNICAL:
             padding: 8px 10px;
         }
 
-        /* CAV escalation info */
+        /* Status-coded left border -- mirrors pill colours */
+        .complaint-card.status-open          { border-left: 4px solid #60a5fa; }
+        .complaint-card.status-acknowledged  { border-left: 4px solid #10b981; background: rgba(16,185,129,0.15);  backdrop-filter: none; }
+        .complaint-card.status-responded     { border-left: 4px solid #a855f7; background: rgba(168,85,247,0.2);   backdrop-filter: none; }
+        .complaint-card.status-escalated     { border-left: 4px solid #f97316; background: rgba(249,115,22,0.15);  backdrop-filter: none; }
+        .complaint-card.status-closed-resolved   { border-left: 4px solid #cbd5e1; background: rgba(203,213,225,0.4); backdrop-filter: none; }
+        .complaint-card.status-closed-unresolved { border-left: 4px solid #9ca3af; background: rgba(156,163,175,0.3); backdrop-filter: none; }
+        /* Board response formatting */
+        .br-entry { margin-bottom: 10px; white-space: pre-wrap; font-size: 0.88rem; color: rgba(255,255,255,0.88); line-height: 1.5; }
+        .br-timestamp { color: rgba(255,255,255,0.5); font-size: 0.8rem; display: block; margin-bottom: 4px; }
+        .br-sent-badge { display: inline-block; background: rgba(110,231,183,0.2); border: 1px solid rgba(110,231,183,0.5); color: #6ee7b7; font-size: 0.72rem; font-weight: 600; padding: 1px 7px; border-radius: 10px; margin-right: 8px; vertical-align: middle; }
+
         .cav-info {
             background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.12);
@@ -632,6 +651,23 @@ TECHNICAL:
         return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
     }
 
+    function formatBoardResponse(text) {
+        if (!text) return '';
+        var parts = text.split(/\n\n(?=\[\d{4}-\d{2}-\d{2})/);
+        return parts.map(function(part) {
+            var hasSent   = part.indexOf('[SENT]') !== -1;
+            var clean     = part.replace(/\s*\[SENT\]/g, '').trim();
+            var lines     = clean.split('\n');
+            var firstLine = lines[0] || '';
+            var rest      = lines.slice(1).join('\n');
+            var isHeader  = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| /.test(firstLine);
+            var header    = isHeader ? '<span class="br-timestamp">' + escHtml(firstLine) + '</span>' : escHtml(firstLine);
+            var body      = rest ? '\n' + escHtml(rest) : '';
+            var badge     = hasSent ? '<span class="br-sent-badge">Sent</span>' : '';
+            return '<div class="br-entry">' + badge + header + body + '</div>';
+        }).join('');
+    }
+
     function escHtml(str) {
         return String(str || '')
             .replace(/&/g,  '&amp;')
@@ -672,6 +708,7 @@ TECHNICAL:
     function buildComplaintCard(c) {
         const normSt      = normaliseStatus(c.status);
         const statusClass = statusPillClass(normSt);
+        const cardClass   = statusClass; // border class mirrors pill class
         const submitted   = formatDate(c.submittedAt);
         const responseDue = c.responseDue ? formatDate(c.responseDue) : '';
         const respondedAt = c.respondedAt ? formatDate(c.respondedAt) : '';
@@ -697,7 +734,7 @@ TECHNICAL:
         const boardResponseHtml = c.boardResponse
             ? '<div class="board-response">' +
               '<div class="board-response-label">Board Response</div>' +
-              '<div class="board-response-text">' + escHtml(c.boardResponse) + '</div>' +
+              '<div class="board-response-text">' + formatBoardResponse(c.boardResponse) + '</div>' +
               '</div>'
             : '';
 
@@ -746,7 +783,7 @@ TECHNICAL:
               + '</div>'
             : '';
 
-        return '<div class="complaint-card" id="card-' + safeRef + '" onclick="toggleCard(\'card-' + safeRef + '\', ' + hasDetail + ')">'
+        return '<div class="complaint-card ' + cardClass + '" id="card-' + safeRef + '" onclick="toggleCard(\'card-' + safeRef + '\', ' + hasDetail + ')">'
             + '<div class="complaint-card-header">'
             +   '<div>'
             +     '<div class="complaint-ref">' + safeRef + '</div>'
