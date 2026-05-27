@@ -6,13 +6,25 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintStatus.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.0.6
-  Backend:          ComplaintsManager V2.0.0
+  Frontend Version: V1.1.0
+  Backend:          ComplaintsManager V2.2.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V1.1.0 (May 2026): Both closed statuses (Closed - Resolved, Closed -
+    Unresolved) added. normaliseStatus() added for legacy Closed mapping.
+    statusPillClass updated for both new statuses. Non-Resolution Notice
+    section displayed on Closed - Unresolved complaints -- narrative
+    sections parsed and mandatory fixed block rendered from
+    NON_RESOLUTION_FIXED_BLOCK frontend constant. Status pill renders
+    normalised status text. Response due suppressed for both closed
+    statuses in meta row. Print output updated for both closed statuses
+    and Non-Resolution Notice block. Backend V2.2.0.
+
+  V1.0.6 (May 2026): [previous version — no change note recorded]
+
   V1.0.5 (May 2026): Fix — print footer colour changed from #9ca3af to
     #374151 for readability on paper.
 
@@ -20,27 +32,27 @@ VERSION HISTORY:
     (Acknowledged green, Responded purple). Badge border-radius 20px to match pill shape.
 
   V1.0.3 (May 2026): Print added. printComplaint() opens a formatted
-    single-complaint record in a new window — includes all fields and
-    Board response. Internal notes never included (stripped by ).
+    single-complaint record in a new window -- includes all fields and
+    Board response. Internal notes never included (stripped by backend).
     CAV escalation notice included on printed page. allComplaints array
     populated by wrapping renderComplaints(). btn-print-record CSS added.
     Print button added to each card with event.stopPropagation() to
     prevent card toggle firing on click. printStyles() uses string
-    concatenation only — no template literals — to avoid parser issues.
+    concatenation only -- no template literals -- to avoid parser issues.
 
   V1.0.2 (May 2026): Expand/collapse added to complaint cards.
-    shows desired outcome, incident date/time, location, people involved,
+    Shows desired outcome, incident date/time, location, people involved,
     previous actions, and Board response. Toggle hidden if no detail exists.
 
   V1.0.0 (May 2026): Initial release.
     OTP verification via VerificationModal_V1_0.js.
     On verification, unit number from session used to call
-    getComplaintsByUnit — no manual reference number entry required.
+    getComplaintsByUnit -- no manual reference number entry required.
     Displays all complaints for the verified resident, newest first.
     Shows status, category, submitted date, response due date,
     and Board response text if recorded.
-    internalNotes never shown to resident (stripped by ).
-    Empty state handled — message shown if no complaints on file.
+    internalNotes never shown to resident (stripped by backend).
+    Empty state handled -- message shown if no complaints on file.
     Back to Resident Portal button.
 
 AUTHENTICATION:
@@ -49,9 +61,9 @@ AUTHENTICATION:
   Shared session with ComplaintForm.html and ResidentDirectory.html
 
 SYSTEM CONNECTIONS:
-  : ComplaintsManager V2.0.0
+  Backend: ComplaintsManager V2.2.0
   Action:  getComplaintsByUnit
-  URL:     CONFIG._URL
+  URL:     CONFIG.BACKEND_URL
 
 PORTAL:
   Accessed from ResidentPortal.html
@@ -92,7 +104,7 @@ TECHNICAL:
             margin: 0 auto;
         }
 
-        /* Header - matches ComplaintForm.html exactly */
+        /* Header */
         .header {
             text-align: center;
             margin-bottom: 30px;
@@ -128,28 +140,7 @@ TECHNICAL:
             font-weight: 500;
         }
 
-        .header-divider {
-            height: 2px;
-            background: linear-gradient(90deg,
-                transparent 0%, rgba(255,255,255,0.3) 10%,
-                rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%,
-                transparent 100%);
-            border-radius: 2px;
-            margin-top: 15px;
-        }
-
-        /* Content card - matches ComplaintForm.html exactly */
-        .content-card {
-            background: rgba(255, 255, 255, 0.08);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 2px;
-            padding: 30px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-        }
-
-        /* Back button - matches ComplaintForm.html exactly */
+        /* Back button */
         .back-btn {
             display: inline-block;
             background: rgba(255,255,255,0.1);
@@ -161,17 +152,46 @@ TECHNICAL:
             margin-bottom: 20px;
             transition: all 0.2s;
             backdrop-filter: blur(10px);
+            cursor: pointer;
+            font-size: 0.9rem;
         }
 
         .back-btn:hover {
             background: rgba(255,255,255,0.15);
         }
 
+        /* Content card */
+        .content-card {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 2px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        /* Hidden */
+        .hidden { display: none !important; }
+
+        /* Loading / error / empty states */
+        .loading-panel,
+        .empty-panel,
+        .error-panel {
+            text-align: center;
+            padding: 40px 20px;
+            color: rgba(255,255,255,0.7);
+            font-size: 0.95rem;
+        }
+
+        .error-panel { color: #fca5a5; }
+
+        /* Print button */
         .btn-print-record {
             background: rgba(255,255,255,0.12);
             border: 1px solid rgba(255,255,255,0.25);
             color: rgba(255,255,255,0.85);
-            padding: 6px 14px;
+            padding: 7px 14px;
             border-radius: 2px;
             font-size: 0.82rem;
             font-weight: 600;
@@ -182,87 +202,33 @@ TECHNICAL:
         }
         .btn-print-record:hover { background: rgba(255,255,255,0.22); color: white; }
 
-        /* Section heading inside card */
-        .section-heading {
-            color: white;
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 20px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid rgba(255,255,255,0.15);
-        }
-
-        /* Loading state */
-        .loading-panel {
-            text-align: center;
-            padding: 30px 0;
-            color: rgba(255,255,255,0.8);
-        }
-
-        .spinner {
-            width: 44px;
-            height: 44px;
-            border: 4px solid rgba(255,255,255,0.2);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin: 0 auto 16px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Empty state */
-        .empty-panel {
-            background: rgba(14, 165, 233, 0.15);
-            border-left: 3px solid rgba(14, 165, 233, 0.6);
-            border-radius: 2px;
-            padding: 20px;
-            color: rgba(255,255,255,0.9);
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-
-        /* Error state */
-        .error-panel {
-            background: rgba(239, 68, 68, 0.15);
-            border-left: 3px solid rgba(239, 68, 68, 0.6);
-            border-radius: 2px;
-            padding: 20px;
-            color: rgba(255,255,255,0.9);
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-
-        /* Complaint cards */
+        /* =====================================================================
+           COMPLAINT CARDS
+           ===================================================================== */
         .complaint-card {
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-left: 4px solid rgba(255,255,255,0.25);
+            backdrop-filter: blur(10px);
             border-radius: 2px;
-            padding: 20px;
-            margin-bottom: 16px;
-            color: white;
-        }
-
-        .complaint-card:last-child {
-            margin-bottom: 0;
+            margin-bottom: 14px;
+            overflow: hidden;
+            cursor: pointer;
         }
 
         .complaint-card-header {
             display: flex;
-            align-items: flex-start;
             justify-content: space-between;
+            align-items: flex-start;
             gap: 12px;
-            margin-bottom: 14px;
-            flex-wrap: wrap;
+            padding: 16px 20px 0;
         }
 
         .complaint-ref {
             font-family: monospace;
-            font-size: 0.9rem;
+            font-size: 0.78rem;
             font-weight: 700;
-            color: rgba(255,255,255,0.7);
+            color: rgba(255,255,255,0.55);
         }
 
         .complaint-category {
@@ -278,7 +244,7 @@ TECHNICAL:
             margin-top: 3px;
         }
 
-        /* Status pills - system standard colours */
+        /* Status pills */
         .status-pill {
             display: inline-block;
             padding: 4px 12px;
@@ -291,18 +257,20 @@ TECHNICAL:
             flex-shrink: 0;
         }
 
-        .status-open         { background: #dbeafe; color: #1d4ed8; }
-        .status-acknowledged { background: #bbf7d0; color: #047857; }
-        .status-responded    { background: #e9d5ff; color: #7c3aed; }
-        .status-closed       { background: #f3f4f6; color: #374151; }
-        .status-other        { background: rgba(255,255,255,0.2); color: white; }
+        .status-open             { background: #dbeafe; color: #1d4ed8; }
+        .status-acknowledged     { background: #bbf7d0; color: #047857; }
+        .status-responded        { background: #e9d5ff; color: #7c3aed; }
+        .status-closed           { background: #f3f4f6; color: #374151; }
+        .status-closed-resolved  { background: #f3f4f6; color: #374151; }
+        .status-closed-unresolved{ background: #e5e7eb; color: #6b7280; }
+        .status-other            { background: rgba(255,255,255,0.2); color: white; }
 
         /* Complaint meta row */
         .complaint-meta {
             display: flex;
             gap: 20px;
             flex-wrap: wrap;
-            margin-bottom: 12px;
+            margin: 10px 20px 12px;
         }
 
         .meta-item {
@@ -319,7 +287,7 @@ TECHNICAL:
             font-size: 0.88rem;
             color: rgba(255,255,255,0.8);
             line-height: 1.5;
-            padding-top: 12px;
+            padding: 12px 20px;
             border-top: 1px solid rgba(255,255,255,0.1);
         }
 
@@ -329,7 +297,7 @@ TECHNICAL:
             border-left: 3px solid rgba(34, 197, 94, 0.5);
             border-radius: 2px;
             padding: 14px 16px;
-            margin-top: 12px;
+            margin: 0 20px 12px;
         }
 
         .board-response-label {
@@ -345,6 +313,65 @@ TECHNICAL:
             font-size: 0.88rem;
             color: rgba(255,255,255,0.88);
             line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        /* Non-Resolution Notice */
+        .nrn-notice {
+            background: rgba(107,114,128,0.12);
+            border: 1px solid rgba(107,114,128,0.35);
+            border-left: 3px solid #9ca3af;
+            border-radius: 2px;
+            padding: 14px 16px;
+            margin: 0 20px 12px;
+        }
+
+        .nrn-notice-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 10px;
+        }
+
+        .nrn-section-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: rgba(255,255,255,0.45);
+            margin-bottom: 4px;
+            margin-top: 10px;
+        }
+
+        .nrn-section-text {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.8);
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .nrn-fixed-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: rgba(255,255,255,0.35);
+            margin-top: 12px;
+            margin-bottom: 4px;
+        }
+
+        .nrn-fixed-block {
+            font-size: 0.78rem;
+            font-family: monospace;
+            color: rgba(255,255,255,0.55);
+            white-space: pre-wrap;
+            line-height: 1.5;
+            background: rgba(0,0,0,0.15);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 2px;
+            padding: 8px 10px;
         }
 
         /* CAV escalation info */
@@ -364,15 +391,11 @@ TECHNICAL:
         }
 
         /* Expand/collapse toggle */
-        .complaint-card {
-            cursor: pointer;
-        }
-
         .card-toggle {
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            margin-top: 12px;
+            padding: 8px 20px 12px;
             font-size: 0.8rem;
             color: rgba(255,255,255,0.5);
             gap: 5px;
@@ -382,18 +405,16 @@ TECHNICAL:
         .card-toggle-arrow {
             display: inline-block;
             transition: transform 0.2s ease;
-            font-style: normal;
         }
 
         .complaint-card.expanded .card-toggle-arrow {
             transform: rotate(180deg);
         }
 
-        /* Detail section — hidden by default */
+        /* Detail section -- hidden by default */
         .complaint-detail {
             display: none;
-            margin-top: 12px;
-            padding-top: 12px;
+            padding: 12px 20px 0;
             border-top: 1px solid rgba(255,255,255,0.1);
         }
 
@@ -420,57 +441,51 @@ TECHNICAL:
             line-height: 1.5;
         }
 
-        .hidden { display: none !important; }
-
-        @media (max-width: 768px) {
-            body { padding: 0; }
-            .container { padding: 0; }
-            .header { padding: 15px; margin-bottom: 15px; }
-            .header h1 { font-size: 1.4rem; }
-            .logo { width: 60px; height: 60px; }
-            .logo-section { flex-direction: column; gap: 10px; }
-            .content-card { padding: 20px; border-radius: 0; margin-bottom: 0; }
-            .complaint-card-header { flex-direction: column; }
-            .complaint-meta { gap: 12px; }
+        /* Print button at bottom of card */
+        .card-print-row {
+            padding: 0 20px 14px;
         }
     </style>
 </head>
 <body>
 
-<!-- Header -->
-<div class="header">
-    <div class="logo-section">
-        <img src="logo.png" alt="Lake Illawong Logo" class="logo">
-        <div>
-            <h1>My Complaints</h1>
-            <div class="header-subtitle">Lake Illawong Retirement Village</div>
-        </div>
-    </div>
-    <div class="header-divider"></div>
-</div>
+<div class="container">
 
-<div class="container" style="padding-top:0;">
-<a href="ResidentPortal.html" class="back-btn">&#8592; Back to Resident Portal</a>
-</div>
-
-<!-- Main content — hidden until verified -->
-<div id="mainContent" class="container hidden">
-
-    <div class="content-card">
-        <div class="section-heading" id="sectionHeading">Your Complaints</div>
-
-        <!-- Complaint list — populated by JS -->
-        <div id="complaintList">
-            <div class="loading-panel">
-                <div class="spinner"></div>
-                <div>Loading your complaints...</div>
+    <div class="header">
+        <div class="logo-section">
+            <img src="lake-illawong-logo.png" alt="Lake Illawong Logo" class="logo"
+                 onerror="this.style.display='none'">
+            <div>
+                <h1>Lake Illawong</h1>
+                <div class="header-subtitle">Residential Club</div>
             </div>
         </div>
     </div>
 
-    <!-- CAV escalation info — always shown -->
-    <div class="cav-info">
-        You may apply for free conciliation through <strong>VicAssist Retirement Villages</strong> at <strong>vic.gov.au/retirement-village-dispute-help</strong> or contact Consumer Affairs Victoria on <strong>1300 55 81 81</strong> for advice.
+    <div id="mainContent" class="hidden">
+
+        <button class="back-btn" onclick="window.location.href='ResidentPortal.html'">
+            &larr; Back to Resident Portal
+        </button>
+
+        <div class="content-card">
+            <h2 style="color:white; font-size:1.25rem; margin-bottom:6px;">My Complaints</h2>
+            <p style="color:rgba(255,255,255,0.65); font-size:0.88rem; margin-bottom:0;">
+                Complaints submitted from your unit are listed below.
+            </p>
+        </div>
+
+        <div id="complaintList">
+            <div class="loading-panel">Loading your complaints...</div>
+        </div>
+
+        <div class="cav-info">
+            If you are not satisfied with the Board's response, you may apply for free conciliation
+            through <strong>VicAssist Retirement Villages</strong> at
+            <strong>vic.gov.au/retirement-village-dispute-help</strong> or contact
+            <strong>Consumer Affairs Victoria</strong> on <strong>1300 55 81 81</strong> for advice.
+        </div>
+
     </div>
 
 </div>
@@ -480,11 +495,30 @@ TECHNICAL:
     // CONFIG
     // =====================================================================
     const CONFIG = {
-        BACKEND_URL:     'https://script.google.com/macros/s/AKfycbwHajzBBItpMwytCWjzM_xj58vPHQxWjuL3mQve7wC-nR8xAt5yLDbei3B8MKvJ19-AUw/exec',
-        SESSION_KEY:     'lakeIllawongVerified'
+        BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwHajzBBItpMwytCWjzM_xj58vPHQxWjuL3mQve7wC-nR8xAt5yLDbei3B8MKvJ19-AUw/exec',
+        SESSION_KEY: 'lakeIllawongVerified'
     };
 
-    let currentUnit = '';
+    let currentUnit  = '';
+    let allComplaints = [];
+
+    // Frontend copy of NON_RESOLUTION_FIXED_BLOCK -- must match backend constant exactly
+    const NON_RESOLUTION_FIXED_BLOCK =
+        'YOUR EXTERNAL OPTIONS\n' +
+        '------------------------------------------------------------\n' +
+        'If you are not satisfied with this outcome, the following\n' +
+        'external pathways are available to you:\n\n' +
+        '  VicAssist Retirement Villages\n' +
+        '  Free conciliation service for retirement village disputes\n' +
+        '  Website: vic.gov.au/retirement-village-dispute-help\n\n' +
+        '  Consumer Affairs Victoria\n' +
+        '  Advice and assistance regarding your rights\n' +
+        '  Phone: 1300 55 81 81\n\n' +
+        '  Independent Legal Advice\n' +
+        '  You have the right to seek independent legal advice at\n' +
+        '  any time regarding your rights as a resident under the\n' +
+        '  Retirement Villages Act 2024 (Vic).\n' +
+        '------------------------------------------------------------';
 
     // =====================================================================
     // INIT
@@ -492,7 +526,7 @@ TECHNICAL:
     window.addEventListener('DOMContentLoaded', function () {
         const alreadyVerified = VerificationModal.init({
             moduleName: 'My Complaints',
-            moduleIcon: '📋',
+            moduleIcon: '&#128203;',
             sessionKey: CONFIG.SESSION_KEY,
             onSuccess:  handleVerificationSuccess
         });
@@ -550,6 +584,41 @@ TECHNICAL:
     }
 
     // =====================================================================
+    // HELPERS
+    // =====================================================================
+    function normaliseStatus(status) {
+        if (status === 'Closed') return 'Closed - Resolved';
+        return status;
+    }
+
+    function statusPillClass(status) {
+        const map = {
+            'Open':               'status-open',
+            'Acknowledged':       'status-acknowledged',
+            'Responded':          'status-responded',
+            'Closed - Resolved':  'status-closed-resolved',
+            'Closed - Unresolved':'status-closed-unresolved',
+            'Escalated':          'status-other'
+        };
+        return map[status] || 'status-other';
+    }
+
+    function formatDate(dateStr) {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+
+    function escHtml(str) {
+        return String(str || '')
+            .replace(/&/g,  '&amp;')
+            .replace(/</g,  '&lt;')
+            .replace(/>/g,  '&gt;')
+            .replace(/"/g,  '&quot;');
+    }
+
+    // =====================================================================
     // RENDER
     // =====================================================================
     function renderComplaints(data) {
@@ -561,88 +630,123 @@ TECHNICAL:
         }
 
         if (!data.complaints || data.complaints.length === 0) {
-            list.innerHTML = `
-                <div class="empty-panel">
-                    No complaints have been submitted from your unit.
-                    If you believe this is incorrect, please contact the Residents Committee.
-                </div>`;
+            list.innerHTML =
+                '<div class="empty-panel">' +
+                'No complaints have been submitted from your unit.<br>' +
+                'If you believe this is incorrect, please contact the Residents Committee.' +
+                '</div>';
             return;
         }
 
+        allComplaints = data.complaints;
         list.innerHTML = data.complaints.map(function (c) {
             return buildComplaintCard(c);
         }).join('');
     }
 
+    // =====================================================================
+    // BUILD CARD
+    // =====================================================================
     function buildComplaintCard(c) {
-        const statusClass = statusPillClass(c.status);
+        const normSt      = normaliseStatus(c.status);
+        const statusClass = statusPillClass(normSt);
         const submitted   = formatDate(c.submittedAt);
         const responseDue = c.responseDue ? formatDate(c.responseDue) : '';
         const respondedAt = c.respondedAt ? formatDate(c.respondedAt) : '';
         const safeRef     = escHtml(c.referenceNumber);
 
-        // Meta items — only show non-empty values
+        // Meta items -- only show non-empty values
         const metaItems = [];
-        if (submitted)   metaItems.push('<span class="meta-item">Submitted: <strong>' + submitted + '</strong></span>');
-        if (responseDue && c.status !== 'Closed' && c.status !== 'Responded') {
+        if (submitted) {
+            metaItems.push('<span class="meta-item">Submitted: <strong>' + submitted + '</strong></span>');
+        }
+        // Response due -- suppress for both closed statuses and Responded
+        if (responseDue && normSt !== 'Closed - Resolved' && normSt !== 'Closed - Unresolved' && c.status !== 'Responded') {
             metaItems.push('<span class="meta-item">Response due: <strong>' + responseDue + '</strong></span>');
         }
-        if (respondedAt) metaItems.push('<span class="meta-item">Board responded: <strong>' + respondedAt + '</strong></span>');
+        if (respondedAt) {
+            metaItems.push('<span class="meta-item">Board responded: <strong>' + respondedAt + '</strong></span>');
+        }
+        if (c.closedAt) {
+            metaItems.push('<span class="meta-item">Closed: <strong>' + formatDate(c.closedAt) + '</strong></span>');
+        }
 
-        // Board response panel — only if text recorded
+        // Board response panel
         const boardResponseHtml = c.boardResponse
-            ? `<div class="board-response">
-                   <div class="board-response-label">Board Response</div>
-                   <div class="board-response-text">${escHtml(c.boardResponse)}</div>
-               </div>`
+            ? '<div class="board-response">' +
+              '<div class="board-response-label">Board Response</div>' +
+              '<div class="board-response-text">' + escHtml(c.boardResponse) + '</div>' +
+              '</div>'
             : '';
 
-        // Detail rows — only render fields that have content
+        // Non-Resolution Notice -- Closed - Unresolved only
+        var nrnHtml = '';
+        if (normSt === 'Closed - Unresolved' && c.nonResolutionNarrative) {
+            var narrative    = c.nonResolutionNarrative;
+            var reasonMatch  = narrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+            var actionsMatch = narrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+            var reasonText   = reasonMatch  ? reasonMatch[1].trim()  : narrative;
+            var actionsText  = actionsMatch ? actionsMatch[1].trim() : '';
+
+            nrnHtml = '<div class="nrn-notice">'
+                + '<div class="nrn-notice-title">Non-Resolution Notice</div>'
+                + '<div class="nrn-section-label">Why this matter was not resolved</div>'
+                + '<div class="nrn-section-text">' + escHtml(reasonText) + '</div>'
+                + (actionsText
+                    ? '<div class="nrn-section-label">Actions taken during the process</div>'
+                      + '<div class="nrn-section-text">' + escHtml(actionsText) + '</div>'
+                    : '')
+                + '<div class="nrn-fixed-label">Your external options</div>'
+                + '<div class="nrn-fixed-block">' + escHtml(NON_RESOLUTION_FIXED_BLOCK) + '</div>'
+                + '</div>';
+        }
+
+        // Detail rows -- only fields with content
         const detailRows = [];
-        if (c.desiredOutcome)   detailRows.push(detailRow('Desired Outcome',       c.desiredOutcome));
-        if (c.incidentDateTime) detailRows.push(detailRow('Incident Date / Time',  c.incidentDateTime));
-        if (c.location)         detailRows.push(detailRow('Location',              c.location));
-        if (c.peopleInvolved)   detailRows.push(detailRow('People Involved',       c.peopleInvolved));
-        if (c.previousActions)  detailRows.push(detailRow('Previous Actions Taken',c.previousActions));
+        if (c.desiredOutcome)   detailRows.push(detailRow('Desired Outcome',        c.desiredOutcome));
+        if (c.incidentDateTime) detailRows.push(detailRow('Incident Date / Time',   c.incidentDateTime));
+        if (c.location)         detailRows.push(detailRow('Location',               c.location));
+        if (c.peopleInvolved)   detailRows.push(detailRow('People Involved',        c.peopleInvolved));
+        if (c.previousActions)  detailRows.push(detailRow('Previous Actions Taken', c.previousActions));
 
-        const detailHtml = detailRows.length > 0
-            ? `<div class="complaint-detail">${detailRows.join('')}${boardResponseHtml}</div>`
-            : `<div class="complaint-detail">${boardResponseHtml}</div>`;
+        const detailHtml = (detailRows.length > 0)
+            ? '<div class="complaint-detail">' + detailRows.join('') + '</div>'
+            : '<div class="complaint-detail"></div>';
 
-        // If no detail rows and no board response, don't show toggle
-        const hasDetail = detailRows.length > 0 || c.boardResponse;
+        const hasDetail = detailRows.length > 0 || c.boardResponse || nrnHtml;
+
         const toggleHtml = hasDetail
-            ? `<div class="card-toggle">
-                   <span>Show details</span>
-                   <span class="card-toggle-arrow">&#9660;</span>
-               </div>`
+            ? '<div class="card-toggle">'
+              + '<span>Show details</span>'
+              + '<span class="card-toggle-arrow">&#9660;</span>'
+              + '</div>'
             : '';
 
-        return `
-            <div class="complaint-card" id="card-${safeRef}" onclick="toggleCard('card-${safeRef}', ${hasDetail})">
-                <div class="complaint-card-header">
-                    <div>
-                        <div class="complaint-ref">${safeRef}</div>
-                        <div class="complaint-category">${escHtml(c.category)}</div>
-                        <div class="complaint-submitter">Submitted by ${escHtml(c.residentName)}</div>
-                    </div>
-                    <div class="status-pill ${statusClass}">${escHtml(c.status)}</div>
-                </div>
-                <div class="complaint-meta">
-                    ${metaItems.join('')}
-                </div>
-                <div class="complaint-description">${escHtml(c.description)}</div>
-                ${detailHtml}
-                ${toggleHtml}
-                <button class="btn-print-record" onclick="event.stopPropagation(); printComplaint('${safeRef}')">&#128438; Print this complaint</button>
-            </div>`;
+        return '<div class="complaint-card" id="card-' + safeRef + '" onclick="toggleCard(\'card-' + safeRef + '\', ' + hasDetail + ')">'
+            + '<div class="complaint-card-header">'
+            +   '<div>'
+            +     '<div class="complaint-ref">' + safeRef + '</div>'
+            +     '<div class="complaint-category">' + escHtml(c.category) + '</div>'
+            +   '</div>'
+            +   '<div class="status-pill ' + statusClass + '">' + escHtml(normSt) + '</div>'
+            + '</div>'
+            + '<div class="complaint-meta">' + metaItems.join('') + '</div>'
+            + '<div class="complaint-description">' + escHtml(c.description) + '</div>'
+            + detailHtml
+            + boardResponseHtml
+            + nrnHtml
+            + toggleHtml
+            + '<div class="card-print-row">'
+            +   '<button class="btn-print-record" onclick="event.stopPropagation(); printComplaint(\'' + safeRef + '\')">&#128438; Print this complaint</button>'
+            + '</div>'
+            + '</div>';
     }
 
     function detailRow(label, value) {
-        return `<div class="detail-row">
-                    <div class="detail-label">${label}</div>
-                    <div class="detail-value">${escHtml(value)}</div>
-                </div>`;
+        return '<div class="detail-row">'
+            + '<div class="detail-label">' + escHtml(label) + '</div>'
+            + '<div class="detail-value">' + escHtml(value) + '</div>'
+            + '</div>';
     }
 
     function toggleCard(cardId, hasDetail) {
@@ -664,52 +768,20 @@ TECHNICAL:
     }
 
     // =====================================================================
-    // HELPERS
-    // =====================================================================
-    function statusPillClass(status) {
-        const map = {
-            'Open':         'status-open',
-            'Acknowledged': 'status-acknowledged',
-            'Responded':    'status-responded',
-            'Closed':       'status-closed'
-        };
-        return map[status] || 'status-other';
-    }
-
-    function formatDate(dateStr) {
-        if (!dateStr) return '';
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr;
-        return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
-    }
-
-    function escHtml(str) {
-        return String(str)
-            .replace(/&/g,  '&amp;')
-            .replace(/</g,  '&lt;')
-            .replace(/>/g,  '&gt;')
-            .replace(/"/g,  '&quot;');
-    }
-
-    // =====================================================================
     // PRINT
     // =====================================================================
-
-    let allComplaints = [];
-
-    // Store complaints when rendered so printComplaint() can look them up
-    const _originalRenderComplaints = renderComplaints;
-    renderComplaints = function(data) {
-        if (data.success && data.complaints) { allComplaints = data.complaints; }
-        _originalRenderComplaints(data);
-    };
-
     function printComplaint(ref) {
-        const c = allComplaints.find(function(x) { return x.referenceNumber === ref; });
+        const c = allComplaints.find(function (x) { return x.referenceNumber === ref; });
         if (!c) { alert('Could not find complaint record. Please try again.'); return; }
 
-        const statusClass = { 'Open': 'badge-open', 'Acknowledged': 'badge-acknowledged',
-                              'Responded': 'badge-responded', 'Closed': 'badge-closed' }[c.status] || '';
+        const normSt      = normaliseStatus(c.status);
+        const statusClass = {
+            'Open':               'badge-open',
+            'Acknowledged':       'badge-acknowledged',
+            'Responded':          'badge-responded',
+            'Closed - Resolved':  'badge-closed',
+            'Closed - Unresolved':'badge-closed'
+        }[normSt] || '';
 
         const now = new Date().toLocaleString('en-AU', {
             day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -719,20 +791,46 @@ TECHNICAL:
         fields += fieldBlock('Reference Number', c.referenceNumber);
         fields += fieldBlock('Category',         c.category);
         fields += fieldBlock('Submitted',         formatDate(c.submittedAt));
-        if (c.acknowledgedAt)  fields += fieldBlock('Acknowledged',    formatDate(c.acknowledgedAt));
-        if (c.responseDue)     fields += fieldBlock('Response Due',    formatDate(c.responseDue));
-        if (c.respondedAt)     fields += fieldBlock('Board Responded', formatDate(c.respondedAt));
-        if (c.closedAt)        fields += fieldBlock('Closed',          formatDate(c.closedAt));
-        fields += fieldBlockFull('Description',      c.description);
-        if (c.desiredOutcome)  fields += fieldBlockFull('Desired Outcome',    c.desiredOutcome);
-        if (c.incidentDateTime) fields += fieldBlock('Incident Date/Time',   c.incidentDateTime);
-        if (c.location)        fields += fieldBlock('Location',              c.location);
-        if (c.peopleInvolved)  fields += fieldBlockFull('People Involved',   c.peopleInvolved);
-        if (c.previousActions) fields += fieldBlockFull('Previous Actions',  c.previousActions);
+        if (c.acknowledgedAt)   fields += fieldBlock('Acknowledged',       formatDate(c.acknowledgedAt));
+        if (c.responseDue)      fields += fieldBlock('Response Due',       formatDate(c.responseDue));
+        if (c.respondedAt)      fields += fieldBlock('Board Responded',    formatDate(c.respondedAt));
+        if (c.closedAt)         fields += fieldBlock('Closed',             formatDate(c.closedAt));
+        fields += fieldBlockFull('Description',   c.description);
+        if (c.desiredOutcome)   fields += fieldBlockFull('Desired Outcome',    c.desiredOutcome);
+        if (c.incidentDateTime) fields += fieldBlock('Incident Date/Time',     c.incidentDateTime);
+        if (c.location)         fields += fieldBlock('Location',               c.location);
+        if (c.previousActions)  fields += fieldBlockFull('Previous Actions',   c.previousActions);
 
-        var boardBlock = c.boardResponse
-            ? '<div class="board-response"><div class="field-label">Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
+        const boardBlock = c.boardResponse
+            ? '<div class="board-response">'
+              + '<div class="field-label">Board Response</div>'
+              + '<div class="field-value">' + escHtml(c.boardResponse) + '</div>'
+              + '</div>'
             : '<div class="no-response">No Board response has been recorded yet.</div>';
+
+        // Non-Resolution Notice print block
+        var nrnPrintBlock = '';
+        if (normSt === 'Closed - Unresolved' && c.nonResolutionNarrative) {
+            var narrative    = c.nonResolutionNarrative;
+            var reasonMatch  = narrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+            var actionsMatch = narrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+            var reasonText   = reasonMatch  ? reasonMatch[1].trim()  : narrative;
+            var actionsText  = actionsMatch ? actionsMatch[1].trim() : '';
+            nrnPrintBlock =
+                '<div style="background:#f9fafb;border:1px solid #d1d5db;border-left:4px solid #6b7280;padding:10px 12px;border-radius:3px;margin-top:12px;">'
+                + '<div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;margin-bottom:8px;">Non-Resolution Notice</div>'
+                + '<div style="font-size:8pt;font-weight:700;color:#6b7280;margin-bottom:2px;">Why this matter was not resolved</div>'
+                + '<div style="font-size:10pt;color:#111;line-height:1.5;margin-bottom:8px;">' + escHtml(reasonText) + '</div>'
+                + (actionsText
+                    ? '<div style="font-size:8pt;font-weight:700;color:#6b7280;margin-bottom:2px;">Actions taken during the process</div>'
+                      + '<div style="font-size:10pt;color:#111;line-height:1.5;margin-bottom:8px;">' + escHtml(actionsText) + '</div>'
+                    : '')
+                + '<div style="font-size:8pt;font-weight:700;color:#6b7280;margin-bottom:4px;">Your external options</div>'
+                + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
+                + escHtml(NON_RESOLUTION_FIXED_BLOCK)
+                + '</div>'
+                + '</div>';
+        }
 
         var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
             + '<title>Complaint ' + escHtml(ref) + '</title>'
@@ -740,13 +838,14 @@ TECHNICAL:
             + '<div class="print-header">'
             + '<div class="print-village">Lake Illawong Retirement Village</div>'
             + '<div class="print-title">Complaint Record'
-            + ' <span class="status-badge ' + statusClass + '">' + escHtml(c.status) + '</span>'
+            + ' <span class="status-badge ' + statusClass + '">' + escHtml(normSt) + '</span>'
             + '</div>'
             + '<div class="print-ref">' + escHtml(ref) + '</div>'
             + '</div>'
             + '<div class="section-title">Complaint Details</div>'
             + '<div class="field-grid">' + fields + '</div>'
             + boardBlock
+            + nrnPrintBlock
             + '<div class="cav-notice">You may apply for free conciliation through <strong>VicAssist Retirement Villages</strong> at vic.gov.au/retirement-village-dispute-help or contact Consumer Affairs Victoria on 1300 55 81 81.</div>'
             + '<div class="print-footer">'
             + '<span>Lake Illawong Retirement Village</span>'
@@ -758,20 +857,20 @@ TECHNICAL:
         w.document.write(html);
         w.document.close();
         w.focus();
-        w.print();
+        setTimeout(function () { w.print(); }, 500);
     }
 
     function fieldBlock(label, value) {
         return '<div class="field-group">'
             + '<div class="field-label">' + escHtml(label) + '</div>'
-            + '<div class="field-value">' + escHtml(value || '—') + '</div>'
+            + '<div class="field-value">' + escHtml(value || '\u2014') + '</div>'
             + '</div>';
     }
 
     function fieldBlockFull(label, value) {
         return '<div class="field-group field-full">'
             + '<div class="field-label">' + escHtml(label) + '</div>'
-            + '<div class="field-value">' + escHtml(value || '—') + '</div>'
+            + '<div class="field-value">' + escHtml(value || '\u2014') + '</div>'
             + '</div>';
     }
 
@@ -790,6 +889,7 @@ TECHNICAL:
             + '.section-title { font-size:8pt; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#6b7280; border-bottom:1px solid #e5e7eb; padding-bottom:4px; margin:16px 0 10px; }'
             + '.field-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-bottom:12px; }'
             + '.field-full { grid-column:1 / -1; }'
+            + '.field-group { margin-bottom:6px; }'
             + '.field-label { font-size:8pt; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px; }'
             + '.field-value { font-size:10pt; color:#111; line-height:1.5; }'
             + '.board-response { background:#f0fdf4; border:1px solid #bbf7d0; border-left:4px solid #16a34a; padding:10px 12px; border-radius:3px; margin-top:8px; }'
