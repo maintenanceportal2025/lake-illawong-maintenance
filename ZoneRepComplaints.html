@@ -6,14 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepComplaints.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.0
-  Backend:          ComplaintsManager V2.0.0
+  Frontend Version: V1.0.1
+  Backend:          ComplaintsManager V2.2.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
-  V1.0.0 (May 2026): Initial release.
+V1.0.1 (May 2026): Both closed statuses (Closed - Resolved, Closed -
+    Unresolved) added to filter dropdown, statusPillClass, buildCard
+    border logic, isRespOverdue, and updateSummary. normaliseStatus()
+    added for legacy Closed record handling. RESP_DAYS updated to 28.
+    Timeline label updated from 14 to 28 days. Backend V2.2.0.
+
+V1.0.0 (May 2026): Initial release.
     Read-only complaint monitoring view for Zone Representatives.
     Zone derived from ZoneRep-N role tag in verified session.
     Shows complaints for all units in the ZoneRep's zone only.
@@ -377,7 +383,8 @@ TECHNICAL:
             <option value="Open">Open</option>
             <option value="Acknowledged">Acknowledged</option>
             <option value="Responded">Responded</option>
-            <option value="Closed">Closed</option>
+           <option value="Closed - Resolved">Closed - Resolved</option>
+            <option value="Closed - Unresolved">Closed - Unresolved</option>
         </select>
         <label for="filterOverdue">Show:</label>
         <select id="filterOverdue" onchange="applyFilters()">
@@ -402,7 +409,7 @@ TECHNICAL:
         SESSION_KEY:       'portalZoneRepVerified',
         PORTAL_URL:        'ZoneRepPortal.html',
         ACK_BUSINESS_DAYS: 2,
-        RESP_DAYS:         14
+        RESP_DAYS:         28
     };
 
     let allComplaints = [];
@@ -484,10 +491,17 @@ TECHNICAL:
     // =====================================================================
     // SUMMARY
     // =====================================================================
+    function normaliseStatus(status) {
+        if (status === 'Closed') return 'Closed - Resolved';
+        return status;
+    }
+
     function updateSummary(complaints) {
         const counts = { Open: 0, Acknowledged: 0, Responded: 0, Closed: 0, overdue: 0 };
         complaints.forEach(function (c) {
-            if (counts[c.status] !== undefined) counts[c.status]++;
+            const s = normaliseStatus(c.status);
+            if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
+            if (s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Closed') counts.Closed++;
             if (isOverdue(c)) counts.overdue++;
         });
         document.getElementById('countTotal').textContent        = complaints.length;
@@ -506,7 +520,7 @@ TECHNICAL:
         const statusFilter  = document.getElementById('filterStatus').value;
         const overdueFilter = document.getElementById('filterOverdue').value;
         let filtered = allComplaints;
-        if (statusFilter)                filtered = filtered.filter(c => c.status === statusFilter);
+        if (statusFilter)                filtered = filtered.filter(c => normaliseStatus(c.status) === statusFilter || c.status === statusFilter);
         if (overdueFilter === 'overdue') filtered = filtered.filter(c => isOverdue(c));
         renderComplaints(filtered);
     }
@@ -521,7 +535,8 @@ TECHNICAL:
     }
 
     function isRespOverdue(c) {
-        if (c.status === 'Responded' || c.status === 'Closed') return false;
+        const s = normaliseStatus(c.status);
+        if (s === 'Responded' || s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Escalated') return false;
         if (!c.responseDue) return false;
         return new Date(c.responseDue) < new Date();
     }
@@ -554,11 +569,13 @@ TECHNICAL:
         let borderClass = '';
         if      (ackOverdue)                  borderClass = 'overdue-ack';
         else if (respOverdue)                 borderClass = 'overdue-resp';
-        else if (c.status === 'Responded')    borderClass = 'status-responded';
-        else if (c.status === 'Closed')       borderClass = 'status-closed';
-        else if (c.status === 'Acknowledged') borderClass = 'status-acknowledged';
+        else if (c.status === 'Responded')           borderClass = 'status-responded';
+        else if (c.status === 'Closed - Resolved' || c.status === 'Closed')   borderClass = 'status-closed';
+        else if (c.status === 'Closed - Unresolved') borderClass = 'status-closed';
+        else if (c.status === 'Acknowledged')         borderClass = 'status-acknowledged';
 
-        const statusClass = statusPillClass(c.status);
+        const normSt      = normaliseStatus(c.status);
+        const statusClass = statusPillClass(normSt);
         const safeRef     = escHtml(c.referenceNumber);
         const badges = [];
         if (ackOverdue)  badges.push('<span class="overdue-badge badge-ack-overdue">Ack overdue</span>');
@@ -573,7 +590,7 @@ TECHNICAL:
                 <div class="card-category">${escHtml(c.category)}</div>
                 <div class="card-resident">${escHtml(c.residentName)} — Unit ${escHtml(c.unitNumber.replace(/^Unit\s*/i,''))}</div>
                 ${badges.join('')}
-                <span class="status-pill ${statusClass}">${escHtml(c.status)}</span>
+                <span class="status-pill ${statusClass}">${escHtml(normSt)}</span>
                 <div class="card-dates">${submitted ? 'Submitted ' + submitted : ''}</div>
                 <div class="card-chevron">&#9660;</div>
             </div>
@@ -619,9 +636,9 @@ TECHNICAL:
         // Timeline compliance block
         const ackStatus  = c.acknowledgedAt ? 'timeline-ok' : (ackOverdue ? 'timeline-overdue' : 'timeline-pending');
         const ackLabel   = c.acknowledgedAt ? 'Acknowledged ' + formatDate(c.acknowledgedAt) : (ackOverdue ? 'OVERDUE' : 'Pending');
-        const respStatus = (c.status === 'Responded' || c.status === 'Closed') ? 'timeline-ok'
+        const respStatus = (c.status === 'Responded' || c.status === 'Closed - Resolved' || c.status === 'Closed - Unresolved' || c.status === 'Closed') ? 'timeline-ok'
                          : respOverdue ? 'timeline-overdue' : 'timeline-pending';
-        const respLabel  = (c.status === 'Responded' || c.status === 'Closed')
+        const respLabel  = (c.status === 'Responded' || c.status === 'Closed - Resolved' || c.status === 'Closed - Unresolved' || c.status === 'Closed')
                          ? 'Responded ' + (c.respondedAt ? formatDate(c.respondedAt) : '')
                          : respOverdue ? 'OVERDUE — due ' + formatDate(c.responseDue)
                          : 'Due ' + (c.responseDue ? formatDate(c.responseDue) : '—');
@@ -634,7 +651,7 @@ TECHNICAL:
                     <span class="timeline-status ${ackStatus}">${ackLabel}</span>
                 </div>
                 <div class="timeline-row">
-                    <span class="timeline-label">Board Response (14 days)</span>
+                    <span class="timeline-label">Board Response (28 days)</span>
                     <span class="timeline-status ${respStatus}">${respLabel}</span>
                 </div>
             </div>`;
@@ -652,7 +669,14 @@ TECHNICAL:
     }
 
     function statusPillClass(status) {
-        return { 'Open': 'status-open', 'Acknowledged': 'status-acknowledged', 'Responded': 'status-responded', 'Closed': 'status-closed' }[status] || '';
+        return {
+            'Open':               'status-open',
+            'Acknowledged':       'status-acknowledged',
+            'Responded':          'status-responded',
+            'Closed - Resolved':  'status-closed',
+            'Closed - Unresolved':'status-closed',
+            'Escalated':          'status-escalated'
+        }[status] || 'status-closed';
     }
 
     function formatDate(str) {
