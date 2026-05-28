@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepComplaints.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.4
+  Frontend Version: V1.0.5
   Backend:          ComplaintsManager V2.2.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V1.0.5 (May 2026): Fix -- Board Response timeline row now derives
+    72-hour deadline from submittedAt + 72h rather than using
+    responseDue (which is the 28-day resolution deadline -- a
+    completely different thing). isClosed derived from normSt.
+
   V1.0.4 (May 2026): Fix -- stale summaryStrip getElementById reference
     removed from loadComplaints() causing TypeError on page load after
     summary strip HTML was removed in V1.0.3.
@@ -60,7 +65,7 @@ AUTHENTICATION:
 SYSTEM CONNECTIONS:
   Backend: ComplaintsManager V2.2.0
   Action:  getComplaintsByZone
-  :     CONFIG.BACKEND_URL
+  URL:     CONFIG.BACKEND_URL
 
 PORTAL:
   Launched from ZoneRepPortal.html module card.
@@ -365,7 +370,7 @@ TECHNICAL:
 </div>
 <script>
     const CONFIG = {
-        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbzADcEOnSY77mIFK_CRxEwol-GrJCvBjaOt_qqjSU1BnJiuKOojo44KESJCz_x_9MQ5zA/exec',
+        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwHajzBBItpMwytCWjzM_xj58vPHQxWjuL3mQve7wC-nR8xAt5yLDbei3B8MKvJ19-AUw/exec',
         SESSION_KEY:       'portalZoneRepVerified',
         PORTAL_URL:        'ZoneRepPortal.html',
         ACK_BUSINESS_DAYS: 2,
@@ -574,12 +579,18 @@ TECHNICAL:
         const ackStatus = c.acknowledgedAt ? 'timeline-ok' : (ackOverdue ? 'timeline-overdue' : 'timeline-pending');
         const ackLabel  = c.acknowledgedAt ? 'Acknowledged ' + formatDate(c.acknowledgedAt) : (ackOverdue ? 'OVERDUE' : 'Pending');
 
-        const isClosed  = (normSt === 'Responded' || normSt === 'Closed - Resolved' || normSt === 'Closed - Unresolved' || normSt === 'Closed');
-        const respStatus = isClosed ? 'timeline-responded' : respOverdue ? 'timeline-overdue' : 'timeline-pending';
+        // 72-hour board response deadline -- derived from submittedAt, not responseDue
+        const isClosed        = (normSt === 'Responded' || normSt === 'Closed - Resolved' || normSt === 'Closed - Unresolved' || normSt === 'Closed');
+        const boardRespDue    = c.submittedAt ? new Date(new Date(c.submittedAt).getTime() + 72 * 60 * 60 * 1000) : null;
+        const boardRespOverdue = boardRespDue && !isClosed && new Date() > boardRespDue;
+
+        const respStatus = isClosed ? 'timeline-responded'
+                         : boardRespOverdue ? 'timeline-overdue'
+                         : 'timeline-pending';
         const respLabel  = isClosed
                          ? 'Responded ' + (c.respondedAt ? formatDate(c.respondedAt) : '')
-                         : respOverdue ? 'OVERDUE — due ' + formatDate(c.responseDue)
-                         : 'Due ' + (c.responseDue ? formatDate(c.responseDue) : '—');
+                         : boardRespOverdue ? 'OVERDUE — due ' + formatDate(boardRespDue.toISOString())
+                         : 'Due ' + (boardRespDue ? formatDate(boardRespDue.toISOString()) : '—');
 
         const timelineHtml = `
             <div class="timeline-block">
