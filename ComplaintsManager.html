@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.0
-  Backend:          ComplaintsManager V2.2.0
+  Frontend Version: V2.2.1
+  Backend:          ComplaintsManager V2.3.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.1 (May 2026): Closed - Resolved closure now mirrors Closed - Unresolved
+    pattern. CLOSURE_RESOLVED_FIXED_BLOCK frontend constant added. cr-panel added
+    to update panel -- appears when Closed - Resolved selected, requires resolution
+    summary narrative before save. Confirmation dialog required. Fixed resolved
+    closure block shown read-only in panel. onStatusChange updated to show/hide
+    cr-panel. saveUpdate validates and packages closureNarrative for both closed
+    statuses. Print output includes Resolution Summary section for Closed - Resolved.
+    nonResolutionNarrative cache references renamed to closureNarrative.
+    Backend ComplaintsManager V2.3.1.
+
   V2.2.0 (May 2026): Status 'Closed' split into 'Closed - Resolved' and
     'Closed - Unresolved'. Non-Resolution Notice panel added to update
     panel -- appears when Closed - Unresolved selected, requires reason
@@ -963,9 +973,30 @@ TECHNICAL:
         '  Retirement Villages Act 2024 (Vic).\n' +
         '------------------------------------------------------------';
 
+    // Frontend copy of backend CLOSURE_RESOLVED_FIXED_BLOCK constant
+    const CLOSURE_RESOLVED_FIXED_BLOCK =
+        'YOUR RIGHTS FOLLOWING RESOLUTION\n' +
+        '------------------------------------------------------------\n' +
+        'This complaint is now recorded as resolved and closed.\n\n' +
+        'If you believe this matter has not been resolved to your\n' +
+        'satisfaction, you retain the right at any time to:\n\n' +
+        '  VicAssist Retirement Villages\n' +
+        '  Apply for free conciliation\n' +
+        '  Website: vic.gov.au/retirement-village-dispute-help\n\n' +
+        '  Consumer Affairs Victoria\n' +
+        '  Seek advice and assistance regarding your rights\n' +
+        '  Phone: 1300 55 81 81\n\n' +
+        '  Independent Legal Advice\n' +
+        '  You have the right to seek independent legal advice at\n' +
+        '  any time regarding your rights as a resident under the\n' +
+        '  Retirement Villages Act 2024 (Vic).\n' +
+        '------------------------------------------------------------';
+
     function onStatusChange(ref, value) {
-        const panel = document.getElementById('nrn-panel-' + ref);
-        if (panel) panel.style.display = (value === 'Closed - Unresolved') ? 'block' : 'none';
+        const nrnPanel = document.getElementById('nrn-panel-' + ref);
+        const crPanel  = document.getElementById('cr-panel-'  + ref);
+        if (nrnPanel) nrnPanel.style.display = (value === 'Closed - Unresolved') ? 'block' : 'none';
+        if (crPanel)  crPanel.style.display  = (value === 'Closed - Resolved')   ? 'block' : 'none';
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -1218,6 +1249,13 @@ TECHNICAL:
                     <div class="nrn-fixed-label">Mandatory block — included automatically in every Non-Resolution Notice</div>
                     <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
                 </div>
+                <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary — Required</div>
+                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
+                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
+                    <div class="nrn-fixed-label">Standard block — included automatically in every Resolved closure notice</div>
+                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
+                </div>
                 <div style="margin-top:14px;">
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                 <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
@@ -1301,6 +1339,36 @@ TECHNICAL:
             nonResolutionNarrative = '[REASON]\n' + reason + '\n[/REASON]\n[ACTIONS]\n' + actions + '\n[/ACTIONS]';
         }
 
+        // Confirmation and narrative validation for Closed - Resolved
+        var closureResolvedNarrative = '';
+        if (status === 'Closed - Resolved') {
+            const summaryEl = document.getElementById('cr-summary-' + ref);
+            const summary   = summaryEl ? summaryEl.value.trim() : '';
+
+            if (!summary) {
+                setFeedback(feedback, 'A resolution summary is required before closing as Resolved.', 'error');
+                return;
+            }
+
+            const confirmed = confirm(
+                'You are about to close this complaint as Resolved.\n\n' +
+                'A Resolution Notice will be issued to the resident.\n' +
+                'This action cannot be undone.\n\n' +
+                'Proceed?'
+            );
+            if (!confirmed) {
+                const statusEl = document.getElementById('status-' + ref);
+                if (statusEl) statusEl.value = '';
+                onStatusChange(ref, '');
+                return;
+            }
+
+            closureResolvedNarrative = '[SUMMARY]\n' + summary + '\n[/SUMMARY]';
+        }
+
+        // Combined closureNarrative -- whichever closure type applies
+        var closureNarrative = nonResolutionNarrative || closureResolvedNarrative;
+
         let effectiveStatus = status;
         if (boardResponse && !status) {
             if (current && (current.status === 'Open' || current.status === 'Acknowledged')) {
@@ -1318,9 +1386,9 @@ TECHNICAL:
             + '&ref='      + encodeURIComponent(ref)
             + '&callback=' + callbackName;
 
-        if (effectiveStatus) url += '&status='        + encodeURIComponent(effectiveStatus);
-        if (boardResponse)   url += '&boardResponse=' + encodeURIComponent(boardResponse);
-        if (nonResolutionNarrative) url += '&nonResolutionNarrative=' + encodeURIComponent(nonResolutionNarrative);
+        if (effectiveStatus) url += '&status='          + encodeURIComponent(effectiveStatus);
+        if (boardResponse)   url += '&boardResponse='   + encodeURIComponent(boardResponse);
+        if (closureNarrative) url += '&closureNarrative=' + encodeURIComponent(closureNarrative);
         const saveUserName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         url += '&userName=' + encodeURIComponent(saveUserName);
 
@@ -1341,7 +1409,7 @@ TECHNICAL:
                     const nowTs = new Date().toString();
                     if ((effectiveStatus === 'Closed - Resolved' || effectiveStatus === 'Closed - Unresolved') && !allComplaints[idx].closedAt) allComplaints[idx].closedAt = nowTs;
                     if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
-                    if (nonResolutionNarrative) allComplaints[idx].nonResolutionNarrative = nonResolutionNarrative;
+                    if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
                     if (boardResponse) {
                         const existing = allComplaints[idx].boardResponse || '';
                         const sentTag  = andSend ? ' [SENT]' : '';
@@ -1711,8 +1779,8 @@ TECHNICAL:
 
         // Non-Resolution Notice block
         var nrnBlock = '';
-        if (normSt === 'Closed - Unresolved' && c.nonResolutionNarrative) {
-            var narrative    = c.nonResolutionNarrative;
+        if (normSt === 'Closed - Unresolved' && c.closureNarrative) {
+            var narrative    = c.closureNarrative;
             var reasonMatch  = narrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
             var actionsMatch = narrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
             var reasonText   = reasonMatch  ? reasonMatch[1].trim()  : narrative;
@@ -1726,6 +1794,22 @@ TECHNICAL:
                 + '<div class="field-label" style="margin-bottom:6px;">Mandatory external pathways</div>'
                 + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
                 + escHtml(NON_RESOLUTION_FIXED_BLOCK) + '</div>'
+                + '</div>';
+        }
+
+        // Resolution Summary block (Closed - Resolved)
+        var resolvedBlock = '';
+        if (normSt === 'Closed - Resolved' && c.closureNarrative) {
+            var resNarrative  = c.closureNarrative;
+            var summaryMatch  = resNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+            var summaryText   = summaryMatch ? summaryMatch[1].trim() : resNarrative;
+            resolvedBlock = '<div class="section-title">Resolution Summary</div>'
+                + '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #10b981;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
+                + '<div class="field-label" style="margin-bottom:6px;">How this matter was resolved</div>'
+                + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(summaryText) + '</div>'
+                + '<div class="field-label" style="margin-bottom:6px;">Standard closure notice</div>'
+                + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
+                + escHtml(CLOSURE_RESOLVED_FIXED_BLOCK) + '</div>'
                 + '</div>';
         }
 
@@ -1781,6 +1865,7 @@ TECHNICAL:
             </div>
             ${boardBlock}
             ${nrnBlock}
+            ${resolvedBlock}
             ${activityBlock}
             ${printFooter()}
             </body></html>`;
