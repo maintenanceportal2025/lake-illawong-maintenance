@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepComplaints.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.2
+  Frontend Version: V1.0.3
   Backend:          ComplaintsManager V2.2.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V1.0.3 (May 2026): Summary strip removed -- not relevant for Zone Rep
+    view. Timeline label corrected from "Board Response (28 days)" to
+    "Board Response (72 hours)" -- 28 days is resolution target, not
+    response target. timeline-responded CSS class added (purple) --
+    Responded status now shows purple to match card/pill colour rather
+    than green. respStatus updated to use timeline-responded.
+
   V1.0.2 (May 2026): Design System V2.1 compliance pass.
     Card CSS: status-closed-resolved, status-closed-unresolved,
     status-escalated border/background classes added.
@@ -113,22 +120,6 @@ TECHNICAL:
             min-height: 44px;
         }
         .portal-back-btn:hover { background: rgba(255,255,255,0.25); }
-
-        /* SUMMARY STRIP */
-        .summary-strip { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-        .summary-tile {
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.15);
-            backdrop-filter: blur(10px);
-            border-radius: 2px;
-            padding: 12px 16px;
-            flex: 1;
-            min-width: 100px;
-            text-align: center;
-        }
-        .tile-count { font-size: 1.8rem; font-weight: 700; color: white; line-height: 1; }
-        .tile-count.overdue { color: #fca5a5; }
-        .tile-label { font-size: 0.72rem; color: rgba(255,255,255,0.7); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
 
         /* INFO NOTICE */
         .info-notice {
@@ -285,9 +276,10 @@ TECHNICAL:
         .timeline-row:last-child { margin-bottom: 0; }
         .timeline-label { color: rgba(255,255,255,0.65); }
         .timeline-status { font-weight: 700; font-size: 0.78rem; padding: 2px 8px; border-radius: 3px; }
-        .timeline-ok      { background: rgba(16,185,129,0.25); color: #6ee7b7; }
-        .timeline-overdue { background: rgba(239,68,68,0.3);   color: #fca5a5; }
-        .timeline-pending { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+        .timeline-ok         { background: rgba(16,185,129,0.25); color: #6ee7b7; }
+        .timeline-responded  { background: rgba(168,85,247,0.3);  color: #e9d5ff; }
+        .timeline-overdue    { background: rgba(239,68,68,0.3);   color: #fca5a5; }
+        .timeline-pending    { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
 
         /* STATES */
         .loading-state, .empty-state, .error-state { text-align: center; padding: 48px 24px; color: rgba(255,255,255,0.6); }
@@ -330,16 +322,6 @@ TECHNICAL:
     </div>
 
     <button class="portal-back-btn" onclick="window.location.href='ZoneRepPortal.html'">&#8592; Back to Zone Rep Portal</button>
-
-    <!-- Summary strip -->
-    <div class="summary-strip" id="summaryStrip" style="display:none">
-        <div class="summary-tile"><div class="tile-count" id="countTotal">—</div><div class="tile-label">Total</div></div>
-        <div class="summary-tile"><div class="tile-count" id="countOpen">—</div><div class="tile-label">Open</div></div>
-        <div class="summary-tile"><div class="tile-count" id="countAcknowledged">—</div><div class="tile-label">Acknowledged</div></div>
-        <div class="summary-tile"><div class="tile-count" id="countResponded">—</div><div class="tile-label">Responded</div></div>
-        <div class="summary-tile"><div class="tile-count" id="countClosed">—</div><div class="tile-label">Closed</div></div>
-        <div class="summary-tile"><div class="tile-count overdue" id="countOverdue">—</div><div class="tile-label">Overdue</div></div>
-    </div>
 
     <!-- Info notice -->
     <div class="info-notice" id="infoNotice" style="display:none">
@@ -455,28 +437,7 @@ TECHNICAL:
     function handleLoaded(data) {
         if (!data.success) { showPageError(data.error || 'Failed to load complaints.'); return; }
         allComplaints = data.complaints || [];
-        updateSummary(allComplaints);
         applyFilters();
-    }
-
-    // =====================================================================
-    // SUMMARY
-    // =====================================================================
-    function updateSummary(complaints) {
-        const counts = { Open: 0, Acknowledged: 0, Responded: 0, Closed: 0, overdue: 0 };
-        complaints.forEach(function (c) {
-            const s = normaliseStatus(c.status);
-            if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
-            if (s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Closed') counts.Closed++;
-            if (isOverdue(c)) counts.overdue++;
-        });
-        document.getElementById('countTotal').textContent        = complaints.length;
-        document.getElementById('countOpen').textContent         = counts.Open;
-        document.getElementById('countAcknowledged').textContent = counts.Acknowledged;
-        document.getElementById('countResponded').textContent    = counts.Responded;
-        document.getElementById('countClosed').textContent       = counts.Closed;
-        document.getElementById('countOverdue').textContent      = counts.overdue;
-        document.getElementById('summaryStrip').style.display    = 'flex';
     }
 
     // =====================================================================
@@ -612,7 +573,7 @@ TECHNICAL:
         const ackLabel  = c.acknowledgedAt ? 'Acknowledged ' + formatDate(c.acknowledgedAt) : (ackOverdue ? 'OVERDUE' : 'Pending');
 
         const isClosed  = (normSt === 'Responded' || normSt === 'Closed - Resolved' || normSt === 'Closed - Unresolved' || normSt === 'Closed');
-        const respStatus = isClosed ? 'timeline-ok' : respOverdue ? 'timeline-overdue' : 'timeline-pending';
+        const respStatus = isClosed ? 'timeline-responded' : respOverdue ? 'timeline-overdue' : 'timeline-pending';
         const respLabel  = isClosed
                          ? 'Responded ' + (c.respondedAt ? formatDate(c.respondedAt) : '')
                          : respOverdue ? 'OVERDUE — due ' + formatDate(c.responseDue)
@@ -626,7 +587,7 @@ TECHNICAL:
                     <span class="timeline-status ${ackStatus}">${ackLabel}</span>
                 </div>
                 <div class="timeline-row">
-                    <span class="timeline-label">Board Response (28 days)</span>
+                    <span class="timeline-label">Board Response (72 hours)</span>
                     <span class="timeline-status ${respStatus}">${respLabel}</span>
                 </div>
             </div>`;
