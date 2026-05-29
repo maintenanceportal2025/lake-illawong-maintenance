@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.2
+  Frontend Version: V2.2.3
   Backend:          ComplaintsManager V2.3.2
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.3 (May 2026): Board Response textarea visible but locked (disabled) when
+    status dropdown set to Closed - Resolved or Closed - Unresolved, or when
+    complaint is already closed. Replaces V2.2.2 hide behaviour. Lock notice
+    shown below textarea explaining field is locked at closure. Read-only history
+    and locked textarea both visible so Board can review record before writing
+    closure narrative. onStatusChange updated to disable/enable rather than
+    hide/show. Backend unchanged at ComplaintsManager V2.3.2.
+
   V2.2.2 (May 2026): Board Response input textarea hidden when status dropdown
     set to Closed - Resolved or Closed - Unresolved, or when complaint is already
     closed. Read-only Board Response history remains visible for reference.
@@ -702,6 +710,22 @@ TECHNICAL:
         .btn-send-resident { padding: 10px 20px; background: rgba(110,231,183,0.15); border: 1px solid rgba(110,231,183,0.5); border-radius: 2px; color: #6ee7b7; font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-left: 8px; }
         .btn-send-resident:hover { background: rgba(110,231,183,0.25); }
         .btn-send-resident:disabled { opacity: 0.5; cursor: not-allowed; }
+        .update-field textarea:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .br-lock-notice {
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.5);
+            font-style: italic;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .br-lock-notice.visible { display: block; }
+
         .send-feedback { display: inline-block; margin-left: 10px; font-size: 0.82rem; font-weight: 600; }
         .send-feedback.success { color: #6ee7b7; }
         .send-feedback.error   { color: #fca5a5; }
@@ -1000,13 +1024,17 @@ TECHNICAL:
         '------------------------------------------------------------';
 
     function onStatusChange(ref, value) {
-        const nrnPanel  = document.getElementById('nrn-panel-'  + ref);
-        const crPanel   = document.getElementById('cr-panel-'   + ref);
-        const brWrapper = document.getElementById('br-wrapper-' + ref);
-        if (nrnPanel)  nrnPanel.style.display  = (value === 'Closed - Unresolved') ? 'block' : 'none';
-        if (crPanel)   crPanel.style.display   = (value === 'Closed - Resolved')   ? 'block' : 'none';
+        const nrnPanel   = document.getElementById('nrn-panel-'   + ref);
+        const crPanel    = document.getElementById('cr-panel-'    + ref);
+        const brTextarea = document.getElementById('response-'    + ref);
+        const brLock     = document.getElementById('br-lock-'     + ref);
+        if (nrnPanel) nrnPanel.style.display = (value === 'Closed - Unresolved') ? 'block' : 'none';
+        if (crPanel)  crPanel.style.display  = (value === 'Closed - Resolved')   ? 'block' : 'none';
         const isClosing = (value === 'Closed - Resolved' || value === 'Closed - Unresolved');
-        if (brWrapper) brWrapper.style.display = isClosing ? 'none' : '';
+        if (brTextarea) brTextarea.disabled = isClosing;
+        if (brLock) {
+            if (isClosing) { brLock.classList.add('visible'); } else { brLock.classList.remove('visible'); }
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -1235,19 +1263,20 @@ TECHNICAL:
                         </select>
                     </div>
                 </div>
-                <div class="update-row" id="br-wrapper-${safeRef}" ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'style="display:none;"' : ''}>
+                <div class="update-row" id="br-wrapper-${safeRef}">
                     <div class="update-field">
                         ${c.respondedAt ? `
                         <label>Board Response</label>
                         <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
                         ${responseNotice}
                         <label for="response-${safeRef}" style="margin-top:12px; display:block;">Add to Board Response</label>
-                        <textarea id="response-${safeRef}" placeholder="Enter additional response to append to the record..."></textarea>
+                        <textarea id="response-${safeRef}" placeholder="Enter additional response to append to the record..." ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'disabled' : ''}></textarea>
                         ` : `
                         <label for="response-${safeRef}">Board Response</label>
                         ${responseNotice}
-                        <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response..."></textarea>
+                        <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response..." ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'disabled' : ''}></textarea>
                         `}
+                        <div id="br-lock-${safeRef}" class="br-lock-notice ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'visible' : ''}">Board Response is locked — complaint is closed. Use the Activity Log for further notes.</div>
                     </div>
                 </div>
                 <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
