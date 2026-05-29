@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.8
-  Backend:          ComplaintsManager V2.3.3
+  Frontend Version: V2.2.9
+  Backend:          ComplaintsManager V2.3.4
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.9 (May 2026): Board Response rework. Save Only saves draft to sheet,
+    no status change, no email. Save & Send emails resident and locks field.
+    Board Response textarea replaced with read-only display when respondedAt set.
+    Auto-Responded effectiveStatus logic removed from saveUpdate.
+    [SENT] badge removed from formatBoardResponse. 72-hour notice updated to
+    reference sending not saving. Backend ComplaintsManager V2.3.4.
+
   V2.2.8 (May 2026): Resend Closure Notice button added to read-only panel for
     closed complaints. Calls resendClosureNotice backend action. Feedback shown
     inline beside button. Activity Log refreshes after successful resend.
@@ -1276,20 +1283,18 @@ TECHNICAL:
             : '<div class="activity-log-empty">No entries recorded.</div>';
         const activityLogHtml = `<div class="activity-log-block"><div class="detail-label">Activity Log (Admin only)</div>${commentEntries}</div>`;
 
-        // 72-hour Board Response notice -- suppressed for closed complaints
+        // 72-hour Board Response notice -- suppressed for closed complaints and when already sent
         const now72        = new Date();
         const submitted    = new Date(c.submittedAt);
         const hoursElapsed = isNaN(submitted) ? 0 : (now72 - submitted) / (1000 * 60 * 60);
         const isClosed     = (normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved');
         let responseNotice = '';
-        if (!isClosed) {
-            if (c.respondedAt) {
-                responseNotice = '<div class="response-notice notice-sent">&#10003; Board Response sent \u2014 editing this field will update the formal record.</div>';
-            } else if (!isNaN(submitted) && hoursElapsed > 72) {
-                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour response deadline has passed \u2014 response required urgently.</div>';
+        if (!isClosed && !c.respondedAt) {
+            if (!isNaN(submitted) && hoursElapsed > 72) {
+                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed \u2014 Board Response must be sent to resident urgently.</div>';
             } else if (!isNaN(submitted)) {
                 const hoursLeft = Math.ceil(72 - hoursElapsed);
-                responseNotice = '<div class="response-notice notice-pending">&#9679; Response required within 72 hours of submission \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
+                responseNotice = '<div class="response-notice notice-pending">&#9679; Board Response must be sent to resident within 72 hours of submission \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
             }
         }
 
@@ -1378,16 +1383,12 @@ TECHNICAL:
                         ${c.respondedAt ? `
                         <label>Board Response</label>
                         <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
-                        ${responseNotice}
-                        <div id="br-input-${safeRef}" ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'style="display:none;"' : ''}>
-                            <label for="response-${safeRef}" style="margin-top:12px; display:block;">Add to Board Response</label>
-                            <textarea id="response-${safeRef}" placeholder="Enter additional response to append to the record..."></textarea>
-                        </div>
+                        <div class="response-notice notice-sent">&#10003; Board Response sent to resident on ${formatDate(c.respondedAt)} \u2014 field locked.</div>
                         ` : `
-                        <div id="br-input-${safeRef}" ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'style="display:none;"' : ''}>
+                        <div id="br-input-${safeRef}" ${isClosed ? 'style="display:none;"' : ''}>
                             <label for="response-${safeRef}">Board Response</label>
                             ${responseNotice}
-                            <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response..."></textarea>
+                            <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response. Use Save Only to draft, Save &amp; Send when ready to send to resident."></textarea>
                         </div>
                         `}
                     </div>
@@ -1521,12 +1522,8 @@ TECHNICAL:
         // Combined closureNarrative -- whichever closure type applies
         var closureNarrative = nonResolutionNarrative || closureResolvedNarrative;
 
+        // effectiveStatus -- use exactly what the Board selected, no auto-promotion
         let effectiveStatus = status;
-        if (boardResponse && !status) {
-            if (current && (current.status === 'Open' || current.status === 'Acknowledged')) {
-                effectiveStatus = 'Responded';
-            }
-        }
 
         btn.disabled = true;
         btn.textContent = 'Saving...';
@@ -1562,20 +1559,9 @@ TECHNICAL:
                     if ((effectiveStatus === 'Closed - Resolved' || effectiveStatus === 'Closed - Unresolved') && !allComplaints[idx].closedAt) allComplaints[idx].closedAt = nowTs;
                     if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
                     if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
+                    // Save Only -- overwrite boardResponse cache, no respondedAt change
                     if (boardResponse) {
-                        const existing = allComplaints[idx].boardResponse || '';
-                        const sentTag  = andSend ? ' [SENT]' : '';
-                        if (!existing) {
-                            allComplaints[idx].boardResponse = boardResponse + sentTag;
-                        } else {
-                            const now2  = new Date();
-                            const pad2  = n => n.toString().padStart(2, '0');
-                            const dStr2 = now2.getFullYear() + '-' + pad2(now2.getMonth()+1) + '-' + pad2(now2.getDate());
-                            const tStr2 = pad2(now2.getHours()) + ':' + pad2(now2.getMinutes());
-                            const uName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-                            const sep   = '\n\n[' + dStr2 + ' ' + tStr2 + ' | ' + uName + ']\n';
-                            allComplaints[idx].boardResponse = existing + sep + boardResponse + sentTag;
-                        }
+                        allComplaints[idx].boardResponse = boardResponse;
                     }
                     // Update activityLog cache with auto-generated status entry
                     if (effectiveStatus) {
@@ -1600,10 +1586,10 @@ TECHNICAL:
                         if (newStatusEl) newStatusEl.value = '';
                         const newResponseEl = document.getElementById('response-' + ref);
                         if (newResponseEl) newResponseEl.value = '';
-                        // If Save & Send, call doSendToResident with the new entry
-                        if (andSend && boardResponse) {
-                            doSendToResident(ref, boardResponse);
-                        }
+                    }
+                    // If Save & Send -- trigger send after save confirmed
+                    if (andSend && boardResponse) {
+                        doSendToResident(ref);
                     }
                 }
                 updateSummary(allComplaints);
@@ -1745,7 +1731,7 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    function doSendToResident(ref, newEntry) {
+    function doSendToResident(ref) {
         const current  = allComplaints.find(c => c.referenceNumber === ref);
         if (!current || !current.contactEmail) {
             const fb = document.getElementById('sendfeedback-' + ref);
@@ -1766,37 +1752,42 @@ TECHNICAL:
         const url = CONFIG.BACKEND_URL
             + '?action=sendBoardResponse'
             + '&ref='      + encodeURIComponent(ref)
-            + '&newEntry=' + encodeURIComponent(newEntry)
             + '&userName=' + encodeURIComponent(userName)
             + '&callback=' + callbackName;
 
         const timeout = setTimeout(function() {
             cleanup(callbackName);
-            btn.disabled = false; btn.textContent = '✉ Send to Resident';
+            btn.disabled = false; btn.textContent = '\u2709 Save & Send to Resident';
             feedback.textContent = 'Timed out — please try again.'; feedback.className = 'send-feedback error';
         }, 20000);
 
         window[callbackName] = function(data) {
             clearTimeout(timeout); cleanup(callbackName);
-            btn.disabled = false; btn.textContent = '✉ Send to Resident';
+            btn.disabled = false; btn.textContent = '\u2709 Save & Send to Resident';
             if (data.success) {
-                feedback.textContent = 'Sent successfully.'; feedback.className = 'send-feedback success';
-                // Update respondedAt in cache
+                feedback.textContent = 'Sent successfully — Board Response locked.'; feedback.className = 'send-feedback success';
+                // Update respondedAt and status in cache, rebuild card
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-                if (idx !== -1 && !allComplaints[idx].respondedAt) {
+                if (idx !== -1) {
                     allComplaints[idx].respondedAt = new Date().toString();
-                    // Rebuild card to show green notice
+                    allComplaints[idx].status      = 'Responded';
+                    const now      = new Date();
+                    const pad      = n => n.toString().padStart(2, '0');
+                    const dateStr  = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+                    const timeStr  = pad(now.getHours()) + ':' + pad(now.getMinutes());
+                    const entry    = dateStr + ' ' + timeStr + ' | SYSTEM | Board Response sent to resident. Status set to Responded.';
+                    const existing = allComplaints[idx].activityLog || '';
+                    allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
                     const cardEl = document.getElementById('card-' + ref);
                     if (cardEl) {
-                        const newCard = document.createElement('div');
-                        newCard.innerHTML = buildCard(allComplaints[idx]);
-                        cardEl.replaceWith(newCard.firstElementChild);
-                        const newDetail = document.getElementById('card-' + ref);
-                        if (newDetail) {
-                            const detailEl = newDetail.querySelector('.card-detail');
-                            if (detailEl) detailEl.style.display = 'block';
-                        }
+                        const wasExpanded = cardEl.classList.contains('expanded');
+                        cardEl.outerHTML  = buildCard(allComplaints[idx]);
+                        const newCard = document.getElementById('card-' + ref);
+                        if (newCard && wasExpanded) newCard.classList.add('expanded');
+                        const newFeedback = document.getElementById('sendfeedback-' + ref);
+                        if (newFeedback) { newFeedback.textContent = 'Sent — Board Response locked.'; newFeedback.className = 'send-feedback success'; }
                     }
+                    updateSummary(allComplaints);
                 }
             } else {
                 feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'send-feedback error';
@@ -1805,8 +1796,8 @@ TECHNICAL:
 
         const script = document.createElement('script');
         script.onerror = function() {
-            clearTimeout(timeout); cleanup(callbackName);
-            btn.disabled = false; btn.textContent = '✉ Send to Resident';
+            cleanup(callbackName);
+            btn.disabled = false; btn.textContent = '\u2709 Save & Send to Resident';
             feedback.textContent = 'Network error.'; feedback.className = 'send-feedback error';
         };
         script.src = url;
@@ -1815,18 +1806,17 @@ TECHNICAL:
 
     function formatBoardResponse(text) {
         if (!text) return '';
-        var parts = text.split(/\n\n(?=\[\d{4}-\d{2}-\d{2})/);
+        // Strip any legacy [SENT] tags from display
+        var cleaned = text.replace(/\s*\[SENT\]/g, '');
+        var parts   = cleaned.split(/\n\n(?=\[\d{4}-\d{2}-\d{2})/);
         return parts.map(function(part) {
-            var hasSent  = part.indexOf('[SENT]') !== -1;
-            var clean    = part.replace(/\s*\[SENT\]/g, '').trim();
-            var lines    = clean.split('\n');
+            var lines     = part.trim().split('\n');
             var firstLine = lines[0] || '';
             var rest      = lines.slice(1).join('\n');
             var isHeader  = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2} \| /.test(firstLine);
             var header    = isHeader ? '<span class="br-timestamp">' + escHtml(firstLine) + '</span>' : escHtml(firstLine);
             var body      = rest ? '\n' + escHtml(rest) : '';
-            var badge     = hasSent ? '<span class="br-sent-badge">Sent</span>' : '';
-            return '<div class="br-entry">' + badge + header + body + '</div>';
+            return '<div class="br-entry">' + header + body + '</div>';
         }).join('');
     }
 
