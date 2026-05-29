@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.11
-  Backend:          ComplaintsManager V2.3.4
+  Frontend Version: V2.2.12
+  Backend:          ComplaintsManager V2.3.6
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.12 (May 2026): Closing - Pending status added. Closure narrative panels
+    (cr-panel, nrn-panel) now follow Save Only / Save & Send model matching
+    Board Response. Save Only saves narrative draft, sets status to
+    Closing - Pending, fields remain editable. Save & Send triggers confirmation
+    dialog, fires closure notice, sets final closed status. [TYPE:RESOLVED] or
+    [TYPE:UNRESOLVED] prefix stored in closureNarrative for backend resolution.
+    Closing - Pending card border and pill amber-gold. Status dropdown excludes
+    Closing - Pending (set automatically by Save Only). onStatusChange updated.
+    saveUpdate closure logic rewritten. isRespOverdue excludes Closing - Pending.
+    Cache and card rebuild updated for new status. Backend ComplaintsManager V2.3.6.
+
   V2.2.11 (May 2026): Instructional note added below Board Response textarea
     in draft mode -- reminds Board to click Save & Send once satisfied with
     the response. Shown only when field is editable (not Open, not sent,
@@ -495,7 +506,7 @@ TECHNICAL:
         .complaint-card.status-closed      { border-left: 4px solid #cbd5e1; background: rgba(203,213,225,0.4);   backdrop-filter: none; }
         .complaint-card.status-closed-resolved   { border-left: 4px solid #cbd5e1; background: rgba(203,213,225,0.4);  backdrop-filter: none; }
         .complaint-card.status-closed-unresolved { border-left: 4px solid #9ca3af; background: rgba(156,163,175,0.3); backdrop-filter: none; }
-        .complaint-card.status-escalated   { border-left: 4px solid #f97316; background: rgba(249,115,22,0.15);   backdrop-filter: none; }
+        .complaint-card.status-closing-pending  { border-left: 4px solid #f59e0b; background: rgba(245,158,11,0.12);  backdrop-filter: none; }
 
         .card-summary {
             padding: 13px 16px;
@@ -569,6 +580,7 @@ TECHNICAL:
         .status-closed-resolved   { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
         .status-closed-unresolved { background: rgba(107,114,128,0.3);  color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
         .status-escalated    { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
+        .status-closing-pending { background: rgba(245,158,11,0.3); color: #fde68a; border: 1px solid rgba(245,158,11,0.6); }
 
         .card-chevron {
             color: rgba(255,255,255,0.4);
@@ -1009,6 +1021,7 @@ TECHNICAL:
         <div class="summary-tile"><div class="tile-count" id="countOpen">—</div><div class="tile-label">Open</div></div>
         <div class="summary-tile"><div class="tile-count" id="countAcknowledged">—</div><div class="tile-label">Acknowledged</div></div>
         <div class="summary-tile"><div class="tile-count" id="countResponded">—</div><div class="tile-label">Responded</div></div>
+        <div class="summary-tile"><div class="tile-count" id="countClosingPending">—</div><div class="tile-label">Closing</div></div>
         <div class="summary-tile"><div class="tile-count" id="countClosed">—</div><div class="tile-label">Closed</div></div>
         <div class="summary-tile"><div class="tile-count overdue" id="countOverdue">—</div><div class="tile-label">Overdue</div></div>
     </div>
@@ -1022,6 +1035,7 @@ TECHNICAL:
             <option value="Acknowledged">Acknowledged</option>
             <option value="Responded">Responded</option>
             <option value="Escalated">Escalated</option>
+            <option value="Closing - Pending">Closing - Pending</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
             <option value="Closed - Unresolved">Closed - Unresolved</option>
         </select>
@@ -1159,20 +1173,22 @@ TECHNICAL:
     }
 
     function updateSummary(complaints) {
-        const counts = { Open: 0, Acknowledged: 0, Responded: 0, Closed: 0, overdue: 0 };
+        const counts = { Open: 0, Acknowledged: 0, Responded: 0, ClosingPending: 0, Closed: 0, overdue: 0 };
         complaints.forEach(function (c) {
             const s = normaliseStatus(c.status);
             if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
+            if (s === 'Closing - Pending') counts.ClosingPending++;
             if (s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Closed') counts.Closed++;
             if (isOverdue(c)) counts.overdue++;
         });
-        document.getElementById('countTotal').textContent        = complaints.length;
-        document.getElementById('countOpen').textContent         = counts.Open;
-        document.getElementById('countAcknowledged').textContent = counts.Acknowledged;
-        document.getElementById('countResponded').textContent    = counts.Responded;
-        document.getElementById('countClosed').textContent       = counts.Closed;
-        document.getElementById('countOverdue').textContent      = counts.overdue;
-        document.getElementById('summaryStrip').style.display    = 'flex';
+        document.getElementById('countTotal').textContent          = complaints.length;
+        document.getElementById('countOpen').textContent           = counts.Open;
+        document.getElementById('countAcknowledged').textContent   = counts.Acknowledged;
+        document.getElementById('countResponded').textContent      = counts.Responded;
+        document.getElementById('countClosingPending').textContent = counts.ClosingPending;
+        document.getElementById('countClosed').textContent         = counts.Closed;
+        document.getElementById('countOverdue').textContent        = counts.overdue;
+        document.getElementById('summaryStrip').style.display      = 'flex';
     }
 
     // Normalise legacy 'Closed' to 'Closed - Resolved' for display
@@ -1198,7 +1214,7 @@ TECHNICAL:
 
     function isRespOverdue(c) {
         const s = normaliseStatus(c.status);
-        if (s === 'Responded' || s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Escalated') return false;
+        if (s === 'Responded' || s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Escalated' || s === 'Closing - Pending') return false;
         if (!c.responseDue) return false;
         return new Date(c.responseDue) < new Date();
     }
@@ -1232,6 +1248,7 @@ TECHNICAL:
         else if (normStatus === 'Closed - Resolved')   borderClass = 'status-closed-resolved';
         else if (normStatus === 'Closed - Unresolved') borderClass = 'status-closed-unresolved';
         else if (normStatus === 'Escalated')       borderClass = 'status-escalated';
+        else if (normStatus === 'Closing - Pending') borderClass = 'status-closing-pending';
         else if (normStatus === 'Acknowledged')    borderClass = 'status-acknowledged';
 
         const statusClass   = statusPillClass(c.status);
@@ -1405,6 +1422,7 @@ TECHNICAL:
                             <option value="Escalated">Escalated</option>
                             <option value="Closed - Resolved">Closed - Resolved</option>
                             <option value="Closed - Unresolved">Closed - Unresolved</option>
+                            ${normaliseStatus(c.status) === 'Closing - Pending' ? '<option value="Closing - Pending" disabled style="color:#f59e0b;">\u2192 Closing - Pending (set automatically)</option>' : ''}
                         </select>
                     </div>
                 </div>
@@ -1426,21 +1444,23 @@ TECHNICAL:
                         `}
                     </div>
                 </div>
-                <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title">Non-Resolution Notice — Required</div>
+                <div id="nrn-panel-${safeRef}" class="nrn-panel" ${(normaliseStatus(c.status) === 'Closing - Pending' && c.closureNarrative && c.closureNarrative.indexOf('[TYPE:UNRESOLVED]') === 0) ? '' : 'style="display:none;"'}>
+                    <div class="nrn-panel-title">Non-Resolution Notice — Draft</div>
                     <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved..."></textarea>
+                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved...">${escHtml((function(n){ var m = n && n.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
                     <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process..."></textarea>
+                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process...">${escHtml((function(n){ var m = n && n.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
                     <div class="nrn-fixed-label">Mandatory block — included automatically in every Non-Resolution Notice</div>
                     <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Non-Resolution Notice and close the complaint.</div>
                 </div>
-                <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary — Required</div>
+                <div id="cr-panel-${safeRef}" class="nrn-panel" ${(normaliseStatus(c.status) === 'Closing - Pending' && c.closureNarrative && c.closureNarrative.indexOf('[TYPE:RESOLVED]') === 0) ? '' : 'style="display:none;"'}>
+                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary — Draft</div>
                     <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
+                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint...">${escHtml((function(n){ var m = n && n.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
                     <div class="nrn-fixed-label">Standard block — included automatically in every Resolved closure notice</div>
                     <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Resolution Notice and close the complaint.</div>
                 </div>
                 <div style="margin-top:14px;">
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
@@ -1475,10 +1495,6 @@ TECHNICAL:
         const btn            = andSend ? document.getElementById('send-' + ref) : document.getElementById('save-' + ref);
         const feedback       = andSend ? document.getElementById('sendfeedback-' + ref) : document.getElementById('feedback-' + ref);
 
-        if (!status && !boardResponse) {
-            setFeedback(feedback, 'Nothing to save — make a change first.', 'error'); return;
-        }
-
         // Confirmation required before setting Escalated status
         if (status === 'Escalated') {
             const confirmed = confirm(
@@ -1496,67 +1512,83 @@ TECHNICAL:
             }
         }
 
-        // Confirmation and narrative validation for Closed - Unresolved
-        var nonResolutionNarrative = '';
-        if (status === 'Closed - Unresolved') {
+        // ── CLOSURE NARRATIVE HANDLING ────────────────────────────────
+        // Save Only: collect narrative, pass to backend with no andSend flag
+        //   → backend sets Closing - Pending, writes col X, no notifications
+        // Save & Send: confirmation dialog, pass andSend=true
+        //   → backend resolves final status from col X type prefix, fires notices
+        // ─────────────────────────────────────────────────────────────
+
+        var closureNarrative = '';
+        const isCurrentlyClosingPending = current && normaliseStatus(current.status) === 'Closing - Pending';
+
+        if (status === 'Closed - Unresolved' || (isCurrentlyClosingPending && !status)) {
+            // NRN panel path
             const reasonEl  = document.getElementById('nrn-reason-'  + ref);
             const actionsEl = document.getElementById('nrn-actions-' + ref);
-            const reason    = reasonEl  ? reasonEl.value.trim()  : '';
-            const actions   = actionsEl ? actionsEl.value.trim() : '';
-
-            if (!reason || !actions) {
-                setFeedback(feedback, 'Both narrative fields are required for a Non-Resolution Notice.', 'error');
-                return;
+            if (reasonEl && actionsEl) {
+                const reason  = reasonEl.value.trim();
+                const actions = actionsEl.value.trim();
+                if (reason || actions) {
+                    // Has narrative content -- build it
+                    if (!reason || !actions) {
+                        setFeedback(feedback, 'Both narrative fields are required.', 'error'); return;
+                    }
+                    if (andSend) {
+                        // Save & Send -- confirm before closing
+                        const confirmed = confirm(
+                            'You are about to close this complaint as Unresolved.\n\n' +
+                            'A Non-Resolution Notice will be issued to the resident.\n' +
+                            'This action cannot be undone.\n\nProceed?'
+                        );
+                        if (!confirmed) {
+                            const statusEl = document.getElementById('status-' + ref);
+                            if (statusEl) statusEl.value = '';
+                            onStatusChange(ref, '');
+                            return;
+                        }
+                    }
+                    closureNarrative = '[TYPE:UNRESOLVED]\n[REASON]\n' + reason + '\n[/REASON]\n[ACTIONS]\n' + actions + '\n[/ACTIONS]';
+                }
             }
-
-            const confirmed = confirm(
-                'You are about to close this complaint as Unresolved.\n\n' +
-                'A Non-Resolution Notice will be issued to the resident.\n' +
-                'This action cannot be undone.\n\n' +
-                'Proceed?'
-            );
-            if (!confirmed) {
-                const statusEl = document.getElementById('status-' + ref);
-                if (statusEl) statusEl.value = '';
-                onStatusChange(ref, '');
-                return;
-            }
-
-            nonResolutionNarrative = '[REASON]\n' + reason + '\n[/REASON]\n[ACTIONS]\n' + actions + '\n[/ACTIONS]';
         }
 
-        // Confirmation and narrative validation for Closed - Resolved
-        var closureResolvedNarrative = '';
-        if (status === 'Closed - Resolved') {
+        if (status === 'Closed - Resolved' || (isCurrentlyClosingPending && !status && !closureNarrative)) {
+            // CR panel path
             const summaryEl = document.getElementById('cr-summary-' + ref);
-            const summary   = summaryEl ? summaryEl.value.trim() : '';
-
-            if (!summary) {
-                setFeedback(feedback, 'A resolution summary is required before closing as Resolved.', 'error');
-                return;
+            if (summaryEl) {
+                const summary = summaryEl.value.trim();
+                if (summary) {
+                    if (andSend) {
+                        const confirmed = confirm(
+                            'You are about to close this complaint as Resolved.\n\n' +
+                            'A Resolution Notice will be issued to the resident.\n' +
+                            'This action cannot be undone.\n\nProceed?'
+                        );
+                        if (!confirmed) {
+                            const statusEl = document.getElementById('status-' + ref);
+                            if (statusEl) statusEl.value = '';
+                            onStatusChange(ref, '');
+                            return;
+                        }
+                    }
+                    closureNarrative = '[TYPE:RESOLVED]\n[SUMMARY]\n' + summary + '\n[/SUMMARY]';
+                }
             }
-
-            const confirmed = confirm(
-                'You are about to close this complaint as Resolved.\n\n' +
-                'A Resolution Notice will be issued to the resident.\n' +
-                'This action cannot be undone.\n\n' +
-                'Proceed?'
-            );
-            if (!confirmed) {
-                const statusEl = document.getElementById('status-' + ref);
-                if (statusEl) statusEl.value = '';
-                onStatusChange(ref, '');
-                return;
-            }
-
-            closureResolvedNarrative = '[SUMMARY]\n' + summary + '\n[/SUMMARY]';
         }
-
-        // Combined closureNarrative -- whichever closure type applies
-        var closureNarrative = nonResolutionNarrative || closureResolvedNarrative;
 
         // effectiveStatus -- use exactly what the Board selected, no auto-promotion
+        // For closure Save & Send from Closing - Pending, pass Closing - Pending
+        // so backend knows to resolve from col X
         let effectiveStatus = status;
+        if (andSend && isCurrentlyClosingPending && !status) {
+            effectiveStatus = 'Closing - Pending';
+        }
+
+        // Nothing to save guard -- allow save if closure narrative or board response or status
+        if (!effectiveStatus && !boardResponse && !closureNarrative) {
+            setFeedback(feedback, 'Nothing to save — make a change first.', 'error'); return;
+        }
 
         btn.disabled = true;
         btn.textContent = 'Saving...';
@@ -1568,9 +1600,10 @@ TECHNICAL:
             + '&ref='      + encodeURIComponent(ref)
             + '&callback=' + callbackName;
 
-        if (effectiveStatus) url += '&status='          + encodeURIComponent(effectiveStatus);
-        if (boardResponse)   url += '&boardResponse='   + encodeURIComponent(boardResponse);
+        if (effectiveStatus)  url += '&status='          + encodeURIComponent(effectiveStatus);
+        if (boardResponse)    url += '&boardResponse='   + encodeURIComponent(boardResponse);
         if (closureNarrative) url += '&closureNarrative=' + encodeURIComponent(closureNarrative);
+        if (andSend)          url += '&andSend=true';
         const saveUserName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         url += '&userName=' + encodeURIComponent(saveUserName);
 
@@ -1584,29 +1617,48 @@ TECHNICAL:
             btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only';
 
             if (data.success) {
-                setFeedback(feedback, 'Saved successfully.', 'success');
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
                 if (idx !== -1) {
-                    if (effectiveStatus) allComplaints[idx].status = effectiveStatus;
                     const nowTs = new Date().toString();
-                    if ((effectiveStatus === 'Closed - Resolved' || effectiveStatus === 'Closed - Unresolved') && !allComplaints[idx].closedAt) allComplaints[idx].closedAt = nowTs;
-                    if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
-                    if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
-                    // Save Only -- overwrite boardResponse cache, no respondedAt change
-                    if (boardResponse) {
-                        allComplaints[idx].boardResponse = boardResponse;
-                    }
-                    // Update activityLog cache with auto-generated status entry
-                    if (effectiveStatus) {
-                        const now      = new Date();
-                        const pad      = n => n.toString().padStart(2, '0');
-                        const dateStr  = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
-                        const timeStr  = pad(now.getHours()) + ':' + pad(now.getMinutes());
-                        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-                        const entry    = dateStr + ' ' + timeStr + ' | ' + userName + ' | Status changed to ' + effectiveStatus;
+
+                    // Closure Save Only -- set Closing - Pending in cache
+                    if (closureNarrative && !andSend) {
+                        allComplaints[idx].status          = 'Closing - Pending';
+                        allComplaints[idx].closureNarrative = closureNarrative;
+                        const now = new Date(); const pad = n => n.toString().padStart(2,'0');
+                        const dStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
+                        const tStr = pad(now.getHours())+':'+pad(now.getMinutes());
+                        const uName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+                        const entry = dStr+' '+tStr+' | '+uName+' | Closure narrative saved (Closing - Pending)';
                         const existing = allComplaints[idx].activityLog || '';
-                        allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
+                        allComplaints[idx].activityLog = existing ? entry+'\n'+existing : entry;
+                        setFeedback(feedback, 'Draft saved — status set to Closing - Pending.', 'success');
+
+                    // Closure Save & Send -- set final closed status from data.finalStatus
+                    } else if (andSend && data.finalStatus) {
+                        allComplaints[idx].status   = data.finalStatus;
+                        allComplaints[idx].closedAt = nowTs;
+                        if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
+                        setFeedback(feedback, 'Closure notice sent — complaint closed.', 'success');
+
+                    // Standard update
+                    } else {
+                        if (effectiveStatus) allComplaints[idx].status = effectiveStatus;
+                        if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
+                        if (boardResponse) allComplaints[idx].boardResponse = boardResponse;
+                        // Activity Log cache
+                        if (effectiveStatus) {
+                            const now = new Date(); const pad = n => n.toString().padStart(2,'0');
+                            const dateStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
+                            const timeStr = pad(now.getHours())+':'+pad(now.getMinutes());
+                            const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+                            const entry = dateStr+' '+timeStr+' | '+userName+' | Status changed to '+effectiveStatus;
+                            const existing = allComplaints[idx].activityLog || '';
+                            allComplaints[idx].activityLog = existing ? entry+'\n'+existing : entry;
+                        }
+                        setFeedback(feedback, 'Saved successfully.', 'success');
                     }
+
                     const cardEl = document.getElementById('card-' + ref);
                     if (cardEl) {
                         const wasExpanded = cardEl.classList.contains('expanded');
@@ -1615,11 +1667,11 @@ TECHNICAL:
                         if (newCard && wasExpanded) newCard.classList.add('expanded');
                         const newFeedback = document.getElementById('feedback-' + ref);
                         const newStatusEl = document.getElementById('status-'   + ref);
-                        if (newFeedback) setFeedback(newFeedback, 'Saved successfully.', 'success');
+                        if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
                         if (newStatusEl) newStatusEl.value = '';
                     }
-                    // If Save & Send -- trigger send after save confirmed
-                    if (andSend && boardResponse) {
+                    // If Board Response Save & Send -- trigger send
+                    if (andSend && boardResponse && !closureNarrative) {
                         doSendToResident(ref);
                     }
                 }
@@ -1866,7 +1918,8 @@ TECHNICAL:
             'Responded':          'status-responded',
             'Closed - Resolved':  'status-closed-resolved',
             'Closed - Unresolved':'status-closed-unresolved',
-            'Escalated':          'status-escalated'
+            'Escalated':          'status-escalated',
+            'Closing - Pending':  'status-closing-pending'
         }[s] || 'status-closed';
     }
 
