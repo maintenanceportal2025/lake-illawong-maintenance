@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.3
+  Frontend Version: V2.2.5
   Backend:          ComplaintsManager V2.3.2
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.5 (May 2026): 72-hour Board Response notice suppressed for closed
+    complaints (Closed - Resolved, Closed - Unresolved). Notice is irrelevant
+    once complaint is closed and textarea is hidden. Backend unchanged at V2.3.2.
+
+  V2.2.4 (May 2026): Board Response input textarea and lock notice hidden entirely
+    for closed complaints (Closed - Resolved, Closed - Unresolved). Replaces
+    V2.2.3 disabled/locked approach -- textarea is a distraction when complaint
+    is closed. Read-only Board Response history remains visible. onStatusChange
+    and buildUpdatePanel updated accordingly. Backend unchanged at V2.3.2.
+
   V2.2.3 (May 2026): Board Response textarea visible but locked (disabled) when
     status dropdown set to Closed - Resolved or Closed - Unresolved, or when
     complaint is already closed. Replaces V2.2.2 hide behaviour. Lock notice
@@ -716,16 +726,6 @@ TECHNICAL:
             background: rgba(255,255,255,0.05);
         }
 
-        .br-lock-notice {
-            font-size: 0.78rem;
-            color: rgba(255,255,255,0.5);
-            font-style: italic;
-            margin-top: 5px;
-            display: none;
-        }
-
-        .br-lock-notice.visible { display: block; }
-
         .send-feedback { display: inline-block; margin-left: 10px; font-size: 0.82rem; font-weight: 600; }
         .send-feedback.success { color: #6ee7b7; }
         .send-feedback.error   { color: #fca5a5; }
@@ -1024,17 +1024,13 @@ TECHNICAL:
         '------------------------------------------------------------';
 
     function onStatusChange(ref, value) {
-        const nrnPanel   = document.getElementById('nrn-panel-'   + ref);
-        const crPanel    = document.getElementById('cr-panel-'    + ref);
-        const brTextarea = document.getElementById('response-'    + ref);
-        const brLock     = document.getElementById('br-lock-'     + ref);
+        const nrnPanel   = document.getElementById('nrn-panel-'  + ref);
+        const crPanel    = document.getElementById('cr-panel-'   + ref);
+        const brInput    = document.getElementById('br-input-'   + ref);
         if (nrnPanel) nrnPanel.style.display = (value === 'Closed - Unresolved') ? 'block' : 'none';
         if (crPanel)  crPanel.style.display  = (value === 'Closed - Resolved')   ? 'block' : 'none';
         const isClosing = (value === 'Closed - Resolved' || value === 'Closed - Unresolved');
-        if (brTextarea) brTextarea.disabled = isClosing;
-        if (brLock) {
-            if (isClosing) { brLock.classList.add('visible'); } else { brLock.classList.remove('visible'); }
-        }
+        if (brInput) brInput.style.display = isClosing ? 'none' : '';
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -1233,18 +1229,21 @@ TECHNICAL:
             : '<div class="activity-log-empty">No entries recorded.</div>';
         const activityLogHtml = `<div class="activity-log-block"><div class="detail-label">Activity Log (Admin only)</div>${commentEntries}</div>`;
 
-        // 72-hour Board Response notice
-        const now72       = new Date();
-        const submitted   = new Date(c.submittedAt);
+        // 72-hour Board Response notice -- suppressed for closed complaints
+        const now72        = new Date();
+        const submitted    = new Date(c.submittedAt);
         const hoursElapsed = isNaN(submitted) ? 0 : (now72 - submitted) / (1000 * 60 * 60);
+        const isClosed     = (normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved');
         let responseNotice = '';
-        if (c.respondedAt) {
-            responseNotice = '<div class="response-notice notice-sent">&#10003; Board Response sent \u2014 editing this field will update the formal record.</div>';
-        } else if (!isNaN(submitted) && hoursElapsed > 72) {
-            responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour response deadline has passed \u2014 response required urgently.</div>';
-        } else if (!isNaN(submitted)) {
-            const hoursLeft = Math.ceil(72 - hoursElapsed);
-            responseNotice = '<div class="response-notice notice-pending">&#9679; Response required within 72 hours of submission \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
+        if (!isClosed) {
+            if (c.respondedAt) {
+                responseNotice = '<div class="response-notice notice-sent">&#10003; Board Response sent \u2014 editing this field will update the formal record.</div>';
+            } else if (!isNaN(submitted) && hoursElapsed > 72) {
+                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour response deadline has passed \u2014 response required urgently.</div>';
+            } else if (!isNaN(submitted)) {
+                const hoursLeft = Math.ceil(72 - hoursElapsed);
+                responseNotice = '<div class="response-notice notice-pending">&#9679; Response required within 72 hours of submission \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
+            }
         }
         return `
             <div class="detail-section-title">Update Complaint</div>
@@ -1269,14 +1268,17 @@ TECHNICAL:
                         <label>Board Response</label>
                         <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
                         ${responseNotice}
-                        <label for="response-${safeRef}" style="margin-top:12px; display:block;">Add to Board Response</label>
-                        <textarea id="response-${safeRef}" placeholder="Enter additional response to append to the record..." ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'disabled' : ''}></textarea>
+                        <div id="br-input-${safeRef}" ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'style="display:none;"' : ''}>
+                            <label for="response-${safeRef}" style="margin-top:12px; display:block;">Add to Board Response</label>
+                            <textarea id="response-${safeRef}" placeholder="Enter additional response to append to the record..."></textarea>
+                        </div>
                         ` : `
-                        <label for="response-${safeRef}">Board Response</label>
-                        ${responseNotice}
-                        <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response..." ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'disabled' : ''}></textarea>
+                        <div id="br-input-${safeRef}" ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'style="display:none;"' : ''}>
+                            <label for="response-${safeRef}">Board Response</label>
+                            ${responseNotice}
+                            <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response..."></textarea>
+                        </div>
                         `}
-                        <div id="br-lock-${safeRef}" class="br-lock-notice ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'visible' : ''}">Board Response is locked — complaint is closed. Use the Activity Log for further notes.</div>
                     </div>
                 </div>
                 <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
