@@ -6,13 +6,26 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.17
-  Backend:          ComplaintsManager V2.3.10
+  Frontend Version: V2.2.19
+  Backend:          ComplaintsManager V2.3.11
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.19 (May 2026): Open panel now gates Acknowledge button on lodgement
+    notification dispatch. Until Activity Log contains "Lodgement notifications
+    dispatched" entry, panel shows neutral waiting message instead of Acknowledge
+    button and 48hr notice. Once dispatched, full Acknowledge panel renders.
+    48hr clock remains based on submittedAt. Backend unchanged at V2.3.11.
+
+  V2.2.18 (May 2026): Fix crVisible/nrnVisible panel detection. Previous logic
+    excluded panels with no inline style (Closing - Pending active panels render
+    without display:none). Fixed to check only !== 'none' -- element with no
+    inline style is visible by default. Resolves Nothing to save and closure
+    narrative required errors on second Save Only / Save & Send from
+    Closing - Pending state. Backend ComplaintsManager V2.3.11.
+
   V2.2.17 (May 2026): Critical fix. saveUpdate closure narrative detection
     rewritten -- reads cr-panel and nrn-panel DOM visibility to determine
     closure type instead of reading status dropdown (absent in Responded panel).
@@ -1497,13 +1510,18 @@ TECHNICAL:
 
         // ── OPEN PANEL ────────────────────────────────────────────────
         if (isOpen) {
+            const notificationsDispatched = c.activityLog && c.activityLog.indexOf('Lodgement notifications dispatched') !== -1;
             return `
-            <div class="detail-section-title">Acknowledge This Complaint</div>
+            <div class="detail-section-title">${notificationsDispatched ? 'Acknowledge This Complaint' : 'Complaint Received'}</div>
             <div class="update-panel">
+                ${notificationsDispatched ? `
                 ${ackNotice}
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:12px 0;">If the acknowledgement email link has been lost, use the button below to manually acknowledge this complaint. An acknowledgement email will be sent to the resident.</p>
                 <button class="btn-ack" id="ack-btn-${safeRef}" onclick="acknowledgeManual('${safeRef}')">&#10003; Acknowledge Complaint</button>
                 <span class="save-feedback" id="ack-feedback-${safeRef}"></span>
+                ` : `
+                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9679; Lodgement notifications are being processed. The Acknowledge option will appear once the resident and Board have been notified.</div>
+                `}
                 ${activityLogSection}
             </div>`;
         }
@@ -1743,8 +1761,8 @@ TECHNICAL:
         // Detect which panel is visible
         const crPanelEl  = document.getElementById('cr-panel-'  + ref);
         const nrnPanelEl = document.getElementById('nrn-panel-' + ref);
-        const crVisible  = crPanelEl  && crPanelEl.style.display  !== 'none' && crPanelEl.style.display  !== '';
-        const nrnVisible = nrnPanelEl && nrnPanelEl.style.display !== 'none' && nrnPanelEl.style.display !== '';
+        const crVisible  = crPanelEl  && crPanelEl.style.display  !== 'none';
+        const nrnVisible = nrnPanelEl && nrnPanelEl.style.display !== 'none';
 
         // Resolved path
         if (crVisible) {
