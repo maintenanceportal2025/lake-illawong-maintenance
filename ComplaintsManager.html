@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.5
+  Frontend Version: V2.2.6
   Backend:          ComplaintsManager V2.3.2
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.6 (May 2026): Update panel is fully read-only for closed complaints
+    (Closed - Resolved, Closed - Unresolved). Status dropdown, Board Response
+    input, closure narrative panels, Save and Save & Send buttons all hidden.
+    Activity Log display and Add to Activity Log textarea remain active.
+    Closed status shown as a static labelled pill. Print Record button retained.
+    buildUpdatePanel returns early with read-only panel when isClosed.
+    Backend unchanged at ComplaintsManager V2.3.2.
+
   V2.2.5 (May 2026): 72-hour Board Response notice suppressed for closed
     complaints (Closed - Resolved, Closed - Unresolved). Notice is irrelevant
     once complaint is closed and textarea is hidden. Backend unchanged at V2.3.2.
@@ -726,6 +734,20 @@ TECHNICAL:
             background: rgba(255,255,255,0.05);
         }
 
+        .closed-status-label {
+            display: inline-block;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            margin-bottom: 10px;
+        }
+
+        .closed-status-label.resolved   { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
+        .closed-status-label.unresolved { background: rgba(107,114,128,0.3);  color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
+
         .send-feedback { display: inline-block; margin-left: 10px; font-size: 0.82rem; font-weight: 600; }
         .send-feedback.success { color: #6ee7b7; }
         .send-feedback.error   { color: #fca5a5; }
@@ -1245,6 +1267,33 @@ TECHNICAL:
                 responseNotice = '<div class="response-notice notice-pending">&#9679; Response required within 72 hours of submission \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
             }
         }
+
+        // Read-only panel for closed complaints
+        if (isClosed) {
+            const closedLabel = normaliseStatus(c.status);
+            const pillClass   = (normaliseStatus(c.status) === 'Closed - Resolved') ? 'resolved' : 'unresolved';
+            return `
+            <div class="detail-section-title">Complaint Record</div>
+            <div class="update-panel">
+                <div style="margin-bottom:14px;">
+                    <span class="closed-status-label ${pillClass}">${escHtml(closedLabel)}</span>
+                    <span style="font-size:0.82rem;color:rgba(255,255,255,0.5);margin-left:8px;">This complaint is closed. No further updates can be made.</span>
+                </div>
+                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:16px;">
+                    ${activityLogHtml}
+                    <div class="update-row">
+                        <div class="update-field">
+                            <label for="comment-${safeRef}">Add to Activity Log (timestamped, permanent record)</label>
+                            <textarea id="comment-${safeRef}" placeholder="Add a note — e.g. VicAssist correspondence received, matter referred to VCAT..."></textarea>
+                        </div>
+                    </div>
+                    <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add to Activity Log</button>
+                    <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>
+                </div>
+            </div>`;
+        }
+
         return `
             <div class="detail-section-title">Update Complaint</div>
             <div class="update-panel">
