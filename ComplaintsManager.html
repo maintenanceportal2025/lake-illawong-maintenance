@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.6
+  Frontend Version: V2.2.7
   Backend:          ComplaintsManager V2.3.2
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.7 (May 2026): Read-only panel for closed complaints now displays Board
+    Response and closure narrative (Resolution Summary for Closed - Resolved,
+    Non-Resolution Notice reason and actions for Closed - Unresolved). Both
+    shown read-only using existing styling. Backend unchanged at V2.3.2.
+
   V2.2.6 (May 2026): Update panel is fully read-only for closed complaints
     (Closed - Resolved, Closed - Unresolved). Status dropdown, Board Response
     input, closure narrative panels, Save and Save & Send buttons all hidden.
@@ -1272,6 +1277,39 @@ TECHNICAL:
         if (isClosed) {
             const closedLabel = normaliseStatus(c.status);
             const pillClass   = (normaliseStatus(c.status) === 'Closed - Resolved') ? 'resolved' : 'unresolved';
+
+            // Board Response read-only block
+            const boardRespHtml = c.boardResponse
+                ? `<div style="margin-bottom:14px;">
+                       <div class="detail-label" style="margin-bottom:6px;">Board Response</div>
+                       <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
+                   </div>`
+                : '';
+
+            // Closure narrative read-only block
+            let closureHtml = '';
+            if (c.closureNarrative) {
+                if (normaliseStatus(c.status) === 'Closed - Resolved') {
+                    var summaryMatch = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+                    var summaryText  = summaryMatch ? summaryMatch[1].trim() : c.closureNarrative;
+                    closureHtml = `<div style="margin-bottom:14px;">
+                        <div class="detail-label" style="margin-bottom:6px;">Resolution Summary</div>
+                        <div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);">${escHtml(summaryText)}</div>
+                    </div>`;
+                } else {
+                    var reasonMatch2  = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+                    var actionsMatch2 = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+                    var reasonText2   = reasonMatch2  ? reasonMatch2[1].trim()  : c.closureNarrative;
+                    var actionsText2  = actionsMatch2 ? actionsMatch2[1].trim() : '';
+                    closureHtml = `<div style="margin-bottom:14px;">
+                        <div class="detail-label" style="margin-bottom:6px;">Why this matter was not resolved</div>
+                        <div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);margin-bottom:10px;">${escHtml(reasonText2)}</div>
+                        ${actionsText2 ? `<div class="detail-label" style="margin-bottom:6px;">Actions taken during the process</div>
+                        <div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);">${escHtml(actionsText2)}</div>` : ''}
+                    </div>`;
+                }
+            }
+
             return `
             <div class="detail-section-title">Complaint Record</div>
             <div class="update-panel">
@@ -1279,6 +1317,8 @@ TECHNICAL:
                     <span class="closed-status-label ${pillClass}">${escHtml(closedLabel)}</span>
                     <span style="font-size:0.82rem;color:rgba(255,255,255,0.5);margin-left:8px;">This complaint is closed. No further updates can be made.</span>
                 </div>
+                ${boardRespHtml}
+                ${closureHtml}
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:16px;">
                     ${activityLogHtml}
