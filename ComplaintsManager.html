@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.16
-  Backend:          ComplaintsManager V2.3.9
+  Frontend Version: V2.2.17
+  Backend:          ComplaintsManager V2.3.10
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.17 (May 2026): Critical fix. saveUpdate closure narrative detection
+    rewritten -- reads cr-panel and nrn-panel DOM visibility to determine
+    closure type instead of reading status dropdown (absent in Responded panel).
+    closureType explicitly set (RESOLVED/UNRESOLVED) and passed in closure
+    narrative prefix. effectiveStatus set to Closing - Pending on Save Only.
+    Backend ComplaintsManager V2.3.10.
+
   V2.2.16 (May 2026): Bug fix. saveUpdate null guard added for status dropdown
     element -- document.getElementById('status-' + ref) returns null in
     Acknowledged and Responded panels where no dropdown exists. Calling .value
@@ -1724,79 +1731,70 @@ TECHNICAL:
         }
 
         // ── CLOSURE NARRATIVE HANDLING ────────────────────────────────
-        // Save Only: collect narrative, pass to backend with no andSend flag
-        //   → backend sets Closing - Pending, writes col X, no notifications
-        // Save & Send: confirmation dialog, pass andSend=true
-        //   → backend resolves final status from col X type prefix, fires notices
+        // Detect closure type from visible panel -- no dropdown in Responded panel.
+        // cr-panel visible = Resolved path. nrn-panel visible = Unresolved path.
+        // Save Only: save draft, set Closing - Pending (no confirmation, no send)
+        // Save & Send: validate, confirm, fire closure
         // ─────────────────────────────────────────────────────────────
 
         var closureNarrative = '';
         const isCurrentlyClosingPending = current && normaliseStatus(current.status) === 'Closing - Pending';
 
-        if (status === 'Closed - Unresolved' || (isCurrentlyClosingPending && !status)) {
-            // NRN panel path
+        // Detect which panel is visible
+        const crPanelEl  = document.getElementById('cr-panel-'  + ref);
+        const nrnPanelEl = document.getElementById('nrn-panel-' + ref);
+        const crVisible  = crPanelEl  && crPanelEl.style.display  !== 'none' && crPanelEl.style.display  !== '';
+        const nrnVisible = nrnPanelEl && nrnPanelEl.style.display !== 'none' && nrnPanelEl.style.display !== '';
+
+        // Resolved path
+        if (crVisible) {
+            const summaryEl = document.getElementById('cr-summary-' + ref);
+            const summary   = summaryEl ? summaryEl.value.trim() : '';
+            if (summary) {
+                if (andSend) {
+                    const confirmed = confirm(
+                        'You are about to close this complaint as Resolved.\n\n' +
+                        'A Resolution Notice will be issued to the resident.\n' +
+                        'This action cannot be undone.\n\nProceed?'
+                    );
+                    if (!confirmed) return;
+                }
+                closureNarrative = '[TYPE:RESOLVED]\n[SUMMARY]\n' + summary + '\n[/SUMMARY]';
+            } else if (andSend) {
+                setFeedback(feedback, 'A resolution summary is required before sending.', 'error'); return;
+            }
+        }
+
+        // Unresolved path
+        if (nrnVisible) {
             const reasonEl  = document.getElementById('nrn-reason-'  + ref);
             const actionsEl = document.getElementById('nrn-actions-' + ref);
-            if (reasonEl && actionsEl) {
-                const reason  = reasonEl.value.trim();
-                const actions = actionsEl.value.trim();
-                if (reason || actions) {
-                    // Has narrative content -- build it
-                    if (!reason || !actions) {
-                        setFeedback(feedback, 'Both narrative fields are required.', 'error'); return;
-                    }
-                    if (andSend) {
-                        // Save & Send -- confirm before closing
-                        const confirmed = confirm(
-                            'You are about to close this complaint as Unresolved.\n\n' +
-                            'A Non-Resolution Notice will be issued to the resident.\n' +
-                            'This action cannot be undone.\n\nProceed?'
-                        );
-                        if (!confirmed) {
-                            const statusEl = document.getElementById('status-' + ref);
-                            if (statusEl) statusEl.value = '';
-                            onStatusChange(ref, '');
-                            return;
-                        }
-                    }
-                    closureNarrative = '[TYPE:UNRESOLVED]\n[REASON]\n' + reason + '\n[/REASON]\n[ACTIONS]\n' + actions + '\n[/ACTIONS]';
+            const reason    = reasonEl  ? reasonEl.value.trim()  : '';
+            const actions   = actionsEl ? actionsEl.value.trim() : '';
+            if (reason || actions) {
+                if (andSend && (!reason || !actions)) {
+                    setFeedback(feedback, 'Both narrative fields are required.', 'error'); return;
                 }
+                if (andSend) {
+                    const confirmed = confirm(
+                        'You are about to close this complaint as Unresolved.\n\n' +
+                        'A Non-Resolution Notice will be issued to the resident.\n' +
+                        'This action cannot be undone.\n\nProceed?'
+                    );
+                    if (!confirmed) return;
+                }
+                closureNarrative = '[TYPE:UNRESOLVED]\n[REASON]\n' + (reason || '') + '\n[/REASON]\n[ACTIONS]\n' + (actions || '') + '\n[/ACTIONS]';
+            } else if (andSend) {
+                setFeedback(feedback, 'Both narrative fields are required before sending.', 'error'); return;
             }
         }
 
-        if (status === 'Closed - Resolved' || (isCurrentlyClosingPending && !status && !closureNarrative)) {
-            // CR panel path
-            const summaryEl = document.getElementById('cr-summary-' + ref);
-            if (summaryEl) {
-                const summary = summaryEl.value.trim();
-                if (summary) {
-                    if (andSend) {
-                        const confirmed = confirm(
-                            'You are about to close this complaint as Resolved.\n\n' +
-                            'A Resolution Notice will be issued to the resident.\n' +
-                            'This action cannot be undone.\n\nProceed?'
-                        );
-                        if (!confirmed) {
-                            const statusEl = document.getElementById('status-' + ref);
-                            if (statusEl) statusEl.value = '';
-                            onStatusChange(ref, '');
-                            return;
-                        }
-                    }
-                    closureNarrative = '[TYPE:RESOLVED]\n[SUMMARY]\n' + summary + '\n[/SUMMARY]';
-                }
-            }
-        }
-
-        // effectiveStatus -- use exactly what the Board selected, no auto-promotion
-        // For closure Save & Send from Closing - Pending, pass Closing - Pending
-        // so backend knows to resolve from col X
+        // effectiveStatus -- for closure Save Only set to Closing - Pending explicitly
         let effectiveStatus = status;
-        if (andSend && isCurrentlyClosingPending && !status) {
-            effectiveStatus = 'Closing - Pending';
-        }
+        if (closureNarrative && !andSend) effectiveStatus = 'Closing - Pending';
+        if (andSend && isCurrentlyClosingPending && !status) effectiveStatus = 'Closing - Pending';
 
-        // Nothing to save guard -- allow save if closure narrative or board response or status
+        // Nothing to save guard
         if (!effectiveStatus && !boardResponse && !closureNarrative) {
             setFeedback(feedback, 'Nothing to save — make a change first.', 'error'); return;
         }
