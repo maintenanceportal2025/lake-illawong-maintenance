@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.7
-  Backend:          ComplaintsManager V2.3.2
+  Frontend Version: V2.2.8
+  Backend:          ComplaintsManager V2.3.3
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.8 (May 2026): Resend Closure Notice button added to read-only panel for
+    closed complaints. Calls resendClosureNotice backend action. Feedback shown
+    inline beside button. Activity Log refreshes after successful resend.
+    btn-resend CSS added. Backend ComplaintsManager V2.3.3.
+
   V2.2.7 (May 2026): Read-only panel for closed complaints now displays Board
     Response and closure narrative (Resolution Summary for Closed - Resolved,
     Non-Resolution Notice reason and actions for Closed - Unresolved). Both
@@ -753,6 +758,21 @@ TECHNICAL:
         .closed-status-label.resolved   { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
         .closed-status-label.unresolved { background: rgba(107,114,128,0.3);  color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
 
+        .btn-resend {
+            background: rgba(59,130,246,0.15);
+            border: 1px solid rgba(59,130,246,0.4);
+            color: #93c5fd;
+            padding: 7px 16px;
+            border-radius: 2px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-left: 8px;
+        }
+        .btn-resend:hover    { background: rgba(59,130,246,0.28); }
+        .btn-resend:disabled { opacity: 0.5; cursor: not-allowed; }
+
         .send-feedback { display: inline-block; margin-left: 10px; font-size: 0.82rem; font-weight: 600; }
         .send-feedback.success { color: #6ee7b7; }
         .send-feedback.error   { color: #fca5a5; }
@@ -1320,6 +1340,8 @@ TECHNICAL:
                 ${boardRespHtml}
                 ${closureHtml}
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
+                <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
                 <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:16px;">
                     ${activityLogHtml}
                     <div class="update-row">
@@ -1600,6 +1622,63 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
+
+    function resendNotice(ref) {
+        const btn      = document.getElementById('resend-' + ref);
+        const feedback = document.getElementById('resendfeedback-' + ref);
+
+        btn.disabled    = true;
+        btn.textContent = 'Sending...';
+        feedback.textContent = '';
+        feedback.className   = 'comment-feedback';
+
+        const userName     = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+        const callbackName = 'resendCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=resendClosureNotice'
+            + '&ref='      + encodeURIComponent(ref)
+            + '&userName=' + encodeURIComponent(userName)
+            + '&callback=' + callbackName;
+
+        const timeout = setTimeout(function () {
+            cleanup(callbackName);
+            btn.disabled = false; btn.textContent = '\u21ba Resend Closure Notice';
+            feedback.textContent = 'Timed out — please try again.'; feedback.className = 'comment-feedback error';
+        }, 15000);
+
+        window[callbackName] = function (data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            btn.disabled = false; btn.textContent = '\u21ba Resend Closure Notice';
+            if (data.success) {
+                feedback.textContent = 'Notice resent successfully.'; feedback.className = 'comment-feedback success';
+                // Append to local Activity Log display
+                const logBlock = document.querySelector('#card-' + ref + ' .activity-log-block');
+                if (logBlock) {
+                    const emptyEl = logBlock.querySelector('.activity-log-empty');
+                    if (emptyEl) emptyEl.remove();
+                    const now    = new Date();
+                    const pad    = n => n.toString().padStart(2, '0');
+                    const dStr   = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+                    const tStr   = pad(now.getHours()) + ':' + pad(now.getMinutes());
+                    const entry  = document.createElement('div');
+                    entry.className   = 'activity-log-entry';
+                    entry.textContent = dStr + ' ' + tStr + ' | SYSTEM | Closure notice resent to resident';
+                    logBlock.insertBefore(entry, logBlock.children[1]);
+                }
+            } else {
+                feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'comment-feedback error';
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function () {
+            clearTimeout(timeout); cleanup(callbackName);
+            btn.disabled = false; btn.textContent = '\u21ba Resend Closure Notice';
+            feedback.textContent = 'Network error — please try again.'; feedback.className = 'comment-feedback error';
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
 
     function addComment(ref) {
         const comment  = (document.getElementById('comment-'        + ref).value || '').trim();
