@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.1
-  Backend:          ComplaintsManager V2.3.1
+  Frontend Version: V2.2.2
+  Backend:          ComplaintsManager V2.3.2
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.2 (May 2026): Board Response input textarea hidden when status dropdown
+    set to Closed - Resolved or Closed - Unresolved, or when complaint is already
+    closed. Read-only Board Response history remains visible for reference.
+    onStatusChange updated to toggle textarea visibility. buildUpdatePanel
+    renders textarea hidden on initial load for already-closed complaints.
+    Backend ComplaintsManager V2.3.2.
+
   V2.2.1 (May 2026): Closed - Resolved closure now mirrors Closed - Unresolved
     pattern. CLOSURE_RESOLVED_FIXED_BLOCK frontend constant added. cr-panel added
     to update panel -- appears when Closed - Resolved selected, requires resolution
@@ -993,10 +1000,13 @@ TECHNICAL:
         '------------------------------------------------------------';
 
     function onStatusChange(ref, value) {
-        const nrnPanel = document.getElementById('nrn-panel-' + ref);
-        const crPanel  = document.getElementById('cr-panel-'  + ref);
-        if (nrnPanel) nrnPanel.style.display = (value === 'Closed - Unresolved') ? 'block' : 'none';
-        if (crPanel)  crPanel.style.display  = (value === 'Closed - Resolved')   ? 'block' : 'none';
+        const nrnPanel  = document.getElementById('nrn-panel-'  + ref);
+        const crPanel   = document.getElementById('cr-panel-'   + ref);
+        const brWrapper = document.getElementById('br-wrapper-' + ref);
+        if (nrnPanel)  nrnPanel.style.display  = (value === 'Closed - Unresolved') ? 'block' : 'none';
+        if (crPanel)   crPanel.style.display   = (value === 'Closed - Resolved')   ? 'block' : 'none';
+        const isClosing = (value === 'Closed - Resolved' || value === 'Closed - Unresolved');
+        if (brWrapper) brWrapper.style.display = isClosing ? 'none' : '';
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -1225,7 +1235,7 @@ TECHNICAL:
                         </select>
                     </div>
                 </div>
-                <div class="update-row">
+                <div class="update-row" id="br-wrapper-${safeRef}" ${(normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved') ? 'style="display:none;"' : ''}>
                     <div class="update-field">
                         ${c.respondedAt ? `
                         <label>Board Response</label>
