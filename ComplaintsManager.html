@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.13
-  Backend:          ComplaintsManager V2.3.7
+  Frontend Version: V2.2.14
+  Backend:          ComplaintsManager V2.3.8
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.14 (May 2026): Status dropdown context-sensitive -- only shows valid
+    forward transitions from current status. No backwards movement. Escalated
+    only available from Closed statuses (shown in closed panel). Closed panel
+    now includes Escalated dropdown with confirmation dialog. getValidNextStatuses()
+    helper added. onStatusChange updated for Escalated from closed. Resend
+    button text confirmed correct. Backend ComplaintsManager V2.3.8.
+
   V2.2.13 (May 2026): Open complaint Board Response message updated -- wording
     now reflects correct sequence (acknowledge first, then action plan within
     72 hours, then Board Response). Backend ComplaintsManager V2.3.7.
@@ -1118,6 +1125,23 @@ TECHNICAL:
         if (crPanel)  crPanel.style.display  = (value === 'Closed - Resolved')   ? 'block' : 'none';
         const isClosing = (value === 'Closed - Resolved' || value === 'Closed - Unresolved');
         if (brInput) brInput.style.display = isClosing ? 'none' : '';
+
+        // Visual card colour preview on dropdown selection
+        const card = document.getElementById('card-' + ref);
+        if (card && value) {
+            const previewClass = {
+                'Acknowledged':      'status-acknowledged',
+                'Responded':         'status-responded',
+                'Escalated':         'status-escalated',
+                'Closing - Pending': 'status-closing-pending',
+                'Closed - Resolved': 'status-closed-resolved',
+                'Closed - Unresolved': 'status-closed-unresolved'
+            }[value];
+            if (previewClass) {
+                card.className = card.className.replace(/\bstatus-\S+|\boverdue-\S+/g, '').trim();
+                card.classList.add(previewClass);
+            }
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -1311,6 +1335,20 @@ TECHNICAL:
         return `<div class="detail-grid">${gridItems}</div>`;
     }
 
+    function getValidNextStatuses(currentStatus) {
+        const norm = normaliseStatus(currentStatus);
+        const map = {
+            'Open':                ['Acknowledged'],
+            'Acknowledged':        ['Responded'],
+            'Responded':           ['Closed - Resolved', 'Closed - Unresolved'],
+            'Closing - Pending':   [],
+            'Closed - Resolved':   ['Escalated'],
+            'Closed - Unresolved': ['Escalated'],
+            'Escalated':           []
+        };
+        return map[norm] || [];
+    }
+
     function buildUpdatePanel(c) {
         const safeRef = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
         const activityLog = c.activityLog || '';
@@ -1390,10 +1428,19 @@ TECHNICAL:
             <div class="update-panel">
                 <div style="margin-bottom:14px;">
                     <span class="closed-status-label ${pillClass}">${escHtml(closedLabel)}</span>
-                    <span style="font-size:0.82rem;color:rgba(255,255,255,0.5);margin-left:8px;">This complaint is closed. No further updates can be made.</span>
+                    <span style="font-size:0.82rem;color:rgba(255,255,255,0.5);margin-left:8px;">This complaint is closed.</span>
                 </div>
                 ${boardRespHtml}
                 ${closureHtml}
+                <div style="margin-bottom:14px;">
+                    <label style="font-size:0.78rem;font-weight:600;color:rgba(255,255,255,0.7);display:block;margin-bottom:6px;">If VicAssist has been engaged by the resident:</label>
+                    <select id="status-${safeRef}" onchange="onStatusChange('${safeRef}', this.value)" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:7px 10px;font-size:0.85rem;color:white;cursor:pointer;">
+                        <option value="">(no action)</option>
+                        <option value="Escalated">Set to Escalated</option>
+                    </select>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)" style="margin-left:8px;">Save</button>
+                </div>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
                 <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
@@ -1420,12 +1467,9 @@ TECHNICAL:
                         <label for="status-${safeRef}">Status</label>
                         <select id="status-${safeRef}" onchange="onStatusChange('${safeRef}', this.value)">
                             <option value="">(no change)</option>
-                            <option value="Open">Open</option>
-                            <option value="Acknowledged">Acknowledged</option>
-                            <option value="Responded">Responded</option>
-                            <option value="Escalated">Escalated</option>
-                            <option value="Closed - Resolved">Closed - Resolved</option>
-                            <option value="Closed - Unresolved">Closed - Unresolved</option>
+                            ${getValidNextStatuses(c.status).map(s =>
+                                `<option value="${escHtml(s)}">${escHtml(s)}</option>`
+                            ).join('')}
                             ${normaliseStatus(c.status) === 'Closing - Pending' ? '<option value="Closing - Pending" disabled style="color:#f59e0b;">\u2192 Closing - Pending (set automatically)</option>' : ''}
                         </select>
                     </div>
