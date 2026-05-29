@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.9
+  Frontend Version: V2.2.10
   Backend:          ComplaintsManager V2.3.4
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.10 (May 2026): Four fixes. (1) Board Response textarea stays populated
+    after Save Only -- textarea pre-filled with saved boardResponse from cache,
+    never cleared on save. (2) Board Response section hidden when complaint
+    status is Open -- must acknowledge before responding. (3) Acknowledgement
+    notice added for Open complaints -- amber within 48 hours, red when overdue,
+    mirrors 72-hour notice pattern. (4) Board Response update-row spans full
+    width of update panel. Backend unchanged at V2.3.4.
+
   V2.2.9 (May 2026): Board Response rework. Save Only saves draft to sheet,
     no status change, no email. Save & Send emails resident and locks field.
     Board Response textarea replaced with read-only display when respondedAt set.
@@ -1288,8 +1296,22 @@ TECHNICAL:
         const submitted    = new Date(c.submittedAt);
         const hoursElapsed = isNaN(submitted) ? 0 : (now72 - submitted) / (1000 * 60 * 60);
         const isClosed     = (normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved');
+        const isOpen       = (normaliseStatus(c.status) === 'Open');
+
+        // 48-hour acknowledgement notice -- Open complaints only
+        let ackNotice = '';
+        if (isOpen) {
+            const ackHours = isNaN(submitted) ? 0 : hoursElapsed;
+            if (ackHours > 48) {
+                ackNotice = '<div class="response-notice notice-overdue">&#9888; Acknowledgement overdue \u2014 this complaint has not been acknowledged within 48 hours. Please acknowledge immediately via the email link or by updating the status.</div>';
+            } else {
+                const ackLeft = Math.ceil(48 - ackHours);
+                ackNotice = '<div class="response-notice notice-pending">&#9679; Acknowledgement required within 48 hours of submission \u2014 ' + ackLeft + ' hour' + (ackLeft === 1 ? '' : 's') + ' remaining.</div>';
+            }
+        }
+
         let responseNotice = '';
-        if (!isClosed && !c.respondedAt) {
+        if (!isClosed && !isOpen && !c.respondedAt) {
             if (!isNaN(submitted) && hoursElapsed > 72) {
                 responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed \u2014 Board Response must be sent to resident urgently.</div>';
             } else if (!isNaN(submitted)) {
@@ -1364,6 +1386,7 @@ TECHNICAL:
         return `
             <div class="detail-section-title">Update Complaint</div>
             <div class="update-panel">
+                ${ackNotice}
                 <div class="update-row">
                     <div class="update-field">
                         <label for="status-${safeRef}">Status</label>
@@ -1378,17 +1401,19 @@ TECHNICAL:
                         </select>
                     </div>
                 </div>
-                <div class="update-row" id="br-wrapper-${safeRef}">
-                    <div class="update-field">
+                <div class="update-row" id="br-wrapper-${safeRef}" style="width:100%;">
+                    <div class="update-field" style="width:100%;">
                         ${c.respondedAt ? `
                         <label>Board Response</label>
                         <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
                         <div class="response-notice notice-sent">&#10003; Board Response sent to resident on ${formatDate(c.respondedAt)} \u2014 field locked.</div>
+                        ` : isOpen ? `
+                        <div class="response-notice notice-pending" style="margin-top:4px;">&#9432; Board Response will be available once this complaint has been acknowledged.</div>
                         ` : `
                         <div id="br-input-${safeRef}" ${isClosed ? 'style="display:none;"' : ''}>
                             <label for="response-${safeRef}">Board Response</label>
                             ${responseNotice}
-                            <textarea id="response-${safeRef}" placeholder="Enter the Board's formal response. Use Save Only to draft, Save &amp; Send when ready to send to resident."></textarea>
+                            <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Enter the Board's formal response. Use Save Only to draft, Save &amp; Send when ready to send to resident.">${escHtml(c.boardResponse || '')}</textarea>
                         </div>
                         `}
                     </div>
@@ -1584,8 +1609,6 @@ TECHNICAL:
                         const newStatusEl = document.getElementById('status-'   + ref);
                         if (newFeedback) setFeedback(newFeedback, 'Saved successfully.', 'success');
                         if (newStatusEl) newStatusEl.value = '';
-                        const newResponseEl = document.getElementById('response-' + ref);
-                        if (newResponseEl) newResponseEl.value = '';
                     }
                     // If Save & Send -- trigger send after save confirmed
                     if (andSend && boardResponse) {
