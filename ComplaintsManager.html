@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.2.19
-  Backend:          ComplaintsManager V2.3.11
+  Frontend Version: V2.2.20
+  Backend:          ComplaintsManager V2.3.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    May 2026
 
 VERSION HISTORY:
+  V2.2.20 (May 2026): Escalated panel rebuilt. Adds Final Note textarea
+    (internal only -- written to Activity Log on save), Close this Complaint
+    section with Resolved/Unresolved buttons opening standard closure panels
+    with Save Only and Save & Send. getValidNextStatuses updated: Escalated
+    now allows Closed - Resolved and Closed - Unresolved. saveFinalNote
+    function added. Backend ComplaintsManager V2.3.13.
+
   V2.2.19 (May 2026): Open panel now gates Acknowledge button on lodgement
     notification dispatch. Until Activity Log contains "Lodgement notifications
     dispatched" entry, panel shows neutral waiting message instead of Acknowledge
@@ -1402,7 +1409,7 @@ TECHNICAL:
             'Closing - Pending':   [],
             'Closed - Resolved':   ['Escalated'],
             'Closed - Unresolved': ['Escalated'],
-            'Escalated':           []
+            'Escalated':           ['Closed - Resolved', 'Closed - Unresolved']
         };
         return map[norm] || [];
     }
@@ -1634,10 +1641,53 @@ TECHNICAL:
         return `
             <div class="detail-section-title">Escalated Complaint</div>
             <div class="update-panel">
-                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9432; This complaint has been escalated to VicAssist. Monitor correspondence and record updates in the Activity Log below.</div>
+                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9432; This complaint has been escalated to VicAssist. Record all correspondence in the Activity Log. When the matter is resolved, record the outcome below and close the complaint.</div>
                 ${c.boardResponse ? `<div style="margin-bottom:14px;"><div class="detail-label" style="margin-bottom:6px;">Board Response</div><div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div></div>` : ''}
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 ${activityLogSection}
+                <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);">
+                    <div class="detail-section-title" style="margin-top:0;padding-top:0;border-top:none;">Final Note (Internal)</div>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:8px 0 12px;">Record the outcome of the VicAssist process. This note is internal only and will not be sent to the resident.</p>
+                    <div class="update-field" style="width:100%;margin-bottom:10px;">
+                        <textarea id="final-note-${safeRef}" style="width:100%;min-height:80px;" placeholder="e.g. VicAssist conciliation concluded. Parties reached agreement on 30 May 2026..."></textarea>
+                    </div>
+                    <button class="btn-save" id="final-note-btn-${safeRef}" onclick="saveFinalNote('${safeRef}')">Save Final Note</button>
+                    <span class="save-feedback" id="final-note-feedback-${safeRef}"></span>
+                </div>
+                <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);">
+                    <div class="detail-section-title" style="margin-top:0;padding-top:0;border-top:none;">Close This Complaint</div>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:8px 0 14px;">Once the VicAssist process is complete, close the complaint. The resident will receive a formal closure notice.</p>
+                    <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
+                    <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                    <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
+                    <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                        <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
+                        <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
+                        <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
+                        <div class="nrn-fixed-label">Standard block — included automatically in every Resolved closure notice</div>
+                        <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
+                        <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Resolution Notice and close the complaint.</div>
+                        <div style="margin-top:12px;">
+                            <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                            <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                        </div>
+                    </div>
+                    <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                        <div class="nrn-panel-title">Non-Resolution Notice</div>
+                        <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
+                        <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved..."></textarea>
+                        <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
+                        <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process..."></textarea>
+                        <div class="nrn-fixed-label">Mandatory block — included automatically in every Non-Resolution Notice</div>
+                        <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
+                        <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Non-Resolution Notice and close the complaint.</div>
+                        <div style="margin-top:12px;">
+                            <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                            <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                        </div>
+                    </div>
+                </div>
             </div>`;
     }
 
@@ -1699,6 +1749,66 @@ TECHNICAL:
         script.onerror = function () {
             cleanup(callbackName);
             if (btn) { btn.disabled = false; btn.textContent = '\u2713 Acknowledge Complaint'; }
+            if (feedback) { feedback.textContent = 'Network error.'; feedback.className = 'save-feedback error'; }
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
+
+    function saveFinalNote(ref) {
+        const textarea = document.getElementById('final-note-' + ref);
+        const btn      = document.getElementById('final-note-btn-' + ref);
+        const feedback = document.getElementById('final-note-feedback-' + ref);
+        const note     = textarea ? textarea.value.trim() : '';
+
+        if (!note) {
+            if (feedback) { feedback.textContent = 'Please enter a note before saving.'; feedback.className = 'save-feedback error'; }
+            return;
+        }
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+        if (feedback) { feedback.textContent = ''; feedback.className = 'save-feedback'; }
+
+        const userName     = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+        const callbackName = 'finalNoteCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=addComment'
+            + '&ref='      + encodeURIComponent(ref)
+            + '&comment='  + encodeURIComponent('FINAL NOTE (VicAssist outcome): ' + note)
+            + '&userName=' + encodeURIComponent(userName)
+            + '&callback=' + callbackName;
+
+        const timeout = setTimeout(function() {
+            cleanup(callbackName);
+            if (btn) { btn.disabled = false; btn.textContent = 'Save Final Note'; }
+            if (feedback) { feedback.textContent = 'Timed out.'; feedback.className = 'save-feedback error'; }
+        }, 15000);
+
+        window[callbackName] = function(data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            if (btn) { btn.disabled = false; btn.textContent = 'Save Final Note'; }
+            if (data.success) {
+                if (feedback) { feedback.textContent = 'Final note saved to Activity Log.'; feedback.className = 'save-feedback success'; }
+                if (textarea) textarea.value = '';
+                // Update local Activity Log cache
+                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                if (idx !== -1) {
+                    const now = new Date(); const pad = n => n.toString().padStart(2,'0');
+                    const dStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
+                    const tStr = pad(now.getHours())+':'+pad(now.getMinutes());
+                    const entry = dStr+' '+tStr+' | '+userName+' | FINAL NOTE (VicAssist outcome): '+note;
+                    const existing = allComplaints[idx].activityLog || '';
+                    allComplaints[idx].activityLog = existing ? entry+'\n'+existing : entry;
+                }
+            } else {
+                if (feedback) { feedback.textContent = 'Error: ' + (data.error || 'Unknown.'); feedback.className = 'save-feedback error'; }
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function() {
+            cleanup(callbackName);
+            if (btn) { btn.disabled = false; btn.textContent = 'Save Final Note'; }
             if (feedback) { feedback.textContent = 'Network error.'; feedback.className = 'save-feedback error'; }
         };
         script.src = url;
