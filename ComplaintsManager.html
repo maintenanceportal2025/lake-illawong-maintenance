@@ -6,27 +6,13 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.3.1
+  Frontend Version: V2.2.20
   Backend:          ComplaintsManager V2.3.13
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    June 2026
+  Last Modified:    May 2026
 
 VERSION HISTORY:
-  V2.3.1 (Jun 2026): buildUpdatePanel replaced with accordion pane stack.
-    New functions: getFinalNote(), buildAccordion(), buildActionPanel().
-    Accordion renders chronological panes: Complaint Details (always),
-    Acknowledgement (when ack'd), Board Response (when ack'd),
-    Closure (when closed or Closing-Pending), Escalation (when escalated),
-    Activity Log (always). Current action panel separate below stack.
-    Final Note shown read-only once saved -- textarea not re-shown.
-    buildCard updated to call buildAccordion + buildActionPanel.
-
-  V2.3.0 (Jun 2026): Accordion CSS added in preparation for accordion
-    pane rebuild. New classes: accordion-pane, accordion-pane-header,
-    accordion-chevron, accordion-body, accordion-pane.open,
-    pane-title, pane-date, final-note-readonly. No functional change.
-
   V2.2.20 (May 2026): Escalated panel rebuilt. Adds Final Note textarea
     (internal only -- written to Activity Log on save), Close this Complaint
     section with Resolved/Unresolved buttons opening standard closure panels
@@ -1073,112 +1059,6 @@ TECHNICAL:
             .summary-strip  { gap: 8px; }
             .summary-tile   { padding: 10px 12px; }
         }
-
-        /* ── ACCORDION PANES ─────────────────────────────────────────── */
-        .accordion-stack {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            margin-top: 16px;
-        }
-
-        .accordion-pane {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .accordion-pane-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 11px 14px;
-            cursor: pointer;
-            user-select: none;
-            transition: background 0.15s;
-        }
-
-        .accordion-pane-header:hover {
-            background: rgba(255,255,255,0.06);
-        }
-
-        .accordion-pane-header-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .pane-title {
-            font-size: 0.85rem;
-            font-weight: 700;
-            color: rgba(255,255,255,0.9);
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-        }
-
-        .pane-date {
-            font-size: 0.78rem;
-            color: rgba(255,255,255,0.45);
-            font-weight: 400;
-        }
-
-        .accordion-chevron {
-            font-size: 0.7rem;
-            color: rgba(255,255,255,0.4);
-            transition: transform 0.2s;
-        }
-
-        .accordion-pane.open .accordion-chevron {
-            transform: rotate(180deg);
-        }
-
-        .accordion-body {
-            display: none;
-            padding: 14px 16px;
-            border-top: 1px solid rgba(255,255,255,0.08);
-        }
-
-        .accordion-pane.open .accordion-body {
-            display: block;
-        }
-
-        /* Pane colour accents — left border per lifecycle step */
-        .accordion-pane.pane-details     { border-left: 3px solid rgba(255,255,255,0.2); }
-        .accordion-pane.pane-ack         { border-left: 3px solid #10b981; }
-        .accordion-pane.pane-response    { border-left: 3px solid #a855f7; }
-        .accordion-pane.pane-closure     { border-left: 3px solid #60a5fa; }
-        .accordion-pane.pane-escalation  { border-left: 3px solid #f97316; }
-        .accordion-pane.pane-activity    { border-left: 3px solid rgba(255,255,255,0.15); }
-
-        /* Read-only Final Note display */
-        .final-note-readonly {
-            background: rgba(249,115,22,0.1);
-            border: 1px solid rgba(249,115,22,0.3);
-            border-left: 3px solid #f97316;
-            border-radius: 2px;
-            padding: 10px 12px;
-            font-size: 0.875rem;
-            color: rgba(255,255,255,0.85);
-            white-space: pre-wrap;
-            line-height: 1.5;
-        }
-
-        /* Action panel — sits below accordion stack, above activity log */
-        .action-panel {
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .action-panel-title {
-            font-size: 0.78rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            color: rgba(255,255,255,0.5);
-            margin-bottom: 12px;
-        }
     </style>
 </head>
 <body>
@@ -1485,8 +1365,8 @@ TECHNICAL:
                 <div class="card-chevron">&#9660;</div>
             </div>
             <div class="card-detail">
-                ${buildAccordion(c)}
-                ${buildActionPanel(c)}
+                ${buildDetail(c)}
+                ${buildUpdatePanel(c)}
             </div>
         </div>`;
     }
@@ -1534,406 +1414,95 @@ TECHNICAL:
         return map[norm] || [];
     }
 
-    // ── HELPER: extract Final Note text from Activity Log ─────────────
-    function getFinalNote(activityLog) {
-        if (!activityLog) return null;
-        const lines = activityLog.split('\n');
-        for (var i = 0; i < lines.length; i++) {
-            var idx = lines[i].indexOf('FINAL NOTE (VicAssist outcome):');
-            if (idx !== -1) {
-                return lines[i].substring(idx + 'FINAL NOTE (VicAssist outcome):'.length).trim();
-            }
-        }
-        return null;
-    }
-
-    // ── HELPER: toggle accordion pane ────────────────────────────────
-    function togglePane(paneId) {
-        const pane = document.getElementById(paneId);
-        if (pane) pane.classList.toggle('open');
-    }
-
-    // ── BUILD ACCORDION ───────────────────────────────────────────────
-    function buildAccordion(c) {
-        const safeRef    = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
-        const normStatus = normaliseStatus(c.status);
-        const isClosed   = (normStatus === 'Closed - Resolved' || normStatus === 'Closed - Unresolved');
-        const isClosingPending = normStatus === 'Closing - Pending';
-        const isEscalated      = normStatus === 'Escalated';
-
-        // Determine which pane starts open (most recent step)
-        // Priority: Escalation > Closure > Board Response > Acknowledgement > Details
-        const openPane = isEscalated ? 'pane-escalation-' + safeRef
-            : (isClosed || isClosingPending) ? 'pane-closure-' + safeRef
-            : c.respondedAt                  ? 'pane-response-' + safeRef
-            : c.acknowledgedAt               ? 'pane-response-' + safeRef
-            : 'pane-details-' + safeRef;
-
-        function pane(id, typeClass, title, dateStr, bodyHtml) {
-            const isOpen = (id === openPane);
-            return `
-            <div class="accordion-pane ${typeClass}${isOpen ? ' open' : ''}" id="${id}">
-                <div class="accordion-pane-header" onclick="togglePane('${id}')">
-                    <div class="accordion-pane-header-left">
-                        <span class="pane-title">${title}</span>
-                        ${dateStr ? `<span class="pane-date">${dateStr}</span>` : ''}
-                    </div>
-                    <span class="accordion-chevron">&#9660;</span>
-                </div>
-                <div class="accordion-body">${bodyHtml}</div>
-            </div>`;
-        }
-
-        let panesHtml = '';
-
-        // ── PANE 1: COMPLAINT DETAILS (always) ────────────────────────
-        panesHtml += pane(
-            'pane-details-' + safeRef,
-            'pane-details',
-            'Complaint Details',
-            formatDate(c.submittedAt),
-            buildDetail(c)
-        );
-
-        // ── PANE 2: ACKNOWLEDGEMENT (once ack'd) ──────────────────────
-        if (c.acknowledgedAt) {
-            const ackBody = `
-                <div class="detail-field">
-                    <div class="detail-label">Acknowledged</div>
-                    <div class="detail-value">${escHtml(formatDate(c.acknowledgedAt))}</div>
-                </div>
-                <div class="detail-field" style="margin-top:8px;">
-                    <div class="detail-label">Method</div>
-                    <div class="detail-value">${c.activityLog && c.activityLog.indexOf('manually acknowledged') !== -1 ? 'Manual (Admin)' : 'Email link'}</div>
-                </div>`;
-            panesHtml += pane(
-                'pane-ack-' + safeRef,
-                'pane-ack',
-                'Acknowledgement',
-                formatDate(c.acknowledgedAt),
-                ackBody
-            );
-        }
-
-        // ── PANE 3: BOARD RESPONSE (once ack'd, stays forever) ────────
-        if (c.acknowledgedAt) {
-            let respBody = '';
-            if (c.boardResponse) {
-                respBody = `
-                    <div class="detail-label" style="margin-bottom:6px;">Board Response</div>
-                    <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
-                    ${c.respondedAt ? `<div class="response-notice notice-sent" style="margin-top:8px;">&#10003; Sent to resident ${formatDate(c.respondedAt)} \u2014 field locked.</div>` : ''}`;
-            } else {
-                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No Board Response recorded yet.</div>`;
-            }
-            panesHtml += pane(
-                'pane-response-' + safeRef,
-                'pane-response',
-                'Board Response',
-                c.respondedAt ? formatDate(c.respondedAt) : '',
-                respBody
-            );
-        }
-
-        // ── PANE 4: CLOSURE (Closing-Pending or Closed) ───────────────
-        if (isClosed || isClosingPending) {
-            let closureBody = '';
-            if (isClosingPending) {
-                closureBody = `<div class="response-notice notice-pending">&#9432; Closure draft saved. Complete and send from the action panel below.</div>`;
-                if (c.closureNarrative) {
-                    const isPendingRes = c.closureNarrative.indexOf('[TYPE:RESOLVED]')   === 0;
-                    const isPendingUnr = c.closureNarrative.indexOf('[TYPE:UNRESOLVED]') === 0;
-                    if (isPendingRes) {
-                        const sm = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
-                        const st = sm ? sm[1].trim() : '';
-                        if (st) closureBody += `<div style="margin-top:10px;"><div class="detail-label" style="margin-bottom:5px;">Resolution Summary — Draft</div><div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);">${escHtml(st)}</div></div>`;
-                    } else if (isPendingUnr) {
-                        const rm = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
-                        const am = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
-                        const rt = rm ? rm[1].trim() : '';
-                        const at = am ? am[1].trim() : '';
-                        if (rt) closureBody += `<div style="margin-top:10px;"><div class="detail-label" style="margin-bottom:5px;">Why not resolved — Draft</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);">${escHtml(rt)}</div></div>`;
-                        if (at) closureBody += `<div style="margin-top:8px;"><div class="detail-label" style="margin-bottom:5px;">Actions taken — Draft</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);">${escHtml(at)}</div></div>`;
-                    }
-                }
-            } else {
-                // Closed — read-only
-                if (normStatus === 'Closed - Resolved' && c.closureNarrative) {
-                    const sm = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
-                    const st = sm ? sm[1].trim() : c.closureNarrative;
-                    closureBody = `<div class="detail-label" style="margin-bottom:6px;">Resolution Summary</div><div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);">${escHtml(st)}</div>`;
-                } else if (normStatus === 'Closed - Unresolved' && c.closureNarrative) {
-                    const rm = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
-                    const am = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
-                    const rt = rm ? rm[1].trim() : c.closureNarrative;
-                    const at = am ? am[1].trim() : '';
-                    closureBody  = `<div class="detail-label" style="margin-bottom:6px;">Why this matter was not resolved</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);margin-bottom:10px;">${escHtml(rt)}</div>`;
-                    if (at) closureBody += `<div class="detail-label" style="margin-bottom:6px;">Actions taken during the process</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);">${escHtml(at)}</div>`;
-                } else {
-                    closureBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No closure narrative recorded.</div>`;
-                }
-            }
-            panesHtml += pane(
-                'pane-closure-' + safeRef,
-                'pane-closure',
-                isClosingPending ? 'Closure — Draft' : 'Closure',
-                isClosed ? formatDate(c.closedAt) : '',
-                closureBody
-            );
-        }
-
-        // ── PANE 5: ESCALATION (when escalated) ───────────────────────
-        if (isEscalated || (isClosed && c.escalatedAt)) {
-            const finalNote = getFinalNote(c.activityLog);
-            let escalationBody = `
-                <div class="detail-field">
-                    <div class="detail-label">Escalated to VicAssist</div>
-                    <div class="detail-value">${escHtml(formatDate(c.escalatedAt))}</div>
-                </div>`;
-            if (finalNote) {
-                escalationBody += `
-                <div style="margin-top:12px;">
-                    <div class="detail-label" style="margin-bottom:6px;">Final Note (VicAssist outcome)</div>
-                    <div class="final-note-readonly">${escHtml(finalNote)}</div>
-                </div>`;
-            } else if (isEscalated) {
-                // Only show textarea if escalated and not yet closed
-                escalationBody += `
-                <div style="margin-top:14px;">
-                    <div class="detail-label" style="margin-bottom:6px;">Final Note (Internal)</div>
-                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.6);margin:0 0 8px;">Record the outcome of the VicAssist process. Internal only — not sent to resident.</p>
-                    <textarea id="final-note-${safeRef}" style="width:100%;min-height:80px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="e.g. VicAssist conciliation concluded. Parties reached agreement on 30 May 2026..."></textarea>
-                    <button class="btn-save" id="final-note-btn-${safeRef}" onclick="saveFinalNote('${safeRef}')" style="margin-top:8px;">Save Final Note</button>
-                    <span class="save-feedback" id="final-note-feedback-${safeRef}"></span>
-                </div>`;
-            }
-            panesHtml += pane(
-                'pane-escalation-' + safeRef,
-                'pane-escalation',
-                'VicAssist Escalation',
-                formatDate(c.escalatedAt),
-                escalationBody
-            );
-        }
-
-        // ── PANE 6: ACTIVITY LOG (always, always expanded) ────────────
-        const activityLog    = c.activityLog || '';
+    function buildUpdatePanel(c) {
+        const safeRef = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
+        const activityLog = c.activityLog || '';
         const commentEntries = activityLog
             ? activityLog.split('\n').map(line => `<div class="activity-log-entry">${escHtml(line)}</div>`).join('')
             : '<div class="activity-log-empty">No entries recorded.</div>';
-        const activityBody = `
-            <div class="activity-log-block">${commentEntries}</div>
-            <div class="update-row" style="margin-top:12px;">
-                <div class="update-field">
-                    <label for="comment-${safeRef}">Add to Activity Log (timestamped, permanent record)</label>
-                    <textarea id="comment-${safeRef}" placeholder="Add a note \u2014 e.g. VicAssist correspondence received, VCAT referral..."></textarea>
-                </div>
-            </div>
-            <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add to Activity Log</button>
-            <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>`;
+        const activityLogHtml = `<div class="activity-log-block"><div class="detail-label">Activity Log (Admin only)</div>${commentEntries}</div>`;
 
-        // Activity log pane always starts open
-        panesHtml += `
-            <div class="accordion-pane pane-activity open" id="pane-activity-${safeRef}">
-                <div class="accordion-pane-header" onclick="togglePane('pane-activity-${safeRef}')">
-                    <div class="accordion-pane-header-left">
-                        <span class="pane-title">Activity Log</span>
-                        <span class="pane-date">Admin only</span>
-                    </div>
-                    <span class="accordion-chevron">&#9660;</span>
-                </div>
-                <div class="accordion-body">${activityBody}</div>
-            </div>`;
-
-        return `<div class="accordion-stack">${panesHtml}</div>`;
-    }
-
-    // ── BUILD ACTION PANEL ────────────────────────────────────────────
-    // Renders the current-step action controls below the accordion stack.
-    function buildActionPanel(c) {
-        const safeRef    = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
-        const normStatus = normaliseStatus(c.status);
-        const isClosed   = (normStatus === 'Closed - Resolved' || normStatus === 'Closed - Unresolved');
-        const isEscalated      = normStatus === 'Escalated';
-        const isClosingPending = normStatus === 'Closing - Pending';
-        const isOpen           = normStatus === 'Open';
-
-        // Timing notices
+        // 72-hour Board Response notice -- suppressed for closed complaints and when already sent
         const now72        = new Date();
         const submitted    = new Date(c.submittedAt);
         const hoursElapsed = isNaN(submitted) ? 0 : (now72 - submitted) / (1000 * 60 * 60);
+        const isClosed     = (normaliseStatus(c.status) === 'Closed - Resolved' || normaliseStatus(c.status) === 'Closed - Unresolved');
+        const isOpen       = (normaliseStatus(c.status) === 'Open');
 
+        // 48-hour acknowledgement notice -- Open complaints only
         let ackNotice = '';
         if (isOpen) {
             const ackHours = isNaN(submitted) ? 0 : hoursElapsed;
             if (ackHours > 48) {
-                ackNotice = '<div class="response-notice notice-overdue">&#9888; Acknowledgement overdue \u2014 please acknowledge immediately.</div>';
+                ackNotice = '<div class="response-notice notice-overdue">&#9888; Acknowledgement overdue \u2014 this complaint has not been acknowledged within 48 hours. Please acknowledge immediately via the email link or by updating the status.</div>';
             } else {
                 const ackLeft = Math.ceil(48 - ackHours);
-                ackNotice = '<div class="response-notice notice-pending">&#9679; Acknowledgement required within 48 hours \u2014 ' + ackLeft + ' hour' + (ackLeft === 1 ? '' : 's') + ' remaining.</div>';
+                ackNotice = '<div class="response-notice notice-pending">&#9679; Acknowledgement required within 48 hours of submission \u2014 ' + ackLeft + ' hour' + (ackLeft === 1 ? '' : 's') + ' remaining.</div>';
             }
         }
 
         let responseNotice = '';
-        if (!isClosed && !isOpen && !c.respondedAt && !isClosingPending && !isEscalated) {
+        if (!isClosed && !isOpen && !c.respondedAt) {
             if (!isNaN(submitted) && hoursElapsed > 72) {
-                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed \u2014 Board Response must be sent urgently.</div>';
+                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed \u2014 Board Response must be sent to resident urgently.</div>';
             } else if (!isNaN(submitted)) {
                 const hoursLeft = Math.ceil(72 - hoursElapsed);
-                responseNotice = '<div class="response-notice notice-pending">&#9679; Board Response must be sent within 72 hours \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
+                responseNotice = '<div class="response-notice notice-pending">&#9679; Board Response must be sent to resident within 72 hours of submission \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
             }
         }
 
-        // ── OPEN: Acknowledge ─────────────────────────────────────────
-        if (isOpen) {
-            const notificationsDispatched = c.activityLog && c.activityLog.indexOf('Lodgement notifications dispatched') !== -1;
-            if (!notificationsDispatched) {
-                return `<div class="action-panel">
-                    <div class="action-panel-title">Next Step</div>
-                    <div class="response-notice notice-pending">&#9679; Lodgement notifications are being processed. The Acknowledge option will appear once the resident and Board have been notified.</div>
-                </div>`;
-            }
-            return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Acknowledge</div>
-                ${ackNotice}
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:10px 0;">If the acknowledgement email link has been lost, use the button below to manually acknowledge this complaint.</p>
-                <button class="btn-ack" id="ack-btn-${safeRef}" onclick="acknowledgeManual('${safeRef}')">&#10003; Acknowledge Complaint</button>
-                <span class="save-feedback" id="ack-feedback-${safeRef}"></span>
-            </div>`;
-        }
+        const normStatus = normaliseStatus(c.status);
+        const isClosingPending = normStatus === 'Closing - Pending';
 
-        // ── ACKNOWLEDGED: Board Response textarea ─────────────────────
-        if (normStatus === 'Acknowledged') {
-            return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Board Response</div>
-                ${responseNotice}
-                <div class="update-field" style="width:100%;margin-bottom:12px;">
-                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Board Response</label>
-                    <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Enter the Board's formal response. Use Save Only to draft, Save &amp; Send when ready to send to resident.">${escHtml(c.boardResponse || '')}</textarea>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> \u2014 this locks the Board Response permanently.</div>
-                </div>
-                <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                <span class="save-feedback" id="feedback-${safeRef}"></span>
-                <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
-            </div>`;
-        }
-
-        // ── RESPONDED: Close This Complaint ───────────────────────────
-        if (normStatus === 'Responded') {
-            return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Close This Complaint</div>
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the required narrative, then click Save &amp; Send to issue the closure notice to the resident.</p>
-                <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
-                <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
-                <span class="save-feedback" id="feedback-${safeRef}"></span>
-                <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
-                <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
-                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice</div>
-                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Resolution Notice and close the complaint.</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+        // ── ACTIVITY LOG HTML (shared across all states) ──────────────
+        const activityLogSection = `
+            <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.1); padding-top:16px;">
+                ${activityLogHtml}
+                <div class="update-row">
+                    <div class="update-field">
+                        <label for="comment-${safeRef}">Add to Activity Log (timestamped, permanent record)</label>
+                        <textarea id="comment-${safeRef}" placeholder="Add a note — e.g. VicAssist correspondence received, VCAT referral..."></textarea>
                     </div>
                 </div>
-                <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title">Non-Resolution Notice</div>
-                    <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved..."></textarea>
-                    <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process..."></textarea>
-                    <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Non-Resolution Notice</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Non-Resolution Notice and close the complaint.</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
+                <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add to Activity Log</button>
+                <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>
             </div>`;
-        }
 
-        // ── CLOSING-PENDING: complete the closure ─────────────────────
-        if (isClosingPending) {
-            const isPendingResolved   = c.closureNarrative && c.closureNarrative.indexOf('[TYPE:RESOLVED]')   === 0;
-            const isPendingUnresolved = c.closureNarrative && c.closureNarrative.indexOf('[TYPE:UNRESOLVED]') === 0;
-            return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Complete Closure</div>
-                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9432; Closure draft saved. Review the narrative and click Save &amp; Send to Resident to issue the closure notice and close the complaint.</div>
-                <div id="cr-panel-${safeRef}" class="nrn-panel" ${isPendingResolved ? '' : 'style="display:none;"'}>
-                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary \u2014 Draft</div>
-                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint...">${escHtml((function(n){ var m = n && n.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice</div>
-                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
-                </div>
-                <div id="nrn-panel-${safeRef}" class="nrn-panel" ${isPendingUnresolved ? '' : 'style="display:none;"'}>
-                    <div class="nrn-panel-title">Non-Resolution Notice \u2014 Draft</div>
-                    <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation...">${escHtml((function(n){ var m = n && n.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
-                    <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken...">${escHtml((function(n){ var m = n && n.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
-                    <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Non-Resolution Notice</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
-                </div>
-                <div style="margin-top:12px;">
-                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                    <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    <span class="save-feedback" id="feedback-${safeRef}"></span>
-                    <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
-                </div>
-            </div>`;
-        }
-
-        // ── ESCALATED: Close from escalation ─────────────────────────
-        if (isEscalated) {
-            return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Close This Complaint</div>
-                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9432; Once the VicAssist process is complete, close the complaint. The resident will receive a formal closure notice.</div>
-                <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
-                <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
-                <span class="save-feedback" id="feedback-${safeRef}"></span>
-                <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
-                <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
-                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice</div>
-                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Resolution Notice and close the complaint.</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
-                <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title">Non-Resolution Notice</div>
-                    <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved..."></textarea>
-                    <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process..."></textarea>
-                    <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Non-Resolution Notice</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Non-Resolution Notice and close the complaint.</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
-            </div>`;
-        }
-
-        // ── CLOSED: Print + Resend + Escalate option ──────────────────
+        // ── CLOSED PANEL ──────────────────────────────────────────────
         if (isClosed) {
-            return `<div class="action-panel">
-                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
-                <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
-                <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
-                <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);">
+            const closedLabel = normStatus;
+            const pillClass   = normStatus === 'Closed - Resolved' ? 'resolved' : 'unresolved';
+            const boardRespHtml = c.boardResponse
+                ? `<div style="margin-bottom:14px;"><div class="detail-label" style="margin-bottom:6px;">Board Response</div><div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div></div>`
+                : '';
+            let closureHtml = '';
+            if (c.closureNarrative) {
+                if (normStatus === 'Closed - Resolved') {
+                    const sm = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+                    const st = sm ? sm[1].trim() : c.closureNarrative;
+                    closureHtml = `<div style="margin-bottom:14px;"><div class="detail-label" style="margin-bottom:6px;">Resolution Summary</div><div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);">${escHtml(st)}</div></div>`;
+                } else {
+                    const rm = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+                    const am = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+                    const rt = rm ? rm[1].trim() : c.closureNarrative;
+                    const at = am ? am[1].trim() : '';
+                    closureHtml = `<div style="margin-bottom:14px;"><div class="detail-label" style="margin-bottom:6px;">Why this matter was not resolved</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);margin-bottom:10px;">${escHtml(rt)}</div>${at ? `<div class="detail-label" style="margin-bottom:6px;">Actions taken during the process</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);">${escHtml(at)}</div>` : ''}</div>`;
+                }
+            }
+            return `
+            <div class="detail-section-title">Complaint Record</div>
+            <div class="update-panel">
+                <div style="margin-bottom:14px;">
+                    <span class="closed-status-label ${pillClass}">${escHtml(closedLabel)}</span>
+                </div>
+                ${boardRespHtml}
+                ${closureHtml}
+                <div style="margin-bottom:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
+                    <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                    <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
+                    <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
+                </div>
+                <div style="margin-bottom:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
                     <div class="detail-label" style="margin-bottom:8px;">If VicAssist has engaged with this complaint:</div>
                     <select id="status-${safeRef}" onchange="onStatusChange('${safeRef}', this.value)" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:7px 10px;font-size:0.85rem;color:white;cursor:pointer;">
                         <option value="">(no action)</option>
@@ -1942,10 +1511,184 @@ TECHNICAL:
                     <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)" style="margin-left:8px;">Save</button>
                     <span class="save-feedback" id="feedback-${safeRef}"></span>
                 </div>
+                ${activityLogSection}
             </div>`;
         }
 
-        return '';
+        // ── OPEN PANEL ────────────────────────────────────────────────
+        if (isOpen) {
+            const notificationsDispatched = c.activityLog && c.activityLog.indexOf('Lodgement notifications dispatched') !== -1;
+            return `
+            <div class="detail-section-title">${notificationsDispatched ? 'Acknowledge This Complaint' : 'Complaint Received'}</div>
+            <div class="update-panel">
+                ${notificationsDispatched ? `
+                ${ackNotice}
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:12px 0;">If the acknowledgement email link has been lost, use the button below to manually acknowledge this complaint. An acknowledgement email will be sent to the resident.</p>
+                <button class="btn-ack" id="ack-btn-${safeRef}" onclick="acknowledgeManual('${safeRef}')">&#10003; Acknowledge Complaint</button>
+                <span class="save-feedback" id="ack-feedback-${safeRef}"></span>
+                ` : `
+                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9679; Lodgement notifications are being processed. The Acknowledge option will appear once the resident and Board have been notified.</div>
+                `}
+                ${activityLogSection}
+            </div>`;
+        }
+
+        // ── ACKNOWLEDGED PANEL ────────────────────────────────────────
+        if (normStatus === 'Acknowledged') {
+            return `
+            <div class="detail-section-title">Board Response</div>
+            <div class="update-panel">
+                ${responseNotice}
+                <div class="update-field" style="width:100%;margin-bottom:12px;">
+                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Board Response</label>
+                    <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Enter the Board's formal response. Use Save Only to draft, Save &amp; Send when ready to send to resident.">${escHtml(c.boardResponse || '')}</textarea>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft at any time. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send — this locks the Board Response permanently.</div>
+                </div>
+                <div style="margin-top:12px;">
+                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                    <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                    <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
+                </div>
+                ${activityLogSection}
+            </div>`;
+        }
+
+        // ── RESPONDED PANEL ───────────────────────────────────────────
+        if (normStatus === 'Responded' && !isClosingPending) {
+            return `
+            <div class="detail-section-title">Board Response</div>
+            <div class="update-panel">
+                <div style="margin-bottom:14px;">
+                    <div class="detail-label" style="margin-bottom:6px;">Board Response</div>
+                    <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
+                    <div class="response-notice notice-sent">&#10003; Board Response sent to resident on ${formatDate(c.respondedAt)} \u2014 field locked.</div>
+                </div>
+                <div style="padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);">
+                    <div class="detail-section-title" style="margin-top:0;padding-top:0;border-top:none;">Close This Complaint</div>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:8px 0 14px;">Select the closure type, complete the required narrative, then click Save &amp; Send to issue the closure notice to the resident.</p>
+                    <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
+                    <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                    <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
+                </div>
+                <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
+                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
+                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
+                    <div class="nrn-fixed-label">Standard block — included automatically in every Resolved closure notice</div>
+                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Resolution Notice and close the complaint.</div>
+                    <div style="margin-top:12px;">
+                        <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                        <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                    </div>
+                </div>
+                <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                    <div class="nrn-panel-title">Non-Resolution Notice</div>
+                    <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
+                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved..."></textarea>
+                    <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
+                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process..."></textarea>
+                    <div class="nrn-fixed-label">Mandatory block — included automatically in every Non-Resolution Notice</div>
+                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Non-Resolution Notice and close the complaint.</div>
+                    <div style="margin-top:12px;">
+                        <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                        <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                    </div>
+                </div>
+                ${activityLogSection}
+            </div>`;
+        }
+
+        // ── CLOSING - PENDING PANEL ───────────────────────────────────
+        if (isClosingPending) {
+            const isPendingResolved   = c.closureNarrative && c.closureNarrative.indexOf('[TYPE:RESOLVED]')   === 0;
+            const isPendingUnresolved = c.closureNarrative && c.closureNarrative.indexOf('[TYPE:UNRESOLVED]') === 0;
+            return `
+            <div class="detail-section-title">Close This Complaint</div>
+            <div class="update-panel">
+                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9432; Closure draft saved. Review the narrative below and click Save &amp; Send to Resident to issue the closure notice and close the complaint.</div>
+                ${c.boardResponse ? `<div style="margin-bottom:14px;"><div class="detail-label" style="margin-bottom:6px;">Board Response</div><div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div></div>` : ''}
+                <div id="cr-panel-${safeRef}" class="nrn-panel" ${isPendingResolved ? '' : 'style="display:none;"'}>
+                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary — Draft</div>
+                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
+                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint...">${escHtml((function(n){ var m = n && n.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
+                    <div class="nrn-fixed-label">Standard block — included automatically in every Resolved closure notice</div>
+                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
+                </div>
+                <div id="nrn-panel-${safeRef}" class="nrn-panel" ${isPendingUnresolved ? '' : 'style="display:none;"'}>
+                    <div class="nrn-panel-title">Non-Resolution Notice — Draft</div>
+                    <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
+                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation...">${escHtml((function(n){ var m = n && n.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
+                    <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
+                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken...">${escHtml((function(n){ var m = n && n.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
+                    <div class="nrn-fixed-label">Mandatory block — included automatically in every Non-Resolution Notice</div>
+                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
+                </div>
+                <div style="margin-top:12px;">
+                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                    <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                    <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
+                </div>
+                ${activityLogSection}
+            </div>`;
+        }
+
+        // ── ESCALATED PANEL ───────────────────────────────────────────
+        return `
+            <div class="detail-section-title">Escalated Complaint</div>
+            <div class="update-panel">
+                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9432; This complaint has been escalated to VicAssist. Record all correspondence in the Activity Log. When the matter is resolved, record the outcome below and close the complaint.</div>
+                ${c.boardResponse ? `<div style="margin-bottom:14px;"><div class="detail-label" style="margin-bottom:6px;">Board Response</div><div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div></div>` : ''}
+                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                ${activityLogSection}
+                <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);">
+                    <div class="detail-section-title" style="margin-top:0;padding-top:0;border-top:none;">Final Note (Internal)</div>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:8px 0 12px;">Record the outcome of the VicAssist process. This note is internal only and will not be sent to the resident.</p>
+                    <div class="update-field" style="width:100%;margin-bottom:10px;">
+                        <textarea id="final-note-${safeRef}" style="width:100%;min-height:80px;" placeholder="e.g. VicAssist conciliation concluded. Parties reached agreement on 30 May 2026..."></textarea>
+                    </div>
+                    <button class="btn-save" id="final-note-btn-${safeRef}" onclick="saveFinalNote('${safeRef}')">Save Final Note</button>
+                    <span class="save-feedback" id="final-note-feedback-${safeRef}"></span>
+                </div>
+                <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);">
+                    <div class="detail-section-title" style="margin-top:0;padding-top:0;border-top:none;">Close This Complaint</div>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:8px 0 14px;">Once the VicAssist process is complete, close the complaint. The resident will receive a formal closure notice.</p>
+                    <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
+                    <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                    <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
+                    <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                        <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
+                        <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
+                        <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
+                        <div class="nrn-fixed-label">Standard block — included automatically in every Resolved closure notice</div>
+                        <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
+                        <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Resolution Notice and close the complaint.</div>
+                        <div style="margin-top:12px;">
+                            <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                            <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                        </div>
+                    </div>
+                    <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                        <div class="nrn-panel-title">Non-Resolution Notice</div>
+                        <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
+                        <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved..."></textarea>
+                        <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
+                        <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process..."></textarea>
+                        <div class="nrn-fixed-label">Mandatory block — included automatically in every Non-Resolution Notice</div>
+                        <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
+                        <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Non-Resolution Notice and close the complaint.</div>
+                        <div style="margin-top:12px;">
+                            <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                            <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
     }
 
     function toggleCard(ref) {
