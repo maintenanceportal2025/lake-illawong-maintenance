@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.4.6
-  Backend:          ComplaintsManager V2.3.16
+  Frontend Version: V2.4.7
+  Backend:          ComplaintsManager V2.3.17
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.4.7 (Jun 2026): Final Note restructured to match Save/Save & Send pattern.
+    Escalation pane: Final Note textarea + Save writes draft to col U (backend
+    V2.3.17 saveFinalNoteDraft) and updates read-only div in-pane. No Activity
+    Log write on Save. Action panel Escalated section: Close type buttons only
+    appear after Final Note draft exists. Save & Send on closure passes
+    finalNote to closeEscalated which writes Activity Log entry and clears col U.
+    saveFinalNote function removed -- replaced by saveFinalNoteDraft.
+
   V2.4.6 (Jun 2026): Apply same saved draft div pattern to escalated closure
     panels (esc-cr-panel, esc-nrn-panel). Save Only updates esc-cr-saved and
     esc-nrn-saved divs in-place -- panel stays visible, no card re-render.
@@ -1371,7 +1379,7 @@ TECHNICAL:
 </div>
 <script>
     const CONFIG = {
-        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbzVkskU4iQqBIIJo3gleGyFlnyi3HX4qJCf4WHM50CxiLk2nN3VUnIaIwOxwX7g2E-fGw/exec',
+        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbz-N8PZ9ZT7cfRY345gX5rbhz8J7iz6TnIvEQd9Ehg2PQ6G1uB89FzsMsi5i3kQdyLvjg/exec',
         SESSION_KEY:       'portalAdminVerified',
         PORTAL_URL:        'AdminPortal.html',
         ALLOWED_ROLES:     ['Complaints-Manager', 'Developer'],
@@ -1785,29 +1793,40 @@ TECHNICAL:
 
         // ── PANE 5: ESCALATION (when escalated) ───────────────────────
         if (isEscalated || (isClosed && c.escalatedAt)) {
-            const finalNote = getFinalNote(c.activityLog);
+            const finalNoteDraft = c.finalNoteDraft || '';
+            const finalNote      = getFinalNote(c.activityLog);
+            // When closed, show from Activity Log. When escalated, show draft from col U if exists.
+            const finalNoteDisplay = isClosed ? finalNote : (finalNoteDraft || finalNote || '');
+
             let escalationBody = `
                 <div class="detail-field">
                     <div class="detail-label">Escalated to VicAssist</div>
                     <div class="detail-value">${escHtml(formatDate(c.escalatedAt))}</div>
                 </div>`;
-            if (finalNote) {
+
+            if (isClosed && finalNoteDisplay) {
+                // Closed -- show Final Note read-only from Activity Log
                 escalationBody += `
                 <div style="margin-top:12px;">
                     <div class="detail-label" style="margin-bottom:6px;">Final Note (VicAssist outcome)</div>
-                    <div class="final-note-readonly">${escHtml(finalNote)}</div>
+                    <div class="final-note-readonly">${escHtml(finalNoteDisplay)}</div>
                 </div>`;
             } else if (isEscalated) {
-                // Only show textarea if escalated and not yet closed
+                // Escalated -- show saved draft div + editable textarea + Save button
                 escalationBody += `
                 <div style="margin-top:14px;">
                     <div class="detail-label" style="margin-bottom:6px;">Final Note (Internal)</div>
-                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.6);margin:0 0 8px;">Record the outcome of the VicAssist process. Internal only — not sent to resident.</p>
-                    <textarea id="final-note-${safeRef}" style="width:100%;min-height:80px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="e.g. VicAssist conciliation concluded. Parties reached agreement on 30 May 2026..."></textarea>
-                    <button class="btn-save" id="final-note-btn-${safeRef}" onclick="saveFinalNote('${safeRef}')" style="margin-top:8px;">Save Final Note</button>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.6);margin:0 0 8px;">Record the outcome of the VicAssist process. Internal only \u2014 written to the complaint record when you close the complaint.</p>
+                    <div id="final-note-saved-${safeRef}" style="${finalNoteDisplay ? '' : 'display:none;'}margin-bottom:10px;">
+                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
+                        <div class="final-note-readonly" id="final-note-saved-text-${safeRef}">${escHtml(finalNoteDisplay)}</div>
+                    </div>
+                    <textarea id="final-note-${safeRef}" style="width:100%;min-height:80px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="e.g. VicAssist conciliation concluded. Parties reached agreement on 1 June 2026...">${escHtml(finalNoteDisplay)}</textarea>
+                    <button class="btn-save" id="final-note-btn-${safeRef}" onclick="saveFinalNoteDraft('${safeRef}')" style="margin-top:8px;">Save</button>
                     <span class="save-feedback" id="final-note-feedback-${safeRef}"></span>
                 </div>`;
             }
+
             panesHtml += pane(
                 'pane-escalation-' + safeRef,
                 'pane-escalation',
@@ -1966,10 +1985,10 @@ TECHNICAL:
 
         // ── ESCALATED: Final Note + separate VicAssist closure ────────
         if (isEscalated) {
-            const finalNote = getFinalNote(c.activityLog);
+            const finalNote = c.finalNoteDraft || getFinalNote(c.activityLog);
             let escalatedActionBody = '';
             if (!finalNote) {
-                escalatedActionBody = `<div class="response-notice notice-pending">&#9432; Record the outcome of the VicAssist process in the Final Note (in the Escalation pane above), then return here to close the complaint.</div>`;
+                escalatedActionBody = `<div class="response-notice notice-pending">&#9432; Save a Final Note in the VicAssist Escalation pane above, then return here to close the complaint.</div>`;
             } else {
                 escalatedActionBody = `
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">VicAssist process concluded. Select the closure type and issue the final notice to the resident.</p>
@@ -2101,7 +2120,7 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    function saveFinalNote(ref) {
+    function saveFinalNoteDraft(ref) {
         const textarea = document.getElementById('final-note-' + ref);
         const btn      = document.getElementById('final-note-btn-' + ref);
         const feedback = document.getElementById('final-note-feedback-' + ref);
@@ -2115,44 +2134,37 @@ TECHNICAL:
         if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
         if (feedback) { feedback.textContent = ''; feedback.className = 'save-feedback'; }
 
-        const userName     = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-        const callbackName = 'finalNoteCallback_' + Date.now();
+        const callbackName = 'finalNoteDraftCallback_' + Date.now();
         const url = CONFIG.BACKEND_URL
-            + '?action=addComment'
-            + '&ref='      + encodeURIComponent(ref)
-            + '&comment='  + encodeURIComponent('FINAL NOTE (VicAssist outcome): ' + note)
-            + '&userName=' + encodeURIComponent(userName)
-            + '&callback=' + callbackName;
+            + '?action=saveFinalNoteDraft'
+            + '&ref='       + encodeURIComponent(ref)
+            + '&draftText=' + encodeURIComponent(note)
+            + '&callback='  + callbackName;
 
         const timeout = setTimeout(function() {
             cleanup(callbackName);
-            if (btn) { btn.disabled = false; btn.textContent = 'Save Final Note'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
             if (feedback) { feedback.textContent = 'Timed out.'; feedback.className = 'save-feedback error'; }
         }, 15000);
 
         window[callbackName] = function(data) {
             clearTimeout(timeout); cleanup(callbackName);
-            if (btn) { btn.disabled = false; btn.textContent = 'Save Final Note'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
             if (data.success) {
-                if (feedback) { feedback.textContent = 'Final note saved to Activity Log.'; feedback.className = 'save-feedback success'; }
-                if (textarea) textarea.value = '';
-                const now2 = new Date(); const pad2 = n => n.toString().padStart(2,'0');
-                const dStr2 = now2.getFullYear()+'-'+pad2(now2.getMonth()+1)+'-'+pad2(now2.getDate());
-                const tStr2 = pad2(now2.getHours())+':'+pad2(now2.getMinutes());
-                const entryText = dStr2+' '+tStr2+' | '+userName+' | FINAL NOTE (VicAssist outcome): '+note;
-                // Append to Activity Log display immediately
-                const logBlock = document.querySelector('#card-' + ref + ' .activity-log-block');
-                if (logBlock) {
-                    const entryEl = document.createElement('div');
-                    entryEl.className   = 'activity-log-entry';
-                    entryEl.textContent = entryText;
-                    logBlock.appendChild(entryEl);
-                }
-                // Update local Activity Log cache
+                if (feedback) { feedback.textContent = 'Draft saved.'; feedback.className = 'save-feedback success'; }
+                // Update read-only div in-pane
+                const savedDiv  = document.getElementById('final-note-saved-' + ref);
+                const savedText = document.getElementById('final-note-saved-text-' + ref);
+                if (savedDiv)  savedDiv.style.display = 'block';
+                if (savedText) savedText.textContent  = note;
+                // Update cache so action panel knows draft exists
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-                if (idx !== -1) {
-                    const existing = allComplaints[idx].activityLog || '';
-                    allComplaints[idx].activityLog = existing ? entryText+'\n'+existing : entryText;
+                if (idx !== -1) allComplaints[idx].finalNoteDraft = note;
+                // Refresh action panel only to show closure buttons if not already visible
+                const cardEl = document.getElementById('card-' + ref);
+                if (cardEl) {
+                    const actionPanel = cardEl.querySelector('.action-panel');
+                    if (actionPanel) actionPanel.outerHTML = buildActionPanel(allComplaints[idx]);
                 }
             } else {
                 if (feedback) { feedback.textContent = 'Error: ' + (data.error || 'Unknown.'); feedback.className = 'save-feedback error'; }
@@ -2162,7 +2174,7 @@ TECHNICAL:
         const script = document.createElement('script');
         script.onerror = function() {
             cleanup(callbackName);
-            if (btn) { btn.disabled = false; btn.textContent = 'Save Final Note'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
             if (feedback) { feedback.textContent = 'Network error.'; feedback.className = 'save-feedback error'; }
         };
         script.src = url;
@@ -2272,6 +2284,9 @@ TECHNICAL:
         );
         if (!confirmed) return;
 
+        const currentC  = allComplaints.find(x => x.referenceNumber === ref);
+        const finalNote = (currentC && currentC.finalNoteDraft) || '';
+
         if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
         setFeedback(feedback, '', '');
 
@@ -2280,6 +2295,7 @@ TECHNICAL:
             + '?action=closeEscalated'
             + '&ref='              + encodeURIComponent(ref)
             + '&closureNarrative=' + encodeURIComponent(closureNarrative)
+            + '&finalNote='        + encodeURIComponent(finalNote)
             + '&userName='         + encodeURIComponent(userName)
             + '&callback='         + callbackName;
 
