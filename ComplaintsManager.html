@@ -6,13 +6,32 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.3.9
-  Backend:          ComplaintsManager V2.3.13
+  Frontend Version: V2.4.0
+  Backend:          ComplaintsManager V2.3.15
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.4.0 (Jun 2026): Major rebuild -- Closing-Pending status removed entirely.
+    Save Only removed from standard closure path -- Save & Send only from
+    Responded. Escalated closure is now a fully separate path with dedicated
+    panel IDs (esc-cr-panel, esc-nrn-panel, esc-cr-summary, esc-nrn-reason,
+    esc-nrn-actions), separate saveEscalatedClosure() function, and separate
+    backend action closeEscalated (V2.3.15). Escalated closure buttons only
+    appear after Final Note is saved. Summary strip Closing tile replaced with
+    Escalated tile. Filter dropdown Closing-Pending option removed.
+    buildActionPanel Closing-Pending branch removed. normaliseStatus unchanged
+    (legacy Closed still maps to Closed-Resolved).
+
+  V2.3.10 (Jun 2026): Fix Escalated closure path (frontend side of V2.3.14
+    backend fix). Closure Save Only from Escalated no longer sets cache status
+    to Closing-Pending -- status stays Escalated, narrative draft saved to
+    cache, Activity Log updated in DOM only. Card re-renders as Escalated.
+    Save & Send from Escalated now sends closureNarrative with effectiveStatus
+    empty (backend handles via currentStatus===Escalated condition added in
+    V2.3.14). Backend: ComplaintsManager V2.3.14.
+
   V2.3.9 (Jun 2026): Fix effectiveStatus over-firing from V2.3.7. Setting
     closureNarrative always to Closing-Pending was also firing from Escalated
     state, causing Save Only on closure panel to incorrectly set status to
@@ -1283,7 +1302,7 @@ TECHNICAL:
         <div class="summary-tile"><div class="tile-count" id="countOpen">—</div><div class="tile-label">Open</div></div>
         <div class="summary-tile"><div class="tile-count" id="countAcknowledged">—</div><div class="tile-label">Acknowledged</div></div>
         <div class="summary-tile"><div class="tile-count" id="countResponded">—</div><div class="tile-label">Responded</div></div>
-        <div class="summary-tile"><div class="tile-count" id="countClosingPending">—</div><div class="tile-label">Closing</div></div>
+        <div class="summary-tile"><div class="tile-count" id="countEscalated">—</div><div class="tile-label">Escalated</div></div>
         <div class="summary-tile"><div class="tile-count" id="countClosed">—</div><div class="tile-label">Closed</div></div>
         <div class="summary-tile"><div class="tile-count overdue" id="countOverdue">—</div><div class="tile-label">Overdue</div></div>
     </div>
@@ -1297,7 +1316,6 @@ TECHNICAL:
             <option value="Acknowledged">Acknowledged</option>
             <option value="Responded">Responded</option>
             <option value="Escalated">Escalated</option>
-            <option value="Closing - Pending">Closing - Pending</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
             <option value="Closed - Unresolved">Closed - Unresolved</option>
         </select>
@@ -1321,7 +1339,7 @@ TECHNICAL:
 </div>
 <script>
     const CONFIG = {
-        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbxSvurWfmIq4boGTZHphTAhE_2AyDZRmqozJ99JI2DBY_6NS-qPxZ8R4QUqKLvDDYB7YQ/exec',
+        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwV-QBBwu_0fhJgfsBPRcDkhxvnTMPEB4lKH6j0G5Q878-rjxAw4K3AYoSzRtXXTokxWg/exec',
         SESSION_KEY:       'portalAdminVerified',
         PORTAL_URL:        'AdminPortal.html',
         ALLOWED_ROLES:     ['Complaints-Manager', 'Developer'],
@@ -1394,7 +1412,6 @@ TECHNICAL:
                 'Acknowledged':        'status-acknowledged',
                 'Responded':           'status-responded',
                 'Escalated':           'status-escalated',
-                'Closing - Pending':   'status-closing-pending',
                 'Closed - Resolved':   'status-closed-resolved',
                 'Closed - Unresolved': 'status-closed-unresolved'
             }[value];
@@ -1462,22 +1479,22 @@ TECHNICAL:
     }
 
     function updateSummary(complaints) {
-        const counts = { Open: 0, Acknowledged: 0, Responded: 0, ClosingPending: 0, Closed: 0, overdue: 0 };
+        const counts = { Open: 0, Acknowledged: 0, Responded: 0, Escalated: 0, Closed: 0, overdue: 0 };
         complaints.forEach(function (c) {
             const s = normaliseStatus(c.status);
             if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
-            if (s === 'Closing - Pending') counts.ClosingPending++;
+            if (s === 'Escalated') counts.Escalated++;
             if (s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Closed') counts.Closed++;
             if (isOverdue(c)) counts.overdue++;
         });
-        document.getElementById('countTotal').textContent          = complaints.length;
-        document.getElementById('countOpen').textContent           = counts.Open;
-        document.getElementById('countAcknowledged').textContent   = counts.Acknowledged;
-        document.getElementById('countResponded').textContent      = counts.Responded;
-        document.getElementById('countClosingPending').textContent = counts.ClosingPending;
-        document.getElementById('countClosed').textContent         = counts.Closed;
-        document.getElementById('countOverdue').textContent        = counts.overdue;
-        document.getElementById('summaryStrip').style.display      = 'flex';
+        document.getElementById('countTotal').textContent        = complaints.length;
+        document.getElementById('countOpen').textContent         = counts.Open;
+        document.getElementById('countAcknowledged').textContent = counts.Acknowledged;
+        document.getElementById('countResponded').textContent    = counts.Responded;
+        document.getElementById('countEscalated').textContent    = counts.Escalated;
+        document.getElementById('countClosed').textContent       = counts.Closed;
+        document.getElementById('countOverdue').textContent      = counts.overdue;
+        document.getElementById('summaryStrip').style.display    = 'flex';
     }
 
     // Normalise legacy 'Closed' to 'Closed - Resolved' for display
@@ -1503,7 +1520,7 @@ TECHNICAL:
 
     function isRespOverdue(c) {
         const s = normaliseStatus(c.status);
-        if (s === 'Responded' || s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Escalated' || s === 'Closing - Pending') return false;
+        if (s === 'Responded' || s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Escalated') return false;
         if (!c.responseDue) return false;
         return new Date(c.responseDue) < new Date();
     }
@@ -1533,12 +1550,11 @@ TECHNICAL:
         let borderClass = '';
         if      (ackOverdue)                       borderClass = 'overdue-ack';
         else if (respOverdue)                      borderClass = 'overdue-resp';
-        else if (normStatus === 'Responded')       borderClass = 'status-responded';
+        else if (normStatus === 'Responded')           borderClass = 'status-responded';
         else if (normStatus === 'Closed - Resolved')   borderClass = 'status-closed-resolved';
         else if (normStatus === 'Closed - Unresolved') borderClass = 'status-closed-unresolved';
-        else if (normStatus === 'Escalated')       borderClass = 'status-escalated';
-        else if (normStatus === 'Closing - Pending') borderClass = 'status-closing-pending';
-        else if (normStatus === 'Acknowledged')    borderClass = 'status-acknowledged';
+        else if (normStatus === 'Escalated')           borderClass = 'status-escalated';
+        else if (normStatus === 'Acknowledged')        borderClass = 'status-acknowledged';
 
         const statusClass   = statusPillClass(c.status);
         const displayStatus = normaliseStatus(c.status);
@@ -1603,7 +1619,6 @@ TECHNICAL:
             'Open':                ['Acknowledged'],
             'Acknowledged':        ['Responded'],
             'Responded':           ['Closed - Resolved', 'Closed - Unresolved'],
-            'Closing - Pending':   [],
             'Closed - Resolved':   ['Escalated'],
             'Closed - Unresolved': ['Escalated'],
             'Escalated':           ['Closed - Resolved', 'Closed - Unresolved']
@@ -1635,15 +1650,13 @@ TECHNICAL:
         const safeRef    = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
         const normStatus = normaliseStatus(c.status);
         const isClosed   = (normStatus === 'Closed - Resolved' || normStatus === 'Closed - Unresolved');
-        const isClosingPending = normStatus === 'Closing - Pending';
         const isEscalated      = normStatus === 'Escalated';
 
         // Determine which pane starts open (most recent step)
-        // Priority: Escalation > Closure > Board Response > Acknowledgement > Details
         const openPane = isEscalated ? 'pane-escalation-' + safeRef
-            : (isClosed || isClosingPending) ? 'pane-closure-' + safeRef
-            : c.respondedAt                  ? 'pane-response-' + safeRef
-            : c.acknowledgedAt               ? 'pane-response-' + safeRef
+            : isClosed                ? 'pane-closure-' + safeRef
+            : c.respondedAt           ? 'pane-response-' + safeRef
+            : c.acknowledgedAt        ? 'pane-response-' + safeRef
             : 'pane-details-' + safeRef;
 
         function pane(id, typeClass, title, dateStr, bodyHtml) {
@@ -1712,49 +1725,28 @@ TECHNICAL:
             );
         }
 
-        // ── PANE 4: CLOSURE (Closing-Pending or Closed) ───────────────
-        if (isClosed || isClosingPending) {
+        // ── PANE 4: CLOSURE (Closed only) ────────────────────────────
+        if (isClosed) {
             let closureBody = '';
-            if (isClosingPending) {
-                closureBody = `<div class="response-notice notice-pending">&#9432; Closure draft saved. Complete and send from the action panel below.</div>`;
-                if (c.closureNarrative) {
-                    const isPendingRes = c.closureNarrative.indexOf('[TYPE:RESOLVED]')   === 0;
-                    const isPendingUnr = c.closureNarrative.indexOf('[TYPE:UNRESOLVED]') === 0;
-                    if (isPendingRes) {
-                        const sm = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
-                        const st = sm ? sm[1].trim() : '';
-                        if (st) closureBody += `<div style="margin-top:10px;"><div class="detail-label" style="margin-bottom:5px;">Resolution Summary — Draft</div><div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);">${escHtml(st)}</div></div>`;
-                    } else if (isPendingUnr) {
-                        const rm = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
-                        const am = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
-                        const rt = rm ? rm[1].trim() : '';
-                        const at = am ? am[1].trim() : '';
-                        if (rt) closureBody += `<div style="margin-top:10px;"><div class="detail-label" style="margin-bottom:5px;">Why not resolved — Draft</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);">${escHtml(rt)}</div></div>`;
-                        if (at) closureBody += `<div style="margin-top:8px;"><div class="detail-label" style="margin-bottom:5px;">Actions taken — Draft</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);">${escHtml(at)}</div></div>`;
-                    }
-                }
-            } else {
-                // Closed — read-only
-                if (normStatus === 'Closed - Resolved' && c.closureNarrative) {
+            if (normStatus === 'Closed - Resolved' && c.closureNarrative) {
                     const sm = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
                     const st = sm ? sm[1].trim() : c.closureNarrative;
                     closureBody = `<div class="detail-label" style="margin-bottom:6px;">Resolution Summary</div><div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);">${escHtml(st)}</div>`;
-                } else if (normStatus === 'Closed - Unresolved' && c.closureNarrative) {
+            } else if (normStatus === 'Closed - Unresolved' && c.closureNarrative) {
                     const rm = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
                     const am = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
                     const rt = rm ? rm[1].trim() : c.closureNarrative;
                     const at = am ? am[1].trim() : '';
                     closureBody  = `<div class="detail-label" style="margin-bottom:6px;">Why this matter was not resolved</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);margin-bottom:10px;">${escHtml(rt)}</div>`;
                     if (at) closureBody += `<div class="detail-label" style="margin-bottom:6px;">Actions taken during the process</div><div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);">${escHtml(at)}</div>`;
-                } else {
-                    closureBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No closure narrative recorded.</div>`;
-                }
+            } else {
+                closureBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No closure narrative recorded.</div>`;
             }
             panesHtml += pane(
                 'pane-closure-' + safeRef,
                 'pane-closure',
-                isClosingPending ? 'Closure — Draft' : 'Closure',
-                isClosed ? formatDate(c.closedAt) : '',
+                'Closure',
+                formatDate(c.closedAt),
                 closureBody
             );
         }
@@ -1833,7 +1825,6 @@ TECHNICAL:
         const normStatus = normaliseStatus(c.status);
         const isClosed   = (normStatus === 'Closed - Resolved' || normStatus === 'Closed - Unresolved');
         const isEscalated      = normStatus === 'Escalated';
-        const isClosingPending = normStatus === 'Closing - Pending';
         const isOpen           = normStatus === 'Open';
 
         // Timing notices
@@ -1853,7 +1844,7 @@ TECHNICAL:
         }
 
         let responseNotice = '';
-        if (!isClosed && !isOpen && !c.respondedAt && !isClosingPending && !isEscalated) {
+        if (!isClosed && !isOpen && !c.respondedAt && !isEscalated) {
             if (!isNaN(submitted) && hoursElapsed > 72) {
                 responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed \u2014 Board Response must be sent urgently.</div>';
             } else if (!isNaN(submitted)) {
@@ -1887,21 +1878,19 @@ TECHNICAL:
                 ${responseNotice}
                 <div class="update-field" style="width:100%;margin-bottom:12px;">
                     <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Board Response</label>
-                    <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Enter the Board's formal response. Use Save Only to draft, Save &amp; Send when ready to send to resident.">${escHtml(c.boardResponse || '')}</textarea>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> \u2014 this locks the Board Response permanently.</div>
+                    <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Enter the Board's formal response. When ready, click Save &amp; Send to Resident to send and lock permanently.">${escHtml(c.boardResponse || '')}</textarea>
                 </div>
-                <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                 <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
                 <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
             </div>`;
         }
 
-        // ── RESPONDED: Close This Complaint ───────────────────────────
+        // ── RESPONDED: Close This Complaint (Send & Send only) ────────
         if (normStatus === 'Responded') {
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the required narrative, then click Save &amp; Send to issue the closure notice to the resident.</p>
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.</p>
                 <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
                 <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
@@ -1912,9 +1901,7 @@ TECHNICAL:
                     <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
                     <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice</div>
                     <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Resolution Notice and close the complaint.</div>
                     <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                         <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                     </div>
                 </div>
@@ -1926,82 +1913,52 @@ TECHNICAL:
                     <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process..."></textarea>
                     <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Non-Resolution Notice</div>
                     <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Non-Resolution Notice and close the complaint.</div>
                     <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                         <button class="btn-send-resident" id="send-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                     </div>
                 </div>
             </div>`;
         }
 
-        // ── CLOSING-PENDING: complete the closure ─────────────────────
-        if (isClosingPending) {
-            const isPendingResolved   = c.closureNarrative && c.closureNarrative.indexOf('[TYPE:RESOLVED]')   === 0;
-            const isPendingUnresolved = c.closureNarrative && c.closureNarrative.indexOf('[TYPE:UNRESOLVED]') === 0;
-            return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Complete Closure</div>
-                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9432; Closure draft saved. Review the narrative and click Save &amp; Send to Resident to issue the closure notice and close the complaint.</div>
-                <div id="cr-panel-${safeRef}" class="nrn-panel" ${isPendingResolved ? '' : 'style="display:none;"'}>
-                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary \u2014 Draft</div>
-                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint...">${escHtml((function(n){ var m = n && n.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice</div>
-                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
-                </div>
-                <div id="nrn-panel-${safeRef}" class="nrn-panel" ${isPendingUnresolved ? '' : 'style="display:none;"'}>
-                    <div class="nrn-panel-title">Non-Resolution Notice \u2014 Draft</div>
-                    <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation...">${escHtml((function(n){ var m = n && n.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
-                    <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken...">${escHtml((function(n){ var m = n && n.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/); return m ? m[1].trim() : ''; })(c.closureNarrative))}</textarea>
-                    <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Non-Resolution Notice</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
-                </div>
-                <div style="margin-top:12px;">
-                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                    <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    <span class="save-feedback" id="feedback-${safeRef}"></span>
-                    <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
-                </div>
-            </div>`;
-        }
-
-        // ── ESCALATED: Close from escalation ─────────────────────────
+        // ── ESCALATED: Final Note + separate VicAssist closure ────────
         if (isEscalated) {
+            const finalNote = getFinalNote(c.activityLog);
+            let escalatedActionBody = '';
+            if (!finalNote) {
+                escalatedActionBody = `<div class="response-notice notice-pending">&#9432; Record the outcome of the VicAssist process in the Final Note (in the Escalation pane above), then return here to close the complaint.</div>`;
+            } else {
+                escalatedActionBody = `
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">VicAssist process concluded. Select the closure type and issue the final notice to the resident.</p>
+                <button class="btn-close-type" id="esc-close-resolved-btn-${safeRef}" onclick="showEscalatedClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved (VicAssist)</button>
+                <button class="btn-close-type" id="esc-close-unresolved-btn-${safeRef}" onclick="showEscalatedClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved (VicAssist)</button>
+                <span class="save-feedback" id="esc-feedback-${safeRef}"></span>
+                <span class="send-feedback" id="esc-sendfeedback-${safeRef}"></span>
+                <div id="esc-cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                    <div class="nrn-panel-title" style="border-left-color:#10b981;">VicAssist Resolution Summary</div>
+                    <label for="esc-cr-summary-${safeRef}">Summary of how this matter was resolved through VicAssist <span style="color:#fca5a5">*</span></label>
+                    <textarea id="esc-cr-summary-${safeRef}" placeholder="Describe the outcome of the VicAssist conciliation process..."></textarea>
+                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every VicAssist Resolved closure notice</div>
+                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK)}</div>
+                    <div style="margin-top:12px;">
+                        <button class="btn-send-resident" id="esc-send-cr-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'resolved')">&#9993; Save &amp; Send to Resident</button>
+                    </div>
+                </div>
+                <div id="esc-nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                    <div class="nrn-panel-title">VicAssist Non-Resolution Notice</div>
+                    <label for="esc-nrn-reason-${safeRef}">Why was this matter not resolved through VicAssist? <span style="color:#fca5a5">*</span></label>
+                    <textarea id="esc-nrn-reason-${safeRef}" placeholder="Describe why the VicAssist conciliation process did not resolve the matter..."></textarea>
+                    <label for="esc-nrn-actions-${safeRef}">What actions were taken during the VicAssist process? <span style="color:#fca5a5">*</span></label>
+                    <textarea id="esc-nrn-actions-${safeRef}" placeholder="Summarise the steps taken during the VicAssist process..."></textarea>
+                    <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every VicAssist Non-Resolution Notice</div>
+                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
+                    <div style="margin-top:12px;">
+                        <button class="btn-send-resident" id="esc-send-nrn-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'unresolved')">&#9993; Save &amp; Send to Resident</button>
+                    </div>
+                </div>`;
+            }
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
-                <div class="response-notice notice-pending" style="margin-bottom:14px;">&#9432; Once the VicAssist process is complete, close the complaint. The resident will receive a formal closure notice.</div>
-                <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
-                <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
-                <span class="save-feedback" id="feedback-${safeRef}"></span>
-                <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
-                <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
-                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice following VicAssist</div>
-                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK)}</div>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Resolution Notice and close the complaint.</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
-                <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title">Non-Resolution Notice</div>
-                    <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved..."></textarea>
-                    <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="nrn-actions-${safeRef}" placeholder="Summarise the steps taken by the Board during this complaint process..."></textarea>
-                    <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Non-Resolution Notice</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> to send the Non-Resolution Notice and close the complaint.</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
+                ${escalatedActionBody}
             </div>`;
         }
 
@@ -2158,7 +2115,103 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    function showClosurePanel(ref, type) {
+    function showEscalatedClosurePanel(ref, type) {
+        const crPanel  = document.getElementById('esc-cr-panel-'  + ref);
+        const nrnPanel = document.getElementById('esc-nrn-panel-' + ref);
+        const btnRes   = document.getElementById('esc-close-resolved-btn-'   + ref);
+        const btnUnres = document.getElementById('esc-close-unresolved-btn-' + ref);
+        if (type === 'resolved') {
+            if (nrnPanel) nrnPanel.style.display = 'none';
+            if (crPanel)  crPanel.style.display  = 'block';
+            if (btnRes)   btnRes.className   = 'btn-close-type active-resolved';
+            if (btnUnres) btnUnres.className = 'btn-close-type';
+        } else {
+            if (crPanel)  crPanel.style.display  = 'none';
+            if (nrnPanel) nrnPanel.style.display = 'block';
+            if (btnUnres) btnUnres.className = 'btn-close-type active-unresolved';
+            if (btnRes)   btnRes.className   = 'btn-close-type';
+        }
+    }
+
+    function saveEscalatedClosure(ref, type) {
+        const isResolved = type === 'resolved';
+        const btn      = isResolved
+            ? document.getElementById('esc-send-cr-'  + ref)
+            : document.getElementById('esc-send-nrn-' + ref);
+        const feedback = document.getElementById('esc-sendfeedback-' + ref)
+            || document.getElementById('esc-feedback-' + ref);
+        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+
+        let closureNarrative = '';
+        if (isResolved) {
+            const summaryEl = document.getElementById('esc-cr-summary-' + ref);
+            const summary   = summaryEl ? summaryEl.value.trim() : '';
+            if (!summary) { setFeedback(feedback, 'A resolution summary is required before sending.', 'error'); return; }
+            closureNarrative = '[SOURCE:VICASSIST][TYPE:RESOLVED]\n[SUMMARY]\n' + summary + '\n[/SUMMARY]';
+        } else {
+            const reasonEl  = document.getElementById('esc-nrn-reason-'  + ref);
+            const actionsEl = document.getElementById('esc-nrn-actions-' + ref);
+            const reason    = reasonEl  ? reasonEl.value.trim()  : '';
+            const actions   = actionsEl ? actionsEl.value.trim() : '';
+            if (!reason || !actions) { setFeedback(feedback, 'Both narrative fields are required before sending.', 'error'); return; }
+            closureNarrative = '[SOURCE:VICASSIST][TYPE:UNRESOLVED]\n[REASON]\n' + reason + '\n[/REASON]\n[ACTIONS]\n' + actions + '\n[/ACTIONS]';
+        }
+
+        const confirmed = confirm(
+            'You are about to close this complaint as ' + (isResolved ? 'Resolved' : 'Unresolved') + ' following the VicAssist process.\n\n' +
+            'A closure notice will be issued to the resident.\nThis action cannot be undone.\n\nProceed?'
+        );
+        if (!confirmed) return;
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+        setFeedback(feedback, '', '');
+
+        const callbackName = 'escCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=closeEscalated'
+            + '&ref='              + encodeURIComponent(ref)
+            + '&closureNarrative=' + encodeURIComponent(closureNarrative)
+            + '&userName='         + encodeURIComponent(userName)
+            + '&callback='         + callbackName;
+
+        const timeout = setTimeout(function() {
+            cleanup(callbackName);
+            if (btn) { btn.disabled = false; btn.textContent = '\u2709 Save & Send to Resident'; }
+            setFeedback(feedback, 'Timed out — please try again.', 'error');
+        }, 20000);
+
+        window[callbackName] = function(data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            if (btn) { btn.disabled = false; btn.textContent = '\u2709 Save & Send to Resident'; }
+            if (data.success) {
+                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                if (idx !== -1) {
+                    allComplaints[idx].status          = data.finalStatus;
+                    allComplaints[idx].closedAt        = new Date().toString();
+                    allComplaints[idx].closureNarrative = closureNarrative;
+                    const cardEl = document.getElementById('card-' + ref);
+                    if (cardEl) {
+                        const wasExpanded = cardEl.classList.contains('expanded');
+                        cardEl.outerHTML = buildCard(allComplaints[idx]);
+                        const newCard = document.getElementById('card-' + ref);
+                        if (newCard && wasExpanded) newCard.classList.add('expanded');
+                    }
+                    updateSummary(allComplaints);
+                }
+            } else {
+                setFeedback(feedback, 'Error: ' + (data.error || 'Unknown error.'), 'error');
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function() {
+            cleanup(callbackName);
+            if (btn) { btn.disabled = false; btn.textContent = '\u2709 Save & Send to Resident'; }
+            setFeedback(feedback, 'Network error — please try again.', 'error');
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
         const nrnPanel = document.getElementById('nrn-panel-' + ref);
         const crPanel  = document.getElementById('cr-panel-'  + ref);
         const btnRes   = document.getElementById('close-resolved-btn-'   + ref);
@@ -2206,14 +2259,11 @@ TECHNICAL:
         }
 
         // ── CLOSURE NARRATIVE HANDLING ────────────────────────────────
-        // Detect closure type from visible panel -- no dropdown in Responded panel.
-        // cr-panel visible = Resolved path. nrn-panel visible = Unresolved path.
-        // Save Only: save draft, set Closing - Pending (no confirmation, no send)
+        // Detect closure type from visible panel.
         // Save & Send: validate, confirm, fire closure
         // ─────────────────────────────────────────────────────────────
 
         var closureNarrative = '';
-        const isCurrentlyClosingPending = current && normaliseStatus(current.status) === 'Closing - Pending';
 
         // Detect which panel is visible
         const crPanelEl  = document.getElementById('cr-panel-'  + ref);
@@ -2264,18 +2314,11 @@ TECHNICAL:
             }
         }
 
-        // effectiveStatus -- closure narrative handling varies by current status:
-        // From Responded: Save Only or Save & Send both send Closing-Pending (backend resolves final from type prefix)
-        // From Closing-Pending: Save & Send sends Closing-Pending (backend resolves final)
-        // From Escalated: closure goes direct to Closed -- do NOT set Closing-Pending
+        // effectiveStatus -- from Responded, Save & Send sends closureNarrative
+        // directly. Backend handles closure via andSend + closureNarrative presence.
         let effectiveStatus = status;
         const currentNormStatus = current ? normaliseStatus(current.status) : '';
-        const fromResponded       = currentNormStatus === 'Responded';
-        const fromClosingPending  = currentNormStatus === 'Closing - Pending';
-        const fromEscalated       = currentNormStatus === 'Escalated';
-
-        if (closureNarrative && (fromResponded || fromClosingPending)) effectiveStatus = 'Closing - Pending';
-        if (andSend && fromClosingPending && !closureNarrative) effectiveStatus = 'Closing - Pending';
+        const fromResponded = currentNormStatus === 'Responded';
 
         // Nothing to save guard
         if (!effectiveStatus && !boardResponse && !closureNarrative) {
@@ -2312,21 +2355,8 @@ TECHNICAL:
                 if (idx !== -1) {
                     const nowTs = new Date().toString();
 
-                    // Closure Save Only -- set Closing - Pending in cache
-                    if (closureNarrative && !andSend) {
-                        allComplaints[idx].status          = 'Closing - Pending';
-                        allComplaints[idx].closureNarrative = closureNarrative;
-                        const now = new Date(); const pad = n => n.toString().padStart(2,'0');
-                        const dStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
-                        const tStr = pad(now.getHours())+':'+pad(now.getMinutes());
-                        const uName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-                        const entry = dStr+' '+tStr+' | '+uName+' | Closure narrative saved (Closing - Pending)';
-                        const existing = allComplaints[idx].activityLog || '';
-                        allComplaints[idx].activityLog = existing ? entry+'\n'+existing : entry;
-                        setFeedback(feedback, 'Draft saved — status set to Closing - Pending.', 'success');
-
                     // Closure Save & Send -- set final closed status from data.finalStatus
-                    } else if (andSend && data.finalStatus) {
+                    if (andSend && data.finalStatus) {
                         allComplaints[idx].status   = data.finalStatus;
                         allComplaints[idx].closedAt = nowTs;
                         if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
@@ -2610,8 +2640,7 @@ TECHNICAL:
             'Responded':          'status-responded',
             'Closed - Resolved':  'status-closed-resolved',
             'Closed - Unresolved':'status-closed-unresolved',
-            'Escalated':          'status-escalated',
-            'Closing - Pending':  'status-closing-pending'
+            'Escalated':          'status-escalated'
         }[s] || 'status-closed';
     }
 
