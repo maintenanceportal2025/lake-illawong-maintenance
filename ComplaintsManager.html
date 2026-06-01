@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.4.2
+  Frontend Version: V2.4.4
   Backend:          ComplaintsManager V2.3.16
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.4.4 (Jun 2026): Fix closure panel still disappearing after Save Only.
+    V2.4.3 early return approach unreliable. Replaced with explicit guard on
+    buildCard call -- card re-render skipped when !andSend && closureNarrative.
+    Panel and textarea remain visible for continued editing.
+
+  V2.4.3 (Jun 2026): Fix closure panel disappearing after Save Only. Card
+    re-render was being called unconditionally on all save success paths,
+    collapsing the closure panel back to hidden state. Closure narrative
+    Save Only now skips buildCard -- updates cache only and shows feedback,
+    leaving the panel and textarea visible for continued editing.
+
   V2.4.2 (Jun 2026): Save Only restored to standard closure panels (cr-panel,
     nrn-panel) and escalated closure panels (esc-cr-panel, esc-nrn-panel).
     Save Only writes narrative draft to col X without status change (backend
@@ -2417,7 +2428,12 @@ TECHNICAL:
                         if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
                         setFeedback(feedback, 'Closure notice sent — complaint closed.', 'success');
 
-                    // Standard update
+                    // Closure narrative Save Only -- update cache only, no card re-render
+                    } else if (!andSend && closureNarrative) {
+                        allComplaints[idx].closureNarrative = closureNarrative;
+                        setFeedback(feedback, 'Draft saved.', 'success');
+
+                    // Standard update (status change, board response, escalation)
                     } else {
                         if (effectiveStatus) allComplaints[idx].status = effectiveStatus;
                         if (effectiveStatus === 'Acknowledged' && !allComplaints[idx].acknowledgedAt) allComplaints[idx].acknowledgedAt = nowTs;
@@ -2437,7 +2453,7 @@ TECHNICAL:
                     }
 
                     const cardEl = document.getElementById('card-' + ref);
-                    if (cardEl) {
+                    if (cardEl && !(!andSend && closureNarrative)) {
                         const wasExpanded = cardEl.classList.contains('expanded');
                         cardEl.outerHTML  = buildCard(allComplaints[idx]);
                         const newCard = document.getElementById('card-' + ref);
