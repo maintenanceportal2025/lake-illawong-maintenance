@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.4.5
+  Frontend Version: V2.4.6
   Backend:          ComplaintsManager V2.3.16
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.4.6 (Jun 2026): Apply same saved draft div pattern to escalated closure
+    panels (esc-cr-panel, esc-nrn-panel). Save Only updates esc-cr-saved and
+    esc-nrn-saved divs in-place -- panel stays visible, no card re-render.
+    saveEscalatedClosure Save Only callback updated to match.
+
   V2.4.5 (Jun 2026): Closure Save Only rewritten to match Board Response
     pattern. cr-panel and nrn-panel now have a read-only saved draft div
     (cr-saved, nrn-saved) that appears after first Save Only and updates
@@ -1974,6 +1979,10 @@ TECHNICAL:
                 <span class="send-feedback" id="esc-sendfeedback-${safeRef}"></span>
                 <div id="esc-cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
                     <div class="nrn-panel-title" style="border-left-color:#10b981;">VicAssist Resolution Summary</div>
+                    <div id="esc-cr-saved-${safeRef}" style="display:none;margin-bottom:10px;">
+                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
+                        <div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);white-space:pre-wrap;" id="esc-cr-saved-text-${safeRef}"></div>
+                    </div>
                     <label for="esc-cr-summary-${safeRef}">Summary of how this matter was resolved through VicAssist <span style="color:#fca5a5">*</span></label>
                     <textarea id="esc-cr-summary-${safeRef}" placeholder="Describe the outcome of the VicAssist conciliation process..."></textarea>
                     <div class="nrn-fixed-label">Standard block \u2014 included automatically in every VicAssist Resolved closure notice</div>
@@ -1985,6 +1994,10 @@ TECHNICAL:
                 </div>
                 <div id="esc-nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
                     <div class="nrn-panel-title">VicAssist Non-Resolution Notice</div>
+                    <div id="esc-nrn-saved-${safeRef}" style="display:none;margin-bottom:10px;">
+                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
+                        <div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);white-space:pre-wrap;" id="esc-nrn-saved-text-${safeRef}"></div>
+                    </div>
                     <label for="esc-nrn-reason-${safeRef}">Why was this matter not resolved through VicAssist? <span style="color:#fca5a5">*</span></label>
                     <textarea id="esc-nrn-reason-${safeRef}" placeholder="Describe why the VicAssist conciliation process did not resolve the matter..."></textarea>
                     <label for="esc-nrn-actions-${safeRef}">What actions were taken during the VicAssist process? <span style="color:#fca5a5">*</span></label>
@@ -2218,6 +2231,24 @@ TECHNICAL:
                 clearTimeout(timeout); cleanup(callbackName);
                 if (btn) { btn.disabled = false; btn.textContent = 'Save Only'; }
                 if (data.success) {
+                    // Update saved draft div in-place -- no card re-render
+                    if (isResolved) {
+                        const sm = closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+                        const st = sm ? sm[1].trim() : '';
+                        const savedDiv  = document.getElementById('esc-cr-saved-' + ref);
+                        const savedText = document.getElementById('esc-cr-saved-text-' + ref);
+                        if (savedDiv)  savedDiv.style.display = 'block';
+                        if (savedText) savedText.textContent  = st;
+                    } else {
+                        const rm = closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+                        const am = closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+                        const rt = rm ? rm[1].trim() : '';
+                        const at = am ? am[1].trim() : '';
+                        const savedDiv  = document.getElementById('esc-nrn-saved-' + ref);
+                        const savedText = document.getElementById('esc-nrn-saved-text-' + ref);
+                        if (savedDiv)  savedDiv.style.display = 'block';
+                        if (savedText) savedText.textContent  = (rt ? 'Why not resolved:\n' + rt : '') + (at ? '\n\nActions taken:\n' + at : '');
+                    }
                     setFeedback(feedback, 'Draft saved.', 'success');
                 } else {
                     setFeedback(feedback, 'Error: ' + (data.error || 'Unknown.'), 'error');
