@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.4.1
-  Backend:          ComplaintsManager V2.3.15
+  Frontend Version: V2.4.2
+  Backend:          ComplaintsManager V2.3.16
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.4.2 (Jun 2026): Save Only restored to standard closure panels (cr-panel,
+    nrn-panel) and escalated closure panels (esc-cr-panel, esc-nrn-panel).
+    Save Only writes narrative draft to col X without status change (backend
+    V2.3.16). Board can revise freely before Save & Send commits and sends.
+
   V2.4.1 (Jun 2026): Restore Save Only to Acknowledged Board Response panel.
     Board Response requires Save Only so draft can be revised multiple times
     before Save & Send locks it permanently. Save Only correctly removed only
@@ -1344,7 +1349,7 @@ TECHNICAL:
 </div>
 <script>
     const CONFIG = {
-        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwV-QBBwu_0fhJgfsBPRcDkhxvnTMPEB4lKH6j0G5Q878-rjxAw4K3AYoSzRtXXTokxWg/exec',
+        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbzVkskU4iQqBIIJo3gleGyFlnyi3HX4qJCf4WHM50CxiLk2nN3VUnIaIwOxwX7g2E-fGw/exec',
         SESSION_KEY:       'portalAdminVerified',
         PORTAL_URL:        'AdminPortal.html',
         ALLOWED_ROLES:     ['Complaints-Manager', 'Developer'],
@@ -1909,6 +1914,7 @@ TECHNICAL:
                     <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice</div>
                     <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
                     <div style="margin-top:12px;">
+                        <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                         <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                     </div>
                 </div>
@@ -1921,6 +1927,7 @@ TECHNICAL:
                     <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Non-Resolution Notice</div>
                     <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
                     <div style="margin-top:12px;">
+                        <button class="btn-save" id="save-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                         <button class="btn-send-resident" id="send-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                     </div>
                 </div>
@@ -1947,7 +1954,8 @@ TECHNICAL:
                     <div class="nrn-fixed-label">Standard block \u2014 included automatically in every VicAssist Resolved closure notice</div>
                     <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK)}</div>
                     <div style="margin-top:12px;">
-                        <button class="btn-send-resident" id="esc-send-cr-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'resolved')">&#9993; Save &amp; Send to Resident</button>
+                        <button class="btn-save" id="esc-save-cr-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'resolved', false)">Save Only</button>
+                        <button class="btn-send-resident" id="esc-send-cr-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'resolved', true)">&#9993; Save &amp; Send to Resident</button>
                     </div>
                 </div>
                 <div id="esc-nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
@@ -1959,7 +1967,8 @@ TECHNICAL:
                     <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every VicAssist Non-Resolution Notice</div>
                     <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
                     <div style="margin-top:12px;">
-                        <button class="btn-send-resident" id="esc-send-nrn-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'unresolved')">&#9993; Save &amp; Send to Resident</button>
+                        <button class="btn-save" id="esc-save-nrn-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'unresolved', false)">Save Only</button>
+                        <button class="btn-send-resident" id="esc-send-nrn-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'unresolved', true)">&#9993; Save &amp; Send to Resident</button>
                     </div>
                 </div>`;
             }
@@ -2140,11 +2149,11 @@ TECHNICAL:
         }
     }
 
-    function saveEscalatedClosure(ref, type) {
+    function saveEscalatedClosure(ref, type, andSend) {
         const isResolved = type === 'resolved';
-        const btn      = isResolved
-            ? document.getElementById('esc-send-cr-'  + ref)
-            : document.getElementById('esc-send-nrn-' + ref);
+        const btn      = andSend
+            ? (isResolved ? document.getElementById('esc-send-cr-'  + ref) : document.getElementById('esc-send-nrn-' + ref))
+            : (isResolved ? document.getElementById('esc-save-cr-'  + ref) : document.getElementById('esc-save-nrn-' + ref));
         const feedback = document.getElementById('esc-sendfeedback-' + ref)
             || document.getElementById('esc-feedback-' + ref);
         const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
@@ -2153,17 +2162,54 @@ TECHNICAL:
         if (isResolved) {
             const summaryEl = document.getElementById('esc-cr-summary-' + ref);
             const summary   = summaryEl ? summaryEl.value.trim() : '';
-            if (!summary) { setFeedback(feedback, 'A resolution summary is required before sending.', 'error'); return; }
+            if (!summary) { setFeedback(feedback, 'A resolution summary is required.', 'error'); return; }
             closureNarrative = '[SOURCE:VICASSIST][TYPE:RESOLVED]\n[SUMMARY]\n' + summary + '\n[/SUMMARY]';
         } else {
             const reasonEl  = document.getElementById('esc-nrn-reason-'  + ref);
             const actionsEl = document.getElementById('esc-nrn-actions-' + ref);
             const reason    = reasonEl  ? reasonEl.value.trim()  : '';
             const actions   = actionsEl ? actionsEl.value.trim() : '';
-            if (!reason || !actions) { setFeedback(feedback, 'Both narrative fields are required before sending.', 'error'); return; }
+            if (!reason || !actions) { setFeedback(feedback, 'Both narrative fields are required.', 'error'); return; }
             closureNarrative = '[SOURCE:VICASSIST][TYPE:UNRESOLVED]\n[REASON]\n' + reason + '\n[/REASON]\n[ACTIONS]\n' + actions + '\n[/ACTIONS]';
         }
 
+        // Save Only -- persist narrative to col X, no status change, no email
+        if (!andSend) {
+            if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+            setFeedback(feedback, '', '');
+            const callbackName = 'escSaveCallback_' + Date.now();
+            const url = CONFIG.BACKEND_URL
+                + '?action=updateComplaint'
+                + '&ref='              + encodeURIComponent(ref)
+                + '&closureNarrative=' + encodeURIComponent(closureNarrative)
+                + '&userName='         + encodeURIComponent(userName)
+                + '&callback='         + callbackName;
+            const timeout = setTimeout(function() {
+                cleanup(callbackName);
+                if (btn) { btn.disabled = false; btn.textContent = 'Save Only'; }
+                setFeedback(feedback, 'Timed out — please try again.', 'error');
+            }, 15000);
+            window[callbackName] = function(data) {
+                clearTimeout(timeout); cleanup(callbackName);
+                if (btn) { btn.disabled = false; btn.textContent = 'Save Only'; }
+                if (data.success) {
+                    setFeedback(feedback, 'Draft saved.', 'success');
+                } else {
+                    setFeedback(feedback, 'Error: ' + (data.error || 'Unknown.'), 'error');
+                }
+            };
+            const script = document.createElement('script');
+            script.onerror = function() {
+                cleanup(callbackName);
+                if (btn) { btn.disabled = false; btn.textContent = 'Save Only'; }
+                setFeedback(feedback, 'Network error.', 'error');
+            };
+            script.src = url;
+            document.head.appendChild(script);
+            return;
+        }
+
+        // Save & Send -- confirm then fire closeEscalated
         const confirmed = confirm(
             'You are about to close this complaint as ' + (isResolved ? 'Resolved' : 'Unresolved') + ' following the VicAssist process.\n\n' +
             'A closure notice will be issued to the resident.\nThis action cannot be undone.\n\nProceed?'
