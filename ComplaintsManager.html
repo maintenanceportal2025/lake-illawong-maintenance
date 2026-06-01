@@ -6,13 +6,19 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.4.4
+  Frontend Version: V2.4.5
   Backend:          ComplaintsManager V2.3.16
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.4.5 (Jun 2026): Closure Save Only rewritten to match Board Response
+    pattern. cr-panel and nrn-panel now have a read-only saved draft div
+    (cr-saved, nrn-saved) that appears after first Save Only and updates
+    in-place on subsequent saves. No card re-render on Save Only -- panel
+    stays visible, textarea retains content for further editing.
+
   V2.4.4 (Jun 2026): Fix closure panel still disappearing after Save Only.
     V2.4.3 early return approach unreliable. Replaced with explicit guard on
     buildCard call -- card re-render skipped when !andSend && closureNarrative.
@@ -1920,6 +1926,10 @@ TECHNICAL:
                 <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
                 <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
                     <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
+                    <div id="cr-saved-${safeRef}" style="display:none;margin-bottom:10px;">
+                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
+                        <div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);white-space:pre-wrap;" id="cr-saved-text-${safeRef}"></div>
+                    </div>
                     <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
                     <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
                     <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice</div>
@@ -1931,6 +1941,10 @@ TECHNICAL:
                 </div>
                 <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
                     <div class="nrn-panel-title">Non-Resolution Notice</div>
+                    <div id="nrn-saved-${safeRef}" style="display:none;margin-bottom:10px;">
+                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
+                        <div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);white-space:pre-wrap;" id="nrn-saved-text-${safeRef}"></div>
+                    </div>
                     <label for="nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
                     <textarea id="nrn-reason-${safeRef}" placeholder="Provide a plain-language explanation of why the matter could not be resolved..."></textarea>
                     <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
@@ -2428,9 +2442,28 @@ TECHNICAL:
                         if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
                         setFeedback(feedback, 'Closure notice sent — complaint closed.', 'success');
 
-                    // Closure narrative Save Only -- update cache only, no card re-render
+                    // Closure narrative Save Only -- update saved div in-place, no card re-render
                     } else if (!andSend && closureNarrative) {
                         allComplaints[idx].closureNarrative = closureNarrative;
+                        // Update the saved draft display div in the visible panel
+                        const isResolved = closureNarrative.indexOf('[TYPE:RESOLVED]') !== -1;
+                        if (isResolved) {
+                            const sm = closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+                            const st = sm ? sm[1].trim() : '';
+                            const savedDiv  = document.getElementById('cr-saved-' + ref);
+                            const savedText = document.getElementById('cr-saved-text-' + ref);
+                            if (savedDiv)  savedDiv.style.display  = 'block';
+                            if (savedText) savedText.textContent   = st;
+                        } else {
+                            const rm = closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+                            const am = closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+                            const rt = rm ? rm[1].trim() : '';
+                            const at = am ? am[1].trim() : '';
+                            const savedDiv  = document.getElementById('nrn-saved-' + ref);
+                            const savedText = document.getElementById('nrn-saved-text-' + ref);
+                            if (savedDiv)  savedDiv.style.display  = 'block';
+                            if (savedText) savedText.textContent   = (rt ? 'Why not resolved:\n' + rt : '') + (at ? '\n\nActions taken:\n' + at : '');
+                        }
                         setFeedback(feedback, 'Draft saved.', 'success');
 
                     // Standard update (status change, board response, escalation)
