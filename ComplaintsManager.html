@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.3.8
+  Frontend Version: V2.3.9
   Backend:          ComplaintsManager V2.3.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.3.9 (Jun 2026): Fix effectiveStatus over-firing from V2.3.7. Setting
+    closureNarrative always to Closing-Pending was also firing from Escalated
+    state, causing Save Only on closure panel to incorrectly set status to
+    Closing-Pending. Fixed: Closing-Pending only forced when current status
+    is Responded or Closing-Pending. Escalated closure goes direct to Closed
+    without transiting through Closing-Pending.
+
   V2.3.8 (Jun 2026): Fix V2.3.6 regression. saveFinalNote callback had
     duplicate const declarations (now, pad, dStr, tStr) in same scope --
     JS strict mode const redeclaration error caused entire script to fail
@@ -2257,11 +2264,18 @@ TECHNICAL:
             }
         }
 
-        // effectiveStatus -- closure Save Only sets Closing-Pending; Save & Send also
-        // sends Closing-Pending (backend resolves final status from narrative type prefix)
+        // effectiveStatus -- closure narrative handling varies by current status:
+        // From Responded: Save Only or Save & Send both send Closing-Pending (backend resolves final from type prefix)
+        // From Closing-Pending: Save & Send sends Closing-Pending (backend resolves final)
+        // From Escalated: closure goes direct to Closed -- do NOT set Closing-Pending
         let effectiveStatus = status;
-        if (closureNarrative) effectiveStatus = 'Closing - Pending';
-        if (andSend && isCurrentlyClosingPending && !closureNarrative) effectiveStatus = 'Closing - Pending';
+        const currentNormStatus = current ? normaliseStatus(current.status) : '';
+        const fromResponded       = currentNormStatus === 'Responded';
+        const fromClosingPending  = currentNormStatus === 'Closing - Pending';
+        const fromEscalated       = currentNormStatus === 'Escalated';
+
+        if (closureNarrative && (fromResponded || fromClosingPending)) effectiveStatus = 'Closing - Pending';
+        if (andSend && fromClosingPending && !closureNarrative) effectiveStatus = 'Closing - Pending';
 
         // Nothing to save guard
         if (!effectiveStatus && !boardResponse && !closureNarrative) {
