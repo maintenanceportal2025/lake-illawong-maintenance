@@ -6,13 +6,19 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.3.4
+  Frontend Version: V2.3.5
   Backend:          ComplaintsManager V2.3.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.3.5 (Jun 2026): Fix Activity Log new entry insertion. Initial render
+    correctly reversed to oldest-first in V2.3.4, but addComment and
+    resendNotice DOM updates were still inserting new entries at top via
+    insertBefore. Changed to appendChild so new entries appear at bottom,
+    consistent with oldest-first display order.
+
   V2.3.4 (Jun 2026): Activity Log entries reversed to chronological order
     (oldest first, newest last). Backend prepends entries so split array
     was newest-first -- .reverse() applied before rendering.
@@ -2352,7 +2358,7 @@ TECHNICAL:
                     const entry  = document.createElement('div');
                     entry.className   = 'activity-log-entry';
                     entry.textContent = dStr + ' ' + tStr + ' | SYSTEM | Closure notice resent to resident';
-                    logBlock.insertBefore(entry, logBlock.children[1]);
+                    logBlock.appendChild(entry);
                 }
             } else {
                 feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'comment-feedback error';
@@ -2403,7 +2409,7 @@ TECHNICAL:
             if (data.success) {
                 feedback.textContent = 'Comment added.'; feedback.className = 'comment-feedback success';
                 document.getElementById('comment-' + ref).value = '';
-                // Prepend new entry to the log display
+                // Append new entry to bottom of log (display is oldest-first)
                 const logBlock = document.querySelector('#card-' + ref + ' .activity-log-block');
                 if (logBlock) {
                     const emptyEl = logBlock.querySelector('.activity-log-empty');
@@ -2411,7 +2417,7 @@ TECHNICAL:
                     const entry = document.createElement('div');
                     entry.className   = 'activity-log-entry';
                     entry.textContent = data.entry;
-                    logBlock.insertBefore(entry, logBlock.children[1]);
+                    logBlock.appendChild(entry);
                 }
                 // Update allComplaints cache
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
