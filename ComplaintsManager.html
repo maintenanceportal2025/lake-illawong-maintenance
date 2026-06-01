@@ -6,13 +6,29 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.3.6
+  Frontend Version: V2.3.8
   Backend:          ComplaintsManager V2.3.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.3.8 (Jun 2026): Fix V2.3.6 regression. saveFinalNote callback had
+    duplicate const declarations (now, pad, dStr, tStr) in same scope --
+    JS strict mode const redeclaration error caused entire script to fail
+    silently, breaking closure Save & Send from Responded panel. Fixed by
+    deduplicating into single entryText variable before DOM update and
+    cache update.
+
+  V2.3.7 (Jun 2026): Fix Save & Send from Responded panel not progressing.
+    Root cause: effectiveStatus was blank when andSend=true with closure
+    narrative from Responded state -- status dropdown doesn't exist in that
+    panel so status resolved to empty string and backend received no status.
+    Fix: closureNarrative presence always sets effectiveStatus to
+    Closing-Pending regardless of andSend -- backend resolves final closed
+    status from narrative [TYPE:] prefix. Also guarded btn.disabled in
+    script.onerror handler.
+
   V2.3.6 (Jun 2026): Three fixes. (1) saveFinalNote DOM update now appends
     entry to Activity Log block immediately on success -- no refresh needed.
     (2) CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK added -- separate wording for
@@ -2102,26 +2118,23 @@ TECHNICAL:
             if (data.success) {
                 if (feedback) { feedback.textContent = 'Final note saved to Activity Log.'; feedback.className = 'save-feedback success'; }
                 if (textarea) textarea.value = '';
+                const now2 = new Date(); const pad2 = n => n.toString().padStart(2,'0');
+                const dStr2 = now2.getFullYear()+'-'+pad2(now2.getMonth()+1)+'-'+pad2(now2.getDate());
+                const tStr2 = pad2(now2.getHours())+':'+pad2(now2.getMinutes());
+                const entryText = dStr2+' '+tStr2+' | '+userName+' | FINAL NOTE (VicAssist outcome): '+note;
                 // Append to Activity Log display immediately
                 const logBlock = document.querySelector('#card-' + ref + ' .activity-log-block');
                 if (logBlock) {
-                    const now = new Date(); const pad = n => n.toString().padStart(2,'0');
-                    const dStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
-                    const tStr = pad(now.getHours())+':'+pad(now.getMinutes());
                     const entryEl = document.createElement('div');
                     entryEl.className   = 'activity-log-entry';
-                    entryEl.textContent = dStr+' '+tStr+' | '+userName+' | FINAL NOTE (VicAssist outcome): '+note;
+                    entryEl.textContent = entryText;
                     logBlock.appendChild(entryEl);
                 }
                 // Update local Activity Log cache
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
                 if (idx !== -1) {
-                    const now = new Date(); const pad = n => n.toString().padStart(2,'0');
-                    const dStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
-                    const tStr = pad(now.getHours())+':'+pad(now.getMinutes());
-                    const entry = dStr+' '+tStr+' | '+userName+' | FINAL NOTE (VicAssist outcome): '+note;
                     const existing = allComplaints[idx].activityLog || '';
-                    allComplaints[idx].activityLog = existing ? entry+'\n'+existing : entry;
+                    allComplaints[idx].activityLog = existing ? entryText+'\n'+existing : entryText;
                 }
             } else {
                 if (feedback) { feedback.textContent = 'Error: ' + (data.error || 'Unknown.'); feedback.className = 'save-feedback error'; }
@@ -2244,10 +2257,11 @@ TECHNICAL:
             }
         }
 
-        // effectiveStatus -- for closure Save Only set to Closing - Pending explicitly
+        // effectiveStatus -- closure Save Only sets Closing-Pending; Save & Send also
+        // sends Closing-Pending (backend resolves final status from narrative type prefix)
         let effectiveStatus = status;
-        if (closureNarrative && !andSend) effectiveStatus = 'Closing - Pending';
-        if (andSend && isCurrentlyClosingPending && !status) effectiveStatus = 'Closing - Pending';
+        if (closureNarrative) effectiveStatus = 'Closing - Pending';
+        if (andSend && isCurrentlyClosingPending && !closureNarrative) effectiveStatus = 'Closing - Pending';
 
         // Nothing to save guard
         if (!effectiveStatus && !boardResponse && !closureNarrative) {
@@ -2348,7 +2362,7 @@ TECHNICAL:
         const script = document.createElement('script');
         script.onerror = function () {
             clearTimeout(timeout); cleanup(callbackName);
-            btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only';
+            if (btn) { btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only'; }
             setFeedback(feedback, 'Network error — please try again.', 'error');
         };
         script.src = url;
