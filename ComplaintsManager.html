@@ -6,13 +6,29 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.3.1
+  Frontend Version: V2.3.3
   Backend:          ComplaintsManager V2.3.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.3.3 (Jun 2026): Two fixes. (1) Action panel moved before Activity Log --
+    buildCard now renders buildAccordion (without Activity Log) then
+    buildActionPanel then Activity Log pane separately, so Next Step always
+    appears before Activity Log. (2) saveUpdate null crash fixed -- btn.disabled
+    now guarded, preventing silent JS halt when btn resolves to null on closure
+    panels. This was root cause of Save Only doing nothing and Save & Send
+    modal not proceeding for both Resolved and Unresolved closure.
+
+  V2.3.2 (Jun 2026): Four fixes from accordion testing. (1) Acknowledgement
+    method detection corrected -- checks for 'Acknowledgement notification sent'
+    in Activity Log rather than 'manually acknowledged'. (2) Activity Log pane
+    moved to last position in all cases. (3) saveUpdate btn/feedback null guard
+    added -- falls back to save-cr/send-cr IDs when save/send not found, fixing
+    Save Only silently doing nothing on Resolved closure panel. (4) Same null
+    guard fixes Save & Send PIN modal not proceeding.
+
   V2.3.1 (Jun 2026): buildUpdatePanel replaced with accordion pane stack.
     New functions: getFinalNote(), buildAccordion(), buildActionPanel().
     Accordion renders chronological panes: Complaint Details (always),
@@ -1487,6 +1503,7 @@ TECHNICAL:
             <div class="card-detail">
                 ${buildAccordion(c)}
                 ${buildActionPanel(c)}
+                ${buildActivityLogPane(c)}
             </div>
         </div>`;
     }
@@ -1604,7 +1621,7 @@ TECHNICAL:
                 </div>
                 <div class="detail-field" style="margin-top:8px;">
                     <div class="detail-label">Method</div>
-                    <div class="detail-value">${c.activityLog && c.activityLog.indexOf('manually acknowledged') !== -1 ? 'Manual (Admin)' : 'Email link'}</div>
+                    <div class="detail-value">${c.activityLog && c.activityLog.indexOf('Acknowledgement notification sent') !== -1 ? 'Email notification sent' : 'Not recorded'}</div>
                 </div>`;
             panesHtml += pane(
                 'pane-ack-' + safeRef,
@@ -1716,24 +1733,17 @@ TECHNICAL:
             );
         }
 
-        // ── PANE 6: ACTIVITY LOG (always, always expanded) ────────────
+        return `<div class="accordion-stack">${panesHtml}</div>`;
+    }
+
+    // ── BUILD ACTIVITY LOG PANE (always last, always expanded) ────────
+    function buildActivityLogPane(c) {
+        const safeRef        = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
         const activityLog    = c.activityLog || '';
         const commentEntries = activityLog
             ? activityLog.split('\n').map(line => `<div class="activity-log-entry">${escHtml(line)}</div>`).join('')
             : '<div class="activity-log-empty">No entries recorded.</div>';
-        const activityBody = `
-            <div class="activity-log-block">${commentEntries}</div>
-            <div class="update-row" style="margin-top:12px;">
-                <div class="update-field">
-                    <label for="comment-${safeRef}">Add to Activity Log (timestamped, permanent record)</label>
-                    <textarea id="comment-${safeRef}" placeholder="Add a note \u2014 e.g. VicAssist correspondence received, VCAT referral..."></textarea>
-                </div>
-            </div>
-            <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add to Activity Log</button>
-            <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>`;
-
-        // Activity log pane always starts open
-        panesHtml += `
+        return `
             <div class="accordion-pane pane-activity open" id="pane-activity-${safeRef}">
                 <div class="accordion-pane-header" onclick="togglePane('pane-activity-${safeRef}')">
                     <div class="accordion-pane-header-left">
@@ -1742,11 +1752,18 @@ TECHNICAL:
                     </div>
                     <span class="accordion-chevron">&#9660;</span>
                 </div>
-                <div class="accordion-body">${activityBody}</div>
+                <div class="accordion-body">
+                    <div class="activity-log-block">${commentEntries}</div>
+                    <div class="update-row" style="margin-top:12px;">
+                        <div class="update-field">
+                            <label for="comment-${safeRef}">Add to Activity Log (timestamped, permanent record)</label>
+                            <textarea id="comment-${safeRef}" placeholder="Add a note \u2014 e.g. VicAssist correspondence received, VCAT referral..."></textarea>
+                        </div>
+                    </div>
+                    <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add to Activity Log</button>
+                    <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>
+                </div>
             </div>`;
-
-        return `<div class="accordion-stack">${panesHtml}</div>`;
-    }
 
     // ── BUILD ACTION PANEL ────────────────────────────────────────────
     // Renders the current-step action controls below the accordion stack.
@@ -2095,8 +2112,12 @@ TECHNICAL:
         const current        = allComplaints.find(c => c.referenceNumber === ref);
         const rawResponse    = document.getElementById('response-' + ref) ? document.getElementById('response-' + ref).value.trim() : '';
         const boardResponse  = rawResponse;
-        const btn            = andSend ? document.getElementById('send-' + ref) : document.getElementById('save-' + ref);
-        const feedback       = andSend ? document.getElementById('sendfeedback-' + ref) : document.getElementById('feedback-' + ref);
+        const btn      = andSend
+            ? (document.getElementById('send-' + ref)    || document.getElementById('send-cr-' + ref)  || document.getElementById('send-nrn-' + ref))
+            : (document.getElementById('save-' + ref)    || document.getElementById('save-cr-' + ref)  || document.getElementById('save-nrn-' + ref));
+        const feedback = andSend
+            ? (document.getElementById('sendfeedback-' + ref) || document.getElementById('feedback-' + ref))
+            : (document.getElementById('feedback-' + ref));
 
         // Confirmation required before setting Escalated status
         if (status === 'Escalated') {
@@ -2184,8 +2205,7 @@ TECHNICAL:
             setFeedback(feedback, 'Nothing to save — make a change first.', 'error'); return;
         }
 
-        btn.disabled = true;
-        btn.textContent = 'Saving...';
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
         setFeedback(feedback, '', '');
 
         const callbackName = 'saveCallback_' + Date.now();
@@ -2202,13 +2222,13 @@ TECHNICAL:
         url += '&userName=' + encodeURIComponent(saveUserName);
 
         const timeout = setTimeout(function () {
-            cleanup(callbackName); btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only';
+            cleanup(callbackName); if (btn) { btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only'; }
             setFeedback(feedback, 'Timed out — please try again.', 'error');
         }, 15000);
 
         window[callbackName] = function (data) {
             clearTimeout(timeout); cleanup(callbackName);
-            btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only';
+            if (btn) { btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only'; }
 
             if (data.success) {
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
