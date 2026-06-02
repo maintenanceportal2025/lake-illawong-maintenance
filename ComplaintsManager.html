@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.5.3
+  Frontend Version: V2.5.4
   Backend:          ComplaintsManager V2.3.22
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.4 (Jun 2026): Fix print output for escalated-closed complaints. Three changes
+    to doPrint(). (1) escalatedClosureBlock rewritten to read Final Note from Activity
+    Log via getFinalNote() -- no longer gated on c.closureNarrative. Shows on both
+    Full Record and Resident Copy as Escalation Closure with outcome text + fixed block.
+    (2) escalationBlock Final Note line suppressed when isEscClosed -- avoids duplication
+    on Full Record (Final Note now appears in escalatedClosureBlock). (3) resolvedBlock
+    and nrnBlock status guards broadened to also match Closed - Resolved (Escalated)
+    and Closed - Unresolved (Escalated) respectively -- original closure narrative now
+    renders as a complete record before the Escalation Closure block.
+
   V2.5.3 (Jun 2026): Fix Final Note becoming truly read-only after Save.
     Edit Final Note button was only rendered when finalNoteDisplay existed at
     card build time. For new drafts (no prior saved note) the button was never
@@ -3004,8 +3014,9 @@ TECHNICAL:
             : '';
 
         // Standard Non-Resolution Notice block
+        // Also renders for Closed - Unresolved (Escalated) to preserve the original closure as a complete record.
         var nrnBlock = '';
-        if (normSt === 'Closed - Unresolved' && c.closureNarrative) {
+        if ((normSt === 'Closed - Unresolved' || normSt === 'Closed - Unresolved (Escalated)') && c.closureNarrative) {
             var narrative    = c.closureNarrative;
             var reasonMatch  = narrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
             var actionsMatch = narrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
@@ -3024,8 +3035,9 @@ TECHNICAL:
         }
 
         // Standard Resolution Summary block
+        // Also renders for Closed - Resolved (Escalated) to preserve the original closure as a complete record.
         var resolvedBlock = '';
-        if (normSt === 'Closed - Resolved' && c.closureNarrative) {
+        if ((normSt === 'Closed - Resolved' || normSt === 'Closed - Resolved (Escalated)') && c.closureNarrative) {
             var resNarrative  = c.closureNarrative;
             var summaryMatch  = resNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
             var summaryText   = summaryMatch ? summaryMatch[1].trim() : resNarrative;
@@ -3039,32 +3051,24 @@ TECHNICAL:
                 + '</div>';
         }
 
-        // Escalated closure blocks
+        // Escalated closure block — Final Note is the closure record (from Activity Log)
         var escalatedClosureBlock = '';
-        if (isEscClosed && c.closureNarrative) {
-            var escNarr = c.closureNarrative;
+        if (isEscClosed) {
+            const escFinalNote = getFinalNote(c.activityLog);
             if (normSt === 'Closed - Resolved (Escalated)') {
-                var escSm = escNarr.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
-                var escSt = escSm ? escSm[1].trim() : escNarr;
-                escalatedClosureBlock = '<div class="section-title">Escalated Closure — Resolution Summary</div>'
+                escalatedClosureBlock = '<div class="section-title">Escalation Closure</div>'
                     + '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-left:4px solid #7c3aed;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
-                    + '<div class="field-label" style="margin-bottom:6px;">How this matter was resolved (escalation process)</div>'
-                    + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(escSt) + '</div>'
+                    + (escFinalNote ? '<div class="field-label" style="margin-bottom:6px;">Outcome of the escalation process</div>'
+                        + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(escFinalNote) + '</div>' : '')
                     + '<div class="field-label" style="margin-bottom:6px;">Escalated closure notice</div>'
                     + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
                     + escHtml(CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK) + '</div>'
                     + '</div>';
             } else {
-                var escRm = escNarr.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
-                var escAm = escNarr.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
-                var escRt = escRm ? escRm[1].trim() : escNarr;
-                var escAt = escAm ? escAm[1].trim() : '';
-                escalatedClosureBlock = '<div class="section-title">Escalated Closure — Non-Resolution Notice</div>'
+                escalatedClosureBlock = '<div class="section-title">Escalation Closure</div>'
                     + '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-left:4px solid #6d28d9;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
-                    + '<div class="field-label" style="margin-bottom:6px;">Why this matter was not resolved (escalation process)</div>'
-                    + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(escRt) + '</div>'
-                    + (escAt ? '<div class="field-label" style="margin-bottom:6px;">Actions taken during escalation</div>'
-                        + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(escAt) + '</div>' : '')
+                    + (escFinalNote ? '<div class="field-label" style="margin-bottom:6px;">Outcome of the escalation process</div>'
+                        + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(escFinalNote) + '</div>' : '')
                     + '<div class="field-label" style="margin-bottom:6px;">Escalated closure notice</div>'
                     + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
                     + escHtml(NON_RESOLUTION_ESCALATED_FIXED_BLOCK) + '</div>'
@@ -3083,7 +3087,7 @@ TECHNICAL:
                 + '<div class="field-value" style="margin-bottom:8px;">' + escHtml(formatDate(c.escalatedAt)) + '</div>'
                 + (escBodyVal ? '<div class="field-label" style="margin-bottom:2px;">Escalating Organisation</div>'
                     + '<div class="field-value" style="margin-bottom:8px;">' + escHtml(escBodyVal) + '</div>' : '')
-                + (finalNoteVal && fullRecord ? '<div class="field-label" style="margin-bottom:2px;">Final Note (Internal)</div>'
+                + (finalNoteVal && fullRecord && !isEscClosed ? '<div class="field-label" style="margin-bottom:2px;">Final Note (Internal)</div>'
                     + '<div class="field-value">' + escHtml(finalNoteVal) + '</div>' : '')
                 + '</div>';
         }
