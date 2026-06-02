@@ -6,13 +6,31 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.4.8
-  Backend:          ComplaintsManager V2.3.19
+  Frontend Version: V2.5.0
+  Backend:          ComplaintsManager V2.3.21
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.0 (Jun 2026): Escalating organisation capture added. Closed action
+    panel shows organisation dropdown (VicAssist, VCAT, Consumer Affairs
+    Victoria, Legal representation, Other) when Set to Escalated is selected.
+    Validation requires org selection before Save. org passed to backend as
+    escalationOrg param. Backend writes ESCALATION BODY: [org] to Activity
+    Log (V2.3.21). getEscalationBody() helper scans Activity Log for prefix.
+    Escalation pane displays Escalating Organisation field when present.
+    Resident escalation email includes escalating body name in the record block.
+
+  V2.4.9 (Jun 2026): Three fixes. (1) white-space:pre-wrap added to
+    board-response-readonly CSS class -- multi-line text now displays
+    correctly in all read-only panels. (2) NON_RESOLUTION_ESCALATED_FIXED_BLOCK
+    added -- escalated unresolved closure notice no longer uses standard
+    NON_RESOLUTION_FIXED_BLOCK which mentions VicAssist as a future option.
+    New block references CAV and legal advice only. (3) Print button confirmed
+    correct -- calls showPrintDialog for Full Record / Resident Copy dialog.
+    Backend: V2.3.20.
+
   V2.4.8 (Jun 2026): Two new statuses: Closed - Resolved (Escalated) and
     Closed - Unresolved (Escalated). Separate from standard Closed statuses --
     no col X collision. New pills, border colours, summary tile, filter options.
@@ -955,7 +973,7 @@ TECHNICAL:
         .notice-pending  { background: rgba(251,191,36,0.12); border-left: 3px solid rgba(251,191,36,0.6); color: #fbbf24; }
         .notice-overdue  { background: rgba(239,68,68,0.12);  border-left: 3px solid rgba(239,68,68,0.6);  color: #fca5a5; }
         .notice-sent     { background: rgba(110,231,183,0.12); border-left: 3px solid rgba(110,231,183,0.6); color: #6ee7b7; }
-        .board-response-readonly { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 2px; padding: 10px 12px; color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 8px; line-height: 1.5; }
+        .board-response-readonly { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 2px; padding: 10px 12px; color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 8px; line-height: 1.5; white-space: pre-wrap; }
         .br-entry { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06); white-space: pre-wrap; }
         .br-entry:last-child { border-bottom: none; }
         .br-timestamp { color: rgba(255,255,255,0.5); font-size: 0.8rem; display: block; margin-bottom: 4px; }
@@ -1394,7 +1412,7 @@ TECHNICAL:
 </div>
 <script>
     const CONFIG = {
-        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwoSIWxX4ThdZ5fa1Ar00R1Ggk1T3JKSjc7d-6BTbKEcXnErRbxx-PQaaTkKob4ozGI/exec',
+        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbycpLGVRtvSrx8VDORasRbOkt3YV52ImUQNal7AVhs3jiMyS2JjcPOJTQsZ3pHKSWl32w/exec',
         SESSION_KEY:       'portalAdminVerified',
         PORTAL_URL:        'AdminPortal.html',
         ALLOWED_ROLES:     ['Complaints-Manager', 'Developer'],
@@ -1459,8 +1477,28 @@ TECHNICAL:
         '  Retirement Villages Act 2024 (Vic).\n' +
         '------------------------------------------------------------';
 
+    // Used when closing as Unresolved from Escalated state
+    const NON_RESOLUTION_ESCALATED_FIXED_BLOCK =
+        'YOUR RIGHTS FOLLOWING THIS OUTCOME\n' +
+        '------------------------------------------------------------\n' +
+        'This complaint has been through an escalated dispute\n' +
+        'resolution process and is now closed as unresolved.\n\n' +
+        'You retain the right at any time to:\n\n' +
+        '  Consumer Affairs Victoria\n' +
+        '  Seek further advice and assistance regarding your rights\n' +
+        '  Phone: 1300 55 81 81\n\n' +
+        '  Independent Legal Advice\n' +
+        '  You have the right to seek independent legal advice at\n' +
+        '  any time regarding your rights as a resident under the\n' +
+        '  Retirement Villages Act 2024 (Vic).\n' +
+        '------------------------------------------------------------';
+
     function onStatusChange(ref, value) {
-        // Visual card colour preview on dropdown selection (closed panel Escalated)
+        // Show/hide organisation dropdown when Escalated is selected
+        const orgRow = document.getElementById('esc-org-row-' + ref);
+        if (orgRow) orgRow.style.display = (value === 'Escalated') ? 'block' : 'none';
+
+        // Visual card colour preview on dropdown selection
         const card = document.getElementById('card-' + ref);
         if (card && value) {
             const previewClass = {
@@ -1715,6 +1753,17 @@ TECHNICAL:
         return null;
     }
 
+    function getEscalationBody(activityLog) {
+        if (!activityLog) return null;
+        const lines = activityLog.split('\n');
+        const prefix = 'ESCALATION BODY:';
+        for (var i = 0; i < lines.length; i++) {
+            const idx = lines[i].indexOf(prefix);
+            if (idx !== -1) return lines[i].substring(idx + prefix.length).trim();
+        }
+        return null;
+    }
+
     // ── HELPER: toggle accordion pane ────────────────────────────────
     function togglePane(paneId) {
         const pane = document.getElementById(paneId);
@@ -1832,6 +1881,7 @@ TECHNICAL:
         if (isEscalated || isEscalatedClosed || (isClosed && c.escalatedAt)) {
             const finalNoteDraft   = c.finalNoteDraft || '';
             const finalNote        = getFinalNote(c.activityLog);
+            const escalationBody2  = getEscalationBody(c.activityLog);
             const isFullyClosed    = isClosed || isEscalatedClosed;
             const finalNoteDisplay = isFullyClosed ? finalNote : (finalNoteDraft || finalNote || '');
 
@@ -1839,7 +1889,12 @@ TECHNICAL:
                 <div class="detail-field">
                     <div class="detail-label">Escalated</div>
                     <div class="detail-value">${escHtml(formatDate(c.escalatedAt))}</div>
-                </div>`;
+                </div>
+                ${escalationBody2 ? `
+                <div class="detail-field" style="margin-top:8px;">
+                    <div class="detail-label">Escalating Organisation</div>
+                    <div class="detail-value">${escHtml(escalationBody2)}</div>
+                </div>` : ''}`;
 
             if (isFullyClosed && finalNoteDisplay) {
                 // Closed -- show Final Note read-only from Activity Log
@@ -2081,7 +2136,7 @@ TECHNICAL:
                     <label for="esc-nrn-actions-${safeRef}">What actions were taken during the escalation process? <span style="color:#fca5a5">*</span></label>
                     <textarea id="esc-nrn-actions-${safeRef}" placeholder="Summarise the steps taken during the escalation process..."></textarea>
                     <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Escalated Non-Resolution Notice</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
+                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_ESCALATED_FIXED_BLOCK)}</div>
                     <div style="margin-top:12px;">
                         <button class="btn-save" id="esc-save-nrn-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'unresolved', false)">Save Only</button>
                         <button class="btn-send-resident" id="esc-send-nrn-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'unresolved', true)">&#9993; Save &amp; Send to Resident</button>
@@ -2115,7 +2170,18 @@ TECHNICAL:
                         <option value="">(no action)</option>
                         <option value="Escalated">Set to Escalated</option>
                     </select>
-                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)" style="margin-left:8px;">Save</button>
+                    <div id="esc-org-row-${safeRef}" style="display:none;margin-top:10px;">
+                        <div class="detail-label" style="margin-bottom:6px;">Escalating organisation</div>
+                        <select id="esc-org-${safeRef}" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:7px 10px;font-size:0.85rem;color:white;cursor:pointer;width:100%;">
+                            <option value="">(select organisation)</option>
+                            <option value="VicAssist">VicAssist</option>
+                            <option value="VCAT">VCAT</option>
+                            <option value="Consumer Affairs Victoria">Consumer Affairs Victoria</option>
+                            <option value="Legal representation">Legal representation</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)" style="margin-left:8px;margin-top:10px;">Save</button>
                     <span class="save-feedback" id="feedback-${safeRef}"></span>
                 </div>
             </div>`;
@@ -2438,9 +2504,15 @@ TECHNICAL:
 
         // Confirmation required before setting Escalated status
         if (status === 'Escalated') {
+            const orgEl  = document.getElementById('esc-org-' + ref);
+            const orgVal = orgEl ? orgEl.value.trim() : '';
+            if (!orgVal) {
+                setFeedback(feedback, 'Please select the escalating organisation before saving.', 'error');
+                return;
+            }
             const confirmed = confirm(
                 'Setting status to Escalated will:\n\n' +
-                '  \u2022 Record the complaint as Escalated\n' +
+                '  \u2022 Record the complaint as Escalated (' + orgVal + ')\n' +
                 '  \u2022 Notify the Board and Residents Committee\n' +
                 '  \u2022 Send the resident a notification acknowledging the escalation\n\n' +
                 'Please confirm this complaint has been escalated before proceeding.\n\n' +
@@ -2530,6 +2602,10 @@ TECHNICAL:
             + '&callback=' + callbackName;
 
         if (effectiveStatus)  url += '&status='          + encodeURIComponent(effectiveStatus);
+        if (effectiveStatus === 'Escalated') {
+            const orgEl2 = document.getElementById('esc-org-' + ref);
+            if (orgEl2 && orgEl2.value) url += '&escalationOrg=' + encodeURIComponent(orgEl2.value);
+        }
         if (boardResponse)    url += '&boardResponse='   + encodeURIComponent(boardResponse);
         if (closureNarrative) url += '&closureNarrative=' + encodeURIComponent(closureNarrative);
         if (andSend)          url += '&andSend=true';
