@@ -6,13 +6,31 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.5.0
-  Backend:          ComplaintsManager V2.3.21
+  Frontend Version: V2.5.2
+  Backend:          ComplaintsManager V2.3.22
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.2 (Jun 2026): Final Note IS the closure. Escalated action panel now
+    shows just two close buttons (no panels, no narrative input). New
+    closeEscalated() frontend function fires action=closeEscalated with type
+    only -- no closureNarrative. showEscalatedClosurePanel and
+    saveEscalatedClosure removed. Backend V2.3.22: closeEscalated simplified
+    to read type param, read Final Note draft from col U, write to Activity
+    Log at closure time, send clean closure email (no narrative content).
+    Email subject and body simplified accordingly.
+
+  V2.5.1 (Jun 2026): Four fixes. (1) white-space:pre-wrap added to field-value
+    in printStyles -- multi-line text in print views now preserves line breaks.
+    (2) doPrint updated: handles escalated closed statuses, new escalatedClosure
+    Block (violet, purple), escalationBlock showing org + Final Note (full
+    record only). Activity Log reversed to oldest-first in print. New status
+    badge classes. (3) Final Note textarea hidden after Save -- shows read-only
+    with Edit link, reducing visual clutter alongside closure panels. (4) Card
+    re-render explicitly re-opens Activity Log pane after status-change saves.
+
   V2.5.0 (Jun 2026): Escalating organisation capture added. Closed action
     panel shows organisation dropdown (VicAssist, VCAT, Consumer Affairs
     Victoria, Legal representation, Other) when Set to Escalated is selected.
@@ -1412,7 +1430,7 @@ TECHNICAL:
 </div>
 <script>
     const CONFIG = {
-        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbycpLGVRtvSrx8VDORasRbOkt3YV52ImUQNal7AVhs3jiMyS2JjcPOJTQsZ3pHKSWl32w/exec',
+        BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec',
         SESSION_KEY:       'portalAdminVerified',
         PORTAL_URL:        'AdminPortal.html',
         ALLOWED_ROLES:     ['Complaints-Manager', 'Developer'],
@@ -1934,9 +1952,12 @@ TECHNICAL:
                         <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
                         <div class="final-note-readonly" id="final-note-saved-text-${safeRef}">${escHtml(finalNoteDisplay)}</div>
                     </div>
-                    <textarea id="final-note-${safeRef}" style="width:100%;min-height:80px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="e.g. Escalation process concluded. Parties reached agreement on 1 June 2026...">${escHtml(finalNoteDisplay)}</textarea>
-                    <button class="btn-save" id="final-note-btn-${safeRef}" onclick="saveFinalNoteDraft('${safeRef}')" style="margin-top:8px;">Save</button>
-                    <span class="save-feedback" id="final-note-feedback-${safeRef}"></span>
+                    <div id="final-note-edit-area-${safeRef}" style="${finalNoteDisplay ? 'display:none;' : ''}">
+                        <textarea id="final-note-${safeRef}" style="width:100%;min-height:80px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="e.g. Escalation process concluded. Parties reached agreement on 1 June 2026...">${escHtml(finalNoteDisplay)}</textarea>
+                        <button class="btn-save" id="final-note-btn-${safeRef}" onclick="saveFinalNoteDraft('${safeRef}')" style="margin-top:8px;">Save</button>
+                        <span class="save-feedback" id="final-note-feedback-${safeRef}"></span>
+                    </div>
+                    ${finalNoteDisplay ? `<button onclick="document.getElementById('final-note-edit-area-${safeRef}').style.display='block';this.style.display='none';" style="background:none;border:none;color:rgba(255,255,255,0.5);font-size:0.78rem;cursor:pointer;padding:4px 0;text-decoration:underline;" id="final-note-edit-btn-${safeRef}">Edit Final Note</button>` : ''}
                 </div>`;
             }
 
@@ -2097,7 +2118,7 @@ TECHNICAL:
             </div>`;
         }
 
-        // ── ESCALATED: Final Note + separate escalated closure ────────
+        // ── ESCALATED: Final Note + simple close buttons ──────────────
         if (isEscalated) {
             const finalNote = c.finalNoteDraft || getFinalNote(c.activityLog);
             let escalatedActionBody = '';
@@ -2105,43 +2126,10 @@ TECHNICAL:
                 escalatedActionBody = `<div class="response-notice notice-pending">&#9432; Save a Final Note in the Escalation pane above, then return here to close the complaint.</div>`;
             } else {
                 escalatedActionBody = `
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Escalation process concluded. Select the closure type and issue the final notice to the resident.</p>
-                <button class="btn-close-type" id="esc-close-resolved-btn-${safeRef}" onclick="showEscalatedClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved (Escalated)</button>
-                <button class="btn-close-type" id="esc-close-unresolved-btn-${safeRef}" onclick="showEscalatedClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved (Escalated)</button>
-                <span class="save-feedback" id="esc-feedback-${safeRef}"></span>
-                <span class="send-feedback" id="esc-sendfeedback-${safeRef}"></span>
-                <div id="esc-cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#a78bfa;">Escalated Closure — Resolution Summary</div>
-                    <div id="esc-cr-saved-${safeRef}" style="display:none;margin-bottom:10px;">
-                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
-                        <div class="board-response-readonly" style="border-color:rgba(167,139,250,0.3);white-space:pre-wrap;" id="esc-cr-saved-text-${safeRef}"></div>
-                    </div>
-                    <label for="esc-cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="esc-cr-summary-${safeRef}" placeholder="Describe the outcome of the escalation process..."></textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Escalated Resolved closure notice</div>
-                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK)}</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="esc-save-cr-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'resolved', false)">Save Only</button>
-                        <button class="btn-send-resident" id="esc-send-cr-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'resolved', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
-                <div id="esc-nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title">Escalated Closure — Non-Resolution Notice</div>
-                    <div id="esc-nrn-saved-${safeRef}" style="display:none;margin-bottom:10px;">
-                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
-                        <div class="board-response-readonly" style="border-color:rgba(124,58,237,0.3);white-space:pre-wrap;" id="esc-nrn-saved-text-${safeRef}"></div>
-                    </div>
-                    <label for="esc-nrn-reason-${safeRef}">Why was this matter not resolved? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="esc-nrn-reason-${safeRef}" placeholder="Describe why the escalation process did not resolve the matter..."></textarea>
-                    <label for="esc-nrn-actions-${safeRef}">What actions were taken during the escalation process? <span style="color:#fca5a5">*</span></label>
-                    <textarea id="esc-nrn-actions-${safeRef}" placeholder="Summarise the steps taken during the escalation process..."></textarea>
-                    <div class="nrn-fixed-label">Mandatory block \u2014 included automatically in every Escalated Non-Resolution Notice</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_ESCALATED_FIXED_BLOCK)}</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="esc-save-nrn-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'unresolved', false)">Save Only</button>
-                        <button class="btn-send-resident" id="esc-send-nrn-${safeRef}" onclick="saveEscalatedClosure('${safeRef}', 'unresolved', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>`;
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Final Note recorded. Select the outcome to close this complaint.</p>
+                <button class="btn-close-type" id="esc-close-resolved-btn-${safeRef}" onclick="closeEscalated('${safeRef}', 'resolved')">&#10003; Close as Resolved (Escalated)</button>
+                <button class="btn-close-type" id="esc-close-unresolved-btn-${safeRef}" onclick="closeEscalated('${safeRef}', 'unresolved')">&#10005; Close as Unresolved (Escalated)</button>
+                <span class="save-feedback" id="esc-feedback-${safeRef}"></span>`;
             }
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
@@ -2289,8 +2277,12 @@ TECHNICAL:
                 // Update read-only div in-pane
                 const savedDiv  = document.getElementById('final-note-saved-' + ref);
                 const savedText = document.getElementById('final-note-saved-text-' + ref);
-                if (savedDiv)  savedDiv.style.display = 'block';
-                if (savedText) savedText.textContent  = note;
+                const editArea  = document.getElementById('final-note-edit-area-' + ref);
+                const editBtn   = document.getElementById('final-note-edit-btn-' + ref);
+                if (savedDiv)  savedDiv.style.display  = 'block';
+                if (savedText) savedText.textContent   = note;
+                if (editArea)  editArea.style.display  = 'none';
+                if (editBtn)   editBtn.style.display   = 'inline';
                 // Update cache so action panel knows draft exists
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
                 if (idx !== -1) allComplaints[idx].finalNoteDraft = note;
@@ -2315,25 +2307,78 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    function showEscalatedClosurePanel(ref, type) {
-        const crPanel  = document.getElementById('esc-cr-panel-'  + ref);
-        const nrnPanel = document.getElementById('esc-nrn-panel-' + ref);
-        const btnRes   = document.getElementById('esc-close-resolved-btn-'   + ref);
-        const btnUnres = document.getElementById('esc-close-unresolved-btn-' + ref);
-        if (type === 'resolved') {
-            if (nrnPanel) nrnPanel.style.display = 'none';
-            if (crPanel)  crPanel.style.display  = 'block';
-            if (btnRes)   btnRes.className   = 'btn-close-type active-resolved';
-            if (btnUnres) btnUnres.className = 'btn-close-type';
-        } else {
-            if (crPanel)  crPanel.style.display  = 'none';
-            if (nrnPanel) nrnPanel.style.display = 'block';
-            if (btnUnres) btnUnres.className = 'btn-close-type active-unresolved';
-            if (btnRes)   btnRes.className   = 'btn-close-type';
-        }
-    }
+    function closeEscalated(ref, type) {
+        const isResolved = type === 'resolved';
+        const feedback   = document.getElementById('esc-feedback-' + ref);
+        const btnRes     = document.getElementById('esc-close-resolved-btn-' + ref);
+        const btnUnres   = document.getElementById('esc-close-unresolved-btn-' + ref);
+        const userName   = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+        const finalStatus = isResolved ? 'Closed - Resolved (Escalated)' : 'Closed - Unresolved (Escalated)';
 
-    function saveEscalatedClosure(ref, type, andSend) {
+        const confirmed = confirm(
+            'Close this complaint as ' + (isResolved ? 'Resolved (Escalated)' : 'Unresolved (Escalated)') + '?\n\n' +
+            'A closure notice will be sent to the resident.\nThis cannot be undone.\n\nProceed?'
+        );
+        if (!confirmed) return;
+
+        if (btnRes)   btnRes.disabled   = true;
+        if (btnUnres) btnUnres.disabled = true;
+        setFeedback(feedback, '', '');
+
+        const callbackName = 'escCloseCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=closeEscalated'
+            + '&ref='       + encodeURIComponent(ref)
+            + '&type='      + encodeURIComponent(type)
+            + '&userName='  + encodeURIComponent(userName)
+            + '&callback='  + callbackName;
+
+        const timeout = setTimeout(function() {
+            cleanup(callbackName);
+            if (btnRes)   btnRes.disabled   = false;
+            if (btnUnres) btnUnres.disabled = false;
+            setFeedback(feedback, 'Timed out — please try again.', 'error');
+        }, 20000);
+
+        window[callbackName] = function(data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            if (data.success) {
+                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                if (idx !== -1) {
+                    allComplaints[idx].status   = data.finalStatus;
+                    allComplaints[idx].closedAt = new Date().toString();
+                    // Write Final Note to Activity Log cache
+                    if (data.finalNoteEntry) {
+                        const existing = allComplaints[idx].activityLog || '';
+                        allComplaints[idx].activityLog = data.finalNoteEntry + (existing ? '\n' + existing : '');
+                    }
+                    allComplaints[idx].finalNoteDraft = '';
+                    const cardEl = document.getElementById('card-' + ref);
+                    if (cardEl) {
+                        const wasExpanded = cardEl.classList.contains('expanded');
+                        cardEl.outerHTML = buildCard(allComplaints[idx]);
+                        const newCard = document.getElementById('card-' + ref);
+                        if (newCard && wasExpanded) newCard.classList.add('expanded');
+                    }
+                    updateSummary(allComplaints);
+                }
+            } else {
+                if (btnRes)   btnRes.disabled   = false;
+                if (btnUnres) btnUnres.disabled = false;
+                setFeedback(feedback, 'Error: ' + (data.error || 'Unknown.'), 'error');
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function() {
+            cleanup(callbackName);
+            if (btnRes)   btnRes.disabled   = false;
+            if (btnUnres) btnUnres.disabled = false;
+            setFeedback(feedback, 'Network error.', 'error');
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
         const isResolved = type === 'resolved';
         const btn      = andSend
             ? (isResolved ? document.getElementById('esc-send-cr-'  + ref) : document.getElementById('esc-send-nrn-' + ref))
@@ -2681,7 +2726,12 @@ TECHNICAL:
                         const wasExpanded = cardEl.classList.contains('expanded');
                         cardEl.outerHTML  = buildCard(allComplaints[idx]);
                         const newCard = document.getElementById('card-' + ref);
-                        if (newCard && wasExpanded) newCard.classList.add('expanded');
+                        if (newCard && wasExpanded) {
+                            newCard.classList.add('expanded');
+                            // Ensure Activity Log pane stays open after re-render
+                            const actPane = document.getElementById('pane-activity-' + ref);
+                            if (actPane) actPane.classList.add('open');
+                        }
                         const newFeedback = document.getElementById('feedback-' + ref);
                         const newStatusEl = document.getElementById('status-'   + ref);
                         if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
@@ -2974,6 +3024,8 @@ TECHNICAL:
             .badge-acknowledged { background: #bbf7d0; color: #047857; }
             .badge-responded    { background: #e9d5ff; color: #7c3aed; }
             .badge-closed       { background: #f3f4f6; color: #374151; }
+            .badge-escalated    { background: #fef3c7; color: #b45309; }
+            .badge-escalated-closed { background: #ede9fe; color: #6d28d9; }
             .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase;
                              letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;
                              padding-bottom: 4px; margin: 16px 0 10px; }
@@ -2981,7 +3033,7 @@ TECHNICAL:
             .field-full    { grid-column: 1 / -1; }
             .field-label   { font-size: 8pt; font-weight: 700; color: #6b7280;
                              text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px; }
-            .field-value   { font-size: 10pt; color: #111; line-height: 1.5; }
+            .field-value   { font-size: 10pt; color: #111; line-height: 1.5; white-space: pre-wrap; }
             .field-empty   { color: #9ca3af; font-style: italic; }
             .board-response { background: #f0fdf4; border: 1px solid #bbf7d0;
                               border-left: 4px solid #16a34a; padding: 10px 12px;
@@ -3065,20 +3117,23 @@ TECHNICAL:
         if (!c) { alert('Complaint record not found.'); return; }
 
         const normSt = normaliseStatus(c.status);
+        const isEscClosed = isEscalatedClosedStatus(normSt);
         const statusClass = {
-            'Open':               'badge-open',
-            'Acknowledged':       'badge-acknowledged',
-            'Responded':          'badge-responded',
-            'Closed - Resolved':  'badge-closed',
-            'Closed - Unresolved':'badge-closed',
-            'Escalated':          'badge-escalated'
+            'Open':                              'badge-open',
+            'Acknowledged':                      'badge-acknowledged',
+            'Responded':                         'badge-responded',
+            'Closed - Resolved':                 'badge-closed',
+            'Closed - Unresolved':               'badge-closed',
+            'Escalated':                         'badge-escalated',
+            'Closed - Resolved (Escalated)':     'badge-escalated-closed',
+            'Closed - Unresolved (Escalated)':   'badge-escalated-closed'
         }[normSt] || '';
 
         const boardBlock = c.boardResponse
             ? '<div class="board-response"><div class="field-label">Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
             : '';
 
-        // Non-Resolution Notice block
+        // Standard Non-Resolution Notice block
         var nrnBlock = '';
         if (normSt === 'Closed - Unresolved' && c.closureNarrative) {
             var narrative    = c.closureNarrative;
@@ -3098,7 +3153,7 @@ TECHNICAL:
                 + '</div>';
         }
 
-        // Resolution Summary block (Closed - Resolved)
+        // Standard Resolution Summary block
         var resolvedBlock = '';
         if (normSt === 'Closed - Resolved' && c.closureNarrative) {
             var resNarrative  = c.closureNarrative;
@@ -3114,10 +3169,58 @@ TECHNICAL:
                 + '</div>';
         }
 
+        // Escalated closure blocks
+        var escalatedClosureBlock = '';
+        if (isEscClosed && c.closureNarrative) {
+            var escNarr = c.closureNarrative;
+            if (normSt === 'Closed - Resolved (Escalated)') {
+                var escSm = escNarr.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+                var escSt = escSm ? escSm[1].trim() : escNarr;
+                escalatedClosureBlock = '<div class="section-title">Escalated Closure — Resolution Summary</div>'
+                    + '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-left:4px solid #7c3aed;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
+                    + '<div class="field-label" style="margin-bottom:6px;">How this matter was resolved (escalation process)</div>'
+                    + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(escSt) + '</div>'
+                    + '<div class="field-label" style="margin-bottom:6px;">Escalated closure notice</div>'
+                    + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
+                    + escHtml(CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK) + '</div>'
+                    + '</div>';
+            } else {
+                var escRm = escNarr.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+                var escAm = escNarr.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+                var escRt = escRm ? escRm[1].trim() : escNarr;
+                var escAt = escAm ? escAm[1].trim() : '';
+                escalatedClosureBlock = '<div class="section-title">Escalated Closure — Non-Resolution Notice</div>'
+                    + '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-left:4px solid #6d28d9;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
+                    + '<div class="field-label" style="margin-bottom:6px;">Why this matter was not resolved (escalation process)</div>'
+                    + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(escRt) + '</div>'
+                    + (escAt ? '<div class="field-label" style="margin-bottom:6px;">Actions taken during escalation</div>'
+                        + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(escAt) + '</div>' : '')
+                    + '<div class="field-label" style="margin-bottom:6px;">Escalated closure notice</div>'
+                    + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
+                    + escHtml(NON_RESOLUTION_ESCALATED_FIXED_BLOCK) + '</div>'
+                    + '</div>';
+            }
+        }
+
+        // Escalation block (for any complaint that has been escalated)
+        var escalationBlock = '';
+        if (c.escalatedAt) {
+            const escBodyVal  = getEscalationBody(c.activityLog);
+            const finalNoteVal = getFinalNote(c.activityLog);
+            escalationBlock = '<div class="section-title">Escalation</div>'
+                + '<div style="background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #d97706;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
+                + '<div class="field-label" style="margin-bottom:2px;">Escalated</div>'
+                + '<div class="field-value" style="margin-bottom:8px;">' + escHtml(formatDate(c.escalatedAt)) + '</div>'
+                + (escBodyVal ? '<div class="field-label" style="margin-bottom:2px;">Escalating Organisation</div>'
+                    + '<div class="field-value" style="margin-bottom:8px;">' + escHtml(escBodyVal) + '</div>' : '')
+                + (finalNoteVal && fullRecord ? '<div class="field-label" style="margin-bottom:2px;">Final Note (Internal)</div>'
+                    + '<div class="field-value">' + escHtml(finalNoteVal) + '</div>' : '')
+                + '</div>';
+        }
 
         const activityBlock = fullRecord && c.activityLog
             ? '<div class="section-title">Activity Log</div><div class="activity-log-print">'
-              + c.activityLog.split('\n').map(line => '<div class="activity-log-entry-print">' + escHtml(line) + '</div>').join('')
+              + c.activityLog.split('\n').reverse().map(line => '<div class="activity-log-entry-print">' + escHtml(line) + '</div>').join('')
               + '</div>'
             : '';
 
@@ -3167,6 +3270,8 @@ TECHNICAL:
             ${boardBlock}
             ${nrnBlock}
             ${resolvedBlock}
+            ${escalationBlock}
+            ${escalatedClosureBlock}
             ${activityBlock}
             ${printFooter()}
             </body></html>`;
