@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.5.5
-  Backend:          ComplaintsManager V2.3.22
+  Frontend Version: V2.5.6
+  Backend:          ComplaintsManager V2.3.23
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.6 (Jun 2026): escalatedClosureBlock in doPrint() now reads Final Note from
+    c.finalNoteDraft (col U) directly -- no Activity Log parsing. Col U is retained
+    after closure as permanent record (backend V2.3.23). getFinalNote() no longer
+    called for print output. Backend reference updated to V2.3.23.
+
   V2.5.5 (Jun 2026): Two further doPrint() fixes. (1) resolvedBlock and nrnBlock
     now guard on [TYPE:RESOLVED] / [TYPE:UNRESOLVED] tag within c.closureNarrative --
     prevents a complaint that was Closed - Unresolved before escalation bleeding its
@@ -1782,26 +1787,30 @@ TECHNICAL:
     }
 
     // ── HELPER: extract Final Note text from Activity Log ─────────────
-    // Activity Log entries are newline-delimited with timestamp prefix.
-    // Final Note text may itself contain newlines -- collect all continuation
-    // lines (those without a timestamp prefix) until the next entry or end.
+    // Activity Log is newest-first. The FINAL NOTE entry is a single timestamped
+    // line; any newlines within the text cause continuation lines to appear ABOVE
+    // it in the array (as newer-looking lines without timestamps). Scan in reverse
+    // (oldest to newest) so the prefix line is found first and continuation lines
+    // follow naturally as the next entries toward the top of the array.
     function getFinalNote(activityLog) {
         if (!activityLog) return null;
         const lines = activityLog.split('\n');
         const prefix       = 'FINAL NOTE (Escalation outcome):';
         const legacyPrefix = 'FINAL NOTE (VicAssist outcome):';
         const tsPattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \|/;
-        for (var i = 0; i < lines.length; i++) {
+        // Scan oldest-first (reverse)
+        for (var i = lines.length - 1; i >= 0; i--) {
             const idx2 = lines[i].indexOf(prefix);
             const idx3 = lines[i].indexOf(legacyPrefix);
             var startText = null;
             if (idx2 !== -1) startText = lines[i].substring(idx2 + prefix.length).trim();
             else if (idx3 !== -1) startText = lines[i].substring(idx3 + legacyPrefix.length).trim();
             if (startText !== null) {
+                // Collect continuation lines going upward (toward newer entries)
                 var parts = [startText];
-                for (var j = i + 1; j < lines.length; j++) {
+                for (var j = i - 1; j >= 0; j--) {
                     if (tsPattern.test(lines[j])) break;
-                    parts.push(lines[j]);
+                    parts.unshift(lines[j]);
                 }
                 return parts.join('\n').trim();
             }
@@ -3078,10 +3087,11 @@ TECHNICAL:
                 + '</div>';
         }
 
-        // Escalated closure block — Final Note is the closure record (from Activity Log)
+        // Escalated closure block — Final Note read from c.finalNoteDraft (col U).
+        // Col U is retained after closure as the permanent record.
         var escalatedClosureBlock = '';
         if (isEscClosed) {
-            const escFinalNote = getFinalNote(c.activityLog);
+            const escFinalNote = c.finalNoteDraft || '';
             if (normSt === 'Closed - Resolved (Escalated)') {
                 escalatedClosureBlock = '<div class="section-title">Escalation Closure</div>'
                     + '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-left:4px solid #7c3aed;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
@@ -3169,8 +3179,8 @@ TECHNICAL:
                 ${fieldRow('Closed',        c.closedAt       ? formatDate(c.closedAt)       : '—', false)}
             </div>
             ${boardBlock}
-            ${nrnBlock}
             ${resolvedBlock}
+            ${nrnBlock}
             ${escalationBlock}
             ${escalatedClosureBlock}
             ${activityBlock}
