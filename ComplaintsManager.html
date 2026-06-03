@@ -6,13 +6,22 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.5.15
+  Frontend Version: V2.5.16
   Backend:          ComplaintsManager V2.3.24
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.16 (Jun 2026): G5 -- dynamic Escalation Closure fixed block. Replaced
+    static CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK and
+    NON_RESOLUTION_ESCALATED_FIXED_BLOCK constants with buildEscalatedFixedBlock
+    (escalatingOrg, type) function. Omits the selected escalating organisation
+    from the pathway list. All five dropdown options covered: VicAssist, VCAT,
+    Consumer Affairs Victoria, Legal representation (each removed when selected),
+    Independent Legal Advice always present. escBodyVal read from Activity Log
+    via getEscalationBody() inside escalatedClosureBlock scope.
+
   V2.5.15 (Jun 2026): Fix Acknowledgement Method showing "Not recorded".
     Detection now three-way: (1) "Notification sent to resident" if Activity
     Log contains "Acknowledgement notification sent"; (2) "Manual — no
@@ -1565,39 +1574,71 @@ TECHNICAL:
         '  Retirement Villages Act 2024 (Vic).\n' +
         '------------------------------------------------------------';
 
-    // Used when closing as Resolved from Escalated state
-    const CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK =
-        'OUTCOME OF ESCALATION PROCESS\n' +
-        '------------------------------------------------------------\n' +
-        'This complaint was escalated for external dispute resolution\n' +
-        'and has now been recorded as resolved and closed following\n' +
-        'the conclusion of that process.\n\n' +
-        'If you have further concerns regarding the outcome, you\n' +
-        'retain the right at any time to:\n\n' +
-        '  Consumer Affairs Victoria\n' +
-        '  Seek advice and assistance regarding your rights\n' +
-        '  Phone: 1300 55 81 81\n\n' +
-        '  Independent Legal Advice\n' +
-        '  You have the right to seek independent legal advice at\n' +
-        '  any time regarding your rights as a resident under the\n' +
-        '  Retirement Villages Act 2024 (Vic).\n' +
-        '------------------------------------------------------------';
+    // ── Dynamic escalated closure fixed block ────────────────────────────
+    // Builds the OUTCOME OF ESCALATION PROCESS block, omitting the pathway
+    // that was used as the escalating organisation. Independent Legal Advice
+    // is always included. type: 'resolved' | 'unresolved'.
+    function buildEscalatedFixedBlock(escalatingOrg, type) {
+        const org = (escalatingOrg || '').trim();
 
-    // Used when closing as Unresolved from Escalated state
-    const NON_RESOLUTION_ESCALATED_FIXED_BLOCK =
-        'YOUR RIGHTS FOLLOWING THIS OUTCOME\n' +
-        '------------------------------------------------------------\n' +
-        'This complaint has been through an escalated dispute\n' +
-        'resolution process and is now closed as unresolved.\n\n' +
-        'You retain the right at any time to:\n\n' +
-        '  Consumer Affairs Victoria\n' +
-        '  Seek further advice and assistance regarding your rights\n' +
-        '  Phone: 1300 55 81 81\n\n' +
-        '  Independent Legal Advice\n' +
-        '  You have the right to seek independent legal advice at\n' +
-        '  any time regarding your rights as a resident under the\n' +
-        '  Retirement Villages Act 2024 (Vic).\n' +
-        '------------------------------------------------------------';
+        // All available pathways keyed by dropdown value
+        const pathways = {
+            'VicAssist': [
+                '  VicAssist Retirement Villages',
+                '  Free conciliation service for retirement village disputes',
+                '  Website: vic.gov.au/retirement-village-dispute-help'
+            ],
+            'VCAT': [
+                '  Victorian Civil and Administrative Tribunal (VCAT)',
+                '  Formal dispute resolution for retirement village matters',
+                '  Website: vcat.vic.gov.au'
+            ],
+            'Consumer Affairs Victoria': [
+                '  Consumer Affairs Victoria',
+                '  Seek advice and assistance regarding your rights',
+                '  Phone: 1300 55 81 81'
+            ],
+            'Legal representation': [
+                '  Legal Representation',
+                '  Engage a solicitor to act on your behalf',
+                '  Refer to the Law Institute of Victoria: liv.asn.au'
+            ]
+        };
+
+        // Always-present pathway
+        const legalAdvice = [
+            '  Independent Legal Advice',
+            '  You have the right to seek independent legal advice at',
+            '  any time regarding your rights as a resident under the',
+            '  Retirement Villages Act 2024 (Vic).'
+        ];
+
+        // Build pathway lines, excluding the one that was used
+        var lines = [];
+        Object.keys(pathways).forEach(function(key) {
+            if (key !== org) {
+                lines.push(pathways[key].join('\n'));
+            }
+        });
+        lines.push(legalAdvice.join('\n'));
+
+        var intro = type === 'resolved'
+            ? 'OUTCOME OF ESCALATION PROCESS\n' +
+              '------------------------------------------------------------\n' +
+              'This complaint was escalated for external dispute resolution\n' +
+              'and has now been recorded as resolved and closed following\n' +
+              'the conclusion of that process.\n\n' +
+              'If you have further concerns regarding the outcome, you\n' +
+              'retain the right at any time to:'
+            : 'YOUR RIGHTS FOLLOWING THIS OUTCOME\n' +
+              '------------------------------------------------------------\n' +
+              'This complaint has been through an escalated dispute\n' +
+              'resolution process and is now closed as unresolved.\n\n' +
+              'You retain the right at any time to:';
+
+        return intro + '\n\n' + lines.join('\n\n') + '\n' +
+               '------------------------------------------------------------';
+    }
 
     function onStatusChange(ref, value) {
         // Show/hide organisation dropdown when Escalated is selected
@@ -3176,6 +3217,7 @@ TECHNICAL:
         var escalatedClosureBlock = '';
         if (isEscClosed) {
             const escFinalNote = c.finalNoteDraft || '';
+            const escBodyVal   = getEscalationBody(c.activityLog) || '';
             if (normSt === 'Closed - Resolved (Escalated)') {
                 escalatedClosureBlock = '<div class="section-title">Escalation Closure</div>'
                     + '<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-left:4px solid #7c3aed;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
@@ -3183,7 +3225,7 @@ TECHNICAL:
                         + '<div class="field-value" style="margin-bottom:12px;white-space:pre-wrap;">' + escHtml(escFinalNote) + '</div>' : '')
                     + '<div class="field-label" style="margin-bottom:6px;">Escalated closure notice</div>'
                     + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
-                    + escHtml(CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK) + '</div>'
+                    + escHtml(buildEscalatedFixedBlock(escBodyVal, 'resolved')) + '</div>'
                     + '</div>';
             } else {
                 escalatedClosureBlock = '<div class="section-title">Escalation Closure</div>'
@@ -3192,7 +3234,7 @@ TECHNICAL:
                         + '<div class="field-value" style="margin-bottom:12px;white-space:pre-wrap;">' + escHtml(escFinalNote) + '</div>' : '')
                     + '<div class="field-label" style="margin-bottom:6px;">Escalated closure notice</div>'
                     + '<div style="font-family:monospace;font-size:8.5pt;white-space:pre-wrap;color:#374151;background:#f3f4f6;padding:8px;border-radius:2px;">'
-                    + escHtml(NON_RESOLUTION_ESCALATED_FIXED_BLOCK) + '</div>'
+                    + escHtml(buildEscalatedFixedBlock(escBodyVal, 'unresolved')) + '</div>'
                     + '</div>';
             }
         }
