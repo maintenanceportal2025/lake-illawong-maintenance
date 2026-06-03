@@ -6,13 +6,26 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.5.16
+  Frontend Version: V2.5.18
   Backend:          ComplaintsManager V2.3.24
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.18 (Jun 2026): Add dynamic pathway block preview to escalated action
+    panel. When Escalation Closure note is recorded and close buttons are
+    shown, the panel now displays the buildEscalatedFixedBlock output under
+    "Pathway notice" label -- matching the standard Resolved/Unresolved panels
+    which show their fixed blocks before sending. Org read from Activity Log
+    via getEscalationBody(). Note: heading uses resolved wording for preview
+    (pathways identical for both closure types at this stage).
+
+  V2.5.17 (Jun 2026): Add dynamic pathway block to accordion escalation pane
+    when isEscalatedClosed. Calls buildEscalatedFixedBlock(escalationBody2,
+    type) -- same function used in doPrint(). Displays under "Pathway Notice"
+    label in monospace style. Backend V2.3.29 required for matching email fix.
+
   V2.5.16 (Jun 2026): G5 -- dynamic Escalation Closure fixed block. Replaced
     static CLOSURE_RESOLVED_ESCALATED_FIXED_BLOCK and
     NON_RESOLUTION_ESCALATED_FIXED_BLOCK constants with buildEscalatedFixedBlock
@@ -2072,26 +2085,36 @@ TECHNICAL:
                     <div class="final-note-readonly">${escHtml(finalNoteDisplay)}</div>
                 </div>`;
             }
-            if (isEscalatedClosed && c.closureNarrative) {
-                // Show escalated closure narrative
+            if (isEscalatedClosed) {
+                // Show escalated closure narrative if present
                 const isEscRes = normStatus === 'Closed - Resolved (Escalated)';
-                const sm = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
-                const rm = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
-                const am = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
-                if (isEscRes && sm) {
-                    escalationBody += `
-                    <div style="margin-top:12px;">
-                        <div class="detail-label" style="margin-bottom:6px;">Resolution Summary</div>
-                        <div class="board-response-readonly" style="border-color:rgba(167,139,250,0.3);">${escHtml(sm[1].trim())}</div>
-                    </div>`;
-                } else if (!isEscRes && rm) {
-                    escalationBody += `
-                    <div style="margin-top:12px;">
-                        <div class="detail-label" style="margin-bottom:6px;">Why not resolved</div>
-                        <div class="board-response-readonly" style="border-color:rgba(124,58,237,0.3);margin-bottom:8px;">${escHtml(rm[1].trim())}</div>
-                        ${am ? `<div class="detail-label" style="margin-bottom:6px;">Actions taken</div><div class="board-response-readonly" style="border-color:rgba(124,58,237,0.3);">${escHtml(am[1].trim())}</div>` : ''}
-                    </div>`;
+                if (c.closureNarrative) {
+                    const sm = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+                    const rm = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+                    const am = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+                    if (isEscRes && sm) {
+                        escalationBody += `
+                        <div style="margin-top:12px;">
+                            <div class="detail-label" style="margin-bottom:6px;">Resolution Summary</div>
+                            <div class="board-response-readonly" style="border-color:rgba(167,139,250,0.3);">${escHtml(sm[1].trim())}</div>
+                        </div>`;
+                    } else if (!isEscRes && rm) {
+                        escalationBody += `
+                        <div style="margin-top:12px;">
+                            <div class="detail-label" style="margin-bottom:6px;">Why not resolved</div>
+                            <div class="board-response-readonly" style="border-color:rgba(124,58,237,0.3);margin-bottom:8px;">${escHtml(rm[1].trim())}</div>
+                            ${am ? `<div class="detail-label" style="margin-bottom:6px;">Actions taken</div><div class="board-response-readonly" style="border-color:rgba(124,58,237,0.3);">${escHtml(am[1].trim())}</div>` : ''}
+                        </div>`;
+                    }
                 }
+                // Dynamic pathway block -- omits the org that was used
+                escalationBody += `
+                <div style="margin-top:14px;">
+                    <div class="detail-label" style="margin-bottom:6px;">Pathway Notice</div>
+                    <div style="font-family:monospace;font-size:0.78rem;white-space:pre-wrap;color:rgba(255,255,255,0.75);background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:2px;padding:10px 12px;">` +
+                    escHtml(buildEscalatedFixedBlock(escalationBody2, isEscRes ? 'resolved' : 'unresolved')) +
+                    `</div>
+                </div>`;
             } else if (isEscalated) {
                 // Escalated -- show saved draft div + editable textarea + Save button
                 escalationBody += `
@@ -2275,11 +2298,16 @@ TECHNICAL:
             if (!finalNote) {
                 escalatedActionBody = `<div class="response-notice notice-pending">&#9432; Save an Escalation Closure note in the Escalation pane above, then return here to close the complaint.</div>`;
             } else {
+                const escOrg = getEscalationBody(c.activityLog) || '';
                 escalatedActionBody = `
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Escalation Closure note recorded. Select the outcome to close this complaint.</p>
                 <button class="btn-close-type" id="esc-close-resolved-btn-${safeRef}" onclick="closeEscalated('${safeRef}', 'resolved')">&#10003; Close as Resolved (Escalated)</button>
                 <button class="btn-close-type" id="esc-close-unresolved-btn-${safeRef}" onclick="closeEscalated('${safeRef}', 'unresolved')">&#10005; Close as Unresolved (Escalated)</button>
-                <span class="save-feedback" id="esc-feedback-${safeRef}"></span>`;
+                <span class="save-feedback" id="esc-feedback-${safeRef}"></span>
+                <div style="margin-top:14px;">
+                    <div class="nrn-fixed-label">Pathway notice — included automatically in the closure notice sent to the resident</div>
+                    <div class="nrn-fixed-block">${escHtml(buildEscalatedFixedBlock(escOrg, 'resolved'))}</div>
+                </div>`;
             }
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
