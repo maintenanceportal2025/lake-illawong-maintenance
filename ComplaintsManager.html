@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.5.10
+  Frontend Version: V2.5.11
   Backend:          ComplaintsManager V2.3.24
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.11 (Jun 2026): Activity Log now updates immediately without refresh.
+    All write callbacks (acknowledge, saveUpdate, closeEscalated, doSendToResident)
+    now read data.activityLog from the backend response and set it directly into
+    the cache. All setTimeout/refreshComplaintCache complexity removed from write
+    paths. refreshComplaintCache helper retained for future use. Backend V2.3.26
+    required.
+
   V2.5.10 (Jun 2026): Add 2-second delay to all refreshComplaintCache calls
     to prevent racing the Sheets write. Closure Save & Send now also gets
     its own delayed refresh so SYSTEM log entries appear without manual
@@ -2284,13 +2291,7 @@ TECHNICAL:
                 if (idx !== -1) {
                     allComplaints[idx].status        = 'Acknowledged';
                     allComplaints[idx].acknowledgedAt = new Date().toString();
-                    const now = new Date(); const pad = n => n.toString().padStart(2,'0');
-                    const dStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
-                    const tStr = pad(now.getHours())+':'+pad(now.getMinutes());
-                    const uName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-                    const entry = dStr+' '+tStr+' | '+uName+' | Status changed to Acknowledged';
-                    const existing = allComplaints[idx].activityLog || '';
-                    allComplaints[idx].activityLog = existing ? entry+'\n'+existing : entry;
+                    if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                     const cardEl = document.getElementById('card-' + ref);
                     if (cardEl) {
                         const wasExpanded = cardEl.classList.contains('expanded');
@@ -2299,20 +2300,6 @@ TECHNICAL:
                         if (newCard && wasExpanded) newCard.classList.add('expanded');
                     }
                     updateSummary(allComplaints);
-                    // Delayed refresh -- allows Sheets to propagate before re-read
-                    setTimeout(function() {
-                        refreshComplaintCache(ref, function(updated) {
-                            if (!updated) return;
-                            const cardEl2 = document.getElementById('card-' + ref);
-                            if (cardEl2) {
-                                const wasExpanded2 = cardEl2.classList.contains('expanded');
-                                cardEl2.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
-                                const newCard2 = document.getElementById('card-' + ref);
-                                if (newCard2 && wasExpanded2) newCard2.classList.add('expanded');
-                            }
-                            updateSummary(allComplaints);
-                        });
-                    }, 2000);
                 }
             } else {
                 if (btn) { btn.disabled = false; btn.textContent = '\u2713 Acknowledge Complaint'; }
@@ -2441,6 +2428,7 @@ TECHNICAL:
                         allComplaints[idx].activityLog = data.finalNoteEntry + (existing ? '\n' + existing : '');
                     }
                     allComplaints[idx].finalNoteDraft = '';
+                    if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                     const cardEl = document.getElementById('card-' + ref);
                     if (cardEl) {
                         const wasExpanded = cardEl.classList.contains('expanded');
@@ -2449,20 +2437,6 @@ TECHNICAL:
                         if (newCard && wasExpanded) newCard.classList.add('expanded');
                     }
                     updateSummary(allComplaints);
-                    // Delayed refresh -- allows Sheets to propagate before re-read
-                    setTimeout(function() {
-                        refreshComplaintCache(ref, function(updated) {
-                            if (!updated) return;
-                            const cardEl2 = document.getElementById('card-' + ref);
-                            if (cardEl2) {
-                                const wasExpanded2 = cardEl2.classList.contains('expanded');
-                                cardEl2.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
-                                const newCard2 = document.getElementById('card-' + ref);
-                                if (newCard2 && wasExpanded2) newCard2.classList.add('expanded');
-                            }
-                            updateSummary(allComplaints);
-                        });
-                    }, 2000);
                 }
             } else {
                 if (btnRes)   btnRes.disabled   = false;
@@ -2641,23 +2615,8 @@ TECHNICAL:
                         allComplaints[idx].status   = data.finalStatus;
                         allComplaints[idx].closedAt = nowTs;
                         if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
+                        if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                         setFeedback(feedback, 'Closure notice sent — complaint closed.', 'success');
-                        // Delayed refresh -- allows Sheets to propagate before re-read
-                        setTimeout(function() {
-                            refreshComplaintCache(ref, function(updated) {
-                                if (!updated) return;
-                                const idxR = allComplaints.findIndex(c => c.referenceNumber === ref);
-                                if (idxR === -1) return;
-                                const cardElR = document.getElementById('card-' + ref);
-                                if (cardElR) {
-                                    const wasExpandedR = cardElR.classList.contains('expanded');
-                                    cardElR.outerHTML = buildCard(allComplaints[idxR]);
-                                    const newCardR = document.getElementById('card-' + ref);
-                                    if (newCardR && wasExpandedR) newCardR.classList.add('expanded');
-                                }
-                                updateSummary(allComplaints);
-                            });
-                        }, 2000);
 
                     // Closure narrative Save Only -- update saved div in-place, no card re-render
                     } else if (!andSend && closureNarrative) {
@@ -2689,16 +2648,7 @@ TECHNICAL:
                         if (effectiveStatus === 'Acknowledged' && !allComplaints[idx].acknowledgedAt) allComplaints[idx].acknowledgedAt = nowTs;
                         if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
                         if (boardResponse) allComplaints[idx].boardResponse = boardResponse;
-                        // Activity Log cache
-                        if (effectiveStatus) {
-                            const now = new Date(); const pad = n => n.toString().padStart(2,'0');
-                            const dateStr = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
-                            const timeStr = pad(now.getHours())+':'+pad(now.getMinutes());
-                            const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-                            const entry = dateStr+' '+timeStr+' | '+userName+' | Status changed to '+effectiveStatus;
-                            const existing = allComplaints[idx].activityLog || '';
-                            allComplaints[idx].activityLog = existing ? entry+'\n'+existing : entry;
-                        }
+                        if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                         setFeedback(feedback, 'Saved successfully.', 'success');
                     }
 
@@ -2716,25 +2666,7 @@ TECHNICAL:
                         // Refresh from server to pick up SYSTEM notification entries.
                         // Skip when andSend && boardResponse -- doSendToResident fires next
                         // and owns the card re-render for that path.
-                        if (!(andSend && boardResponse)) {
-                            setTimeout(function() {
-                                refreshComplaintCache(ref, function(updated) {
-                                    if (!updated) return;
-                                    const cardEl2 = document.getElementById('card-' + ref);
-                                    if (cardEl2) {
-                                        const wasExpanded2 = cardEl2.classList.contains('expanded');
-                                        cardEl2.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
-                                        const newCard2 = document.getElementById('card-' + ref);
-                                        if (newCard2 && wasExpanded2) {
-                                            newCard2.classList.add('expanded');
-                                            const actPane2 = document.getElementById('pane-activity-' + ref);
-                                            if (actPane2) actPane2.classList.add('open');
-                                        }
-                                    }
-                                    updateSummary(allComplaints);
-                                });
-                            }, 2000);
-                        }
+                        // activityLog updated from data.activityLog above -- no refresh needed
                         const newFeedback = document.getElementById('feedback-' + ref);
                         const newStatusEl = document.getElementById('status-'   + ref);
                         if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
@@ -2940,21 +2872,8 @@ TECHNICAL:
                         const newFeedback = document.getElementById('sendfeedback-' + ref);
                         if (newFeedback) { newFeedback.textContent = 'Sent — Board Response locked.'; newFeedback.className = 'send-feedback success'; }
                     }
+                    if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                     updateSummary(allComplaints);
-                    // Refresh from server to pick up all SYSTEM entries from sendBoardResponse
-                    refreshComplaintCache(ref, function(updated) {
-                        if (!updated) return;
-                        const cardEl3 = document.getElementById('card-' + ref);
-                        if (cardEl3) {
-                            const wasExpanded3 = cardEl3.classList.contains('expanded');
-                            cardEl3.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
-                            const newCard3 = document.getElementById('card-' + ref);
-                            if (newCard3 && wasExpanded3) newCard3.classList.add('expanded');
-                            const newFeedback3 = document.getElementById('sendfeedback-' + ref);
-                            if (newFeedback3) { newFeedback3.textContent = 'Sent — Board Response locked.'; newFeedback3.className = 'send-feedback success'; }
-                        }
-                        updateSummary(allComplaints);
-                    });
                 }
             } else {
                 feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'send-feedback error';
