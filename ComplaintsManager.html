@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.5.8
+  Frontend Version: V2.5.9
   Backend:          ComplaintsManager V2.3.24
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.9 (Jun 2026): Fix Save & Send (Board Response) broken by V2.5.8
+    refreshComplaintCache. The saveUpdate refresh was firing mid-flight and
+    destroying DOM elements that doSendToResident was still using. Fix: gate
+    the saveUpdate refresh so it does not fire when andSend && boardResponse.
+    doSendToResident now has its own refreshComplaintCache call in its success
+    callback to pick up all SYSTEM entries from sendBoardResponse.
+
   V2.5.8 (Jun 2026): Fix Activity Log not showing SYSTEM notification entries
     without page refresh. Added refreshComplaintCache(ref, callback) helper --
     calls getComplaintByRef to fetch the full server record after each action
@@ -2680,22 +2687,26 @@ TECHNICAL:
                             const actPane = document.getElementById('pane-activity-' + ref);
                             if (actPane) actPane.classList.add('open');
                         }
-                        // Refresh from server to pick up SYSTEM notification entries
-                        refreshComplaintCache(ref, function(updated) {
-                            if (!updated) return;
-                            const cardEl2 = document.getElementById('card-' + ref);
-                            if (cardEl2) {
-                                const wasExpanded2 = cardEl2.classList.contains('expanded');
-                                cardEl2.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
-                                const newCard2 = document.getElementById('card-' + ref);
-                                if (newCard2 && wasExpanded2) {
-                                    newCard2.classList.add('expanded');
-                                    const actPane2 = document.getElementById('pane-activity-' + ref);
-                                    if (actPane2) actPane2.classList.add('open');
+                        // Refresh from server to pick up SYSTEM notification entries.
+                        // Skip when andSend && boardResponse -- doSendToResident fires next
+                        // and owns the card re-render for that path.
+                        if (!(andSend && boardResponse)) {
+                            refreshComplaintCache(ref, function(updated) {
+                                if (!updated) return;
+                                const cardEl2 = document.getElementById('card-' + ref);
+                                if (cardEl2) {
+                                    const wasExpanded2 = cardEl2.classList.contains('expanded');
+                                    cardEl2.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
+                                    const newCard2 = document.getElementById('card-' + ref);
+                                    if (newCard2 && wasExpanded2) {
+                                        newCard2.classList.add('expanded');
+                                        const actPane2 = document.getElementById('pane-activity-' + ref);
+                                        if (actPane2) actPane2.classList.add('open');
+                                    }
                                 }
-                            }
-                            updateSummary(allComplaints);
-                        });
+                                updateSummary(allComplaints);
+                            });
+                        }
                         const newFeedback = document.getElementById('feedback-' + ref);
                         const newStatusEl = document.getElementById('status-'   + ref);
                         if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
@@ -2902,6 +2913,20 @@ TECHNICAL:
                         if (newFeedback) { newFeedback.textContent = 'Sent — Board Response locked.'; newFeedback.className = 'send-feedback success'; }
                     }
                     updateSummary(allComplaints);
+                    // Refresh from server to pick up all SYSTEM entries from sendBoardResponse
+                    refreshComplaintCache(ref, function(updated) {
+                        if (!updated) return;
+                        const cardEl3 = document.getElementById('card-' + ref);
+                        if (cardEl3) {
+                            const wasExpanded3 = cardEl3.classList.contains('expanded');
+                            cardEl3.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
+                            const newCard3 = document.getElementById('card-' + ref);
+                            if (newCard3 && wasExpanded3) newCard3.classList.add('expanded');
+                            const newFeedback3 = document.getElementById('sendfeedback-' + ref);
+                            if (newFeedback3) { newFeedback3.textContent = 'Sent — Board Response locked.'; newFeedback3.className = 'send-feedback success'; }
+                        }
+                        updateSummary(allComplaints);
+                    });
                 }
             } else {
                 feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'send-feedback error';
