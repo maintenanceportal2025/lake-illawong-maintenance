@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V2.5.7
+  Frontend Version: V2.5.8
   Backend:          ComplaintsManager V2.3.24
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.5.8 (Jun 2026): Fix Activity Log not showing SYSTEM notification entries
+    without page refresh. Added refreshComplaintCache(ref, callback) helper --
+    calls getComplaintByRef to fetch the full server record after each action
+    and merges it into the cache. Card re-renders twice: immediately from local
+    cache for responsiveness, then again from the refreshed server record to
+    pick up all SYSTEM entries. Applied to: acknowledge callback, saveUpdate
+    callback (status/escalation/closure), closeEscalated callback.
+
   V2.5.7 (Jun 2026): Rename all user-facing "Final Note" references to
     "Escalation Closure" to match print report terminology. Affected: closed
     pane label, textarea pane label, Edit button, action panel notices, and
@@ -2278,6 +2286,18 @@ TECHNICAL:
                         if (newCard && wasExpanded) newCard.classList.add('expanded');
                     }
                     updateSummary(allComplaints);
+                    // Refresh from server to pick up SYSTEM notification entries
+                    refreshComplaintCache(ref, function(updated) {
+                        if (!updated) return;
+                        const cardEl2 = document.getElementById('card-' + ref);
+                        if (cardEl2) {
+                            const wasExpanded2 = cardEl2.classList.contains('expanded');
+                            cardEl2.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
+                            const newCard2 = document.getElementById('card-' + ref);
+                            if (newCard2 && wasExpanded2) newCard2.classList.add('expanded');
+                        }
+                        updateSummary(allComplaints);
+                    });
                 }
             } else {
                 if (btn) { btn.disabled = false; btn.textContent = '\u2713 Acknowledge Complaint'; }
@@ -2414,6 +2434,18 @@ TECHNICAL:
                         if (newCard && wasExpanded) newCard.classList.add('expanded');
                     }
                     updateSummary(allComplaints);
+                    // Refresh from server to pick up SYSTEM notification entries
+                    refreshComplaintCache(ref, function(updated) {
+                        if (!updated) return;
+                        const cardEl2 = document.getElementById('card-' + ref);
+                        if (cardEl2) {
+                            const wasExpanded2 = cardEl2.classList.contains('expanded');
+                            cardEl2.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
+                            const newCard2 = document.getElementById('card-' + ref);
+                            if (newCard2 && wasExpanded2) newCard2.classList.add('expanded');
+                        }
+                        updateSummary(allComplaints);
+                    });
                 }
             } else {
                 if (btnRes)   btnRes.disabled   = false;
@@ -2648,6 +2680,22 @@ TECHNICAL:
                             const actPane = document.getElementById('pane-activity-' + ref);
                             if (actPane) actPane.classList.add('open');
                         }
+                        // Refresh from server to pick up SYSTEM notification entries
+                        refreshComplaintCache(ref, function(updated) {
+                            if (!updated) return;
+                            const cardEl2 = document.getElementById('card-' + ref);
+                            if (cardEl2) {
+                                const wasExpanded2 = cardEl2.classList.contains('expanded');
+                                cardEl2.outerHTML = buildCard(allComplaints[allComplaints.findIndex(c => c.referenceNumber === ref)]);
+                                const newCard2 = document.getElementById('card-' + ref);
+                                if (newCard2 && wasExpanded2) {
+                                    newCard2.classList.add('expanded');
+                                    const actPane2 = document.getElementById('pane-activity-' + ref);
+                                    if (actPane2) actPane2.classList.add('open');
+                                }
+                            }
+                            updateSummary(allComplaints);
+                        });
                         const newFeedback = document.getElementById('feedback-' + ref);
                         const newStatusEl = document.getElementById('status-'   + ref);
                         if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
@@ -2884,6 +2932,36 @@ TECHNICAL:
             var body      = rest ? '\n' + escHtml(rest) : '';
             return '<div class="br-entry">' + header + body + '</div>';
         }).join('');
+    }
+
+    // ── HELPER: refresh a single complaint from the server ───────────────
+    // Fetches the latest record via getComplaintByRef and updates the cache.
+    // Ensures the Activity Log reflects all entries written by the backend
+    // (including SYSTEM notification entries) without requiring a page refresh.
+    // Calls callback(updatedComplaint) on success, or callback(null) on failure.
+    function refreshComplaintCache(ref, callback) {
+        const cbName = 'refreshCacheCallback_' + Date.now();
+        const timeout = setTimeout(function() {
+            cleanup(cbName);
+            if (callback) callback(null);
+        }, 10000);
+        window[cbName] = function(data) {
+            clearTimeout(timeout); cleanup(cbName);
+            if (data.success && data.complaint) {
+                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                if (idx !== -1) {
+                    // Merge server record into cache -- preserve any unsaved local state
+                    allComplaints[idx] = Object.assign({}, allComplaints[idx], data.complaint);
+                }
+                if (callback) callback(data.complaint);
+            } else {
+                if (callback) callback(null);
+            }
+        };
+        const script = document.createElement('script');
+        script.onerror = function() { clearTimeout(timeout); cleanup(cbName); if (callback) callback(null); };
+        script.src = BACKEND_URL + '?action=getComplaintByRef&ref=' + encodeURIComponent(ref) + '&callback=' + cbName;
+        document.head.appendChild(script);
     }
 
     function setFeedback(el, msg, type) { el.textContent = msg; el.className = 'save-feedback ' + type; }
