@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.0
+  Frontend Version: V3.0.1
   Backend:          DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.1 (Jun 2026): Resident lookup added to Log Dispute modal.
+    Party A: search by name via getUnitListData (ManagementCentral),
+    select from results, unit/email/mobile auto-populate. Stage 1 only.
+    Party B: same lookup with free-text fallback for non-residents --
+    "Not a resident" toggle clears lookup and enables manual entry.
+    MGMT_URL added to CONFIG. allResidents loaded on auth success.
+    Lookup CSS added (lookup-row, lookup-results, lookup-result-item).
+
   V3.0.0 (Jun 2026): Initial release.
     New module -- dispute resolution system.
     Two-party model: Party A and Party B managed in a single record.
@@ -433,6 +441,47 @@ TECHNICAL:
             white-space: pre-wrap; font-family: monospace; line-height: 1.5;
         }
 
+        /* ── RESIDENT LOOKUP ────────────────────────────────────── */
+        .lookup-row {
+            display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px;
+        }
+        .lookup-row .form-field { flex: 1; margin-bottom: 0; }
+        .lookup-btn {
+            padding: 9px 16px; background: rgba(13,148,136,0.2);
+            border: 1px solid rgba(13,148,136,0.5); border-radius: 4px;
+            color: #0d9488; font-size: 0.85rem; font-weight: 600;
+            cursor: pointer; white-space: nowrap; transition: all 0.2s; height: 38px;
+        }
+        .lookup-btn:hover { background: rgba(13,148,136,0.35); }
+        .lookup-results {
+            display: none; margin-top: 4px;
+            border: 1px solid #d1d5db; border-radius: 4px; overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); background: white;
+        }
+        .lookup-result-item {
+            padding: 9px 14px; color: #1e293b; font-size: 0.88rem;
+            cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: background 0.15s;
+        }
+        .lookup-result-item:last-child { border-bottom: none; }
+        .lookup-result-item:hover { background: #f0fdf4; }
+        .lookup-result-item .unit-tag {
+            color: #6b7280; font-size: 0.78rem; margin-left: 8px;
+        }
+        .prefilled {
+            background: #f0fdf4 !important; border-color: #86efac !important;
+            color: #166534 !important;
+        }
+        .not-resident-toggle {
+            font-size: 0.78rem; color: #6b7280; margin-top: 4px;
+            cursor: pointer; text-decoration: underline; display: inline-block;
+        }
+        .not-resident-toggle:hover { color: #374151; }
+        .manual-entry-note {
+            font-size: 0.78rem; color: #0d9488; margin-bottom: 8px;
+            padding: 6px 10px; background: #f0fdfa; border-radius: 4px;
+            border: 1px solid #99f6e4; display: none;
+        }
+
         /* ── LOG DISPUTE MODAL ───────────────────────────────────── */
         .modal-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -657,47 +706,78 @@ TECHNICAL:
             </div>
 
             <div class="modal-section-title">Party A <span class="form-required">*</span></div>
-            <div class="form-row">
+            <div class="lookup-row">
                 <div class="form-field">
-                    <label>Name <span class="form-required">*</span></label>
-                    <input type="text" id="logPartyAName" placeholder="Resident full name">
+                    <label>Search resident name <span class="form-required">*</span></label>
+                    <input type="text" id="partyASearch" placeholder="Type name to search..." autocomplete="off"
+                        oninput="searchParty('A')" onkeydown="if(event.key==='Enter'){event.preventDefault();searchParty('A');}">
                 </div>
-                <div class="form-field">
-                    <label>Unit <span class="form-required">*</span></label>
-                    <input type="text" id="logPartyAUnit" placeholder="e.g. Unit 12">
-                </div>
+                <button type="button" class="lookup-btn" onclick="searchParty('A')">Search</button>
             </div>
-            <div class="form-row">
-                <div class="form-field">
-                    <label>Email</label>
-                    <input type="text" id="logPartyAEmail" placeholder="resident@email.com">
+            <div id="partyAResults" class="lookup-results"></div>
+            <div id="partyAFields" style="display:none;">
+                <div class="form-row">
+                    <div class="form-field">
+                        <label>Name</label>
+                        <input type="text" id="logPartyAName" class="prefilled" readonly>
+                    </div>
+                    <div class="form-field">
+                        <label>Unit</label>
+                        <input type="text" id="logPartyAUnit" class="prefilled" readonly>
+                    </div>
                 </div>
-                <div class="form-field">
-                    <label>Mobile</label>
-                    <input type="text" id="logPartyAMobile" placeholder="04xx xxx xxx">
+                <div class="form-row">
+                    <div class="form-field">
+                        <label>Email</label>
+                        <input type="text" id="logPartyAEmail" class="prefilled" readonly>
+                    </div>
+                    <div class="form-field">
+                        <label>Mobile</label>
+                        <input type="text" id="logPartyAMobile" class="prefilled" readonly>
+                    </div>
                 </div>
             </div>
 
             <div class="modal-section-title">Party B</div>
-            <div class="form-row">
-                <div class="form-field">
-                    <label>Name</label>
-                    <input type="text" id="logPartyBName" placeholder="Resident full name">
-                </div>
-                <div class="form-field">
-                    <label>Unit</label>
-                    <input type="text" id="logPartyBUnit" placeholder="e.g. Unit 15">
-                </div>
+            <div id="partyBManualNote" class="manual-entry-note">
+                &#9432; Manual entry mode — enter details for the non-resident party.
             </div>
-            <div class="form-row">
-                <div class="form-field">
-                    <label>Email</label>
-                    <input type="text" id="logPartyBEmail" placeholder="resident@email.com">
+            <div id="partyBLookupSection">
+                <div class="lookup-row">
+                    <div class="form-field">
+                        <label>Search resident name</label>
+                        <input type="text" id="partyBSearch" placeholder="Type name to search..." autocomplete="off"
+                            oninput="searchParty('B')" onkeydown="if(event.key==='Enter'){event.preventDefault();searchParty('B');}">
+                    </div>
+                    <button type="button" class="lookup-btn" onclick="searchParty('B')">Search</button>
                 </div>
-                <div class="form-field">
-                    <label>Mobile</label>
-                    <input type="text" id="logPartyBMobile" placeholder="04xx xxx xxx">
+                <div id="partyBResults" class="lookup-results"></div>
+                <span class="not-resident-toggle" onclick="enablePartyBManual()">Not a resident — enter manually</span>
+            </div>
+            <div id="partyBFields" style="display:none;">
+                <div class="form-row">
+                    <div class="form-field">
+                        <label>Name</label>
+                        <input type="text" id="logPartyBName" placeholder="Full name">
+                    </div>
+                    <div class="form-field">
+                        <label>Unit</label>
+                        <input type="text" id="logPartyBUnit" placeholder="e.g. Unit 15 (if applicable)">
+                    </div>
                 </div>
+                <div class="form-row">
+                    <div class="form-field">
+                        <label>Email</label>
+                        <input type="text" id="logPartyBEmail" placeholder="resident@email.com">
+                    </div>
+                    <div class="form-field">
+                        <label>Mobile</label>
+                        <input type="text" id="logPartyBMobile" placeholder="04xx xxx xxx">
+                    </div>
+                </div>
+                <span id="partyBBackToLookup" class="not-resident-toggle" onclick="resetPartyBToLookup()" style="display:none;">
+                    &#8592; Search residents instead
+                </span>
             </div>
 
             <div class="modal-section-title">Nature of Dispute <span class="form-required">*</span></div>
@@ -727,6 +807,7 @@ TECHNICAL:
 <script>
     const CONFIG = {
         BACKEND_URL:   'https://script.google.com/macros/s/AKfycbx2dwG5mP6Cv-UAqii38FAINvaUvrR2oq-6uv6U_mnKqG8Rzjq56C35lOVHFS9ZsCvw/exec',
+        MGMT_URL:      'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
         SESSION_KEY:   'portalAdminVerified',
         PORTAL_URL:    'AdminPortal.html',
         ALLOWED_ROLES: ['Complaints-Manager', 'Developer'],
@@ -734,6 +815,7 @@ TECHNICAL:
     };
 
     let allDisputes = [];
+    let allResidents = [];
 
     // ── AUTH ──────────────────────────────────────────────────────────────
 
@@ -758,6 +840,7 @@ TECHNICAL:
             return;
         }
         document.getElementById('mainContent').classList.remove('hidden');
+        loadResidentList();
         loadDisputes();
     }
 
@@ -1236,6 +1319,117 @@ TECHNICAL:
 
     // ── LOG DISPUTE MODAL ─────────────────────────────────────────────────
 
+    // ── RESIDENT LOOKUP ───────────────────────────────────────────────────
+
+    function loadResidentList() {
+        var callbackName = 'dm_mgmt_' + Date.now();
+        var url = CONFIG.MGMT_URL + '?action=getUnitListData&callback=' + callbackName;
+        var timer = setTimeout(function() { delete window[callbackName]; console.warn('loadResidentList timed out'); }, 15000);
+        window[callbackName] = function(data) {
+            clearTimeout(timer); delete window[callbackName];
+            if (data.success && data.residents) {
+                allResidents = data.residents.filter(function(r) {
+                    return r.stage === 'Stage 1' || r.stage === 1;
+                });
+                console.log('Resident list loaded: ' + allResidents.length + ' residents');
+            }
+        };
+        var s = document.createElement('script');
+        s.src = url;
+        document.head.appendChild(s);
+    }
+
+    function searchParty(party) {
+        var searchId  = party === 'A' ? 'partyASearch'  : 'partyBSearch';
+        var resultsId = party === 'A' ? 'partyAResults' : 'partyBResults';
+        var query     = (document.getElementById(searchId).value || '').trim().toLowerCase();
+        var resultsEl = document.getElementById(resultsId);
+
+        if (!query) { resultsEl.style.display = 'none'; return; }
+
+        if (allResidents.length === 0) {
+            resultsEl.innerHTML = '<div class="lookup-result-item">Resident list still loading — please try again.</div>';
+            resultsEl.style.display = 'block';
+            return;
+        }
+
+        var matches = allResidents.filter(function(r) {
+            return r.residentName && r.residentName.toLowerCase().indexOf(query) !== -1;
+        });
+
+        if (matches.length === 0) {
+            resultsEl.innerHTML = '<div class="lookup-result-item">No residents found matching "' + escHtml(query) + '".</div>';
+            resultsEl.style.display = 'block';
+            return;
+        }
+
+        resultsEl.innerHTML = '';
+        matches.forEach(function(r) {
+            var item = document.createElement('div');
+            item.className = 'lookup-result-item';
+            item.innerHTML = escHtml(r.residentName) + '<span class="unit-tag">' + escHtml(r.unitNumber || '') + '</span>';
+            item.addEventListener('click', function() { selectParty(party, r); });
+            resultsEl.appendChild(item);
+        });
+        resultsEl.style.display = 'block';
+    }
+
+    function selectParty(party, resident) {
+        var resultsId = party === 'A' ? 'partyAResults' : 'partyBResults';
+        var fieldsId  = party === 'A' ? 'partyAFields'  : 'partyBFields';
+        var searchId  = party === 'A' ? 'partyASearch'  : 'partyBSearch';
+
+        document.getElementById(resultsId).style.display = 'none';
+        document.getElementById(searchId).value = resident.residentName;
+
+        var prefix = party === 'A' ? 'logPartyA' : 'logPartyB';
+        var nameEl  = document.getElementById(prefix + 'Name');
+        var unitEl  = document.getElementById(prefix + 'Unit');
+        var emailEl = document.getElementById(prefix + 'Email');
+        var mobEl   = document.getElementById(prefix + 'Mobile');
+
+        if (nameEl)  { nameEl.value  = resident.residentName || ''; nameEl.readOnly  = true; nameEl.classList.add('prefilled'); }
+        if (unitEl)  { unitEl.value  = resident.unitNumber   || ''; unitEl.readOnly  = true; unitEl.classList.add('prefilled'); }
+        if (emailEl) { emailEl.value = resident.email        || ''; emailEl.readOnly = true; emailEl.classList.add('prefilled'); }
+        if (mobEl)   { mobEl.value   = resident.phone || resident.mobile || ''; mobEl.readOnly = true; mobEl.classList.add('prefilled'); }
+
+        document.getElementById(fieldsId).style.display = 'block';
+
+        // For Party B, hide the lookup section and show back-to-lookup link
+        if (party === 'B') {
+            document.getElementById('partyBLookupSection').style.display = 'none';
+            document.getElementById('partyBManualNote').style.display    = 'none';
+            document.getElementById('partyBBackToLookup').style.display  = 'inline-block';
+        }
+    }
+
+    function enablePartyBManual() {
+        document.getElementById('partyBLookupSection').style.display = 'none';
+        document.getElementById('partyBManualNote').style.display    = 'block';
+        document.getElementById('partyBFields').style.display        = 'block';
+        document.getElementById('partyBBackToLookup').style.display  = 'inline-block';
+        // Ensure fields are editable in manual mode
+        ['logPartyBName','logPartyBUnit','logPartyBEmail','logPartyBMobile'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.readOnly = false; el.classList.remove('prefilled'); }
+        });
+    }
+
+    function resetPartyBToLookup() {
+        document.getElementById('partyBLookupSection').style.display = 'block';
+        document.getElementById('partyBManualNote').style.display    = 'none';
+        document.getElementById('partyBFields').style.display        = 'none';
+        document.getElementById('partyBBackToLookup').style.display  = 'none';
+        document.getElementById('partyBSearch').value = '';
+        document.getElementById('partyBResults').style.display = 'none';
+        ['logPartyBName','logPartyBUnit','logPartyBEmail','logPartyBMobile'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.value = ''; el.readOnly = false; el.classList.remove('prefilled'); }
+        });
+    }
+
+    // ── LOG DISPUTE MODAL ─────────────────────────────────────────────────
+
     function openLogModal() {
         clearLogForm();
         document.getElementById('logModal').classList.add('visible');
@@ -1246,24 +1440,39 @@ TECHNICAL:
     }
 
     function clearLogForm() {
-        ['logLoggedBy','logPartyAName','logPartyAUnit','logPartyAEmail','logPartyAMobile',
-         'logPartyBName','logPartyBUnit','logPartyBEmail','logPartyBMobile','logNature'].forEach(function(id) {
-            var el = document.getElementById(id);
-            if (el) el.value = '';
+        // Reset search inputs
+        ['partyASearch','partyBSearch'].forEach(function(id) {
+            var el = document.getElementById(id); if (el) el.value = '';
         });
+        ['partyAResults','partyBResults'].forEach(function(id) {
+            var el = document.getElementById(id); if (el) el.style.display = 'none';
+        });
+        // Reset Party A fields
+        document.getElementById('partyAFields').style.display = 'none';
+        ['logPartyAName','logPartyAUnit','logPartyAEmail','logPartyAMobile'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.value = ''; el.readOnly = false; el.classList.remove('prefilled'); }
+        });
+        // Reset Party B to lookup mode
+        resetPartyBToLookup();
+        // Reset other fields
+        var loggedBy = document.getElementById('logLoggedBy');
+        if (loggedBy) loggedBy.value = '';
+        var nature = document.getElementById('logNature');
+        if (nature) nature.value = '';
         setFeedback('logFeedback', '', '');
         var btn = document.getElementById('logSubmitBtn');
         if (btn) btn.disabled = false;
     }
 
     function submitDispute() {
-        const loggedBy  = val('logLoggedBy');
+        const loggedBy   = val('logLoggedBy');
         const partyAName = val('logPartyAName');
         const partyAUnit = val('logPartyAUnit');
-        const nature    = val('logNature');
+        const nature     = val('logNature');
 
         if (!loggedBy)   { setFeedback('logFeedback', 'Board member name is required.', false); return; }
-        if (!partyAName) { setFeedback('logFeedback', 'Party A name is required.', false); return; }
+        if (!partyAName) { setFeedback('logFeedback', 'Party A — please search and select a resident.', false); return; }
         if (!partyAUnit) { setFeedback('logFeedback', 'Party A unit is required.', false); return; }
         if (!nature)     { setFeedback('logFeedback', 'Nature of dispute is required.', false); return; }
 
@@ -1272,16 +1481,16 @@ TECHNICAL:
         setFeedback('logFeedback', 'Logging dispute...', null);
 
         jsonp({
-            action:         'submitDispute',
-            loggedBy:       loggedBy,
-            partyAName:     val('logPartyAName'),
-            partyAUnit:     val('logPartyAUnit'),
-            partyAEmail:    val('logPartyAEmail'),
-            partyAMobile:   val('logPartyAMobile'),
-            partyBName:     val('logPartyBName'),
-            partyBUnit:     val('logPartyBUnit'),
-            partyBEmail:    val('logPartyBEmail'),
-            partyBMobile:   val('logPartyBMobile'),
+            action:          'submitDispute',
+            loggedBy:        loggedBy,
+            partyAName:      val('logPartyAName'),
+            partyAUnit:      val('logPartyAUnit'),
+            partyAEmail:     val('logPartyAEmail'),
+            partyAMobile:    val('logPartyAMobile'),
+            partyBName:      val('logPartyBName'),
+            partyBUnit:      val('logPartyBUnit'),
+            partyBEmail:     val('logPartyBEmail'),
+            partyBMobile:    val('logPartyBMobile'),
             natureOfDispute: nature
         }, function(data) {
             submitBtn.disabled = false;
