@@ -6,13 +6,28 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.0
+  Frontend Version: V3.0.2
   Backend:          ComplaintsManager V3.0.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.2 (Jun 2026): doConvertToDispute redirects to DisputesManager.html
+    on success instead of reloading complaints. Board lands directly in
+    Disputes Manager ready to log the dispute.
+
+  V3.0.1 (Jun 2026): Closed - Converted to Dispute status added.
+    Card border: teal (#0d9488) -- visually connects to dispute system.
+    Status pill: teal glass pill.
+    isClosedStatus() updated to include new status.
+    statusCardClass() and statusPillClass() maps updated.
+    Filter dropdown option added.
+    Responded action panel: Convert to Dispute button added.
+    showConvertToDisputePanel() and doConvertToDispute() added.
+    Closed panel: read-only notice shown for this status.
+    Summary strip: counted with Closed.
+
   V3.0.0 (Jun 2026): Version boundary marker. No functional changes.
     Marks the architectural boundary at which the Dispute Resolution
     module (DisputesManager V3.0.0) was introduced as a sibling system.
@@ -852,6 +867,7 @@ TECHNICAL:
         .complaint-card.status-closed-unresolved { border-left: 4px solid #9ca3af; background: rgba(156,163,175,0.3); backdrop-filter: none; }
         .complaint-card.status-closed-resolved-escalated   { border-left: 4px solid #a78bfa; background: rgba(167,139,250,0.15); backdrop-filter: none; }
         .complaint-card.status-closed-unresolved-escalated { border-left: 4px solid #7c3aed; background: rgba(124,58,237,0.15);  backdrop-filter: none; }
+        .complaint-card.status-converted-to-dispute        { border-left: 4px solid #0d9488; background: rgba(13,148,136,0.12);  backdrop-filter: none; }
         .complaint-card.status-closing-pending  { border-left: 4px solid #f59e0b; background: rgba(245,158,11,0.12);  backdrop-filter: none; }
 
         .card-summary {
@@ -927,6 +943,7 @@ TECHNICAL:
         .status-closed-unresolved { background: rgba(107,114,128,0.3);  color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
         .status-closed-resolved-escalated   { background: rgba(167,139,250,0.2); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.5); }
         .status-closed-unresolved-escalated { background: rgba(124,58,237,0.2);  color: #a78bfa; border: 1px solid rgba(124,58,237,0.5); }
+        .status-converted-to-dispute        { background: rgba(13,148,136,0.25); color: #5eead4; border: 1px solid rgba(13,148,136,0.5); }
         .status-escalated    { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
         .status-closing-pending { background: rgba(245,158,11,0.3); color: #fde68a; border: 1px solid rgba(245,158,11,0.6); }
 
@@ -1523,6 +1540,7 @@ TECHNICAL:
             <option value="Closed - Unresolved">Closed - Unresolved</option>
             <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated)</option>
             <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated)</option>
+            <option value="Closed - Converted to Dispute">Closed - Converted to Dispute</option>
         </select>
         <label for="filterOverdue">Show:</label>
         <select id="filterOverdue" onchange="applyFilters()">
@@ -1672,7 +1690,9 @@ TECHNICAL:
                 'Closed - Resolved':               'status-closed-resolved',
                 'Closed - Unresolved':             'status-closed-unresolved',
                 'Closed - Resolved (Escalated)':   'status-closed-resolved-escalated',
-                'Closed - Unresolved (Escalated)': 'status-closed-unresolved-escalated'
+                'Closed - Unresolved (Escalated)': 'status-closed-unresolved-escalated',
+                'Closed - Converted to Dispute':   'status-converted-to-dispute',
+                'Closed - Converted to Dispute':   'status-converted-to-dispute'
             }[value];
             if (previewClass) {
                 card.className = card.className.replace(/\bstatus-\S+|\boverdue-\S+/g, '').trim();
@@ -1743,7 +1763,7 @@ TECHNICAL:
             const s = normaliseStatus(c.status);
             if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
             if (s === 'Escalated') counts.Escalated++;
-            if (s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Closed') counts.Closed++;
+            if (s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Closed - Converted to Dispute' || s === 'Closed') counts.Closed++;
             if (s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)') counts.ClosedEscalated++;
             if (isOverdue(c)) counts.overdue++;
         });
@@ -1765,6 +1785,7 @@ TECHNICAL:
 
     function isClosedStatus(s) {
         return s === 'Closed - Resolved' || s === 'Closed - Unresolved'
+            || s === 'Closed - Converted to Dispute'
             || s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
             || s === 'Closed';
     }
@@ -2258,6 +2279,15 @@ TECHNICAL:
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.</p>
                 <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
                 <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
+                <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="showConvertToDisputePanel('${safeRef}')">&#9878; Convert to Dispute</button>
+                <div id="ctd-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                    <div class="nrn-panel-title" style="border-left-color:#0d9488;">Convert to Dispute</div>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 10px;">This complaint will be closed and the resident notified that their matter is being handled under the formal Dispute Resolution process. Enter the Dispute reference number below.</p>
+                    <label for="ctd-ref-${safeRef}" style="font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.7);display:block;margin-bottom:6px;">Dispute Reference Number <span style="color:#fca5a5">*</span></label>
+                    <input type="text" id="ctd-ref-${safeRef}" placeholder="e.g. DISP-20260605-001" style="width:100%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;color:white;font-size:0.88rem;font-family:monospace;margin-bottom:12px;">
+                    <button class="btn-send-resident" id="send-ctd-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Close &amp; Convert to Dispute</button>
+                    <span class="save-feedback" id="ctd-feedback-${safeRef}"></span>
+                </div>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
                 <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
                 <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
@@ -2325,6 +2355,16 @@ TECHNICAL:
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
                 <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
+            </div>`;
+        }
+
+        // ── CLOSED - CONVERTED TO DISPUTE: Read-only notice ──────────
+        if (normStatus === 'Closed - Converted to Dispute') {
+            return `<div class="action-panel">
+                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                <div style="margin-top:12px;padding:10px 12px;background:rgba(13,148,136,0.1);border:1px solid rgba(13,148,136,0.3);border-radius:2px;font-size:0.85rem;color:rgba(255,255,255,0.75);line-height:1.5;">
+                    &#9878; This complaint has been converted to a formal Dispute. The resident has been notified. Manage this matter in <strong style="color:#5eead4;">Disputes Manager</strong>.
+                </div>
             </div>`;
         }
 
@@ -3152,6 +3192,46 @@ TECHNICAL:
             <div class="field-label">${label}</div>
             <div class="field-value">${val}</div>
         </div>`;
+    }
+
+    function showConvertToDisputePanel(ref) {
+        // Hide other closure panels first
+        var crPanel  = document.getElementById('cr-panel-'  + ref);
+        var nrnPanel = document.getElementById('nrn-panel-' + ref);
+        var ctdPanel = document.getElementById('ctd-panel-' + ref);
+        if (crPanel)  crPanel.style.display  = 'none';
+        if (nrnPanel) nrnPanel.style.display = 'none';
+        if (ctdPanel) ctdPanel.style.display = ctdPanel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function doConvertToDispute(ref) {
+        const dispRef = document.getElementById('ctd-ref-' + ref);
+        const fbEl    = document.getElementById('ctd-feedback-' + ref);
+        const btnEl   = document.getElementById('send-ctd-' + ref);
+        const dispRefVal = dispRef ? dispRef.value.trim() : '';
+        if (!dispRefVal) {
+            if (fbEl) { fbEl.textContent = 'Dispute reference is required.'; fbEl.className = 'save-feedback error'; }
+            return;
+        }
+        if (!dispRefVal.startsWith('DISP-')) {
+            if (fbEl) { fbEl.textContent = 'Reference must start with DISP- (e.g. DISP-20260605-001).'; fbEl.className = 'save-feedback error'; }
+            return;
+        }
+        if (btnEl) { btnEl._origText = btnEl.textContent; btnEl.textContent = 'Sending…'; btnEl.disabled = true; }
+        if (fbEl)  { fbEl.textContent = ''; fbEl.className = 'save-feedback'; }
+        const userName = window._sessionUser && window._sessionUser.name ? window._sessionUser.name : 'Admin';
+        jsonpCall({ action: 'updateComplaint', ref: ref, status: 'Closed - Converted to Dispute', dispReference: dispRefVal, userName: userName });
+        window['jsonpCallback_' + ref] = function(data) {
+            if (btnEl) { btnEl.textContent = btnEl._origText || btnEl.textContent; btnEl.disabled = false; }
+            if (data.success) {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+                if (fbEl) { fbEl.textContent = '✓ Done — ' + timeStr + '. Opening Disputes Manager...'; fbEl.className = 'save-feedback success'; }
+                setTimeout(function() { window.location.href = 'DisputesManager.html'; }, 1200);
+            } else {
+                if (fbEl) { fbEl.textContent = '✗ ' + (data.error || 'Update failed.'); fbEl.className = 'save-feedback error'; }
+            }
+        };
     }
 
     function showPrintDialog(ref) {
