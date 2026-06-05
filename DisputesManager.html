@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.1
+  Frontend Version: V3.0.2
   Backend:          DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.2 (Jun 2026): Two changes:
+    1. Notifications pending banner added to Open dispute cards.
+       Amber info panel shown when status is Open and acknowledgedAt
+       is empty -- advises Board to await 30-min trigger before sending
+       further communications. Auto-hidden once status moves to Under Review.
+    2. Both Parties send option added to Send Message to Party panel.
+       Third tab fires sendPartyNotification for A then B sequentially.
+       Each send independently logged in Activity Log.
+       Placeholder text updated to reflect Both Parties option.
+       doSendPartyNotification updated to handle party='Both'.
+
   V3.0.1 (Jun 2026): Resident lookup added to Log Dispute modal.
     Party A: search by name via getUnitListData (ManagementCentral),
     select from results, unit/email/mobile auto-populate. Stage 1 only.
@@ -440,6 +451,21 @@ TECHNICAL:
             font-size: 0.78rem; color: rgba(255,255,255,0.65);
             white-space: pre-wrap; font-family: monospace; line-height: 1.5;
         }
+
+        /* ── NOTIFICATIONS PENDING BANNER ───────────────────────── */
+        .notify-pending-banner {
+            display: flex; align-items: flex-start; gap: 10px;
+            background: rgba(251,191,36,0.12);
+            border: 1px solid rgba(251,191,36,0.35);
+            border-radius: 2px; padding: 10px 14px; margin-bottom: 14px;
+        }
+        .notify-pending-icon {
+            font-size: 1rem; flex-shrink: 0; margin-top: 1px; color: #fbbf24;
+        }
+        .notify-pending-text {
+            font-size: 0.82rem; color: rgba(255,255,255,0.8); line-height: 1.5;
+        }
+        .notify-pending-text strong { color: #fef08a; }
 
         /* ── RESIDENT LOOKUP ────────────────────────────────────── */
         .lookup-row {
@@ -986,6 +1012,20 @@ TECHNICAL:
         const ref = d.referenceNumber;
         var html = '';
 
+        // ── NOTIFICATIONS PENDING BANNER ──
+        // Shown only when status is Open and acknowledgedAt not yet set
+        if (d.status === 'Open' && !d.acknowledgedAt) {
+            html += '<div class="notify-pending-banner">' +
+                '<div class="notify-pending-icon">&#9432;</div>' +
+                '<div class="notify-pending-text">' +
+                '<strong>Notifications pending</strong> — Acknowledgement emails will be sent ' +
+                'to both parties within 30 minutes of lodgement via the automated trigger. ' +
+                'Allow this notification to be delivered before sending further communications ' +
+                'so that parties receive their reference number and process overview first.' +
+                '</div>' +
+            '</div>';
+        }
+
         // ── PARTY BLOCKS ──
         html += '<div class="detail-section-title">Parties</div>';
         html += '<div class="party-block">' +
@@ -1158,6 +1198,7 @@ TECHNICAL:
             '<div class="party-tabs">' +
                 '<button class="party-tab active" id="ptab-A-' + ref + '" onclick="selectPartyTab(\'' + ref + '\',\'A\')">Party A — ' + escHtml(d.partyAName || 'A') + '</button>' +
                 (d.partyBName ? '<button class="party-tab" id="ptab-B-' + ref + '" onclick="selectPartyTab(\'' + ref + '\',\'B\')">Party B — ' + escHtml(d.partyBName) + '</button>' : '') +
+                (d.partyBName ? '<button class="party-tab" id="ptab-Both-' + ref + '" onclick="selectPartyTab(\'' + ref + '\',\'Both\')">Both Parties</button>' : '') +
             '</div>' +
             '<input type="hidden" id="selected-party-' + ref + '" value="A">' +
             '<div class="action-row">' +
@@ -1168,9 +1209,9 @@ TECHNICAL:
             '</div>' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>Message</label>' +
-                '<textarea id="pnotify-body-' + ref + '" placeholder="Compose your message to the selected party. This will be sent only to that party — the other party will not receive this message."></textarea>' +
+                '<textarea id="pnotify-body-' + ref + '" placeholder="Compose your message. When Both Parties is selected the same message will be sent to each party independently."></textarea>' +
             '</div></div>' +
-            '<button class="btn-secondary-action" onclick="doSendPartyNotification(\'' + ref + '\')">Send to Selected Party</button>' +
+            '<button class="btn-secondary-action" onclick="doSendPartyNotification(\'' + ref + '\')">Send</button>' +
             '<span id="fb-pnotify-' + ref + '" class="save-feedback"></span>';
         }
 
@@ -1195,8 +1236,10 @@ TECHNICAL:
     // ── PARTY TAB ─────────────────────────────────────────────────────────
 
     function selectPartyTab(ref, party) {
-        document.getElementById('ptab-A-' + ref) && document.getElementById('ptab-A-' + ref).classList.remove('active');
-        document.getElementById('ptab-B-' + ref) && document.getElementById('ptab-B-' + ref).classList.remove('active');
+        ['A', 'B', 'Both'].forEach(function(p) {
+            var t = document.getElementById('ptab-' + p + '-' + ref);
+            if (t) t.classList.remove('active');
+        });
         const tab = document.getElementById('ptab-' + party + '-' + ref);
         if (tab) tab.classList.add('active');
         document.getElementById('selected-party-' + ref).value = party;
@@ -1285,6 +1328,34 @@ TECHNICAL:
         if (!body)    { feedback(fbId, 'Message body is required.', false); return; }
 
         const userName = currentUserName();
+
+        if (party === 'Both') {
+            // Send to Party A then Party B sequentially
+            btn(fbId, true);
+            jsonp({ action: 'sendPartyNotification', ref: ref, party: 'A', subject: subject, messageBody: body, userName: userName },
+                function(dataA) {
+                    if (!dataA.success) {
+                        btn(fbId, false);
+                        feedback(fbId, 'Party A failed: ' + (dataA.error || 'Send failed.'), false);
+                        return;
+                    }
+                    // A succeeded -- now send to B
+                    jsonp({ action: 'sendPartyNotification', ref: ref, party: 'B', subject: subject, messageBody: body, userName: userName },
+                        function(dataB) {
+                            btn(fbId, false);
+                            if (dataB.success) {
+                                feedback(fbId, 'Message sent to both parties.', true);
+                                document.getElementById('pnotify-body-' + ref) && (document.getElementById('pnotify-body-' + ref).value = '');
+                                if (dataB.activityLog) updateActivityLog(ref, dataB.activityLog);
+                            } else {
+                                feedback(fbId, 'Party A sent. Party B failed: ' + (dataB.error || 'Send failed.'), false);
+                            }
+                        }, function(err) { btn(fbId, false); feedback(fbId, 'Party A sent. Party B error: ' + err, false); });
+                }, function(err) { btn(fbId, false); feedback(fbId, 'Party A error: ' + err, false); });
+            return;
+        }
+
+        // Single party send
         btn(fbId, true);
         jsonp({ action: 'sendPartyNotification', ref: ref, party: party, subject: subject, messageBody: body, userName: userName },
             function(data) {
