@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.6
+  Frontend Version: V3.0.7
   Backend:          DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.7 (Jun 2026): Print Record and Print Register added.
+    Print Record: showDisputePrintDialog() -- two options: Full Record
+    (includes Activity Log, both parties contact details, Board use only)
+    and Summary (excludes Activity Log and contact details).
+    Print Register: printDisputeRegister() -- tabular summary of all
+    disputes matching current filter, as-at date, overdue flagged.
+    Print Record button added to each card action panel.
+    Print Register button added to filter bar.
+    printDisputeStyles(), printDisputeHeader(), printDisputeFooter(),
+    disputeFieldRow() helpers added.
+
   V3.0.6 (Jun 2026): Activity log ordering corrected to oldest-first
     (consistent with ComplaintsManager). .reverse() reinstated on
     entry array after 
@@ -480,6 +491,24 @@ TECHNICAL:
             white-space: pre-wrap; font-family: monospace; line-height: 1.5;
         }
 
+        /* ── PRINT BUTTONS ──────────────────────────────────────── */
+        .btn-print {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.25);
+            color: rgba(255,255,255,0.85); padding: 7px 16px; border-radius: 2px;
+            font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.2s;
+        }
+        .btn-print:hover { background: rgba(255,255,255,0.22); color: white; }
+
+        .btn-print-record {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.18);
+            color: rgba(255,255,255,0.7); padding: 6px 14px; border-radius: 2px;
+            font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: background 0.2s;
+            margin-top: 8px;
+        }
+        .btn-print-record:hover { background: rgba(255,255,255,0.15); color: white; }
+
         /* ── NOTIFICATIONS PENDING BANNER ───────────────────────── */
         .notify-pending-banner {
             display: flex; align-items: flex-start; gap: 10px;
@@ -728,6 +757,7 @@ TECHNICAL:
                 <option value="overdue">Overdue only</option>
             </select>
             <button class="btn-refresh" onclick="loadDisputes()">&#8635; Refresh</button>
+            <button class="btn-print" onclick="printDisputeRegister()">&#128438; Print Register</button>
             <button class="btn-log-dispute" onclick="openLogModal()">+ Log Dispute</button>
         </div>
 
@@ -1245,6 +1275,10 @@ TECHNICAL:
             '<span id="fb-pnotify-' + ref + '" class="save-feedback"></span>';
         }
 
+        // Print Record button -- always shown
+        html += '<hr class="action-separator">';
+        html += '<button class="btn-print-record" onclick="showDisputePrintDialog(\'' + ref + '\')">';
+        html += '&#128438; Print Record</button>';
         html += '</div>'; // end action-panel
         return html;
     }
@@ -1755,6 +1789,306 @@ TECHNICAL:
     function currentUserName() {
         return (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
     }
+
+    // ── PRINT FUNCTIONS ───────────────────────────────────────────────────
+
+    function printDisputeStyles() {
+        return `
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background: white; }
+            .print-header { border-bottom: 3px solid #0d9488; padding-bottom: 12px; margin-bottom: 20px; }
+            .print-village { font-size: 9pt; font-weight: 700; text-transform: uppercase;
+                             letter-spacing: 1px; color: #0d9488; margin-bottom: 4px; }
+            .print-title   { font-size: 16pt; font-weight: 700; color: #111; margin-bottom: 4px; }
+            .print-ref     { font-size: 10pt; color: #444; }
+            .print-confidential { font-size: 8pt; font-weight: 700; text-transform: uppercase;
+                                  letter-spacing: 1px; color: #dc2626; float: right; margin-top: 6px; }
+            .status-badge  { display: inline-block; padding: 3px 10px; border-radius: 3px;
+                             font-size: 9pt; font-weight: 700; text-transform: uppercase;
+                             letter-spacing: 0.5px; margin-left: 10px; }
+            .badge-open         { background: #ccfbf1; color: #0f766e; }
+            .badge-under-review { background: #fef3c7; color: #b45309; }
+            .badge-resolved     { background: #f1f5f9; color: #374151; }
+            .badge-referred     { background: #ffedd5; color: #c2410c; }
+            .badge-closed       { background: #f3f4f6; color: #374151; }
+            .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase;
+                             letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;
+                             padding-bottom: 4px; margin: 16px 0 10px; }
+            .field-grid    { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 8px; }
+            .field-full    { grid-column: 1 / -1; }
+            .field-label   { font-size: 8pt; font-weight: 700; color: #6b7280;
+                             text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px; }
+            .field-value   { font-size: 10pt; color: #111; line-height: 1.5; white-space: pre-wrap; }
+            .field-empty   { color: #9ca3af; font-style: italic; }
+            .party-block   { background: #f0fdfa; border: 1px solid #99f6e4;
+                             border-left: 4px solid #0d9488; padding: 10px 12px;
+                             border-radius: 3px; margin-bottom: 10px; }
+            .party-block .field-label { color: #0f766e; }
+            .content-block { background: #f8f9fa; border: 1px solid #e9ecef;
+                             border-left: 4px solid #0d9488; padding: 10px 12px;
+                             border-radius: 3px; margin-bottom: 10px; }
+            .activity-log-print { margin: 8px 0 16px 0; padding: 10px;
+                                  background: #f8fafc; border-left: 3px solid #0d9488; }
+            .activity-log-entry-print { font-size: 8pt; font-family: monospace; padding: 3px 0;
+                                        border-bottom: 1px solid #e5e7eb; color: #374151;
+                                        white-space: pre-wrap; }
+            .activity-log-entry-print:last-child { border-bottom: none; }
+            .print-footer  { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e5e7eb;
+                             font-size: 8pt; color: #374151; display: flex;
+                             justify-content: space-between; }
+            table  { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 12px; }
+            thead  { background: #0d9488; color: white; }
+            th     { padding: 7px 8px; text-align: left; font-size: 8pt;
+                     text-transform: uppercase; letter-spacing: 0.4px; }
+            td     { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+            tr:nth-child(even) td { background: #f8fafc; }
+            .reg-overdue { color: #dc2626; font-weight: 700; }
+        `;
+    }
+
+    function printDisputeHeader(title, subtitle) {
+        return '<div class="print-header">'
+            + '<div class="print-confidential">Confidential</div>'
+            + '<div class="print-village">Lake Illawong Retirement Village</div>'
+            + '<div class="print-title">' + title + '</div>'
+            + '<div class="print-ref">' + subtitle + '</div>'
+            + '</div>';
+    }
+
+    function printDisputeFooter() {
+        var now = new Date().toLocaleString('en-AU', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+        return '<div class="print-footer">'
+            + '<span>Lake Illawong Retirement Village — Dispute Resolution Register</span>'
+            + '<span>Printed ' + now + '</span>'
+            + '</div>';
+    }
+
+    function disputeFieldRow(label, value, full) {
+        var v = value ? escHtml(value) : '<span class="field-empty">—</span>';
+        return '<div class="field-group' + (full ? ' field-full' : '') + '">'
+            + '<div class="field-label">' + label + '</div>'
+            + '<div class="field-value">' + v + '</div>'
+            + '</div>';
+    }
+
+    function showDisputePrintDialog(ref) {
+        var d = allDisputes.find(function(x) { return x.referenceNumber === ref; });
+        if (!d) { alert('Dispute record not found.'); return; }
+
+        var existing = document.getElementById('disputePrintDialog');
+        if (existing) existing.remove();
+
+        var dialog = document.createElement('div');
+        dialog.id = 'disputePrintDialog';
+        dialog.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        dialog.innerHTML = '<div style="background:#1e3a8a;border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:32px;max-width:400px;width:90%;text-align:center;">'
+            + '<div style="color:white;font-size:1.1rem;font-weight:600;margin-bottom:8px;">Print Dispute Record</div>'
+            + '<div style="color:rgba(255,255,255,0.7);font-size:0.85rem;margin-bottom:24px;">' + escHtml(ref) + '</div>'
+            + '<button onclick="doDisputePrint('' + escHtml(ref) + '', true)" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '&#128438; Print Full Record'
+            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Activity Log and contact details (Board use only)</div>'
+            + '</button>'
+            + '<button onclick="doDisputePrint('' + escHtml(ref) + '', false)" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '&#128196; Print Summary'
+            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Excludes Activity Log and contact details</div>'
+            + '</button>'
+            + '<button onclick="document.getElementById('disputePrintDialog').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>'
+            + '</div>';
+        document.body.appendChild(dialog);
+    }
+
+    function doDisputePrint(ref, fullRecord) {
+        var dlg = document.getElementById('disputePrintDialog');
+        if (dlg) dlg.remove();
+
+        var d = allDisputes.find(function(x) { return x.referenceNumber === ref; });
+        if (!d) { alert('Dispute record not found.'); return; }
+
+        var statusBadgeClass = {
+            'Open':                  'badge-open',
+            'Under Review':          'badge-under-review',
+            'Resolved':              'badge-resolved',
+            'Referred to VicAssist': 'badge-referred',
+            'Closed':                'badge-closed'
+        }[d.status] || 'badge-open';
+
+        var fmtD = function(dateStr) {
+            if (!dateStr) return '—';
+            var dt = new Date(dateStr);
+            return isNaN(dt) ? dateStr : dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+        };
+
+        // Party blocks
+        var partyABlock = '<div class="section-title">Party A</div>'
+            + '<div class="party-block"><div class="field-grid">'
+            + disputeFieldRow('Name',   d.partyAName,   false)
+            + disputeFieldRow('Unit',   d.partyAUnit,   false)
+            + (fullRecord ? disputeFieldRow('Email',  d.partyAEmail,  false)
+                          + disputeFieldRow('Mobile', d.partyAMobile, false) : '')
+            + '</div></div>';
+
+        var partyBBlock = d.partyBName
+            ? '<div class="section-title">Party B</div>'
+              + '<div class="party-block"><div class="field-grid">'
+              + disputeFieldRow('Name',   d.partyBName,   false)
+              + disputeFieldRow('Unit',   d.partyBUnit,   false)
+              + (fullRecord ? disputeFieldRow('Email',  d.partyBEmail,  false)
+                            + disputeFieldRow('Mobile', d.partyBMobile, false) : '')
+              + '</div></div>'
+            : '';
+
+        // Timeline block
+        var timelineBlock = '<div class="section-title">Timeline</div>'
+            + '<div class="field-grid">'
+            + disputeFieldRow('Logged',         fmtD(d.loggedAt),         false)
+            + disputeFieldRow('Logged By',       d.loggedBy,               false)
+            + disputeFieldRow('Review Due',      fmtD(d.reviewDue),        false)
+            + disputeFieldRow('Acknowledged',    d.acknowledgedAt ? fmtD(d.acknowledgedAt) : 'Not yet acknowledged', false)
+            + disputeFieldRow('Process Statement', d.processStatementAt ? fmtD(d.processStatementAt) : '—', false)
+            + disputeFieldRow('Resolved',        d.resolvedAt   ? fmtD(d.resolvedAt)   : '—', false)
+            + disputeFieldRow('Referred',        d.referredAt   ? fmtD(d.referredAt)   : '—', false)
+            + disputeFieldRow('Closed',          d.closedAt     ? fmtD(d.closedAt)     : '—', false)
+            + '</div>';
+
+        // Nature of dispute (full record only)
+        var natureBlock = fullRecord && d.natureOfDispute
+            ? '<div class="section-title">Nature of Dispute</div>'
+              + '<div class="content-block"><div class="field-value">' + escHtml(d.natureOfDispute) + '</div></div>'
+            : '';
+
+        // Process statement
+        var psBlock = d.processStatement
+            ? '<div class="section-title">Board Process Statement</div>'
+              + '<div class="content-block"><div class="field-value">' + escHtml(d.processStatement) + '</div></div>'
+            : '';
+
+        // Resolution summary
+        var resBlock = d.resolutionSummary
+            ? '<div class="section-title">Resolution Summary</div>'
+              + '<div class="content-block" style="border-left-color:#10b981;">'
+              + '<div class="field-value">' + escHtml(d.resolutionSummary) + '</div></div>'
+            : '';
+
+        // Referral narrative
+        var refBlock = d.referralNarrative
+            ? '<div class="section-title">VicAssist Referral — Board Statement</div>'
+              + '<div class="content-block" style="border-left-color:#f97316;">'
+              + '<div class="field-value">' + escHtml(d.referralNarrative) + '</div></div>'
+            : '';
+
+        // VicAssist outcome
+        var vaBlock = d.vicAssistOutcome
+            ? '<div class="section-title">VicAssist Outcome</div>'
+              + '<div class="content-block" style="border-left-color:#6b7280;">'
+              + '<div class="field-value">' + escHtml(d.vicAssistOutcome) + '</div></div>'
+            : '';
+
+        // Activity log (full record only)
+        var activityBlock = '';
+        if (fullRecord && d.activityLog) {
+            var entries = d.activityLog.split('
+
+').map(function(e) { return e.trim(); }).filter(Boolean);
+            activityBlock = '<div class="section-title">Activity Log</div>'
+                + '<div class="activity-log-print">'
+                + entries.map(function(e) {
+                    return '<div class="activity-log-entry-print">' + escHtml(e) + '</div>';
+                  }).join('')
+                + '</div>';
+        }
+
+        var summaryBanner = !fullRecord
+            ? '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#0f766e;font-weight:600;">SUMMARY — Activity Log and contact details withheld</div>'
+            : '';
+
+        var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+            + '<title>Dispute Record — ' + escHtml(ref) + '</title>'
+            + '<style>' + printDisputeStyles() + '</style></head><body>'
+            + printDisputeHeader(
+                'Dispute Record <span class="status-badge ' + statusBadgeClass + '">' + escHtml(d.status) + '</span>',
+                escHtml(ref)
+              )
+            + summaryBanner
+            + partyABlock
+            + partyBBlock
+            + timelineBlock
+            + natureBlock
+            + psBlock
+            + resBlock
+            + refBlock
+            + vaBlock
+            + activityBlock
+            + printDisputeFooter()
+            + '</body></html>';
+
+        var w = window.open('', '_blank', 'width=800,height=900');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        w.print();
+    }
+
+    function printDisputeRegister() {
+        var statusFilter  = document.getElementById('filterStatus').value;
+        var overdueFilter = document.getElementById('filterOverdue').value;
+        var list = allDisputes.slice();
+        if (statusFilter)                list = list.filter(function(d) { return d.status === statusFilter; });
+        if (overdueFilter === 'overdue') list = list.filter(function(d) { return isOverdue(d); });
+
+        if (list.length === 0) { alert('No disputes match the current filter — nothing to print.'); return; }
+
+        var now = new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+        var filterLabel  = statusFilter ? statusFilter + ' disputes' : 'All disputes';
+        var overdueLabel = overdueFilter === 'overdue' ? ' — Overdue only' : '';
+
+        var fmtD = function(dateStr) {
+            if (!dateStr) return '—';
+            var dt = new Date(dateStr);
+            return isNaN(dt) ? dateStr : dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+        };
+
+        var rows = list.map(function(d) {
+            var overdueMark = isOverdue(d) ? ' <span class="reg-overdue">OVERDUE</span>' : '';
+            return '<tr>'
+                + '<td>' + escHtml(d.referenceNumber) + '</td>'
+                + '<td>' + escHtml(d.partyAName) + (d.partyAUnit ? ' (' + escHtml(d.partyAUnit) + ')' : '') + '</td>'
+                + '<td>' + escHtml(d.partyBName || '—') + (d.partyBUnit ? ' (' + escHtml(d.partyBUnit) + ')' : '') + '</td>'
+                + '<td>' + escHtml(d.status) + overdueMark + '</td>'
+                + '<td>' + fmtD(d.loggedAt) + '</td>'
+                + '<td>' + fmtD(d.reviewDue) + '</td>'
+                + '</tr>';
+        }).join('');
+
+        var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+            + '<title>Disputes Register — ' + now + '</title>'
+            + '<style>' + printDisputeStyles() + '</style></head><body>'
+            + printDisputeHeader(
+                'Disputes Register',
+                filterLabel + overdueLabel + '   |   as at ' + now + '   |   ' + list.length + ' record' + (list.length !== 1 ? 's' : '')
+              )
+            + '<table><thead><tr>'
+            + '<th>Reference</th>'
+            + '<th>Party A</th>'
+            + '<th>Party B</th>'
+            + '<th>Status</th>'
+            + '<th>Logged</th>'
+            + '<th>Review Due</th>'
+            + '</tr></thead>'
+            + '<tbody>' + rows + '</tbody>'
+            + '</table>'
+            + printDisputeFooter()
+            + '</body></html>';
+
+        var w = window.open('', '_blank', 'width=1000,height=900');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        w.print();
+    }
+
 
     // Close modal on overlay click
     document.getElementById('logModal').addEventListener('click', function(e) {
