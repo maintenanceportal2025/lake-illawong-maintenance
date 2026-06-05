@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.3
+  Frontend Version: V3.0.4
   Backend:          DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.4 (Jun 2026): Two fixes:
+    1. btnSending/btnDone applied to all remaining buttons:
+       doResolve, doRefer, doClose, addComment.
+    2. Activity Log ordering fixed. Log entries were being split
+       on single \n then filter(Boolean) removed blank lines before
+       reverse(), scrambling multi-line entries. Fixed by splitting
+       on \n\n (entry separator) first, reversing entries as units,
+       then rendering each entry's internal lines preserving order.
+       white-space:pre-wrap added to entry divs for correct rendering.
+
   V3.0.3 (Jun 2026): Send button states improved.
     Button text changes to "Sending..." while call is in flight.
     On success: button text restored, feedback shows checkmark + time.
@@ -1100,12 +1110,14 @@ TECHNICAL:
         }
 
         // Activity Log pane -- always shown
+        // Split on double-newline (entry separator) to keep multi-line
+        // entries intact, then reverse so newest entry appears first.
         const logEntries = d.activityLog
-            ? d.activityLog.split('\n').filter(Boolean).reverse()
+            ? d.activityLog.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse()
             : [];
         const logHtml = logEntries.length
             ? logEntries.map(function(e) {
-                return '<div style="font-size:0.8rem;color:rgba(255,255,255,0.65);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.06);">' + escHtml(e) + '</div>';
+                return '<div style="font-size:0.8rem;color:rgba(255,255,255,0.65);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.06);white-space:pre-wrap;">' + escHtml(e) + '</div>';
               }).join('')
             : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No activity recorded yet.</div>';
 
@@ -1277,17 +1289,18 @@ TECHNICAL:
         if (!res) { feedback('fb-res-' + ref, 'Resolution summary is required.', false); return; }
         if (!confirm('Mark this dispute as Resolved and notify both parties?')) return;
         const userName = currentUserName();
-        btn('fb-res-' + ref, true);
+        const fbIdRes = 'fb-res-' + ref;
+        const btnElRes = getSendBtn(fbIdRes);
+        btnSending(fbIdRes, btnElRes);
         jsonp({ action: 'updateDispute', ref: ref, status: 'Resolved', resolutionSummary: res, userName: userName, andSend: 'true' },
             function(data) {
-                btn('fb-res-' + ref, false);
                 if (data.success) {
-                    feedback('fb-res-' + ref, 'Resolved. Both parties notified.', true);
+                    btnDone(fbIdRes, btnElRes, true, '');
                     refreshCard(ref, data.activityLog);
                 } else {
-                    feedback('fb-res-' + ref, data.error || 'Update failed.', false);
+                    btnDone(fbIdRes, btnElRes, false, data.error || 'Update failed.');
                 }
-            }, function(err) { btn('fb-res-' + ref, false); feedback('fb-res-' + ref, err, false); });
+            }, function(err) { btnDone(fbIdRes, btnElRes, false, err); });
     }
 
     function doRefer(ref) {
@@ -1295,17 +1308,18 @@ TECHNICAL:
         if (!narrative) { feedback('fb-ref-' + ref, 'Referral statement is required.', false); return; }
         if (!confirm('Refer this dispute to VicAssist and notify both parties? This action cannot be undone.')) return;
         const userName = currentUserName();
-        btn('fb-ref-' + ref, true);
+        const fbIdRef = 'fb-ref-' + ref;
+        const btnElRef = getSendBtn(fbIdRef);
+        btnSending(fbIdRef, btnElRef);
         jsonp({ action: 'updateDispute', ref: ref, status: 'Referred to VicAssist', referralNarrative: narrative, userName: userName, andSend: 'true' },
             function(data) {
-                btn('fb-ref-' + ref, false);
                 if (data.success) {
-                    feedback('fb-ref-' + ref, 'Referred to VicAssist. Both parties notified.', true);
+                    btnDone(fbIdRef, btnElRef, true, '');
                     refreshCard(ref, data.activityLog);
                 } else {
-                    feedback('fb-ref-' + ref, data.error || 'Update failed.', false);
+                    btnDone(fbIdRef, btnElRef, false, data.error || 'Update failed.');
                 }
-            }, function(err) { btn('fb-ref-' + ref, false); feedback('fb-ref-' + ref, err, false); });
+            }, function(err) { btnDone(fbIdRef, btnElRef, false, err); });
     }
 
     function doClose(ref) {
@@ -1313,17 +1327,18 @@ TECHNICAL:
         if (!outcome) { feedback('fb-va-' + ref, 'VicAssist outcome is required.', false); return; }
         if (!confirm('Record VicAssist outcome and close this dispute? Both parties will be notified.')) return;
         const userName = currentUserName();
-        btn('fb-va-' + ref, true);
+        const fbIdVa = 'fb-va-' + ref;
+        const btnElVa = getSendBtn(fbIdVa);
+        btnSending(fbIdVa, btnElVa);
         jsonp({ action: 'updateDispute', ref: ref, status: 'Closed', vicAssistOutcome: outcome, userName: userName, andSend: 'true' },
             function(data) {
-                btn('fb-va-' + ref, false);
                 if (data.success) {
-                    feedback('fb-va-' + ref, 'Dispute closed. Both parties notified.', true);
+                    btnDone(fbIdVa, btnElVa, true, '');
                     refreshCard(ref, data.activityLog);
                 } else {
-                    feedback('fb-va-' + ref, data.error || 'Update failed.', false);
+                    btnDone(fbIdVa, btnElVa, false, data.error || 'Update failed.');
                 }
-            }, function(err) { btn('fb-va-' + ref, false); feedback('fb-va-' + ref, err, false); });
+            }, function(err) { btnDone(fbIdVa, btnElVa, false, err); });
     }
 
     function doSendPartyNotification(ref) {
@@ -1383,16 +1398,18 @@ TECHNICAL:
         const userName = currentUserName();
         if (!comment) { feedback(fbId, 'Comment text is required.', false); return; }
 
+        const btnElC = getSendBtn(fbId);
+        btnSending(fbId, btnElC);
         jsonp({ action: 'addDisputeComment', ref: ref, comment: comment, userName: userName },
             function(data) {
                 if (data.success) {
-                    feedback(fbId, 'Comment added.', true);
+                    btnDone(fbId, btnElC, true, '');
                     document.getElementById('comment-' + ref) && (document.getElementById('comment-' + ref).value = '');
                     if (data.activityLog) updateActivityLog(ref, data.activityLog);
                 } else {
-                    feedback(fbId, data.error || 'Failed to add comment.', false);
+                    btnDone(fbId, btnElC, false, data.error || 'Failed to add comment.');
                 }
-            }, function(err) { feedback(fbId, err, false); });
+            }, function(err) { btnDone(fbId, btnElC, false, err); });
     }
 
     // ── LOG DISPUTE MODAL ─────────────────────────────────────────────────
@@ -1617,9 +1634,9 @@ TECHNICAL:
         const body = pane.querySelector('.accordion-body');
         if (!body) return;
 
-        const entries = logText.split('\n').filter(Boolean).reverse();
+        const entries = logText.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse();
         const logHtml = entries.map(function(e) {
-            return '<div style="font-size:0.8rem;color:rgba(255,255,255,0.65);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.06);">' + escHtml(e) + '</div>';
+            return '<div style="font-size:0.8rem;color:rgba(255,255,255,0.65);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.06);white-space:pre-wrap;">' + escHtml(e) + '</div>';
         }).join('');
 
         const commentEl = body.querySelector('div[style*="border-top"]');
