@@ -6,13 +6,17 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.7
+  Frontend Version: V3.0.8
   Backend:          DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.8 (Jun 2026): showDisputePrintDialog quote-nesting bug fixed.
+    onclick inline string concatenation replaced with data-ref attribute
+    pattern -- buttons read ref from dialog dataset, no quote conflicts.
+
   V3.0.7 (Jun 2026): Print Record and Print Register added.
     Print Record: showDisputePrintDialog() -- two options: Full Record
     (includes Activity Log, both parties contact details, Board use only)
@@ -1883,21 +1887,27 @@ TECHNICAL:
 
         var dialog = document.createElement('div');
         dialog.id = 'disputePrintDialog';
+        dialog.dataset.ref = ref;
         dialog.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
         dialog.innerHTML = '<div style="background:#1e3a8a;border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:32px;max-width:400px;width:90%;text-align:center;">'
             + '<div style="color:white;font-size:1.1rem;font-weight:600;margin-bottom:8px;">Print Dispute Record</div>'
             + '<div style="color:rgba(255,255,255,0.7);font-size:0.85rem;margin-bottom:24px;">' + escHtml(ref) + '</div>'
-            + '<button onclick="doDisputePrint('' + escHtml(ref) + '', true)" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '<button id="dpb-full" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
             + '&#128438; Print Full Record'
             + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Activity Log and contact details (Board use only)</div>'
             + '</button>'
-            + '<button onclick="doDisputePrint('' + escHtml(ref) + '', false)" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '<button id="dpb-summary" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
             + '&#128196; Print Summary'
             + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Excludes Activity Log and contact details</div>'
             + '</button>'
-            + '<button onclick="document.getElementById('disputePrintDialog').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>'
+            + '<button id="dpb-cancel" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>'
             + '</div>';
         document.body.appendChild(dialog);
+
+        // Wire button handlers after insertion -- avoids all inline quote issues
+        document.getElementById('dpb-full').addEventListener('click', function() { doDisputePrint(ref, true); });
+        document.getElementById('dpb-summary').addEventListener('click', function() { doDisputePrint(ref, false); });
+        document.getElementById('dpb-cancel').addEventListener('click', function() { dialog.remove(); });
     }
 
     function doDisputePrint(ref, fullRecord) {
