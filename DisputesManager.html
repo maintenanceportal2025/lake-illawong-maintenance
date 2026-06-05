@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.2
+  Frontend Version: V3.0.3
   Backend:          DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.3 (Jun 2026): Send button states improved.
+    Button text changes to "Sending..." while call is in flight.
+    On success: button text restored, feedback shows checkmark + time.
+    On fail: button text restored, feedback shows error in red.
+    Applies to: Send Process Statement, Send to Party (A, B, Both).
+    btnSending() / btnDone() helpers added for button state management.
+
   V3.0.2 (Jun 2026): Two changes:
     1. Notifications pending banner added to Open dispute cards.
        Amber info panel shown when status is Open and acknowledgedAt
@@ -1251,17 +1258,18 @@ TECHNICAL:
         const ps = val('ps-' + ref);
         if (!ps) { feedback('fb-' + ref, 'Process statement is required.', false); return; }
         const userName = currentUserName();
-        btn('fb-' + ref, true);
+        const fbId = 'fb-' + ref;
+        const btnEl = getSendBtn(fbId);
+        btnSending(fbId, btnEl);
         jsonp({ action: 'updateDispute', ref: ref, status: 'Under Review', processStatement: ps, userName: userName, andSend: 'true' },
             function(data) {
-                btn('fb-' + ref, false);
                 if (data.success) {
-                    feedback('fb-' + ref, 'Status updated. Process statement sent to both parties.', true);
+                    btnDone(fbId, btnEl, true, '');
                     refreshCard(ref, data.activityLog);
                 } else {
-                    feedback('fb-' + ref, data.error || 'Update failed.', false);
+                    btnDone(fbId, btnEl, false, data.error || 'Update failed.');
                 }
-            }, function(err) { btn('fb-' + ref, false); feedback('fb-' + ref, err, false); });
+            }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
 
     function doResolve(ref) {
@@ -1331,43 +1339,42 @@ TECHNICAL:
 
         if (party === 'Both') {
             // Send to Party A then Party B sequentially
-            btn(fbId, true);
+            const btnElB = getSendBtn(fbId);
+            btnSending(fbId, btnElB);
             jsonp({ action: 'sendPartyNotification', ref: ref, party: 'A', subject: subject, messageBody: body, userName: userName },
                 function(dataA) {
                     if (!dataA.success) {
-                        btn(fbId, false);
-                        feedback(fbId, 'Party A failed: ' + (dataA.error || 'Send failed.'), false);
+                        btnDone(fbId, btnElB, false, 'Party A failed: ' + (dataA.error || 'Send failed.'));
                         return;
                     }
                     // A succeeded -- now send to B
                     jsonp({ action: 'sendPartyNotification', ref: ref, party: 'B', subject: subject, messageBody: body, userName: userName },
                         function(dataB) {
-                            btn(fbId, false);
                             if (dataB.success) {
-                                feedback(fbId, 'Message sent to both parties.', true);
+                                btnDone(fbId, btnElB, true, '');
                                 document.getElementById('pnotify-body-' + ref) && (document.getElementById('pnotify-body-' + ref).value = '');
                                 if (dataB.activityLog) updateActivityLog(ref, dataB.activityLog);
                             } else {
-                                feedback(fbId, 'Party A sent. Party B failed: ' + (dataB.error || 'Send failed.'), false);
+                                btnDone(fbId, btnElB, false, 'Party A sent. Party B failed: ' + (dataB.error || 'Send failed.'));
                             }
-                        }, function(err) { btn(fbId, false); feedback(fbId, 'Party A sent. Party B error: ' + err, false); });
-                }, function(err) { btn(fbId, false); feedback(fbId, 'Party A error: ' + err, false); });
+                        }, function(err) { btnDone(fbId, btnElB, false, 'Party A sent. Party B error: ' + err); });
+                }, function(err) { btnDone(fbId, btnElB, false, 'Party A error: ' + err); });
             return;
         }
 
         // Single party send
-        btn(fbId, true);
+        const btnElS = getSendBtn(fbId);
+        btnSending(fbId, btnElS);
         jsonp({ action: 'sendPartyNotification', ref: ref, party: party, subject: subject, messageBody: body, userName: userName },
             function(data) {
-                btn(fbId, false);
                 if (data.success) {
-                    feedback(fbId, 'Message sent to Party ' + party + '.', true);
+                    btnDone(fbId, btnElS, true, '');
                     document.getElementById('pnotify-body-' + ref) && (document.getElementById('pnotify-body-' + ref).value = '');
                     if (data.activityLog) updateActivityLog(ref, data.activityLog);
                 } else {
-                    feedback(fbId, data.error || 'Send failed.', false);
+                    btnDone(fbId, btnElS, false, data.error || 'Send failed.');
                 }
-            }, function(err) { btn(fbId, false); feedback(fbId, err, false); });
+            }, function(err) { btnDone(fbId, btnElS, false, err); });
     }
 
     function addComment(ref) {
@@ -1693,6 +1700,28 @@ TECHNICAL:
         if (!el) return;
         var prev = el.previousElementSibling;
         if (prev && prev.tagName === 'BUTTON') prev.disabled = disabled;
+    }
+
+    function btnSending(fbId, btnEl) {
+        // Set button to sending state
+        if (btnEl) { btnEl._origText = btnEl.textContent; btnEl.textContent = 'Sending…'; btnEl.disabled = true; }
+        feedback(fbId, '', null);
+    }
+
+    function btnDone(fbId, btnEl, ok, msg) {
+        // Restore button and show persistent result
+        if (btnEl) { btnEl.textContent = btnEl._origText || btnEl.textContent; btnEl.disabled = false; }
+        var now = new Date();
+        var timeStr = now.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+        var fullMsg = ok ? '✓ Sent — ' + timeStr : '✗ ' + msg;
+        feedback(fbId, fullMsg, ok);
+    }
+
+    function getSendBtn(fbId) {
+        var el = document.getElementById(fbId);
+        if (!el) return null;
+        var prev = el.previousElementSibling;
+        return (prev && prev.tagName === 'BUTTON') ? prev : null;
     }
 
     function currentUserName() {
