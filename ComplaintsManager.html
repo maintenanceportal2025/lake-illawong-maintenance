@@ -6,13 +6,22 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.2
+  Frontend Version: V3.0.3
   Backend:          ComplaintsManager V3.0.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.3 (Jun 2026): doConvertToDispute redesigned. Instead of asking
+    for a DISP reference (which doesnt exist yet), clicking Convert to
+    Dispute now redirects immediately to DisputesManager.html with URL
+    params: autoLog=true, partyAName, partyAUnit, partyAEmail,
+    partyAMobile, originatingRef. DisputesManager pre-populates Party A
+    and opens Log Dispute modal automatically. Complaint closure happens
+    inside submitDispute on the DisputesManager backend.
+    CTD panel simplified -- no DISP reference input required.
+
   V3.0.2 (Jun 2026): doConvertToDispute redirects to DisputesManager.html
     on success instead of reloading complaints. Board lands directly in
     Disputes Manager ready to log the dispute.
@@ -2282,10 +2291,8 @@ TECHNICAL:
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="showConvertToDisputePanel('${safeRef}')">&#9878; Convert to Dispute</button>
                 <div id="ctd-panel-${safeRef}" class="nrn-panel" style="display:none;">
                     <div class="nrn-panel-title" style="border-left-color:#0d9488;">Convert to Dispute</div>
-                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 10px;">This complaint will be closed and the resident notified that their matter is being handled under the formal Dispute Resolution process. Enter the Dispute reference number below.</p>
-                    <label for="ctd-ref-${safeRef}" style="font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.7);display:block;margin-bottom:6px;">Dispute Reference Number <span style="color:#fca5a5">*</span></label>
-                    <input type="text" id="ctd-ref-${safeRef}" placeholder="e.g. DISP-20260605-001" style="width:100%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;color:white;font-size:0.88rem;font-family:monospace;margin-bottom:12px;">
-                    <button class="btn-send-resident" id="send-ctd-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Close &amp; Convert to Dispute</button>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 10px;">Disputes Manager will open with Party A pre-populated from this complaint. Log the dispute there — the complaint will be closed automatically when the dispute is submitted.</p>
+                    <button class="btn-send-resident" id="send-ctd-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Open Disputes Manager</button>
                     <span class="save-feedback" id="ctd-feedback-${safeRef}"></span>
                 </div>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
@@ -3205,33 +3212,21 @@ TECHNICAL:
     }
 
     function doConvertToDispute(ref) {
-        const dispRef = document.getElementById('ctd-ref-' + ref);
-        const fbEl    = document.getElementById('ctd-feedback-' + ref);
-        const btnEl   = document.getElementById('send-ctd-' + ref);
-        const dispRefVal = dispRef ? dispRef.value.trim() : '';
-        if (!dispRefVal) {
-            if (fbEl) { fbEl.textContent = 'Dispute reference is required.'; fbEl.className = 'save-feedback error'; }
-            return;
-        }
-        if (!dispRefVal.startsWith('DISP-')) {
-            if (fbEl) { fbEl.textContent = 'Reference must start with DISP- (e.g. DISP-20260605-001).'; fbEl.className = 'save-feedback error'; }
-            return;
-        }
-        if (btnEl) { btnEl._origText = btnEl.textContent; btnEl.textContent = 'Sending…'; btnEl.disabled = true; }
-        if (fbEl)  { fbEl.textContent = ''; fbEl.className = 'save-feedback'; }
-        const userName = window._sessionUser && window._sessionUser.name ? window._sessionUser.name : 'Admin';
-        jsonpCall({ action: 'updateComplaint', ref: ref, status: 'Closed - Converted to Dispute', dispReference: dispRefVal, userName: userName });
-        window['jsonpCallback_' + ref] = function(data) {
-            if (btnEl) { btnEl.textContent = btnEl._origText || btnEl.textContent; btnEl.disabled = false; }
-            if (data.success) {
-                const now = new Date();
-                const timeStr = now.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
-                if (fbEl) { fbEl.textContent = '✓ Done — ' + timeStr + '. Opening Disputes Manager...'; fbEl.className = 'save-feedback success'; }
-                setTimeout(function() { window.location.href = 'DisputesManager.html'; }, 1200);
-            } else {
-                if (fbEl) { fbEl.textContent = '✗ ' + (data.error || 'Update failed.'); fbEl.className = 'save-feedback error'; }
-            }
-        };
+        // Find the complaint in allComplaints to get party details
+        const c = allComplaints.find(function(x) { return x.referenceNumber === ref; });
+        if (!c) { alert('Complaint record not found.'); return; }
+
+        // Build URL params -- DisputesManager will pre-populate Party A
+        var params = new URLSearchParams({
+            autoLog:        'true',
+            originatingRef: ref,
+            partyAName:     c.residentName  || '',
+            partyAUnit:     c.unitNumber    || '',
+            partyAEmail:    c.contactEmail  || '',
+            partyAMobile:   c.contactMobile || ''
+        });
+
+        window.location.href = 'DisputesManager.html?' + params.toString();
     }
 
     function showPrintDialog(ref) {
