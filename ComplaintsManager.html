@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.3
+  Frontend Version: V3.0.4
   Backend:          ComplaintsManager V3.0.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.4 (Jun 2026): Three fixes:
+    1. doConvertToDispute -- intermediate confirm panel removed.
+       Clicking Convert to Dispute button immediately opens
+       DisputesManager.html in a new tab with URL params.
+       CTD panel replaced with single direct button.
+    2. DisputesManager opens in new tab (window.open _blank)
+       so Board stays in ComplaintsManager.
+    3. Board Response locked message changed to neutral
+       Sent — HH:MM am/pm to avoid confusion in Closed section.
+
   V3.0.3 (Jun 2026): doConvertToDispute redesigned. Instead of asking
     for a DISP reference (which doesnt exist yet), clicking Convert to
     Dispute now redirects immediately to DisputesManager.html with URL
@@ -2288,13 +2298,7 @@ TECHNICAL:
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.</p>
                 <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
                 <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
-                <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="showConvertToDisputePanel('${safeRef}')">&#9878; Convert to Dispute</button>
-                <div id="ctd-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#0d9488;">Convert to Dispute</div>
-                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 10px;">Disputes Manager will open with Party A pre-populated from this complaint. Log the dispute there — the complaint will be closed automatically when the dispute is submitted.</p>
-                    <button class="btn-send-resident" id="send-ctd-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Open Disputes Manager</button>
-                    <span class="save-feedback" id="ctd-feedback-${safeRef}"></span>
-                </div>
+                <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
                 <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
                 <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
@@ -2998,7 +3002,7 @@ TECHNICAL:
             clearTimeout(timeout); cleanup(callbackName);
             btn.disabled = false; btn.textContent = '\u2709 Save & Send to Resident';
             if (data.success) {
-                feedback.textContent = 'Sent successfully — Board Response locked.'; feedback.className = 'send-feedback success';
+                const _now = new Date(); feedback.textContent = '✓ Sent — ' + _now.toLocaleTimeString('en-AU', {hour:'2-digit',minute:'2-digit'}); feedback.className = 'send-feedback success';
                 // Update respondedAt and status in cache, rebuild card
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
                 if (idx !== -1) {
@@ -3018,7 +3022,7 @@ TECHNICAL:
                         const newCard = document.getElementById('card-' + ref);
                         if (newCard && wasExpanded) newCard.classList.add('expanded');
                         const newFeedback = document.getElementById('sendfeedback-' + ref);
-                        if (newFeedback) { newFeedback.textContent = 'Sent — Board Response locked.'; newFeedback.className = 'send-feedback success'; }
+                        if (newFeedback) { newFeedback.textContent = ''; }
                     }
                     if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                     updateSummary(allComplaints);
@@ -3201,22 +3205,9 @@ TECHNICAL:
         </div>`;
     }
 
-    function showConvertToDisputePanel(ref) {
-        // Hide other closure panels first
-        var crPanel  = document.getElementById('cr-panel-'  + ref);
-        var nrnPanel = document.getElementById('nrn-panel-' + ref);
-        var ctdPanel = document.getElementById('ctd-panel-' + ref);
-        if (crPanel)  crPanel.style.display  = 'none';
-        if (nrnPanel) nrnPanel.style.display = 'none';
-        if (ctdPanel) ctdPanel.style.display = ctdPanel.style.display === 'none' ? 'block' : 'none';
-    }
-
     function doConvertToDispute(ref) {
-        // Find the complaint in allComplaints to get party details
         const c = allComplaints.find(function(x) { return x.referenceNumber === ref; });
         if (!c) { alert('Complaint record not found.'); return; }
-
-        // Build URL params -- DisputesManager will pre-populate Party A
         var params = new URLSearchParams({
             autoLog:        'true',
             originatingRef: ref,
@@ -3225,8 +3216,7 @@ TECHNICAL:
             partyAEmail:    c.contactEmail  || '',
             partyAMobile:   c.contactMobile || ''
         });
-
-        window.location.href = 'DisputesManager.html?' + params.toString();
+        window.open('DisputesManager.html?' + params.toString(), '_blank');
     }
 
     function showPrintDialog(ref) {
