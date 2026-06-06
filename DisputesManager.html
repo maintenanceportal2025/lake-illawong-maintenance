@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.9
+  Frontend Version: V3.0.10
   Backend:          DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.10 (Jun 2026): Auto-populate from URL params added.
+    On load, if autoLog=true in URL, pre-populates Party A fields
+    from params (partyAName, partyAUnit, partyAEmail, partyAMobile)
+    and originatingRef, then opens Log Dispute modal automatically.
+    originatingRef shown as read-only info in modal header.
+    originatingRef passed to submitDispute for automatic complaint closure.
+    checkAutoLog() called after auth success.
+
   V3.0.9 (Jun 2026): Activity log split literal newline bug fixed in
     doDisputePrint. Literal \n\n in print function replaced with
     correct JS escape sequence.
@@ -789,6 +797,12 @@ TECHNICAL:
         </div>
         <div class="modal-body">
 
+            <!-- Originating complaint ref -- shown when launched from ComplaintsManager -->
+            <div id="originatingRefBanner" style="display:none;background:#f0fdfa;border:1px solid #0d9488;border-radius:4px;padding:10px 14px;margin-bottom:16px;font-size:0.85rem;color:#0f766e;">
+                &#9878; Converting complaint <strong id="originatingRefLabel"></strong> to a dispute. The complaint will be closed automatically when this dispute is submitted.
+            </div>
+            <input type="hidden" id="logOriginatingRef" value="">
+
             <div class="modal-section-title">Logged By</div>
             <div class="form-row single">
                 <div class="form-field">
@@ -934,6 +948,7 @@ TECHNICAL:
         document.getElementById('mainContent').classList.remove('hidden');
         loadResidentList();
         loadDisputes();
+        checkAutoLog();
     }
 
     function reVerify() {
@@ -1469,6 +1484,13 @@ TECHNICAL:
 
     // ── RESIDENT LOOKUP ───────────────────────────────────────────────────
 
+    function checkAutoLog() {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('autoLog') !== 'true') return;
+        // Short delay to allow resident list to start loading
+        setTimeout(function() { openLogModalAutoLog(params); }, 400);
+    }
+
     function loadResidentList() {
         var callbackName = 'dm_mgmt_' + Date.now();
         var url = CONFIG.MGMT_URL + '?action=getUnitListData&callback=' + callbackName;
@@ -1583,6 +1605,50 @@ TECHNICAL:
         document.getElementById('logModal').classList.add('visible');
     }
 
+    function openLogModalAutoLog(params) {
+        clearLogForm();
+
+        // Pre-populate Party A from URL params
+        var partyAName  = params.get('partyAName')  || '';
+        var partyAUnit  = params.get('partyAUnit')  || '';
+        var partyAEmail = params.get('partyAEmail') || '';
+        var partyAMobile = params.get('partyAMobile') || '';
+        var originatingRef = params.get('originatingRef') || '';
+
+        // Set hidden originatingRef field
+        var origEl = document.getElementById('logOriginatingRef');
+        if (origEl) origEl.value = originatingRef;
+
+        // Show originating ref banner
+        if (originatingRef) {
+            var banner = document.getElementById('originatingRefBanner');
+            var label  = document.getElementById('originatingRefLabel');
+            if (banner) banner.style.display = 'block';
+            if (label)  label.textContent = originatingRef;
+        }
+
+        // Set Party A search field and pre-fill detail fields
+        var searchEl = document.getElementById('partyASearch');
+        if (searchEl) searchEl.value = partyAName;
+
+        var nameEl  = document.getElementById('logPartyAName');
+        var unitEl  = document.getElementById('logPartyAUnit');
+        var emailEl = document.getElementById('logPartyAEmail');
+        var mobEl   = document.getElementById('logPartyAMobile');
+
+        if (nameEl)  { nameEl.value  = partyAName;   nameEl.readOnly  = true; nameEl.classList.add('prefilled'); }
+        if (unitEl)  { unitEl.value  = partyAUnit;   unitEl.readOnly  = true; unitEl.classList.add('prefilled'); }
+        if (emailEl) { emailEl.value = partyAEmail;  emailEl.readOnly = true; emailEl.classList.add('prefilled'); }
+        if (mobEl)   { mobEl.value   = partyAMobile; mobEl.readOnly   = true; mobEl.classList.add('prefilled'); }
+
+        if (partyAName) {
+            var fieldsEl = document.getElementById('partyAFields');
+            if (fieldsEl) fieldsEl.style.display = 'block';
+        }
+
+        document.getElementById('logModal').classList.add('visible');
+    }
+
     function closeLogModal() {
         document.getElementById('logModal').classList.remove('visible');
     }
@@ -1608,6 +1674,11 @@ TECHNICAL:
         if (loggedBy) loggedBy.value = '';
         var nature = document.getElementById('logNature');
         if (nature) nature.value = '';
+        // Reset originatingRef
+        var origEl = document.getElementById('logOriginatingRef');
+        if (origEl) origEl.value = '';
+        var banner = document.getElementById('originatingRefBanner');
+        if (banner) banner.style.display = 'none';
         setFeedback('logFeedback', '', '');
         var btn = document.getElementById('logSubmitBtn');
         if (btn) btn.disabled = false;
@@ -1639,7 +1710,8 @@ TECHNICAL:
             partyBUnit:      val('logPartyBUnit'),
             partyBEmail:     val('logPartyBEmail'),
             partyBMobile:    val('logPartyBMobile'),
-            natureOfDispute: nature
+            natureOfDispute: nature,
+            originatingRef:  val('logOriginatingRef')
         }, function(data) {
             submitBtn.disabled = false;
             if (data.success) {
