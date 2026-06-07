@@ -7,13 +7,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintForm_V2_0_0.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.0.5
+  Frontend Version: V2.0.6
   Backend:          ComplaintsManager V2.2.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.0.6 (Jun 2026): Contact detail guard fixed.
+    Previous check used currentUserData.phone || currentUserData.mobile
+    which passed because session mobile was always present.
+    Now uses contactLookupSuccess flag set only when UnitList lookup
+    returns a valid match with email populated. Submission blocked
+    if flag is false after retry.
+
   V2.0.5 (Jun 2026): Alert messages updated -- System Support
     instead of Board for technical retrieval failures.
 
@@ -582,7 +589,8 @@ PORTAL:
             SESSION_KEY: 'lakeIllawongVerified'
         };
 
-        let currentUserData = null;
+        let currentUserData      = null;
+        let contactLookupSuccess = false; // Set true only when UnitList returns email
 
         // Initialize verification
         window.addEventListener('DOMContentLoaded', function() {
@@ -622,7 +630,8 @@ PORTAL:
                         }) || response.residents[0];
                         currentUserData.email = match.email || '';
                         currentUserData.phone = match.phone || '';
-                        console.log('lookupContactDetails: email=' + currentUserData.email + ' phone=' + currentUserData.phone);
+                        contactLookupSuccess  = !!match.email; // Only flag success if email present
+                        console.log('lookupContactDetails: email=' + currentUserData.email + ' phone=' + currentUserData.phone + ' success=' + contactLookupSuccess);
                     } else {
                         console.warn('lookupContactDetails: no residents found for unit ' + unitNumber);
                     }
@@ -671,18 +680,18 @@ PORTAL:
             submitBtn.disabled    = true;
             submitBtn.textContent = 'Submitting...';
 
-            // If contact details are missing, retry lookup before submitting.
-            // lookupContactDetails can fail silently on page load (JSONP timeout
-            // or ManagementCentral unavailable). Retrying here ensures contact
-            // details are present before the record is created.
-            var contactReady = (currentUserData.email || currentUserData.phone)
+            // If contact lookup hasn't succeeded, retry before submitting.
+            // contactLookupSuccess is only true when UnitList returned an email.
+            // Session mobile alone is not sufficient -- email is required for
+            // complaint notifications to be sent.
+            var contactReady = contactLookupSuccess
                 ? Promise.resolve()
                 : lookupContactDetails(currentUserData.unit, currentUserData.name);
 
             contactReady.then(function() {
 
-                // If still missing after retry, warn resident and abort
-                if (!currentUserData.email && !currentUserData.phone) {
+                // If still no email after retry, warn resident and abort
+                if (!contactLookupSuccess || !currentUserData.email) {
                     alert('Your contact details could not be retrieved at this time. Please try again in a moment. If the problem persists, please contact System Support.');
                     submitBtn.disabled    = false;
                     submitBtn.textContent = 'Submit Complaint';
