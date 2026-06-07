@@ -7,13 +7,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintForm_V2_0_0.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.0.3
+  Frontend Version: V2.0.5
   Backend:          ComplaintsManager V2.2.0
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    May 2026
+  Last Modified:    June 2026
 
 VERSION HISTORY:
+  V2.0.5 (Jun 2026): Alert messages updated -- System Support
+    instead of Board for technical retrieval failures.
+
+  V2.0.4 (Jun 2026): Contact detail validation added to submission handler.
+    If contactEmail is blank at submit time (indicating lookupContactDetails
+    failed silently on page load), a retry is attempted before submitting.
+    If retry also fails, resident shown clear message to try again.
+    lookupContactDetails now returns a Promise for retry support.
+    contactDetailsFetched flag added to track lookup state.
+
   V2.0.3 (May 2026): Success screen updated -- response period changed
     from 14 to 28 days. Note added advising resident to expect
     confirmation email within 30 minutes. Backend updated to
@@ -604,7 +614,7 @@ PORTAL:
         }
 
         function lookupContactDetails(unitNumber, verifiedName) {
-            jsonpCall({ action: 'getUnitResidents', unitNumber: unitNumber }, CONFIG.MGMT_URL)
+            return jsonpCall({ action: 'getUnitResidents', unitNumber: unitNumber }, CONFIG.MGMT_URL)
                 .then(function(response) {
                     if (response.success && response.residents && response.residents.length > 0) {
                         const match = response.residents.find(function(r) {
@@ -612,6 +622,7 @@ PORTAL:
                         }) || response.residents[0];
                         currentUserData.email = match.email || '';
                         currentUserData.phone = match.phone || '';
+                        console.log('lookupContactDetails: email=' + currentUserData.email + ' phone=' + currentUserData.phone);
                     } else {
                         console.warn('lookupContactDetails: no residents found for unit ' + unitNumber);
                     }
@@ -660,39 +671,63 @@ PORTAL:
             submitBtn.disabled    = true;
             submitBtn.textContent = 'Submitting...';
 
-            const formData = {
-    action:           'submitComplaint',
-    residentName:     document.getElementById('residentName').value,
-    unitNumber:       document.getElementById('residentUnit').value,
-    contactEmail:     currentUserData.email  || '',
-    contactMobile:    currentUserData.phone  || currentUserData.mobile || '',
-    category:         document.getElementById('category').value,
-    description:      document.getElementById('description').value,
-    desiredOutcome:   document.getElementById('resolution').value,
-    incidentDateTime: document.getElementById('incidentDateTime').value,
-    location:         document.getElementById('location').value,
-    peopleInvolved:   document.getElementById('peopleInvolved').value,
-    previousActions:  document.getElementById('previousActions').value,
-    howSubmitted:     'Digital'
-};
+            // If contact details are missing, retry lookup before submitting.
+            // lookupContactDetails can fail silently on page load (JSONP timeout
+            // or ManagementCentral unavailable). Retrying here ensures contact
+            // details are present before the record is created.
+            var contactReady = (currentUserData.email || currentUserData.phone)
+                ? Promise.resolve()
+                : lookupContactDetails(currentUserData.unit, currentUserData.name);
 
-            jsonpCall(formData)
-                .then(function(response) {
-                    if (response.success) {
-                        document.getElementById('referenceNumber').textContent = response.referenceNumber;
-                        document.getElementById('formView').classList.add('hidden');
-                        document.getElementById('successView').classList.remove('hidden');
-                    } else {
-                        alert('Submission failed: ' + (response.error || 'Please try again or contact management.'));
-                        submitBtn.disabled    = false;
-                        submitBtn.textContent = 'Submit Complaint';
-                    }
-                })
-                .catch(function(submitErr) {
-                    alert('A network error occurred. Please check your connection and try again.');
+            contactReady.then(function() {
+
+                // If still missing after retry, warn resident and abort
+                if (!currentUserData.email && !currentUserData.phone) {
+                    alert('Your contact details could not be retrieved at this time. Please try again in a moment. If the problem persists, please contact System Support.');
                     submitBtn.disabled    = false;
                     submitBtn.textContent = 'Submit Complaint';
-                });
+                    return;
+                }
+
+                const formData = {
+                    action:           'submitComplaint',
+                    residentName:     document.getElementById('residentName').value,
+                    unitNumber:       document.getElementById('residentUnit').value,
+                    contactEmail:     currentUserData.email  || '',
+                    contactMobile:    currentUserData.phone  || currentUserData.mobile || '',
+                    category:         document.getElementById('category').value,
+                    description:      document.getElementById('description').value,
+                    desiredOutcome:   document.getElementById('resolution').value,
+                    incidentDateTime: document.getElementById('incidentDateTime').value,
+                    location:         document.getElementById('location').value,
+                    peopleInvolved:   document.getElementById('peopleInvolved').value,
+                    previousActions:  document.getElementById('previousActions').value,
+                    howSubmitted:     'Digital'
+                };
+
+                jsonpCall(formData)
+                    .then(function(response) {
+                        if (response.success) {
+                            document.getElementById('referenceNumber').textContent = response.referenceNumber;
+                            document.getElementById('formView').classList.add('hidden');
+                            document.getElementById('successView').classList.remove('hidden');
+                        } else {
+                            alert('Submission failed: ' + (response.error || 'Please try again or contact management.'));
+                            submitBtn.disabled    = false;
+                            submitBtn.textContent = 'Submit Complaint';
+                        }
+                    })
+                    .catch(function(submitErr) {
+                        alert('A network error occurred. Please check your connection and try again.');
+                        submitBtn.disabled    = false;
+                        submitBtn.textContent = 'Submit Complaint';
+                    });
+
+            }).catch(function() {
+                alert('Your contact details could not be retrieved. Please try again in a moment. If the problem persists, please contact System Support.');
+                submitBtn.disabled    = false;
+                submitBtn.textContent = 'Submit Complaint';
+            });
         });
 
         function jsonpCall(params, baseUrl) {
