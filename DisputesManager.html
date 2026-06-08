@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.14
+  Frontend Version: V3.0.15
   Backend:          DisputesManager V3.0.6
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.15 (Jun 2026): Log Inbound Correspondence section removed from
+    Activity Log pane. InboundEmailProcessor V2.1.0 handles Board-
+    forwarded emails automatically -- manual logging is redundant.
+    Add Board Comment retained as-is for consistency with
+    ComplaintsManager. doLogInbound() function removed from script block.
+    No backend change required.
+
   V3.0.14 (Jun 2026): partyDescription field added to Log Dispute modal.
     Board writes a tactful, party-facing description of the dispute at
     lodgement time alongside the internal Nature of Dispute. Required.
@@ -1255,19 +1262,6 @@ TECHNICAL:
             + '<textarea id="comment-' + escHtml(ref) + '" rows="2" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;margin-top:6px;" placeholder="Add a Board comment or note..."></textarea>'
             + '<button onclick="addComment(\'' + escHtml(ref) + '\')" style="margin-top:6px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;padding:6px 14px;border-radius:2px;font-size:0.8rem;font-weight:600;cursor:pointer;">Add Comment</button>'
             + '<span id="comment-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>'
-            + '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">'
-            + '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:#fbbf24;">&#9993; Log Inbound Correspondence</label>'
-            + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">'
-            + '<select id="inbound-party-' + escHtml(ref) + '" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:6px 8px;color:white;font-size:0.82rem;">'
-            + '<option value="A">Party A</option><option value="B">Party B</option><option value="Other">Other</option>'
-            + '</select>'
-            + '<input type="text" id="inbound-sender-' + escHtml(ref) + '" placeholder="Sender name / email" style="flex:1;min-width:120px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:6px 8px;color:white;font-size:0.82rem;">'
-            + '<input type="text" id="inbound-date-' + escHtml(ref) + '" placeholder="Date received (e.g. 6 Jun 2026)" style="flex:1;min-width:140px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:6px 8px;color:white;font-size:0.82rem;">'
-            + '</div>'
-            + '<textarea id="inbound-body-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;margin-top:6px;" placeholder="Paste or type the inbound message content here..."></textarea>'
-            + '<button onclick="doLogInbound(\'' + escHtml(ref) + '\')" style="margin-top:6px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);color:#fef08a;padding:6px 14px;border-radius:2px;font-size:0.8rem;font-weight:600;cursor:pointer;">&#9993; Log Inbound</button>'
-            + '<span id="inbound-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>'
-            + '</div>'
         + '</div>';
     }
 
@@ -1452,33 +1446,6 @@ TECHNICAL:
                     btnDone(fbId, btnElC, false, data.error || 'Failed to add comment.');
                 }
             }, function(err) { btnDone(fbId, btnElC, false, err); });
-    }
-
-    function doLogInbound(ref) {
-        const party    = document.getElementById('inbound-party-'  + ref) ? document.getElementById('inbound-party-'  + ref).value : 'A';
-        const sender   = document.getElementById('inbound-sender-' + ref) ? document.getElementById('inbound-sender-' + ref).value.trim() : '';
-        const received = document.getElementById('inbound-date-'   + ref) ? document.getElementById('inbound-date-'   + ref).value.trim() : '';
-        const body     = document.getElementById('inbound-body-'   + ref) ? document.getElementById('inbound-body-'   + ref).value.trim() : '';
-        const fbId     = 'inbound-fb-' + ref;
-        const userName = currentUserName();
-
-        if (!body) { feedback(fbId, 'Message content is required.', false); return; }
-
-        const btnEl = getSendBtn(fbId);
-        btnSending(fbId, btnEl);
-        jsonp({ action: 'logInboundCorrespondence', ref: ref, party: party, sender: sender,
-                receivedAt: received, messageBody: body, userName: userName },
-            function(data) {
-                if (data.success) {
-                    btnDone(fbId, btnEl, true, '');
-                    document.getElementById('inbound-body-'   + ref) && (document.getElementById('inbound-body-'   + ref).value = '');
-                    document.getElementById('inbound-sender-' + ref) && (document.getElementById('inbound-sender-' + ref).value = '');
-                    document.getElementById('inbound-date-'   + ref) && (document.getElementById('inbound-date-'   + ref).value = '');
-                    if (data.activityLog) updateActivityLog(ref, data.activityLog);
-                } else {
-                    btnDone(fbId, btnEl, false, data.error || 'Failed to log.');
-                }
-            }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
 
     // ── LOG DISPUTE MODAL ─────────────────────────────────────────────────
