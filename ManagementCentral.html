@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        ManagementCentral.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module (Admin Portal)
-  Frontend Version: V1.2.0
+  Frontend Version: V1.4.0
   Backend:          ManagementCentral V1.3.js
   Status:           PRODUCTION
   Created:          2025
@@ -17,6 +17,8 @@ VERSION HISTORY:
   V1.0.0 (2025): Initial release — resident and unit management interface
   V1.1.0 (Jun 2026): Glass-morphism pass — Design System V2.2 applied throughout
   V1.2.0 (Jun 2026): Glass button pass; removed Quick Navigation & Test buttons; filter text fix; Back to Portal repositioned; Sub-Categories glass fix; Assigned By → Assigned To
+  V1.3.0 (Jun 2026): Add buttons glass styled; Export Data removed; Edit/Delete gap fix
+  V1.4.0 (Jun 2026): Export Data reinstated as functional CSV download from loaded contactsData
 
 AUTHENTICATION:
   Session guard checks sessionStorage for portalAdminVerified key.
@@ -53,7 +55,7 @@ TECHNICAL:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Management Central V1.2.0 - Lake Illawong</title>
+    <title>Management Central V1.4.0 - Lake Illawong</title>
     <style>
         :root {
             /* Primary */
@@ -626,13 +628,22 @@ TECHNICAL:
         .dropdown-form input::placeholder { color: var(--glass-text-subtle); }
 
         .dropdown-form button {
-            padding: 8px 12px;
+            padding: 8px 14px;
             border-radius: 2px;
-            border: none;
+            border: 1px solid var(--glass-border);
             cursor: pointer;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            color: var(--glass-text);
             font-weight: 600;
+            transition: all 0.2s;
+            min-height: 38px;
+        }
+
+        .dropdown-form button:hover {
+            background: var(--glass-bg-strong);
+            border-color: var(--glass-border-hover);
         }
 
         .subcategory-item {
@@ -863,8 +874,8 @@ TECHNICAL:
                     <button class="btn-primary" onclick="loadContacts()">
                         📊 Load Contact Data
                     </button>
-                    <button class="btn-warning" onclick="showMessage('Export functionality ready')">
-                        📤 Export Data
+                    <button class="btn-primary" onclick="exportContactsCSV()">
+                        📤 Export CSV
                     </button>
                 </div>
 
@@ -1305,9 +1316,10 @@ TECHNICAL:
                     <td>${contact.stage || ''}</td>
                     <td>${contact.roleTags || ''}</td>
                     <td>
-
-<button style="background: var(--warning-amber); color: white; border: none; padding: 6px 12px; font-size: 0.85rem; margin-right: 8px; border-radius: 4px; cursor: pointer;" onclick="editResident(${contact.rowIndex})">✏️ Edit</button>
-    <button style="background: var(--error-red); color: white; border: none; padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; cursor: pointer;" onclick="deleteResident(${contact.rowIndex})">🗑️ Delete</button>
+<div style="display:flex; gap:6px; align-items:center;">
+  <button style="background: var(--warning-amber); color: white; border: none; padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; cursor: pointer; white-space:nowrap;" onclick="editResident(${contact.rowIndex})">✏️ Edit</button>
+  <button style="background: var(--error-red); color: white; border: none; padding: 6px 12px; font-size: 0.85rem; border-radius: 4px; cursor: pointer; white-space:nowrap;" onclick="deleteResident(${contact.rowIndex})">🗑️ Delete</button>
+</div>
 </td>
 
                 </tr>
@@ -2459,6 +2471,38 @@ function filterByStage(stage) {
     window.currentStageFilter = stage;
     filterContacts();
 }
+
+        function exportContactsCSV() {
+            if (!contactsData || contactsData.length === 0) {
+                showToast('No contact data loaded — click Load Contact Data first', 'warning');
+                return;
+            }
+
+            const headers = ['Unit', 'Name', 'Email', 'Phone', 'Zone', 'Stage', 'Roles'];
+            const rows = contactsData.map(c => [
+                c.unitNumber  || '',
+                c.residentName || '',
+                c.email       || '',
+                c.phone       || '',
+                c.zone        || '',
+                c.stage       || '',
+                c.roleTags    || ''
+            ].map(v => `"${String(v).replace(/"/g, '""')}"`));
+
+            const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('
+');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const date = new Date().toISOString().slice(0, 10);
+            a.href = url;
+            a.download = `LakeIllawong_Contacts_${date}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(`✅ Exported ${contactsData.length} contacts to CSV`, 'success');
+        }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
