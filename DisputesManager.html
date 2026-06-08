@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.12
-  Backend:          DisputesManager V3.0.0
+  Frontend Version: V3.0.13
+  Backend:          DisputesManager V3.0.5
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.13 (Jun 2026): Send to Both Parties action added.
+    New section in buildActionPanel (all lifecycle stages except terminal).
+    Board enters partyDescription -- a tactful, party-facing summary.
+    natureOfDispute is internal only and never sent to parties.
+    partyDescription textarea with 1000 char limit and live counter.
+    Board contact reminder note (email B31 + phone C31 from EmailList).
+    doSendBothParties() JSONP call to sendBothParties backend action.
+    Activity Log updated from response on success.
+    Backend V3.0.5 required (sendBothParties + logInboundCorrespondence
+    actions now present in doGet switch).
+
   V3.0.12 (Jun 2026): Send Message to Party removed entirely.
     All direct correspondence is Board responsibility via personal email.
     Removed: party-tab CSS, party section from buildActionPanel,
@@ -1299,6 +1310,30 @@ TECHNICAL:
         }
 
 
+        // ── SEND TO BOTH PARTIES ──────────────────────────────────────
+        // Available at all lifecycle stages (Board may need to send
+        // ad hoc notification at any point during the dispute).
+        // natureOfDispute is never sent -- Board writes a fresh,
+        // tactful partyDescription for each communication.
+        html += '<hr class="action-separator">';
+        html += '<div class="action-title" style="color:#5eead4;">&#9993; Send to Both Parties</div>';
+        html += '<div class="action-note" style="margin-bottom:10px;">Send a notification to both parties. Write a brief, tactful description of the matter for this communication. This text will appear in the email — <strong>do not use internal Board wording</strong>. The Nature of Dispute is never included in party emails.</div>';
+        html += '<div class="action-row"><div class="action-field full-width">'
+            + '<label>Description for parties <span style="color:#fca5a5">*</span></label>'
+            + '<textarea id="sbp-desc-' + ref + '" rows="4" maxlength="1000" '
+            + 'style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(13,148,136,0.4);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" '
+            + 'placeholder="e.g. A dispute has been registered regarding noise and amenity concerns. The Board will be in contact with both parties to discuss the matter." '
+            + 'oninput="document.getElementById(\'sbp-count-' + ref + '\').textContent = this.value.length + \' / 1000\'">'
+            + '</textarea>'
+            + '<div id="sbp-count-' + ref + '" style="text-align:right;font-size:0.72rem;color:rgba(255,255,255,0.4);margin-top:2px;">0 / 1000</div>'
+            + '<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.05);border-left:2px solid rgba(255,255,255,0.2);border-radius:0 2px 2px 0;font-size:0.78rem;color:rgba(255,255,255,0.5);line-height:1.5;">'
+            + 'Board contact details (email and phone from EmailList B31 / C31) will be included automatically so parties know how to reach you directly.'
+            + '</div>'
+            + '</div></div>';
+        html += '<button class="btn-action" style="background:rgba(13,148,136,0.25);border-color:rgba(13,148,136,0.5);" onclick="doSendBothParties(\'' + ref + '\')">'
+            + '&#9993; Send to Both Parties</button>';
+        html += '<span id="sbp-fb-' + ref + '" class="save-feedback"></span>';
+
         // Print Record button -- always shown
         html += '<hr class="action-separator">';
         html += '<button class="btn-print-record" onclick="showDisputePrintDialog(\'' + ref + '\')">';
@@ -1445,6 +1480,43 @@ TECHNICAL:
                     if (data.activityLog) updateActivityLog(ref, data.activityLog);
                 } else {
                     btnDone(fbId, btnEl, false, data.error || 'Failed to log.');
+                }
+            }, function(err) { btnDone(fbId, btnEl, false, err); });
+    }
+
+    function doSendBothParties(ref) {
+        const descEl = document.getElementById('sbp-desc-' + ref);
+        const fbId   = 'sbp-fb-' + ref;
+        if (!descEl) { feedback(fbId, 'Description field not found.', false); return; }
+
+        const partyDescription = descEl.value.trim();
+        if (!partyDescription) {
+            feedback(fbId, 'Please enter a description for the parties before sending.', false);
+            descEl.focus();
+            return;
+        }
+        if (partyDescription.length < 20) {
+            feedback(fbId, 'Description is too short. Please write a meaningful summary.', false);
+            descEl.focus();
+            return;
+        }
+
+        if (!confirm('Send dispute notification to both parties?\n\nThe description you have entered will appear in each party\'s email.\n\nThis cannot be undone. Proceed?')) return;
+
+        const userName = currentUserName();
+        const btnEl    = getSendBtn(fbId);
+        btnSending(fbId, btnEl);
+
+        jsonp({ action: 'sendBothParties', ref: ref, partyDescription: partyDescription, userName: userName },
+            function(data) {
+                if (data.success) {
+                    btnDone(fbId, btnEl, true, '');
+                    descEl.value = '';
+                    var countEl = document.getElementById('sbp-count-' + ref);
+                    if (countEl) countEl.textContent = '0 / 1000';
+                    if (data.activityLog) updateActivityLog(ref, data.activityLog);
+                } else {
+                    btnDone(fbId, btnEl, false, data.error || 'Send failed.');
                 }
             }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
