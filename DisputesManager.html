@@ -6,13 +6,26 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.10
+  Frontend Version: V3.0.12
   Backend:          DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.12 (Jun 2026): Send Message to Party removed entirely.
+    All direct correspondence is Board responsibility via personal email.
+    Removed: party-tab CSS, party section from buildActionPanel,
+    selectPartyTab(), doSendPartyNotification().
+
+  V3.0.11 (Jun 2026): Correspondence record improvements.
+    1. Log Inbound Correspondence section added to Activity Log pane.
+       Board can log received emails with party, sender, date, body.
+       [INBOUND] marker makes inbound correspondence clearly visible.
+       doLogInbound() calls logInboundCorrespondence backend action.
+    2. Activity Log entries now show message body for sent messages.
+       [INBOUND] entries styled distinctly (amber left border).
+
   V3.0.10 (Jun 2026): Auto-populate from URL params added.
     On load, if autoLog=true in URL, pre-populates Party A fields
     from params (partyAName, partyAUnit, partyAEmail, partyAMobile)
@@ -441,18 +454,6 @@ TECHNICAL:
             outline: none; border-color: rgba(255,255,255,0.5);
         }
 
-        /* Party selector tabs */
-        .party-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
-        .party-tab {
-            padding: 6px 16px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.2);
-            font-size: 0.82rem; font-weight: 600; cursor: pointer;
-            background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7);
-            transition: all 0.15s;
-        }
-        .party-tab.active {
-            background: rgba(13,148,136,0.4); border-color: rgba(13,148,136,0.7);
-            color: white;
-        }
 
         /* Buttons */
         .btn-action {
@@ -669,6 +670,12 @@ TECHNICAL:
         .modal-feedback { font-size: 0.82rem; font-weight: 600; }
         .modal-feedback.success { color: #059669; }
         .modal-feedback.error   { color: #dc2626; }
+
+        /* ── INBOUND CORRESPONDENCE ─────────────────────────────── */
+        .inbound-entry {
+            border-left: 3px solid rgba(251,191,36,0.6);
+            padding-left: 8px; margin: 4px 0;
+        }
 
         /* ── STATES ──────────────────────────────────────────────── */
         .loading-state, .empty-state, .error-state {
@@ -1181,7 +1188,11 @@ TECHNICAL:
             : [];
         const logHtml = logEntries.length
             ? logEntries.map(function(e) {
-                return '<div style="font-size:0.8rem;color:rgba(255,255,255,0.65);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.06);white-space:pre-wrap;">' + escHtml(e) + '</div>';
+                var isInbound = e.indexOf('[INBOUND]') !== -1;
+                var style = isInbound
+                    ? 'font-size:0.8rem;color:rgba(255,255,255,0.75);padding:4px 0 4px 8px;border-bottom:1px solid rgba(255,255,255,0.06);white-space:pre-wrap;border-left:3px solid rgba(251,191,36,0.6);margin-bottom:2px;'
+                    : 'font-size:0.8rem;color:rgba(255,255,255,0.65);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.06);white-space:pre-wrap;';
+                return '<div style="' + style + '">' + escHtml(e) + '</div>';
               }).join('')
             : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No activity recorded yet.</div>';
 
@@ -1206,12 +1217,25 @@ TECHNICAL:
     }
 
     function buildCommentInput(ref) {
-        return '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">' +
-            '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.45);">Add to Activity Log</label>' +
-            '<textarea id="comment-' + escHtml(ref) + '" rows="2" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;margin-top:6px;" placeholder="Add a Board comment or note..."></textarea>' +
-            '<button onclick="addComment(\'' + escHtml(ref) + '\')" style="margin-top:6px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;padding:6px 14px;border-radius:2px;font-size:0.8rem;font-weight:600;cursor:pointer;">Add Comment</button>' +
-            '<span id="comment-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>' +
-        '</div>';
+        return '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">'
+            + '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.45);">Add Board Comment</label>'
+            + '<textarea id="comment-' + escHtml(ref) + '" rows="2" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;margin-top:6px;" placeholder="Add a Board comment or note..."></textarea>'
+            + '<button onclick="addComment(\'' + escHtml(ref) + '\')" style="margin-top:6px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;padding:6px 14px;border-radius:2px;font-size:0.8rem;font-weight:600;cursor:pointer;">Add Comment</button>'
+            + '<span id="comment-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>'
+            + '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">'
+            + '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:#fbbf24;">&#9993; Log Inbound Correspondence</label>'
+            + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">'
+            + '<select id="inbound-party-' + escHtml(ref) + '" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:6px 8px;color:white;font-size:0.82rem;">'
+            + '<option value="A">Party A</option><option value="B">Party B</option><option value="Other">Other</option>'
+            + '</select>'
+            + '<input type="text" id="inbound-sender-' + escHtml(ref) + '" placeholder="Sender name / email" style="flex:1;min-width:120px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:6px 8px;color:white;font-size:0.82rem;">'
+            + '<input type="text" id="inbound-date-' + escHtml(ref) + '" placeholder="Date received (e.g. 6 Jun 2026)" style="flex:1;min-width:140px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:6px 8px;color:white;font-size:0.82rem;">'
+            + '</div>'
+            + '<textarea id="inbound-body-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;margin-top:6px;" placeholder="Paste or type the inbound message content here..."></textarea>'
+            + '<button onclick="doLogInbound(\'' + escHtml(ref) + '\')" style="margin-top:6px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);color:#fef08a;padding:6px 14px;border-radius:2px;font-size:0.8rem;font-weight:600;cursor:pointer;">&#9993; Log Inbound</button>'
+            + '<span id="inbound-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>'
+            + '</div>'
+        + '</div>';
     }
 
     // ── ACTION PANEL ──────────────────────────────────────────────────────
@@ -1274,29 +1298,6 @@ TECHNICAL:
             html += '<div class="action-note">This dispute is <strong>' + escHtml(status) + '</strong> and no further actions are available.</div>';
         }
 
-        // Party notification -- available for all non-terminal statuses
-        if (terminal.indexOf(status) === -1) {
-            html += '<hr class="action-separator">' +
-            '<div class="action-title">Send Message to Party</div>' +
-            '<div class="party-tabs">' +
-                '<button class="party-tab active" id="ptab-A-' + ref + '" onclick="selectPartyTab(\'' + ref + '\',\'A\')">Party A — ' + escHtml(d.partyAName || 'A') + '</button>' +
-                (d.partyBName ? '<button class="party-tab" id="ptab-B-' + ref + '" onclick="selectPartyTab(\'' + ref + '\',\'B\')">Party B — ' + escHtml(d.partyBName) + '</button>' : '') +
-                (d.partyBName ? '<button class="party-tab" id="ptab-Both-' + ref + '" onclick="selectPartyTab(\'' + ref + '\',\'Both\')">Both Parties</button>' : '') +
-            '</div>' +
-            '<input type="hidden" id="selected-party-' + ref + '" value="A">' +
-            '<div class="action-row">' +
-                '<div class="action-field">' +
-                    '<label>Subject</label>' +
-                    '<input type="text" id="pnotify-subj-' + ref + '" value="Neighbourhood Dispute — Reference ' + escHtml(ref) + '" placeholder="Email subject">' +
-                '</div>' +
-            '</div>' +
-            '<div class="action-row"><div class="action-field">' +
-                '<label>Message</label>' +
-                '<textarea id="pnotify-body-' + ref + '" placeholder="Compose your message. When Both Parties is selected the same message will be sent to each party independently."></textarea>' +
-            '</div></div>' +
-            '<button class="btn-secondary-action" onclick="doSendPartyNotification(\'' + ref + '\')">Send</button>' +
-            '<span id="fb-pnotify-' + ref + '" class="save-feedback"></span>';
-        }
 
         // Print Record button -- always shown
         html += '<hr class="action-separator">';
@@ -1322,15 +1323,6 @@ TECHNICAL:
 
     // ── PARTY TAB ─────────────────────────────────────────────────────────
 
-    function selectPartyTab(ref, party) {
-        ['A', 'B', 'Both'].forEach(function(p) {
-            var t = document.getElementById('ptab-' + p + '-' + ref);
-            if (t) t.classList.remove('active');
-        });
-        const tab = document.getElementById('ptab-' + party + '-' + ref);
-        if (tab) tab.classList.add('active');
-        document.getElementById('selected-party-' + ref).value = party;
-    }
 
     // ── ACTIONS ───────────────────────────────────────────────────────────
 
@@ -1409,56 +1401,6 @@ TECHNICAL:
             }, function(err) { btnDone(fbIdVa, btnElVa, false, err); });
     }
 
-    function doSendPartyNotification(ref) {
-        const party   = document.getElementById('selected-party-' + ref) ? document.getElementById('selected-party-' + ref).value : 'A';
-        const subject = val('pnotify-subj-' + ref);
-        const body    = val('pnotify-body-' + ref);
-        const fbId    = 'fb-pnotify-' + ref;
-
-        if (!subject) { feedback(fbId, 'Subject is required.', false); return; }
-        if (!body)    { feedback(fbId, 'Message body is required.', false); return; }
-
-        const userName = currentUserName();
-
-        if (party === 'Both') {
-            // Send to Party A then Party B sequentially
-            const btnElB = getSendBtn(fbId);
-            btnSending(fbId, btnElB);
-            jsonp({ action: 'sendPartyNotification', ref: ref, party: 'A', subject: subject, messageBody: body, userName: userName },
-                function(dataA) {
-                    if (!dataA.success) {
-                        btnDone(fbId, btnElB, false, 'Party A failed: ' + (dataA.error || 'Send failed.'));
-                        return;
-                    }
-                    // A succeeded -- now send to B
-                    jsonp({ action: 'sendPartyNotification', ref: ref, party: 'B', subject: subject, messageBody: body, userName: userName },
-                        function(dataB) {
-                            if (dataB.success) {
-                                btnDone(fbId, btnElB, true, '');
-                                document.getElementById('pnotify-body-' + ref) && (document.getElementById('pnotify-body-' + ref).value = '');
-                                if (dataB.activityLog) updateActivityLog(ref, dataB.activityLog);
-                            } else {
-                                btnDone(fbId, btnElB, false, 'Party A sent. Party B failed: ' + (dataB.error || 'Send failed.'));
-                            }
-                        }, function(err) { btnDone(fbId, btnElB, false, 'Party A sent. Party B error: ' + err); });
-                }, function(err) { btnDone(fbId, btnElB, false, 'Party A error: ' + err); });
-            return;
-        }
-
-        // Single party send
-        const btnElS = getSendBtn(fbId);
-        btnSending(fbId, btnElS);
-        jsonp({ action: 'sendPartyNotification', ref: ref, party: party, subject: subject, messageBody: body, userName: userName },
-            function(data) {
-                if (data.success) {
-                    btnDone(fbId, btnElS, true, '');
-                    document.getElementById('pnotify-body-' + ref) && (document.getElementById('pnotify-body-' + ref).value = '');
-                    if (data.activityLog) updateActivityLog(ref, data.activityLog);
-                } else {
-                    btnDone(fbId, btnElS, false, data.error || 'Send failed.');
-                }
-            }, function(err) { btnDone(fbId, btnElS, false, err); });
-    }
 
     function addComment(ref) {
         const comment  = val('comment-' + ref);
@@ -1478,6 +1420,33 @@ TECHNICAL:
                     btnDone(fbId, btnElC, false, data.error || 'Failed to add comment.');
                 }
             }, function(err) { btnDone(fbId, btnElC, false, err); });
+    }
+
+    function doLogInbound(ref) {
+        const party    = document.getElementById('inbound-party-'  + ref) ? document.getElementById('inbound-party-'  + ref).value : 'A';
+        const sender   = document.getElementById('inbound-sender-' + ref) ? document.getElementById('inbound-sender-' + ref).value.trim() : '';
+        const received = document.getElementById('inbound-date-'   + ref) ? document.getElementById('inbound-date-'   + ref).value.trim() : '';
+        const body     = document.getElementById('inbound-body-'   + ref) ? document.getElementById('inbound-body-'   + ref).value.trim() : '';
+        const fbId     = 'inbound-fb-' + ref;
+        const userName = currentUserName();
+
+        if (!body) { feedback(fbId, 'Message content is required.', false); return; }
+
+        const btnEl = getSendBtn(fbId);
+        btnSending(fbId, btnEl);
+        jsonp({ action: 'logInboundCorrespondence', ref: ref, party: party, sender: sender,
+                receivedAt: received, messageBody: body, userName: userName },
+            function(data) {
+                if (data.success) {
+                    btnDone(fbId, btnEl, true, '');
+                    document.getElementById('inbound-body-'   + ref) && (document.getElementById('inbound-body-'   + ref).value = '');
+                    document.getElementById('inbound-sender-' + ref) && (document.getElementById('inbound-sender-' + ref).value = '');
+                    document.getElementById('inbound-date-'   + ref) && (document.getElementById('inbound-date-'   + ref).value = '');
+                    if (data.activityLog) updateActivityLog(ref, data.activityLog);
+                } else {
+                    btnDone(fbId, btnEl, false, data.error || 'Failed to log.');
+                }
+            }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
 
     // ── LOG DISPUTE MODAL ─────────────────────────────────────────────────
