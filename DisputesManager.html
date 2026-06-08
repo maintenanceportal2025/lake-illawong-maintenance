@@ -6,13 +6,27 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.13
-  Backend:          DisputesManager V3.0.5
+  Frontend Version: V3.0.14
+  Backend:          DisputesManager V3.0.6
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.14 (Jun 2026): partyDescription field added to Log Dispute modal.
+    Board writes a tactful, party-facing description of the dispute at
+    lodgement time alongside the internal Nature of Dispute. Required.
+    Passed to submitDispute() and included in the deferred party
+    acknowledgement emails via processPendingDisputeNotifications.
+    natureOfDispute remains internal -- parties never see it.
+    Modal hint text updated to reflect two-field design.
+    submitDispute() validation updated (partyDescription required).
+    clearLogForm() updated to clear partyDescription textarea.
+    Send to Both Parties action panel section removed (V3.0.13) --
+    single lodgement notification is the correct pattern.
+    doSendBothParties() function removed from script block.
+    Backend V3.0.6 required.
+
   V3.0.13 (Jun 2026): Send to Both Parties action added.
     New section in buildActionPanel (all lifecycle stages except terminal).
     Board enters partyDescription -- a tactful, party-facing summary.
@@ -907,16 +921,24 @@ TECHNICAL:
             <div class="modal-section-title">Nature of Dispute <span class="form-required">*</span></div>
             <div class="form-row single">
                 <div class="form-field">
-                    <label>Board's neutral description of the situation <span class="form-required">*</span></label>
-                    <textarea id="logNature" placeholder="Describe the dispute in neutral, factual terms. Do not attribute blame. This description will be used in the Board's internal record only."></textarea>
+                    <label>Board's internal description <span class="form-required">*</span></label>
+                    <textarea id="logNature" placeholder="Describe the dispute in neutral, factual terms for the Board's internal record. Do not attribute blame. This description is never sent to parties."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-section-title">Description for Parties <span class="form-required">*</span></div>
+            <div class="form-row single">
+                <div class="form-field">
+                    <label>What parties will see in their notification email <span class="form-required">*</span></label>
+                    <textarea id="logPartyDescription" placeholder="Write a brief, tactful description of the matter for the parties. Keep it neutral and factual — this text will appear in the notification email sent to both parties within 30 minutes of lodgement."></textarea>
                 </div>
             </div>
 
             <div style="font-size:0.8rem;color:#6b7280;margin-top:8px;line-height:1.5;">
-                &#9432; Both parties will be notified by email once the dispute is logged.
-                Each notification will include the reference number and the Board's
-                obligation to refer the matter to VicAssist if unresolved within 28 days.
-                The nature of dispute description is not included in party notifications.
+                &#9432; Both parties will be notified by email within 30 minutes of lodgement.
+                Each notification will include the reference number, the description for parties
+                above, the 28-day review period, and Board contact details.
+                The internal Nature of Dispute is not included in party notifications.
             </div>
 
         </div>
@@ -1309,31 +1331,6 @@ TECHNICAL:
             html += '<div class="action-note">This dispute is <strong>' + escHtml(status) + '</strong> and no further actions are available.</div>';
         }
 
-
-        // ── SEND TO BOTH PARTIES ──────────────────────────────────────
-        // Available at all lifecycle stages (Board may need to send
-        // ad hoc notification at any point during the dispute).
-        // natureOfDispute is never sent -- Board writes a fresh,
-        // tactful partyDescription for each communication.
-        html += '<hr class="action-separator">';
-        html += '<div class="action-title" style="color:#5eead4;">&#9993; Send to Both Parties</div>';
-        html += '<div class="action-note" style="margin-bottom:10px;">Send a notification to both parties. Write a brief, tactful description of the matter for this communication. This text will appear in the email — <strong>do not use internal Board wording</strong>. The Nature of Dispute is never included in party emails.</div>';
-        html += '<div class="action-row"><div class="action-field full-width">'
-            + '<label>Description for parties <span style="color:#fca5a5">*</span></label>'
-            + '<textarea id="sbp-desc-' + ref + '" rows="4" maxlength="1000" '
-            + 'style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(13,148,136,0.4);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" '
-            + 'placeholder="e.g. A dispute has been registered regarding noise and amenity concerns. The Board will be in contact with both parties to discuss the matter." '
-            + 'oninput="document.getElementById(\'sbp-count-' + ref + '\').textContent = this.value.length + \' / 1000\'">'
-            + '</textarea>'
-            + '<div id="sbp-count-' + ref + '" style="text-align:right;font-size:0.72rem;color:rgba(255,255,255,0.4);margin-top:2px;">0 / 1000</div>'
-            + '<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.05);border-left:2px solid rgba(255,255,255,0.2);border-radius:0 2px 2px 0;font-size:0.78rem;color:rgba(255,255,255,0.5);line-height:1.5;">'
-            + 'Board contact details (email and phone from EmailList B31 / C31) will be included automatically so parties know how to reach you directly.'
-            + '</div>'
-            + '</div></div>';
-        html += '<button class="btn-action" style="background:rgba(13,148,136,0.25);border-color:rgba(13,148,136,0.5);" onclick="doSendBothParties(\'' + ref + '\')">'
-            + '&#9993; Send to Both Parties</button>';
-        html += '<span id="sbp-fb-' + ref + '" class="save-feedback"></span>';
-
         // Print Record button -- always shown
         html += '<hr class="action-separator">';
         html += '<button class="btn-print-record" onclick="showDisputePrintDialog(\'' + ref + '\')">';
@@ -1480,43 +1477,6 @@ TECHNICAL:
                     if (data.activityLog) updateActivityLog(ref, data.activityLog);
                 } else {
                     btnDone(fbId, btnEl, false, data.error || 'Failed to log.');
-                }
-            }, function(err) { btnDone(fbId, btnEl, false, err); });
-    }
-
-    function doSendBothParties(ref) {
-        const descEl = document.getElementById('sbp-desc-' + ref);
-        const fbId   = 'sbp-fb-' + ref;
-        if (!descEl) { feedback(fbId, 'Description field not found.', false); return; }
-
-        const partyDescription = descEl.value.trim();
-        if (!partyDescription) {
-            feedback(fbId, 'Please enter a description for the parties before sending.', false);
-            descEl.focus();
-            return;
-        }
-        if (partyDescription.length < 20) {
-            feedback(fbId, 'Description is too short. Please write a meaningful summary.', false);
-            descEl.focus();
-            return;
-        }
-
-        if (!confirm('Send dispute notification to both parties?\n\nThe description you have entered will appear in each party\'s email.\n\nThis cannot be undone. Proceed?')) return;
-
-        const userName = currentUserName();
-        const btnEl    = getSendBtn(fbId);
-        btnSending(fbId, btnEl);
-
-        jsonp({ action: 'sendBothParties', ref: ref, partyDescription: partyDescription, userName: userName },
-            function(data) {
-                if (data.success) {
-                    btnDone(fbId, btnEl, true, '');
-                    descEl.value = '';
-                    var countEl = document.getElementById('sbp-count-' + ref);
-                    if (countEl) countEl.textContent = '0 / 1000';
-                    if (data.activityLog) updateActivityLog(ref, data.activityLog);
-                } else {
-                    btnDone(fbId, btnEl, false, data.error || 'Send failed.');
                 }
             }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
@@ -1715,6 +1675,8 @@ TECHNICAL:
         if (loggedBy) loggedBy.value = '';
         var nature = document.getElementById('logNature');
         if (nature) nature.value = '';
+        var partyDesc = document.getElementById('logPartyDescription');
+        if (partyDesc) partyDesc.value = '';
         // Reset originatingRef
         var origEl = document.getElementById('logOriginatingRef');
         if (origEl) origEl.value = '';
@@ -1726,33 +1688,36 @@ TECHNICAL:
     }
 
     function submitDispute() {
-        const loggedBy   = val('logLoggedBy');
-        const partyAName = val('logPartyAName');
-        const partyAUnit = val('logPartyAUnit');
-        const nature     = val('logNature');
+        const loggedBy          = val('logLoggedBy');
+        const partyAName        = val('logPartyAName');
+        const partyAUnit        = val('logPartyAUnit');
+        const nature            = val('logNature');
+        const partyDescription  = val('logPartyDescription');
 
-        if (!loggedBy)   { setFeedback('logFeedback', 'Board member name is required.', false); return; }
-        if (!partyAName) { setFeedback('logFeedback', 'Party A — please search and select a resident.', false); return; }
-        if (!partyAUnit) { setFeedback('logFeedback', 'Party A unit is required.', false); return; }
-        if (!nature)     { setFeedback('logFeedback', 'Nature of dispute is required.', false); return; }
+        if (!loggedBy)         { setFeedback('logFeedback', 'Board member name is required.', false); return; }
+        if (!partyAName)       { setFeedback('logFeedback', 'Party A — please search and select a resident.', false); return; }
+        if (!partyAUnit)       { setFeedback('logFeedback', 'Party A unit is required.', false); return; }
+        if (!nature)           { setFeedback('logFeedback', 'Nature of dispute is required.', false); return; }
+        if (!partyDescription) { setFeedback('logFeedback', 'Description for parties is required — this text will appear in the notification email sent to both parties.', false); return; }
 
         var submitBtn = document.getElementById('logSubmitBtn');
         submitBtn.disabled = true;
         setFeedback('logFeedback', 'Logging dispute...', null);
 
         jsonp({
-            action:          'submitDispute',
-            loggedBy:        loggedBy,
-            partyAName:      val('logPartyAName'),
-            partyAUnit:      val('logPartyAUnit'),
-            partyAEmail:     val('logPartyAEmail'),
-            partyAMobile:    val('logPartyAMobile'),
-            partyBName:      val('logPartyBName'),
-            partyBUnit:      val('logPartyBUnit'),
-            partyBEmail:     val('logPartyBEmail'),
-            partyBMobile:    val('logPartyBMobile'),
-            natureOfDispute: nature,
-            originatingRef:  val('logOriginatingRef')
+            action:           'submitDispute',
+            loggedBy:         loggedBy,
+            partyAName:       val('logPartyAName'),
+            partyAUnit:       val('logPartyAUnit'),
+            partyAEmail:      val('logPartyAEmail'),
+            partyAMobile:     val('logPartyAMobile'),
+            partyBName:       val('logPartyBName'),
+            partyBUnit:       val('logPartyBUnit'),
+            partyBEmail:      val('logPartyBEmail'),
+            partyBMobile:     val('logPartyBMobile'),
+            natureOfDispute:  nature,
+            partyDescription: partyDescription,
+            originatingRef:   val('logOriginatingRef')
         }, function(data) {
             submitBtn.disabled = false;
             if (data.success) {
