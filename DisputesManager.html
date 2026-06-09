@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.16
-  Backend:          DisputesManager V3.0.7
+  Frontend Version: V3.0.17
+  Backend:          DisputesManager V3.0.9
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.17 (Jun 2026): Referred to VicAssist renamed to Referred to External Body.
+    Dropdown option, terminal status array, action panel heading and button,
+    referral statement label, outcome label and placeholder, confirmation dialogs,
+    status/pill/badge mappings, pane labels, and print record section titles all
+    updated. vicAssistOutcome field references updated to externalReferralOutcome.
+    Backend V3.0.9 required.
+
   V3.0.16 (Jun 2026): Print record shows Description Sent to Parties.
     doDisputePrint: partyDescBlock added between Nature of Dispute and
     Process Statement. Full Record only -- matches Nature of Dispute
@@ -142,12 +149,12 @@ VERSION HISTORY:
   V3.0.0 (Jun 2026): Initial release.
     New module -- dispute resolution system.
     Two-party model: Party A and Party B managed in a single record.
-    Lifecycle: Open -> Under Review -> Resolved / Referred to VicAssist -> Closed.
+    Lifecycle: Open -> Under Review -> Resolved / Referred to External Body -> Closed.
     Log Dispute form (Board-only, inline modal).
     Summary strip: Open / Under Review / Resolved / Referred / Closed / Overdue.
     Filter by status. Card-per-dispute accordion layout.
     Accordion panes: Dispute Details, Process Statement, Resolution,
-    VicAssist Referral, Activity Log.
+    External Referral, Activity Log.
     Action panel: context-sensitive per lifecycle stage.
     Party notification: independently compose and send to Party A or Party B.
     Add to Activity Log: manual Board comment.
@@ -161,7 +168,7 @@ AUTHENTICATION:
   Redirects to AdminPortal.html if session absent.
 
 SYSTEM CONNECTIONS:
-  Backend: DisputesManager V3.0.0
+  Backend: DisputesManager V3.0.9
   Actions: submitDispute, getDisputes, getDisputeByRef, updateDispute,
            sendPartyNotification, addDisputeComment, testConnection
   URL:     CONFIG.BACKEND_URL
@@ -810,7 +817,7 @@ TECHNICAL:
                 <option value="Open">Open</option>
                 <option value="Under Review">Under Review</option>
                 <option value="Resolved">Resolved</option>
-                <option value="Referred to VicAssist">Referred to VicAssist</option>
+                <option value="Referred to External Body">Referred to External Body</option>
                 <option value="Closed">Closed</option>
             </select>
             <label for="filterOverdue">Show:</label>
@@ -1072,7 +1079,7 @@ TECHNICAL:
             if (d.status === 'Open')                   counts.Open++;
             if (d.status === 'Under Review')           counts.UnderReview++;
             if (d.status === 'Resolved')               counts.Resolved++;
-            if (d.status === 'Referred to VicAssist')  counts.Referred++;
+            if (d.status === 'Referred to External Body')  counts.Referred++;
             if (d.status === 'Closed')                 counts.Closed++;
             if (isOverdue(d))                          counts.overdue++;
         });
@@ -1101,7 +1108,7 @@ TECHNICAL:
 
     function isOverdue(d) {
         if (!d.reviewDue) return false;
-        const terminal = ['Resolved', 'Referred to VicAssist', 'Closed'];
+        const terminal = ['Resolved', 'Referred to External Body', 'Closed'];
         if (terminal.indexOf(d.status) !== -1) return false;
         return new Date(d.reviewDue) < new Date();
     }
@@ -1220,10 +1227,10 @@ TECHNICAL:
         // VicAssist referral pane
         if (d.referralNarrative) {
             html += accordionPane('pane-ref-' + ref,
-                'VicAssist Referral',
+                'External Referral',
                 d.referredAt ? fmtDate(new Date(d.referredAt)) : '',
                 '<div class="pane-text">' + escHtml(d.referralNarrative) + '</div>' +
-                (d.vicAssistOutcome ? '<div class="detail-section-title">VicAssist Outcome</div><div class="pane-text">' + escHtml(d.vicAssistOutcome) + '</div>' : ''),
+                (d.externalReferralOutcome ? '<div class="detail-section-title">External Referral Outcome</div><div class="pane-text">' + escHtml(d.externalReferralOutcome) + '</div>' : ''),
                 true);
         }
 
@@ -1307,22 +1314,22 @@ TECHNICAL:
             '<span id="fb-res-' + ref + '" class="save-feedback"></span>' +
 
             '<hr class="action-separator">' +
-            '<div class="action-title" style="color:#fed7aa;">&#9888; Refer to VicAssist</div>' +
+            '<div class="action-title" style="color:#fed7aa;">&#9888; Refer to External Body</div>' +
             '<div class="action-note" style="margin-bottom:8px;">Use this path if the dispute has not been resolved within 28 days, or if the Board determines referral is warranted sooner. Both parties will be notified separately.</div>' +
             '<div class="action-row"><div class="action-field">' +
-                '<label>Board Referral Statement <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="ref-' + ref + '" placeholder="Describe the Board\'s reasons for referral and any steps already taken. This will be included in notifications to both parties."></textarea>' +
+                '<label>External Body &amp; Referral Statement <span style="color:#fca5a5">*</span></label>' +
+                '<textarea id="ref-' + ref + '" placeholder="Identify the external body (e.g. VicAssist, VCAT, Consumer Affairs Victoria) and describe the reasons for referral. This will be included in notifications sent to both parties."></textarea>' +
             '</div></div>' +
-            '<button class="btn-danger-action" onclick="doRefer(\'' + ref + '\')">Refer to VicAssist &amp; Notify Both Parties</button>' +
+            '<button class="btn-danger-action" onclick="doRefer(\'' + ref + '\')">Refer to External Body &amp; Notify Both Parties</button>' +
             '<span id="fb-ref-' + ref + '" class="save-feedback"></span>';
         }
 
-        else if (status === 'Referred to VicAssist') {
+        else if (status === 'Referred to External Body') {
             // Record VicAssist outcome + Close
             html += '<div class="action-note" style="margin-bottom:10px;">Record the outcome once VicAssist has concluded the conciliation process.</div>' +
             '<div class="action-row"><div class="action-field">' +
-                '<label>VicAssist Outcome <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="va-' + ref + '" placeholder="Summarise the outcome of the VicAssist conciliation process."></textarea>' +
+                '<label>External Referral Outcome <span style="color:#fca5a5">*</span></label>' +
+                '<textarea id="va-' + ref + '" placeholder="Identify the external body and summarise the outcome of the conciliation or other process."></textarea>' +
             '</div></div>' +
             '<button class="btn-action" onclick="doClose(\'' + ref + '\')">Record Outcome &amp; Close Dispute</button>' +
             '<span id="fb-va-' + ref + '" class="save-feedback"></span>';
@@ -1399,12 +1406,12 @@ TECHNICAL:
     function doRefer(ref) {
         const narrative = val('ref-' + ref);
         if (!narrative) { feedback('fb-ref-' + ref, 'Referral statement is required.', false); return; }
-        if (!confirm('Refer this dispute to VicAssist and notify both parties? This action cannot be undone.')) return;
+        if (!confirm('Refer this dispute to an external body and notify both parties? This action cannot be undone.')) return;
         const userName = currentUserName();
         const fbIdRef = 'fb-ref-' + ref;
         const btnElRef = getSendBtn(fbIdRef);
         btnSending(fbIdRef, btnElRef);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Referred to VicAssist', referralNarrative: narrative, userName: userName, andSend: 'true' },
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Referred to External Body', referralNarrative: narrative, userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
                     btnDone(fbIdRef, btnElRef, true, '');
@@ -1417,8 +1424,8 @@ TECHNICAL:
 
     function doClose(ref) {
         const outcome = val('va-' + ref);
-        if (!outcome) { feedback('fb-va-' + ref, 'VicAssist outcome is required.', false); return; }
-        if (!confirm('Record VicAssist outcome and close this dispute? Both parties will be notified.')) return;
+        if (!outcome) { feedback('fb-va-' + ref, 'External referral outcome is required.', false); return; }
+        if (!confirm('Record external referral outcome and close this dispute? Both parties will be notified.')) return;
         const userName = currentUserName();
         const fbIdVa = 'fb-va-' + ref;
         const btnElVa = getSendBtn(fbIdVa);
@@ -1755,7 +1762,7 @@ TECHNICAL:
             'Open':                   'status-open',
             'Under Review':           'status-under-review',
             'Resolved':               'status-resolved',
-            'Referred to VicAssist':  'status-referred',
+            'Referred to External Body':  'status-referred',
             'Closed':                 'status-closed'
         }[status] || 'status-open';
     }
@@ -1765,7 +1772,7 @@ TECHNICAL:
             'Open':                   'pill-open',
             'Under Review':           'pill-under-review',
             'Resolved':               'pill-resolved',
-            'Referred to VicAssist':  'pill-referred',
+            'Referred to External Body':  'pill-referred',
             'Closed':                 'pill-closed'
         }[status] || 'pill-open';
     }
@@ -1977,7 +1984,7 @@ TECHNICAL:
             'Open':                  'badge-open',
             'Under Review':          'badge-under-review',
             'Resolved':              'badge-resolved',
-            'Referred to VicAssist': 'badge-referred',
+            'Referred to External Body': 'badge-referred',
             'Closed':                'badge-closed'
         }[d.status] || 'badge-open';
 
@@ -2047,16 +2054,16 @@ TECHNICAL:
 
         // Referral narrative
         var refBlock = d.referralNarrative
-            ? '<div class="section-title">VicAssist Referral — Board Statement</div>'
+            ? '<div class="section-title">External Referral — Board Statement</div>'
               + '<div class="content-block" style="border-left-color:#f97316;">'
               + '<div class="field-value">' + escHtml(d.referralNarrative) + '</div></div>'
             : '';
 
         // VicAssist outcome
-        var vaBlock = d.vicAssistOutcome
-            ? '<div class="section-title">VicAssist Outcome</div>'
+        var vaBlock = d.externalReferralOutcome
+            ? '<div class="section-title">External Referral Outcome</div>'
               + '<div class="content-block" style="border-left-color:#6b7280;">'
-              + '<div class="field-value">' + escHtml(d.vicAssistOutcome) + '</div></div>'
+              + '<div class="field-value">' + escHtml(d.externalReferralOutcome) + '</div></div>'
             : '';
 
         // Activity log (full record only)
