@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.0
+  Frontend Version: V1.0.2
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
@@ -27,6 +27,11 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
+  V1.0.2 (Jun 2026): parseBoardLogBody updated. [BOARD LOG] entries now
+    show full email body (complete correspondence record required for
+    regulatory compliance). Body extracted from after the --- delimiter.
+    > quoting prefixes and stray --- delimiters stripped from body text.
+
   V1.0.0 (Jun 2026): Initial release.
     Reference lookup (COMP- or DISP- prefix auto-detected).
     Calls getComplaintByRef or getDisputeByRef backend action.
@@ -341,7 +346,7 @@ body {
 // =====================================================================
 const CONFIG = {
     COMPLAINTS_BACKEND: 'https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec',
-    DISPUTES_BACKEND:   'https://script.google.com/macros/s/AKfycbx2dwG5mP6Cv-UAqii38FAINvaUvrR2oq-6uv6U_mnKqG8Rzjq56C35lOVHFS9ZsCvw/exec',
+    DISPUTES_BACKEND:   'https://script.google.com/macros/s/AKfycbzxFhvM2Vy8gPrXoYB1-DisputeBackendURL-placeholder/exec',
     SESSION_KEY:        'portalAdminVerified',
     PORTAL_URL:         'AdminPortal.html',
     ALLOWED_ROLES:      ['Complaints-Manager', 'Developer']
@@ -722,19 +727,36 @@ function parseEntry(raw) {
 }
 
 function parseBoardLogBody(body) {
-    // For [BOARD LOG] entries we show only: received date, sender, subject -- body suppressed
-    // Raw format: [BOARD LOG] Forwarded to log by <sender>\nReceived: <date>\nSubject: <subject>\n---\n<body>\n---
-    var summary = body.replace('[BOARD LOG]', '').trim();
+    // Raw log format (single line in sheet):
+    // [BOARD LOG] Forwarded to log by <sender> Received: <date> Subject: <subject> --- <email body>
+    // The --- separates the metadata header from the email body content.
+    // > quoting prefixes (email client thread notation) are stripped from the body.
 
-    var receivedMatch = summary.match(/Received:\s*(.+)/);
-    var subjectMatch  = summary.match(/Subject:\s*(.+)/);
-    var senderMatch   = summary.match(/Forwarded to log by\s*(.+)/);
+    var text = body.replace('[BOARD LOG]', '').trim();
 
+    // Isolate metadata (before first ' --- ') and body (after it)
+    var dashIdx = text.indexOf(' --- ');
+    var metadata  = dashIdx !== -1 ? text.substring(0, dashIdx).trim() : text;
+    var emailBody = dashIdx !== -1 ? text.substring(dashIdx + 5).trim() : '';
+
+    // Extract header fields from the metadata section
+    var senderMatch   = metadata.match(/Forwarded to log by\s+(.+?)\s+Received:/);
+    var receivedMatch = metadata.match(/Received:\s*(.+?)\s+Subject:/);
+    var subjectMatch  = metadata.match(/Subject:\s*(.+)/);
+
+    // Clean the body: strip > quoting prefixes and any stray --- delimiters
+    var cleanBody = emailBody
+        .replace(/\s*---+\s*/g, ' ')    // remove any --- delimiters in body
+        .replace(/(^|\s)>+\s*/g, ' ')   // strip > and >> quoting prefixes
+        .replace(/\s{2,}/g, ' ')         // collapse multiple spaces
+        .trim();
+
+    // Build structured output: header block then body
     var lines = [];
-    if (senderMatch)  lines.push('From:     ' + senderMatch[1].trim());
+    if (senderMatch)   lines.push('From:     ' + senderMatch[1].trim());
     if (receivedMatch) lines.push('Received: ' + receivedMatch[1].trim());
     if (subjectMatch)  lines.push('Subject:  ' + subjectMatch[1].trim());
-    lines.push('[Email body not reproduced in Chronicle]');
+    if (cleanBody)     lines.push('', cleanBody);
 
     return lines.join('\n');
 }
