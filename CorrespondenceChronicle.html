@@ -1,0 +1,1146 @@
+<!--
+=====================================================================
+CorrespondenceChronicle.html
+Lake Illawong Management Central System
+=====================================================================
+DOCUMENT INFORMATION:
+  File Name:        CorrespondenceChronicle.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Admin Module
+  Frontend Version: V1.0.0
+  Status:           PRODUCTION
+  Created:          June 2026
+  Last Modified:    June 2026
+
+PURPOSE:
+  Correspondence Chronicle -- unified, filtered correspondence record
+  for a single complaint or dispute matter. Reads from the existing
+  Activity Log and structured fields of each record. Produces two
+  print-ready report versions:
+    Board Version  -- full record including all internal entries,
+                      [BOARD LOG] email summaries (header only, body
+                      suppressed), pathway notice blocks stripped.
+    Resident Version -- same structure, further stripped of internal
+                      Board notes, [BOARD LOG] entries, and any entry
+                      marked as internal-only.
+  Accessed via Admin Portal. Requires Complaints-Manager or Developer
+  role tag. JSONP architecture -- no POST, no CORS.
+
+VERSION HISTORY:
+  V1.0.0 (Jun 2026): Initial release.
+    Reference lookup (COMP- or DISP- prefix auto-detected).
+    Calls getComplaintByRef or getDisputeByRef backend action.
+    Board Version: structured matter header + submission details +
+      board response + escalation record + closure narrative +
+      filtered/formatted Activity Log.
+    Resident Version: same structure minus internal fields,
+      [BOARD LOG] entries, and internal-only Activity Log entries.
+    Print output via window.open() -- consistent with Managers.
+    RBAC: Complaints-Manager and Developer roles.
+
+BACKEND URLS:
+  Complaints: https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec
+  Disputes:   (see DisputesManager.html CONFIG.BACKEND_URL)
+
+DEPENDENCIES:
+  VerificationModal_V1_0.js (OTP auth + RBAC)
+  ManagementCentral backend (OTP verification)
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Correspondence Chronicle — Lake Illawong</title>
+<script src="verificationmodal_v1_0.js"></script>
+<style>
+:root {
+    --primary-blue:       #667eea;
+    --primary-blue-dark:  #764ba2;
+    --primary-gradient:   linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+    --bg-primary:         #ffffff;
+    --bg-secondary:       #f8fafc;
+    --text-primary:       #1e293b;
+    --text-secondary:     #64748b;
+    --border-primary:     #e2e8f0;
+    --success-green:      #10b981;
+    --warning-amber:      #f59e0b;
+    --error-red:          #ef4444;
+    --glass-bg:           rgba(255,255,255,0.08);
+    --glass-bg-hover:     rgba(255,255,255,0.12);
+    --glass-bg-strong:    rgba(255,255,255,0.15);
+    --glass-border:       rgba(255,255,255,0.15);
+    --glass-border-hover: rgba(255,255,255,0.30);
+    --glass-blur:         blur(15px);
+    --glass-text:         #ffffff;
+    --glass-text-muted:   rgba(255,255,255,0.70);
+    --glass-text-subtle:  rgba(255,255,255,0.50);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+    min-height: 100vh;
+    color: var(--glass-text);
+    line-height: 1.6;
+}
+
+.container { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+
+/* ── HEADER ── */
+.header { text-align: center; margin-bottom: 28px; }
+.header-content { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 14px; }
+.logo-image { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; padding: 4px; }
+.header-text { display: flex; flex-direction: column; align-items: flex-start; }
+.header-title { font-size: 2rem; font-weight: 700; line-height: 1.1; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+.header-subtitle { font-size: 0.95rem; font-weight: 500; color: rgba(255,255,255,0.85); }
+.header-divider { height: 2px; background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%); border-radius: 2px; margin-top: 14px; }
+
+/* ── BACK BUTTON ── */
+.btn-back-glass {
+    background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border); color: white; padding: 10px 22px; border-radius: 2px;
+    font-weight: 600; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; min-height: 44px;
+}
+.btn-back-glass:hover { background: var(--glass-bg-hover); border-color: var(--glass-border-hover); }
+
+/* ── GLASS PANEL ── */
+.glass-panel {
+    background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border); border-radius: 2px; padding: 20px;
+}
+
+/* ── LOOKUP PANEL ── */
+.lookup-panel { margin-bottom: 20px; }
+.lookup-label { font-size: 0.8rem; font-weight: 600; color: var(--glass-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+.lookup-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.glass-input {
+    background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 2px;
+    color: var(--glass-text); padding: 10px 16px; font-size: 0.95rem; backdrop-filter: var(--glass-blur);
+    min-height: 44px; flex: 1; min-width: 200px; max-width: 320px; font-family: inherit;
+}
+.glass-input::placeholder { color: var(--glass-text-subtle); }
+.glass-input:focus { outline: none; background: var(--glass-bg-strong); border-color: var(--glass-border-hover); }
+.btn-load {
+    background: rgba(16,185,129,0.3); border: 1px solid rgba(16,185,129,0.6); color: #6ee7b7;
+    padding: 10px 24px; border-radius: 2px; font-weight: 700; cursor: pointer; font-size: 0.9rem;
+    min-height: 44px; transition: all 0.2s; white-space: nowrap;
+}
+.btn-load:hover { background: rgba(16,185,129,0.45); }
+.btn-load:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── RESULT PANEL ── */
+.result-panel { margin-top: 20px; display: none; }
+
+/* ── MATTER HEADER ── */
+.matter-header {
+    background: var(--glass-bg-strong); border: 1px solid var(--glass-border);
+    border-radius: 2px; padding: 18px 20px; margin-bottom: 16px;
+}
+.matter-ref { font-size: 1.3rem; font-weight: 700; margin-bottom: 4px; }
+.matter-type-badge {
+    display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 0.72rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;
+}
+.badge-complaint { background: rgba(59,130,246,0.35); color: #bfdbfe; border: 1px solid rgba(96,165,250,0.6); }
+.badge-dispute   { background: rgba(13,148,136,0.35); color: #99f6e4; border: 1px solid rgba(13,148,136,0.6); }
+.matter-meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 10px; margin-top: 12px; }
+.meta-item { }
+.meta-label { font-size: 0.72rem; color: var(--glass-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.meta-value { font-size: 0.88rem; font-weight: 600; color: white; margin-top: 2px; }
+
+/* ── STATUS PILL ── */
+.status-pill {
+    display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 0.72rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
+}
+.status-open             { background: rgba(59,130,246,0.35);  color: #bfdbfe; border: 1px solid rgba(96,165,250,0.6); }
+.status-acknowledged     { background: rgba(16,185,129,0.3);   color: #6ee7b7; border: 1px solid rgba(52,211,153,0.6); }
+.status-responded        { background: rgba(168,85,247,0.35);  color: #e9d5ff; border: 1px solid rgba(168,85,247,0.7); }
+.status-escalated        { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
+.status-closed-resolved  { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
+.status-closed-unresolved{ background: rgba(107,114,128,0.3);  color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
+.status-closed-resolved-escalated   { background: rgba(139,92,246,0.3);  color: #ddd6fe; border: 1px solid rgba(139,92,246,0.6); }
+.status-closed-unresolved-escalated { background: rgba(107,114,128,0.3); color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
+.status-closed-converted { background: rgba(13,148,136,0.3);  color: #99f6e4; border: 1px solid rgba(13,148,136,0.6); }
+.status-under-review { background: rgba(245,158,11,0.3);   color: #fde68a; border: 1px solid rgba(245,158,11,0.6); }
+.status-resolved     { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
+.status-referred     { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
+.status-closed       { background: rgba(107,114,128,0.3);  color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
+
+/* ── CHRONICLE SECTIONS ── */
+.chronicle-section { margin-bottom: 14px; }
+.section-label {
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--glass-text-muted); margin-bottom: 8px; padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.section-body {
+    background: var(--glass-bg); border: 1px solid var(--glass-border);
+    border-radius: 2px; padding: 14px 16px; font-size: 0.875rem; color: rgba(255,255,255,0.88); line-height: 1.6;
+}
+.field-row { display: flex; gap: 8px; margin-bottom: 6px; font-size: 0.875rem; }
+.field-label { color: var(--glass-text-muted); min-width: 130px; flex-shrink: 0; }
+.field-value { color: white; }
+.field-block { margin-bottom: 12px; }
+.field-block-label { font-size: 0.8rem; color: var(--glass-text-muted); margin-bottom: 4px; }
+.field-block-value { color: rgba(255,255,255,0.88); font-size: 0.875rem; white-space: pre-wrap; line-height: 1.6; }
+
+/* ── ACTIVITY ENTRIES ── */
+.activity-entries { display: flex; flex-direction: column; gap: 8px; }
+.activity-entry {
+    background: rgba(255,255,255,0.05); border-left: 3px solid rgba(255,255,255,0.2);
+    border-radius: 0 2px 2px 0; padding: 10px 12px; font-size: 0.83rem;
+}
+.activity-entry.entry-board-log { border-left-color: rgba(59,130,246,0.6); }
+.activity-entry.entry-inbound   { border-left-color: rgba(245,158,11,0.6); }
+.activity-entry.entry-system    { border-left-color: rgba(255,255,255,0.15); opacity: 0.7; }
+.activity-entry.entry-comment   { border-left-color: rgba(168,85,247,0.6); }
+.entry-meta { font-size: 0.78rem; color: var(--glass-text-muted); margin-bottom: 4px; }
+.entry-tag  {
+    display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.68rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px;
+}
+.tag-boardlog { background: rgba(59,130,246,0.3);  color: #bfdbfe; }
+.tag-inbound  { background: rgba(245,158,11,0.3);  color: #fde68a; }
+.tag-system   { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+.tag-comment  { background: rgba(168,85,247,0.3);  color: #e9d5ff; }
+.entry-body   { color: rgba(255,255,255,0.85); white-space: pre-wrap; line-height: 1.5; margin-top: 4px; }
+.entry-suppressed { color: var(--glass-text-subtle); font-style: italic; font-size: 0.8rem; margin-top: 2px; }
+
+/* ── PRINT BUTTONS ── */
+.print-bar {
+    display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px;
+    padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);
+}
+.btn-print-board {
+    background: rgba(59,130,246,0.3); border: 1px solid rgba(96,165,250,0.6); color: #bfdbfe;
+    padding: 12px 28px; border-radius: 2px; font-weight: 700; cursor: pointer; font-size: 0.9rem;
+    min-height: 44px; transition: all 0.2s;
+}
+.btn-print-board:hover { background: rgba(59,130,246,0.45); }
+.btn-print-resident {
+    background: rgba(16,185,129,0.25); border: 1px solid rgba(16,185,129,0.5); color: #6ee7b7;
+    padding: 12px 28px; border-radius: 2px; font-weight: 700; cursor: pointer; font-size: 0.9rem;
+    min-height: 44px; transition: all 0.2s;
+}
+.btn-print-resident:hover { background: rgba(16,185,129,0.4); }
+.print-note { font-size: 0.78rem; color: var(--glass-text-muted); align-self: center; }
+
+/* ── STATES ── */
+.loading-state { text-align: center; padding: 30px; color: var(--glass-text-muted); }
+.spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,0.2); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-notice {
+    background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4);
+    border-radius: 2px; padding: 12px 16px; color: #fca5a5; font-size: 0.875rem; margin-top: 12px;
+}
+.info-notice {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 2px; padding: 12px 16px; color: var(--glass-text-muted); font-size: 0.875rem; margin-top: 12px;
+}
+
+/* ── ACCESS DENIED ── */
+.hidden { display: none !important; }
+#deniedView {
+    background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); border-radius: 2px;
+    padding: 30px; text-align: center; margin-top: 20px;
+}
+#deniedView h2 { color: #fca5a5; margin-bottom: 10px; }
+#deniedView p  { color: rgba(255,255,255,0.7); margin-bottom: 16px; font-size: 0.9rem; }
+.btn-reverify  {
+    background: rgba(239,68,68,0.3); border: 1px solid rgba(239,68,68,0.6); color: #fca5a5;
+    padding: 10px 24px; border-radius: 2px; font-weight: 600; cursor: pointer; font-size: 0.9rem;
+}
+
+@media (max-width: 480px) {
+    .header-content { flex-direction: column; gap: 12px; }
+    .header-text    { align-items: center; text-align: center; }
+    .header-title   { font-size: 1.6rem; }
+    .logo-image     { width: 70px; height: 70px; }
+    .lookup-row     { flex-direction: column; }
+    .glass-input    { max-width: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Back button -->
+    <div style="margin-bottom:16px;">
+        <button class="btn-back-glass" onclick="window.location.href='AdminPortal.html'">&#8592; Admin Portal</button>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="lake-illawong-logo.png" alt="Lake Illawong" class="logo-image"
+                     onerror="this.style.display='none'">
+            </div>
+            <div class="header-text">
+                <div class="header-title">Correspondence Chronicle</div>
+                <div class="header-subtitle">Lake Illawong Residential Club &mdash; Case Correspondence Record</div>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+    </div>
+
+    <!-- Access denied -->
+    <div id="deniedView" class="hidden">
+        <h2>&#128683; Access Denied</h2>
+        <p>Your account (<strong><span id="deniedName"></span></strong>) does not have the
+           <strong>Complaints-Manager</strong> role required for this module.</p>
+        <p>Assigned roles: <span id="deniedRoles"></span></p>
+        <button class="btn-reverify" onclick="reVerify()">Try a Different Account</button>
+    </div>
+
+    <!-- Main content -->
+    <div id="mainContent" class="hidden">
+
+        <!-- Lookup panel -->
+        <div class="glass-panel lookup-panel">
+            <div class="lookup-label">Matter Reference Lookup</div>
+            <div class="lookup-row">
+                <input type="text" id="refInput" class="glass-input"
+                       placeholder="e.g. COMP-20260601-001 or DISP-20260601-001"
+                       onkeydown="if(event.key==='Enter')loadMatter()">
+                <button id="loadBtn" class="btn-load" onclick="loadMatter()">Load Matter</button>
+            </div>
+            <div id="lookupError"></div>
+        </div>
+
+        <!-- Result panel -->
+        <div id="resultPanel" class="result-panel">
+
+            <!-- Matter header -->
+            <div id="matterHeader" class="matter-header"></div>
+
+            <!-- Chronicle sections -->
+            <div id="chronicleSections"></div>
+
+            <!-- Print bar -->
+            <div class="print-bar">
+                <button class="btn-print-board"    onclick="doPrint(false)">&#128438; Print Board Record</button>
+                <button class="btn-print-resident" onclick="doPrint(true)">&#128209; Print Resident Copy</button>
+                <span class="print-note">Board Record includes all entries &mdash; Resident Copy omits internal Board notes.</span>
+            </div>
+
+        </div>
+
+    </div><!-- /mainContent -->
+
+</div><!-- /container -->
+<script>
+// =====================================================================
+// CONFIGURATION
+// =====================================================================
+const CONFIG = {
+    COMPLAINTS_BACKEND: 'https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec',
+    DISPUTES_BACKEND:   'https://script.google.com/macros/s/AKfycbzxFhvM2Vy8gPrXoYB1-DisputeBackendURL-placeholder/exec',
+    SESSION_KEY:        'portalAdminVerified',
+    PORTAL_URL:         'AdminPortal.html',
+    ALLOWED_ROLES:      ['Complaints-Manager', 'Developer']
+};
+
+// Current loaded matter
+let currentMatter = null;
+let currentType   = null; // 'complaint' | 'dispute'
+
+// =====================================================================
+// AUTH
+// =====================================================================
+document.addEventListener('DOMContentLoaded', function() {
+    const alreadyVerified = VerificationModal.init({
+        moduleName: 'Correspondence Chronicle',
+        moduleIcon: '\uD83D\uDCDC',
+        sessionKey: CONFIG.SESSION_KEY,
+        onSuccess:  handleVerificationSuccess
+    });
+    if (!alreadyVerified) { VerificationModal.show(); }
+});
+
+function handleVerificationSuccess(userData) {
+    window._sessionUser = userData;
+    const roles    = userData.roleTags || [];
+    const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
+    if (!hasAccess) {
+        document.getElementById('deniedName').textContent  = userData.name  || 'Unknown';
+        document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
+        document.getElementById('deniedView').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('mainContent').classList.remove('hidden');
+    document.getElementById('refInput').focus();
+}
+
+function reVerify() {
+    document.getElementById('deniedView').classList.add('hidden');
+    VerificationModal.clearVerification();
+    VerificationModal.show();
+}
+
+// =====================================================================
+// LOOKUP
+// =====================================================================
+function loadMatter() {
+    const raw = (document.getElementById('refInput').value || '').trim().toUpperCase();
+    const errEl = document.getElementById('lookupError');
+    errEl.innerHTML = '';
+
+    if (!raw) {
+        errEl.innerHTML = '<div class="error-notice">Please enter a reference number.</div>';
+        return;
+    }
+
+    const isComplaint = raw.startsWith('COMP-');
+    const isDispute   = raw.startsWith('DISP-');
+
+    if (!isComplaint && !isDispute) {
+        errEl.innerHTML = '<div class="error-notice">Reference must start with COMP- or DISP-.</div>';
+        return;
+    }
+
+    const btn = document.getElementById('loadBtn');
+    btn.disabled = true;
+    btn.textContent = 'Loading\u2026';
+
+    document.getElementById('resultPanel').style.display = 'none';
+    currentMatter = null;
+    currentType   = null;
+
+    const callbackName = 'chronicleCallback_' + Date.now();
+    const backendUrl   = isComplaint ? CONFIG.COMPLAINTS_BACKEND : CONFIG.DISPUTES_BACKEND;
+    const action       = isComplaint ? 'getComplaintByRef' : 'getDisputeByRef';
+    const url = backendUrl + '?action=' + action + '&ref=' + encodeURIComponent(raw) + '&callback=' + callbackName;
+
+    const timeout = setTimeout(function() {
+        cleanup(callbackName);
+        btn.disabled = false;
+        btn.textContent = 'Load Matter';
+        errEl.innerHTML = '<div class="error-notice">Server did not respond. Please try again.</div>';
+    }, 15000);
+
+    window[callbackName] = function(data) {
+        clearTimeout(timeout);
+        cleanup(callbackName);
+        btn.disabled = false;
+        btn.textContent = 'Load Matter';
+
+        if (!data || !data.success || !data.complaint && !data.dispute) {
+            errEl.innerHTML = '<div class="error-notice">Matter not found: ' + escHtml(raw) + '</div>';
+            return;
+        }
+
+        currentMatter = data.complaint || data.dispute;
+        currentType   = isComplaint ? 'complaint' : 'dispute';
+        renderMatter();
+    };
+
+    const script = document.createElement('script');
+    script.onerror = function() {
+        clearTimeout(timeout);
+        cleanup(callbackName);
+        btn.disabled = false;
+        btn.textContent = 'Load Matter';
+        errEl.innerHTML = '<div class="error-notice">Network error. Please try again.</div>';
+    };
+    script.src = url;
+    document.head.appendChild(script);
+}
+
+function cleanup(name) {
+    delete window[name];
+    var s = document.querySelector('script[src*="' + name + '"]');
+    if (s && s.parentNode) s.parentNode.removeChild(s);
+}
+
+// =====================================================================
+// RENDER
+// =====================================================================
+function renderMatter() {
+    const m = currentMatter;
+    const isComp = currentType === 'complaint';
+
+    // ── Matter header
+    const status = normaliseStatus(isComp ? m.status : m.status);
+    document.getElementById('matterHeader').innerHTML =
+        '<div class="matter-ref">' + escHtml(m.referenceNumber) + '</div>' +
+        '<span class="matter-type-badge ' + (isComp ? 'badge-complaint' : 'badge-dispute') + '">' +
+            (isComp ? 'Complaint' : 'Dispute') +
+        '</span> ' +
+        '<span class="status-pill ' + statusPillClass(status, isComp) + '">' + escHtml(status) + '</span>' +
+        '<div class="matter-meta">' + buildMetaFields(m, isComp) + '</div>';
+
+    // ── Chronicle sections
+    document.getElementById('chronicleSections').innerHTML = buildSections(m, isComp);
+
+    document.getElementById('lookupError').innerHTML = '';
+    const rp = document.getElementById('resultPanel');
+    rp.style.display = 'block';
+}
+
+function buildMetaFields(m, isComp) {
+    var fields = [];
+    if (isComp) {
+        fields.push(['Resident',    m.residentName + ' (Unit ' + m.unitNumber + ')']);
+        fields.push(['Category',    m.category]);
+        fields.push(['Lodged',      formatDate(m.submittedAt)]);
+        if (m.acknowledgedAt) fields.push(['Acknowledged', formatDate(m.acknowledgedAt)]);
+        if (m.respondedAt)    fields.push(['Responded',    formatDate(m.respondedAt)]);
+        if (m.escalatedAt)    fields.push(['Escalated',    formatDate(m.escalatedAt)]);
+        if (m.closedAt)       fields.push(['Closed',       formatDate(m.closedAt)]);
+    } else {
+        if (m.partyAName) fields.push(['Party A', m.partyAName + (m.partyAUnit ? ' (Unit ' + m.partyAUnit + ')' : '')]);
+        if (m.partyBName) fields.push(['Party B', m.partyBName + (m.partyBUnit ? ' (Unit ' + m.partyBUnit + ')' : '')]);
+        fields.push(['Logged', formatDate(m.loggedAt || m.submittedAt)]);
+        if (m.reviewDue)  fields.push(['Review Due', formatDate(m.reviewDue)]);
+        if (m.resolvedAt) fields.push(['Resolved',   formatDate(m.resolvedAt)]);
+        if (m.closedAt)   fields.push(['Closed',     formatDate(m.closedAt)]);
+    }
+    return fields.map(function(f) {
+        return '<div class="meta-item"><div class="meta-label">' + escHtml(f[0]) + '</div><div class="meta-value">' + escHtml(f[1] || '\u2014') + '</div></div>';
+    }).join('');
+}
+
+function buildSections(m, isComp) {
+    var html = '';
+
+    // ── 1. Submission details
+    html += section('Original Submission', buildSubmission(m, isComp));
+
+    // ── 2. Board Response (complaints only)
+    if (isComp && m.boardResponse) {
+        html += section('Board Response', buildBoardResponse(m));
+    }
+
+    // ── 3. Dispute process statement (disputes only)
+    if (!isComp && m.processStatement) {
+        html += section('Process Statement', '<div class="field-block-value">' + escHtml(m.processStatement) + '</div>');
+    }
+
+    // ── 4. Escalation record (complaints only)
+    if (isComp && m.escalatedAt) {
+        html += section('Escalation Record', buildEscalation(m));
+    }
+
+    // ── 5. Closure
+    if (isComp && m.closedAt) {
+        html += section('Closure', buildClosure(m));
+    }
+    if (!isComp && (m.resolvedAt || m.closedAt)) {
+        html += section('Resolution / Closure', buildDisputeClosure(m));
+    }
+
+    // ── 6. Correspondence Timeline (Activity Log)
+    var entries = parseActivityLog(m.activityLog, isComp, false);
+    if (entries.length > 0) {
+        html += section('Correspondence Timeline',
+            '<div class="activity-entries">' +
+            entries.map(renderEntry).join('') +
+            '</div>');
+    } else {
+        html += section('Correspondence Timeline',
+            '<div style="color:var(--glass-text-muted);font-size:0.875rem;font-style:italic;">No correspondence entries recorded.</div>');
+    }
+
+    return html;
+}
+
+function section(label, body) {
+    return '<div class="chronicle-section">' +
+               '<div class="section-label">' + escHtml(label) + '</div>' +
+               '<div class="section-body">' + body + '</div>' +
+           '</div>';
+}
+
+function buildSubmission(m, isComp) {
+    var html = '';
+    if (isComp) {
+        html += fieldBlock('Description', m.description);
+        if (m.desiredOutcome)   html += fieldBlock('Desired Outcome', m.desiredOutcome);
+        if (m.incidentDateTime) html += fieldRow('Incident Date/Time', formatDate(m.incidentDateTime));
+        if (m.location)         html += fieldRow('Location', m.location);
+        if (m.peopleInvolved)   html += fieldBlock('People Involved', m.peopleInvolved);
+        if (m.previousActions)  html += fieldBlock('Previous Actions Taken', m.previousActions);
+        html += fieldRow('Submitted via', m.howSubmitted || 'Digital');
+    } else {
+        html += fieldBlock('Nature of Dispute', m.natureOfDispute);
+        if (m.partyDescription) html += fieldBlock('Description (sent to parties)', m.partyDescription);
+        html += fieldRow('Logged by', m.loggedBy || '\u2014');
+    }
+    return html;
+}
+
+function buildBoardResponse(m) {
+    var html = '';
+    if (!m.boardResponse) return '<span style="color:var(--glass-text-muted);font-style:italic;">No Board Response recorded.</span>';
+    // Parse entries: split on double-newline timestamp boundary
+    var parts = m.boardResponse.split(/\n\n(?=\[\d{4}-\d{2}-\d{2})/);
+    parts.forEach(function(part) {
+        var hasSent = part.indexOf('[SENT]') !== -1;
+        var clean   = part.replace(/\s*\[SENT\]/g, '').trim();
+        var lines   = clean.split('\n');
+        var first   = lines[0] || '';
+        var rest    = lines.slice(1).join('\n');
+        html += '<div style="margin-bottom:10px;padding:10px 12px;background:rgba(255,255,255,0.05);border-left:3px solid rgba(168,85,247,0.5);border-radius:0 2px 2px 0;">';
+        if (hasSent) html += '<span style="display:inline-block;background:rgba(110,231,183,0.2);border:1px solid rgba(110,231,183,0.5);color:#6ee7b7;font-size:0.68rem;font-weight:700;padding:1px 7px;border-radius:10px;margin-right:6px;">Sent</span>';
+        html += '<span style="font-size:0.78rem;color:var(--glass-text-muted);">' + escHtml(first) + '</span>';
+        if (rest) html += '<div style="margin-top:4px;white-space:pre-wrap;font-size:0.875rem;color:rgba(255,255,255,0.88);">' + escHtml(rest) + '</div>';
+        html += '</div>';
+    });
+    return html;
+}
+
+function buildEscalation(m) {
+    var html = '';
+    html += fieldRow('Escalated', formatDate(m.escalatedAt));
+    var escOrg = getEscalationBody(m.activityLog);
+    if (escOrg) html += fieldRow('Escalating Organisation', escOrg);
+    var finalNote = m.finalNoteDraft || getFinalNote(m.activityLog);
+    if (finalNote) html += fieldBlock('Escalation Closure Note', finalNote);
+    return html;
+}
+
+function buildClosure(m) {
+    var html = '';
+    var norm = normaliseStatus(m.status);
+    html += fieldRow('Closed', formatDate(m.closedAt));
+    html += fieldRow('Outcome', norm);
+    if (m.closureNarrative) {
+        var sm = m.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+        var rm = m.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+        var am = m.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+        if (sm) html += fieldBlock('Resolution Summary', sm[1].trim());
+        if (rm) html += fieldBlock('Reason Not Resolved', rm[1].trim());
+        if (am) html += fieldBlock('Actions Taken', am[1].trim());
+    }
+    return html;
+}
+
+function buildDisputeClosure(m) {
+    var html = '';
+    if (m.resolvedAt) {
+        html += fieldRow('Resolved', formatDate(m.resolvedAt));
+        if (m.resolutionSummary) html += fieldBlock('Resolution Summary', m.resolutionSummary);
+    }
+    if (m.closedAt) html += fieldRow('Closed', formatDate(m.closedAt));
+    if (m.vicAssistOutcome) html += fieldBlock('External Body Outcome', m.vicAssistOutcome);
+    return html;
+}
+
+// =====================================================================
+// ACTIVITY LOG PARSING
+// =====================================================================
+// Entry types:
+//   [BOARD LOG]  — Board-forwarded email. Board version: header only. Resident: omitted.
+//   [INBOUND]    — Stray inbound reply. Board version: one line. Resident: omitted.
+//   SYSTEM       — Automated system events. Both versions: include (pathway blocks stripped).
+//   userName     — Board comment. Both versions: include.
+//   Internal keywords that trigger resident omission: checked per entry.
+
+var INTERNAL_KEYWORDS = [
+    'Internal note',
+    'internal note',
+    '[INTERNAL]',
+    'Board only',
+    'board only'
+];
+
+// Pathway block patterns to strip in ALL versions
+var PATHWAY_PATTERNS = [
+    /OUTCOME OF ESCALATION PROCESS[\s\S]*?-{10,}/g,
+    /YOUR RIGHTS FOLLOWING[\s\S]*?-{10,}/g,
+    /YOUR EXTERNAL OPTIONS[\s\S]*?-{10,}/g,
+    /YOUR RIGHTS FOLLOWING RESOLUTION[\s\S]*?-{10,}/g,
+    /ESCALATION BODY:.*$/gm
+];
+
+function parseActivityLog(raw, isComp, residentOnly) {
+    if (!raw) return [];
+
+    // Complaints: entries separated by \n, disputes by \n\n
+    var sep     = isComp ? '\n' : '\n\n';
+    var entries = raw.split(sep).filter(function(e) { return e.trim(); });
+
+    // Complaints are prepended (newest first in sheet) -- reverse to chronological
+    entries = entries.reverse();
+
+    var result = [];
+    entries.forEach(function(rawEntry) {
+        var e = parseEntry(rawEntry.trim());
+        if (!e) return;
+
+        // Strip pathway blocks from body
+        e.body = stripPathwayBlocks(e.body);
+
+        // Determine if this entry is resident-safe
+        if (residentOnly) {
+            if (e.type === 'boardlog')  return; // never shown to resident
+            if (e.type === 'inbound')   return; // never shown to resident
+            if (containsInternalKeyword(e.body)) return;
+        }
+
+        result.push(e);
+    });
+
+    return result;
+}
+
+function parseEntry(raw) {
+    if (!raw) return null;
+
+    // Format: YYYY-MM-DD HH:MM | actor | content
+    var headerMatch = raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*\|\s*([^|]+)\|\s*([\s\S]*)$/);
+    if (!headerMatch) {
+        // Doesn't match format -- include as-is, type=system
+        return { date: '', actor: '', body: raw, type: 'system', raw: raw };
+    }
+
+    var date  = headerMatch[1].trim();
+    var actor = headerMatch[2].trim();
+    var body  = headerMatch[3].trim();
+
+    var type = 'comment'; // default -- Board comment
+
+    if (actor === 'SYSTEM') {
+        if (body.indexOf('[BOARD LOG]') !== -1) {
+            type = 'boardlog';
+            body = parseBoardLogBody(body);
+        } else if (body.indexOf('[INBOUND]') !== -1) {
+            type = 'inbound';
+        } else {
+            type = 'system';
+        }
+    }
+
+    return { date: date, actor: actor, body: body, type: type, raw: raw };
+}
+
+function parseBoardLogBody(body) {
+    // For [BOARD LOG] entries we show only: received date, sender, subject -- body suppressed
+    // Raw format: [BOARD LOG] Forwarded to log by <sender>\nReceived: <date>\nSubject: <subject>\n---\n<body>\n---
+    var summary = body.replace('[BOARD LOG]', '').trim();
+
+    var receivedMatch = summary.match(/Received:\s*(.+)/);
+    var subjectMatch  = summary.match(/Subject:\s*(.+)/);
+    var senderMatch   = summary.match(/Forwarded to log by\s*(.+)/);
+
+    var lines = [];
+    if (senderMatch)  lines.push('From:     ' + senderMatch[1].trim());
+    if (receivedMatch) lines.push('Received: ' + receivedMatch[1].trim());
+    if (subjectMatch)  lines.push('Subject:  ' + subjectMatch[1].trim());
+    lines.push('[Email body not reproduced in Chronicle]');
+
+    return lines.join('\n');
+}
+
+function stripPathwayBlocks(text) {
+    if (!text) return text;
+    PATHWAY_PATTERNS.forEach(function(pattern) {
+        text = text.replace(pattern, '[Pathway notice omitted]');
+    });
+    // Clean up multiple consecutive omission markers
+    text = text.replace(/(\[Pathway notice omitted\]\s*){2,}/g, '[Pathway notice omitted]\n');
+    return text.trim();
+}
+
+function containsInternalKeyword(text) {
+    if (!text) return false;
+    return INTERNAL_KEYWORDS.some(function(kw) { return text.indexOf(kw) !== -1; });
+}
+
+function renderEntry(e) {
+    var typeClass = {
+        boardlog: 'entry-board-log',
+        inbound:  'entry-inbound',
+        system:   'entry-system',
+        comment:  'entry-comment'
+    }[e.type] || 'entry-system';
+
+    var tagClass = {
+        boardlog: 'tag-boardlog',
+        inbound:  'tag-inbound',
+        system:   'tag-system',
+        comment:  'tag-comment'
+    }[e.type] || 'tag-system';
+
+    var tagLabel = {
+        boardlog: 'Board Log',
+        inbound:  'Inbound',
+        system:   'System',
+        comment:  'Board Comment'
+    }[e.type] || 'System';
+
+    var meta = '';
+    if (e.date || e.actor) {
+        meta = '<div class="entry-meta">' +
+               '<span class="entry-tag ' + tagClass + '">' + tagLabel + '</span>' +
+               (e.date  ? escHtml(e.date)  : '') +
+               (e.actor && e.actor !== 'SYSTEM' ? ' &mdash; ' + escHtml(e.actor) : '') +
+               '</div>';
+    }
+
+    return '<div class="activity-entry ' + typeClass + '">' +
+               meta +
+               '<div class="entry-body">' + escHtml(e.body) + '</div>' +
+           '</div>';
+}
+
+// =====================================================================
+// PRINT
+// =====================================================================
+function doPrint(residentOnly) {
+    if (!currentMatter) return;
+    const m      = currentMatter;
+    const isComp = currentType === 'complaint';
+    const title  = residentOnly ? 'Resident Copy' : 'Board Record';
+    const norm   = normaliseStatus(m.status);
+
+    var entries = parseActivityLog(m.activityLog, isComp, residentOnly);
+
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<title>Correspondence Chronicle \u2014 ' + escHtml(m.referenceNumber) + ' \u2014 ' + title + '</title>' +
+    '<style>' +
+    'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;font-size:12px;color:#1e293b;margin:0;padding:0;}' +
+    '.page{max-width:780px;margin:0 auto;padding:30px 32px;}' +
+    // Header
+    '.doc-header{border-bottom:3px solid #1e40af;padding-bottom:14px;margin-bottom:20px;}' +
+    '.doc-org{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;}' +
+    '.doc-title{font-size:20px;font-weight:700;color:#1e293b;margin-bottom:2px;}' +
+    '.doc-sub{font-size:11px;color:#64748b;}' +
+    '.doc-ref{font-size:14px;font-weight:700;color:#1e40af;margin-top:8px;}' +
+    // Matter summary
+    '.matter-summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:14px 16px;margin-bottom:18px;}' +
+    '.matter-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;}' +
+    '.matter-field{}.mf-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;}' +
+    '.mf-value{font-size:12px;font-weight:600;color:#1e293b;margin-top:1px;}' +
+    // Version badge
+    '.version-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;}' +
+    '.vb-board{background:#dbeafe;color:#1d4ed8;}' +
+    '.vb-resident{background:#d1fae5;color:#065f46;}' +
+    // Status badge
+    '.status-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;margin-left:8px;}' +
+    '.badge-open{background:#dbeafe;color:#1d4ed8;} .badge-acknowledged{background:#bbf7d0;color:#047857;}' +
+    '.badge-responded{background:#e9d5ff;color:#7c3aed;} .badge-closed{background:#f3f4f6;color:#374151;}' +
+    '.badge-escalated{background:#fed7aa;color:#92400e;} .badge-escalated-closed{background:#ede9fe;color:#6d28d9;}' +
+    '.badge-converted{background:#ccfbf1;color:#0f766e;} .badge-dispute-open{background:#ccfbf1;color:#0f766e;}' +
+    '.badge-under-review{background:#fef3c7;color:#b45309;} .badge-referred{background:#ffedd5;color:#c2410c;}' +
+    // Sections
+    '.section{margin-bottom:18px;page-break-inside:avoid;}' +
+    '.section-heading{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#1e40af;' +
+      'border-bottom:1px solid #e2e8f0;padding-bottom:5px;margin-bottom:10px;}' +
+    '.field-row{display:flex;gap:8px;margin-bottom:5px;font-size:12px;}' +
+    '.fl{color:#64748b;min-width:130px;flex-shrink:0;}' +
+    '.fv{color:#1e293b;font-weight:500;}' +
+    '.field-block{margin-bottom:10px;}' +
+    '.fb-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;}' +
+    '.fb-value{font-size:12px;color:#1e293b;white-space:pre-wrap;line-height:1.6;background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;padding:8px 10px;}' +
+    // Board response
+    '.br-entry{margin-bottom:10px;padding:8px 10px;border-left:3px solid #8b5cf6;background:#f9f7ff;border-radius:0 3px 3px 0;}' +
+    '.br-ts{font-size:10px;color:#64748b;margin-bottom:3px;}' +
+    '.br-sent{display:inline-block;background:#d1fae5;color:#065f46;font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;margin-right:5px;}' +
+    '.br-text{font-size:12px;color:#1e293b;white-space:pre-wrap;line-height:1.6;}' +
+    // Activity entries
+    '.entry{margin-bottom:8px;padding:8px 10px;border-radius:3px;page-break-inside:avoid;}' +
+    '.entry-boardlog{border-left:3px solid #3b82f6;background:#eff6ff;}' +
+    '.entry-inbound {border-left:3px solid #f59e0b;background:#fffbeb;}' +
+    '.entry-system  {border-left:3px solid #e2e8f0;background:#f8fafc;}' +
+    '.entry-comment {border-left:3px solid #8b5cf6;background:#faf5ff;}' +
+    '.entry-meta{font-size:10px;color:#64748b;margin-bottom:3px;}' +
+    '.entry-tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;text-transform:uppercase;margin-right:5px;}' +
+    '.tag-boardlog{background:#dbeafe;color:#1d4ed8;} .tag-inbound{background:#fef3c7;color:#b45309;}' +
+    '.tag-system{background:#f1f5f9;color:#64748b;} .tag-comment{background:#ede9fe;color:#6d28d9;}' +
+    '.entry-body{font-size:12px;color:#1e293b;white-space:pre-wrap;line-height:1.5;}' +
+    // Footer
+    '.doc-footer{border-top:1px solid #e2e8f0;margin-top:24px;padding-top:10px;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between;}' +
+    '@media print{.no-print{display:none;} body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}' +
+    '</style></head><body><div class="page">';
+
+    // ── Doc header
+    html += '<div class="doc-header">' +
+            '<div class="doc-org">Lake Illawong Residential Club &mdash; Board of Management</div>' +
+            '<div class="doc-title">Correspondence Chronicle</div>' +
+            '<div class="doc-sub">Case correspondence record &mdash; ' + (residentOnly ? 'Resident Copy' : 'Board Record (Confidential)') + '</div>' +
+            '<div class="doc-ref">' + escHtml(m.referenceNumber) + ' &mdash; ' + (isComp ? 'Complaint' : 'Dispute') + '</div>' +
+            '</div>';
+
+    // Version badge + status
+    html += '<span class="version-badge ' + (residentOnly ? 'vb-resident' : 'vb-board') + '">' + title + '</span>' +
+            '<span class="status-badge ' + printStatusBadgeClass(norm, isComp) + '">' + escHtml(norm) + '</span>';
+
+    // ── Matter summary box
+    html += '<div class="matter-summary">';
+    if (isComp) {
+        html += '<div style="font-size:13px;font-weight:600;">' + escHtml(m.residentName) + ' &mdash; Unit ' + escHtml(m.unitNumber) + '</div>';
+        html += '<div style="font-size:11px;color:#64748b;margin-top:2px;">' + escHtml(m.category) + '</div>';
+        html += '<div class="matter-grid">';
+        html += mf('Lodged',       formatDate(m.submittedAt));
+        if (m.acknowledgedAt) html += mf('Acknowledged', formatDate(m.acknowledgedAt));
+        if (m.respondedAt)    html += mf('Responded',    formatDate(m.respondedAt));
+        if (m.escalatedAt)    html += mf('Escalated',    formatDate(m.escalatedAt));
+        if (m.closedAt)       html += mf('Closed',       formatDate(m.closedAt));
+        html += mf('How submitted', m.howSubmitted || 'Digital');
+        html += '</div>';
+    } else {
+        if (m.partyAName) html += '<div style="font-size:12px;margin-bottom:4px;"><strong>Party A:</strong> ' + escHtml(m.partyAName) + (m.partyAUnit ? ' (Unit ' + escHtml(m.partyAUnit) + ')' : '') + '</div>';
+        if (m.partyBName) html += '<div style="font-size:12px;margin-bottom:4px;"><strong>Party B:</strong> ' + escHtml(m.partyBName) + (m.partyBUnit ? ' (Unit ' + escHtml(m.partyBUnit) + ')' : '') + '</div>';
+        html += '<div class="matter-grid">';
+        html += mf('Logged',  formatDate(m.loggedAt || m.submittedAt));
+        if (m.reviewDue)  html += mf('Review Due', formatDate(m.reviewDue));
+        if (m.resolvedAt) html += mf('Resolved',   formatDate(m.resolvedAt));
+        if (m.closedAt)   html += mf('Closed',     formatDate(m.closedAt));
+        html += '</div>';
+    }
+    html += '</div>'; // /matter-summary
+
+    // ── Sections
+    // 1. Submission
+    html += printSection('Original Submission', buildPrintSubmission(m, isComp, residentOnly));
+
+    // 2. Board Response (complaints, board version only or if not internal)
+    if (isComp && m.boardResponse) {
+        html += printSection('Board Response', buildPrintBoardResponse(m));
+    }
+
+    // 3. Process Statement (disputes)
+    if (!isComp && m.processStatement) {
+        html += printSection('Process Statement', '<div class="fb-value">' + escHtml(m.processStatement) + '</div>');
+    }
+
+    // 4. Escalation (complaints)
+    if (isComp && m.escalatedAt && !residentOnly) {
+        html += printSection('Escalation Record', buildPrintEscalation(m));
+    }
+
+    // 5. Closure
+    if (isComp && m.closedAt) {
+        html += printSection('Closure', buildPrintClosure(m, residentOnly));
+    }
+    if (!isComp && (m.resolvedAt || m.closedAt)) {
+        html += printSection('Resolution / Closure', buildPrintDisputeClosure(m));
+    }
+
+    // 6. Correspondence timeline
+    var printEntries = parseActivityLog(m.activityLog, isComp, residentOnly);
+    var timelineHtml = '';
+    if (printEntries.length > 0) {
+        printEntries.forEach(function(e) {
+            timelineHtml += renderPrintEntry(e);
+        });
+    } else {
+        timelineHtml = '<div style="color:#94a3b8;font-style:italic;font-size:12px;">No correspondence entries recorded.</div>';
+    }
+    html += printSection('Correspondence Timeline', timelineHtml);
+
+    // ── Footer
+    var printedBy = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Board of Management';
+    var now = new Date();
+    html += '<div class="doc-footer">' +
+            '<span>Lake Illawong Residential Club &mdash; Management Central System</span>' +
+            '<span>Printed ' + now.toLocaleDateString('en-AU', {day:'numeric',month:'long',year:'numeric'}) +
+            ' by ' + escHtml(printedBy) + '</span>' +
+            '</div>';
+
+    if (!residentOnly) {
+        html += '<div class="doc-footer" style="margin-top:6px;">' +
+                '<span style="color:#ef4444;font-weight:600;">CONFIDENTIAL &mdash; Board of Management use only. Not for distribution.</span>' +
+                '</div>';
+    }
+
+    html += '</div></body></html>';
+
+    var w = window.open('', '_blank', 'width=860,height=950');
+    if (!w) { alert('Please allow pop-ups for this site to print.'); return; }
+    w.document.write(html);
+    w.document.close();
+    setTimeout(function() { w.print(); }, 600);
+}
+
+function printSection(label, body) {
+    return '<div class="section"><div class="section-heading">' + label + '</div>' + body + '</div>';
+}
+
+function mf(label, value) {
+    return '<div class="matter-field"><div class="mf-label">' + label + '</div><div class="mf-value">' + escHtml(value || '\u2014') + '</div></div>';
+}
+
+function buildPrintSubmission(m, isComp, residentOnly) {
+    var html = '';
+    if (isComp) {
+        html += pfb('Description', m.description);
+        if (m.desiredOutcome)   html += pfb('Desired Outcome', m.desiredOutcome);
+        if (m.incidentDateTime) html += pfr('Incident Date/Time', formatDate(m.incidentDateTime));
+        if (m.location)         html += pfr('Location', m.location);
+        if (m.peopleInvolved)   html += pfb('People Involved', m.peopleInvolved);
+        if (m.previousActions)  html += pfb('Previous Actions Taken', m.previousActions);
+        html += pfr('Submitted via', m.howSubmitted || 'Digital');
+    } else {
+        if (!residentOnly) html += pfb('Nature of Dispute (Internal)', m.natureOfDispute);
+        if (m.partyDescription) html += pfb('Description sent to Parties', m.partyDescription);
+        html += pfr('Logged by', m.loggedBy || '\u2014');
+    }
+    return html;
+}
+
+function buildPrintBoardResponse(m) {
+    if (!m.boardResponse) return '<div style="color:#94a3b8;font-style:italic;">No Board Response recorded.</div>';
+    var html = '';
+    var parts = m.boardResponse.split(/\n\n(?=\[\d{4}-\d{2}-\d{2})/);
+    parts.forEach(function(part) {
+        var hasSent = part.indexOf('[SENT]') !== -1;
+        var clean   = part.replace(/\s*\[SENT\]/g, '').trim();
+        var lines   = clean.split('\n');
+        var first   = lines[0] || '';
+        var rest    = lines.slice(1).join('\n');
+        html += '<div class="br-entry">';
+        if (hasSent) html += '<span class="br-sent">Sent</span>';
+        html += '<div class="br-ts">' + escHtml(first) + '</div>';
+        if (rest) html += '<div class="br-text">' + escHtml(rest) + '</div>';
+        html += '</div>';
+    });
+    return html;
+}
+
+function buildPrintEscalation(m) {
+    var html = '';
+    html += pfr('Escalated', formatDate(m.escalatedAt));
+    var escOrg = getEscalationBody(m.activityLog);
+    if (escOrg) html += pfr('Escalating Organisation', escOrg);
+    var finalNote = m.finalNoteDraft || getFinalNote(m.activityLog);
+    if (finalNote) html += pfb('Escalation Closure Note', finalNote);
+    return html;
+}
+
+function buildPrintClosure(m, residentOnly) {
+    var html = '';
+    var norm = normaliseStatus(m.status);
+    html += pfr('Closed', formatDate(m.closedAt));
+    html += pfr('Outcome', norm);
+    if (m.closureNarrative) {
+        var sm = m.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
+        var rm = m.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
+        var am = m.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
+        if (sm) html += pfb('Resolution Summary', sm[1].trim());
+        if (rm) html += pfb('Reason Not Resolved', rm[1].trim());
+        if (am) html += pfb('Actions Taken', am[1].trim());
+    }
+    return html;
+}
+
+function buildPrintDisputeClosure(m) {
+    var html = '';
+    if (m.resolvedAt) {
+        html += pfr('Resolved', formatDate(m.resolvedAt));
+        if (m.resolutionSummary) html += pfb('Resolution Summary', m.resolutionSummary);
+    }
+    if (m.closedAt)        html += pfr('Closed', formatDate(m.closedAt));
+    if (m.vicAssistOutcome) html += pfb('External Body Outcome', m.vicAssistOutcome);
+    return html;
+}
+
+function renderPrintEntry(e) {
+    var cls = { boardlog:'entry-boardlog', inbound:'entry-inbound', system:'entry-system', comment:'entry-comment' }[e.type] || 'entry-system';
+    var tagCls = { boardlog:'tag-boardlog', inbound:'tag-inbound', system:'tag-system', comment:'tag-comment' }[e.type] || 'tag-system';
+    var tagLbl = { boardlog:'Board Log', inbound:'Inbound', system:'System', comment:'Board Comment' }[e.type] || 'System';
+    var meta = '';
+    if (e.date || e.actor) {
+        meta = '<div class="entry-meta">' +
+               '<span class="entry-tag ' + tagCls + '">' + tagLbl + '</span>' +
+               escHtml(e.date || '') +
+               (e.actor && e.actor !== 'SYSTEM' ? ' &mdash; ' + escHtml(e.actor) : '') +
+               '</div>';
+    }
+    return '<div class="entry ' + cls + '">' + meta +
+           '<div class="entry-body">' + escHtml(e.body) + '</div></div>';
+}
+
+function pfr(label, value) {
+    return '<div class="field-row"><span class="fl">' + label + '</span><span class="fv">' + escHtml(value || '\u2014') + '</span></div>';
+}
+function pfb(label, value) {
+    return '<div class="field-block"><div class="fb-label">' + label + '</div><div class="fb-value">' + escHtml(value || '\u2014') + '</div></div>';
+}
+
+// =====================================================================
+// HELPERS
+// =====================================================================
+function escHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatDate(val) {
+    if (!val) return '';
+    var d = new Date(val);
+    if (isNaN(d.getTime())) return val;
+    return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function normaliseStatus(s) {
+    if (!s) return '';
+    if (s === 'Closed') return 'Closed - Resolved';
+    if (s === 'Referred to VicAssist') return 'Referred to External Body';
+    return s;
+}
+
+function statusPillClass(s, isComp) {
+    if (!isComp) {
+        var map = {
+            'Open': 'status-open', 'Under Review': 'status-under-review',
+            'Resolved': 'status-resolved', 'Referred to External Body': 'status-referred',
+            'Closed': 'status-closed'
+        };
+        return map[s] || 'status-closed';
+    }
+    var map = {
+        'Open': 'status-open', 'Acknowledged': 'status-acknowledged', 'Responded': 'status-responded',
+        'Escalated': 'status-escalated', 'Closed - Resolved': 'status-closed-resolved',
+        'Closed - Unresolved': 'status-closed-unresolved',
+        'Closed - Resolved (Escalated)': 'status-closed-resolved-escalated',
+        'Closed - Unresolved (Escalated)': 'status-closed-unresolved-escalated',
+        'Closed - Converted to Dispute': 'status-closed-converted'
+    };
+    return map[s] || 'status-closed-resolved';
+}
+
+function printStatusBadgeClass(s, isComp) {
+    if (!isComp) {
+        var map = { 'Open':'badge-dispute-open','Under Review':'badge-under-review','Resolved':'badge-closed','Referred to External Body':'badge-referred','Closed':'badge-closed' };
+        return map[s] || 'badge-closed';
+    }
+    var map = {
+        'Open':'badge-open','Acknowledged':'badge-acknowledged','Responded':'badge-responded',
+        'Escalated':'badge-escalated','Closed - Resolved':'badge-closed','Closed - Unresolved':'badge-closed',
+        'Closed - Resolved (Escalated)':'badge-escalated-closed','Closed - Unresolved (Escalated)':'badge-closed',
+        'Closed - Converted to Dispute':'badge-converted'
+    };
+    return map[s] || 'badge-closed';
+}
+
+function fieldRow(label, value) {
+    return '<div class="field-row"><span class="field-label">' + escHtml(label) + '</span><span class="field-value">' + escHtml(value || '\u2014') + '</span></div>';
+}
+function fieldBlock(label, value) {
+    return '<div class="field-block"><div class="field-block-label">' + escHtml(label) + '</div><div class="field-block-value">' + escHtml(value || '\u2014') + '</div></div>';
+}
+
+// Extract escalating org from Activity Log (ESCALATION BODY: entry)
+function getEscalationBody(actLog) {
+    if (!actLog) return '';
+    var m = actLog.match(/ESCALATION BODY: (.+)/);
+    return m ? m[1].trim() : '';
+}
+
+// Extract Final Note from Activity Log (FINAL NOTE: entry)
+function getFinalNote(actLog) {
+    if (!actLog) return '';
+    var m = actLog.match(/FINAL NOTE: ([\s\S]+?)(?:\n\d{4}-\d{2}-\d{2}|$)/);
+    return m ? m[1].trim() : '';
+}
+</script>
+</body>
+</html>
