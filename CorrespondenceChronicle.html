@@ -729,41 +729,34 @@ function parseEntry(raw) {
 }
 
 function parseBoardLogBody(body) {
-    // Raw format (all on one line in sheet, --- separates metadata from body):
-    // [BOARD LOG] Forwarded to log by <sender> Received: <date> Subject: <subject> --- <email body> --- <quoted thread with > lines>
-    //
-    // We extract:
-    //   From, Received, Subject  -- from metadata section before first ---
-    //   Email body               -- text between first --- and start of quoted > lines
-    //   Quoted thread            -- lines starting with > (prior correspondence) -- stripped
+    // Raw format (single line in sheet):
+    // [BOARD LOG] Forwarded to log by <sender> Received: <date> Subject: <subject> --- <email body incl quoted thread>
+    // --- is an inline delimiter between metadata and body, not a line separator.
+    // > prefixes are email client quoting notation -- stripped for readability.
 
     var text = body.replace('[BOARD LOG]', '').trim();
 
-    // Split on --- to get metadata | body | (possibly more)
-    var parts = text.split(/\s*---\s*/);
-    var metadata = parts[0] || '';
-    var emailBody = parts.length > 1 ? parts[1] : '';
+    // Split on first --- only to isolate metadata from body
+    var dashIdx = text.indexOf(' --- ');
+    var metadata  = dashIdx !== -1 ? text.substring(0, dashIdx).trim() : text;
+    var emailBody = dashIdx !== -1 ? text.substring(dashIdx + 5).trim() : '';
 
     // Extract header fields from metadata
     var senderMatch   = metadata.match(/Forwarded to log by\s+(.+?)\s+Received:/);
     var receivedMatch = metadata.match(/Received:\s*(.+?)\s+Subject:/);
-    var subjectMatch  = metadata.match(/Subject:\s*(.+?)$/);
-    if (!subjectMatch) subjectMatch = metadata.match(/Subject:\s*(.+)/);
+    var subjectMatch  = metadata.match(/Subject:\s*(.+)/);
 
-    // Keep full email body including quoted thread for complete context.
-    // Strip only bare --- separator lines (log delimiters, not content).
-    var bodyLines = emailBody.split('\n');
-    var cleanLines = [];
-    bodyLines.forEach(function(line) {
-        if (/^\s*-{3,}\s*$/.test(line)) return; // strip bare --- lines
-        cleanLines.push(line);
-    });
-    // Collapse multiple blank lines to one
-    var cleanBody = cleanLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    // Clean body: strip > quoting prefixes and any remaining --- separators
+    // Entry is a single line so split on space-padded > markers
+    var cleanBody = emailBody
+        .replace(/\s*---+\s*/g, ' ')   // remove any remaining --- delimiters
+        .replace(/(^|\s)>\s*/g, ' ')   // strip > quoting prefixes
+        .replace(/\s{2,}/g, ' ')        // collapse multiple spaces
+        .trim();
 
     // Build structured output
     var header = '';
-    if (senderMatch)  header += 'From:     ' + senderMatch[1].trim() + '\n';
+    if (senderMatch)   header += 'From:     ' + senderMatch[1].trim() + '\n';
     if (receivedMatch) header += 'Received: ' + receivedMatch[1].trim() + '\n';
     if (subjectMatch)  header += 'Subject:  ' + subjectMatch[1].trim() + '\n';
 
