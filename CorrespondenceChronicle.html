@@ -7,10 +7,18 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.0
+  Frontend Version: V1.0.1
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
+
+VERSION HISTORY:
+  V1.0.1 (Jun 2026): parseBoardLogBody rewritten. [BOARD LOG] entries now
+    show From/Received/Subject header plus cleaned email body (quoted > thread
+    lines stripped). Suppression notice removed -- full correspondence content
+    required for regulatory compliance.
+
+  V1.0.0 (Jun 2026): Initial release.
 
 PURPOSE:
   Correspondence Chronicle -- unified, filtered correspondence record
@@ -40,7 +48,7 @@ VERSION HISTORY:
 
 BACKEND URLS:
   Complaints: https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec
-  Disputes:   https://script.google.com/macros/s/AKfycbx2dwG5mP6Cv-UAqii38FAINvaUvrR2oq-6uv6U_mnKqG8Rzjq56C35lOVHFS9ZsCvw/exec
+  Disputes:   (see DisputesManager.html CONFIG.BACKEND_URL)
 
 DEPENDENCIES:
   VerificationModal_V1_0.js (OTP auth + RBAC)
@@ -721,21 +729,49 @@ function parseEntry(raw) {
 }
 
 function parseBoardLogBody(body) {
-    // For [BOARD LOG] entries we show only: received date, sender, subject -- body suppressed
-    // Raw format: [BOARD LOG] Forwarded to log by <sender>\nReceived: <date>\nSubject: <subject>\n---\n<body>\n---
-    var summary = body.replace('[BOARD LOG]', '').trim();
+    // Raw format (all on one line in sheet, --- separates metadata from body):
+    // [BOARD LOG] Forwarded to log by <sender> Received: <date> Subject: <subject> --- <email body> --- <quoted thread with > lines>
+    //
+    // We extract:
+    //   From, Received, Subject  -- from metadata section before first ---
+    //   Email body               -- text between first --- and start of quoted > lines
+    //   Quoted thread            -- lines starting with > (prior correspondence) -- stripped
 
-    var receivedMatch = summary.match(/Received:\s*(.+)/);
-    var subjectMatch  = summary.match(/Subject:\s*(.+)/);
-    var senderMatch   = summary.match(/Forwarded to log by\s*(.+)/);
+    var text = body.replace('[BOARD LOG]', '').trim();
 
-    var lines = [];
-    if (senderMatch)  lines.push('From:     ' + senderMatch[1].trim());
-    if (receivedMatch) lines.push('Received: ' + receivedMatch[1].trim());
-    if (subjectMatch)  lines.push('Subject:  ' + subjectMatch[1].trim());
-    lines.push('[Email body not reproduced in Chronicle]');
+    // Split on --- to get metadata | body | (possibly more)
+    var parts = text.split(/\s*---\s*/);
+    var metadata = parts[0] || '';
+    var emailBody = parts.length > 1 ? parts[1] : '';
 
-    return lines.join('\n');
+    // Extract header fields from metadata
+    var senderMatch   = metadata.match(/Forwarded to log by\s+(.+?)\s+Received:/);
+    var receivedMatch = metadata.match(/Received:\s*(.+?)\s+Subject:/);
+    var subjectMatch  = metadata.match(/Subject:\s*(.+?)$/);
+    if (!subjectMatch) subjectMatch = metadata.match(/Subject:\s*(.+)/);
+
+    // Clean email body: remove lines that are purely quoted (start with >)
+    // and trim leading/trailing whitespace
+    var bodyLines = emailBody.split(/
+/);
+    var cleanLines = [];
+    bodyLines.forEach(function(line) {
+        var trimmed = line.trim();
+        // Skip quoted lines (start with >) and bare > characters
+        if (/^>/.test(trimmed)) return;
+        // Skip lines that are just whitespace after stripping
+        cleanLines.push(line);
+    });
+    // Collapse multiple blank lines to one
+    var cleanBody = cleanLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+    // Build structured output
+    var header = '';
+    if (senderMatch)  header += 'From:     ' + senderMatch[1].trim() + '\n';
+    if (receivedMatch) header += 'Received: ' + receivedMatch[1].trim() + '\n';
+    if (subjectMatch)  header += 'Subject:  ' + subjectMatch[1].trim() + '\n';
+
+    return header + (cleanBody ? '\n' + cleanBody : '');
 }
 
 function stripPathwayBlocks(text) {
