@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.4
+  Frontend Version: V1.0.3
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
@@ -27,16 +27,9 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
-  V1.0.4 (Jun 2026): Fix parseActivityLog splitting on all \n including
-    those within multi-line Board Log entries. Now splits only on \n
-    immediately followed by a timestamp, keeping each entry intact.
-    Replaced reverse() with explicit timestamp sort for correct
-    chronological order.
-
-  V1.0.3 (Jun 2026): Fix parseActivityLog using wrong entry separator for
-    Disputes. Was splitting on \n\n (double newline) causing entire Activity
-    Log to be treated as one entry -- no entries rendered. Both Complaints
-    and Disputes use single \n as entry separator.
+  V1.0.3 (Jun 2026): Fix parseBoardLogBody > and --- stripping. Replaced
+    regex with explicit string splits to avoid JS regex flag issues.
+    Disputes entry separator confirmed \n\n (correct in V1.0.2).
 
   V1.0.2 (Jun 2026): parseBoardLogBody updated. [BOARD LOG] entries now
     show full email body (complete correspondence record required for
@@ -679,25 +672,12 @@ var PATHWAY_PATTERNS = [
 function parseActivityLog(raw, isComp, residentOnly) {
     if (!raw) return [];
 
-    // Entries start with a timestamp: YYYY-MM-DD HH:MM | actor | content
-    // We split on newlines that are immediately followed by a timestamp pattern,
-    // so that multi-line entries (e.g. Board Log with quoted email thread) are
-    // kept together as a single entry.
-    var timestampPattern = /\n(?=\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s*\|)/g;
-    var entries = raw.split(timestampPattern).filter(function(e) { return e.trim(); });
+    // Complaints: entries separated by \n, disputes by \n\n
+    var sep     = isComp ? '\n' : '\n\n';
+    var entries = raw.split(sep).filter(function(e) { return e.trim(); });
 
-    // If no entries matched the pattern, fall back to plain \n split
-    if (entries.length <= 1 && raw.indexOf('\n') !== -1) {
-        entries = raw.split('\n').filter(function(e) { return e.trim(); });
-    }
-
-    // Sort chronologically by leading timestamp (oldest first)
-    entries.sort(function(a, b) {
-        var ta = a.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
-        var tb = b.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
-        if (!ta || !tb) return 0;
-        return ta[1] < tb[1] ? -1 : ta[1] > tb[1] ? 1 : 0;
-    });
+    // Complaints are prepended (newest first in sheet) -- reverse to chronological
+    entries = entries.reverse();
 
     var result = [];
     entries.forEach(function(rawEntry) {
@@ -754,7 +734,7 @@ function parseBoardLogBody(body) {
     // Raw log format (single line in sheet):
     // [BOARD LOG] Forwarded to log by <sender> Received: <date> Subject: <subject> --- <email body>
     // The --- separates the metadata header from the email body content.
-    // > quoting prefixes (email client thread notation) are stripped from the body.
+    // > quoting prefixes (email client thread notation) and --- delimiters stripped from body.
 
     var text = body.replace('[BOARD LOG]', '').trim();
 
@@ -768,12 +748,21 @@ function parseBoardLogBody(body) {
     var receivedMatch = metadata.match(/Received:\s*(.+?)\s+Subject:/);
     var subjectMatch  = metadata.match(/Subject:\s*(.+)/);
 
-    // Clean the body: strip > quoting prefixes and any stray --- delimiters
-    var cleanBody = emailBody
-        .replace(/\s*---+\s*/g, ' ')    // remove any --- delimiters in body
-        .replace(/(^|\s)>+\s*/g, ' ')   // strip > and >> quoting prefixes
-        .replace(/\s{2,}/g, ' ')         // collapse multiple spaces
-        .trim();
+    // Clean the body:
+    // 1. Remove any --- delimiters
+    // 2. Strip > quoting prefixes: replace ' > ' and '> ' patterns with a space
+    //    (simple string replacement rather than regex to avoid JS flag issues)
+    var cleanBody = emailBody;
+    cleanBody = cleanBody.split(' --- ').join(' ');   // remove --- delimiters
+    cleanBody = cleanBody.split(' >  ').join(' ');    // strip '>  ' (with 2 spaces)
+    cleanBody = cleanBody.split(' > ').join(' ');     // strip '> '
+    cleanBody = cleanBody.split('>  ').join('');      // strip leading '>  '
+    cleanBody = cleanBody.split('> ').join('');       // strip leading '> '
+    // Collapse multiple spaces
+    while (cleanBody.indexOf('  ') !== -1) {
+        cleanBody = cleanBody.split('  ').join(' ');
+    }
+    cleanBody = cleanBody.trim();
 
     // Build structured output: header block then body
     var lines = [];
