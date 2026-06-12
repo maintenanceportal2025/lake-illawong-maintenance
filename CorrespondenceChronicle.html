@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.9
+  Frontend Version: V1.0.10
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
@@ -27,6 +27,10 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
+  V1.0.10 (Jun 2026): Back to Search Results button added. Shown above
+    print bar when Chronicle loaded via search. Caches last search
+    results so returning restores the list without re-querying.
+
   V1.0.9 (Jun 2026): Search by Name/Unit added. Two-tab lookup panel:
     Reference tab (existing) and Search tab (new). Search calls
     getComplaintsByUnit/getComplaintsByName and getDisputesByUnit/
@@ -385,6 +389,11 @@ body {
             <!-- Chronicle sections -->
             <div id="chronicleSections"></div>
 
+            <!-- Back to results (shown only when loaded via search) -->
+            <div id="backToResultsBar" style="display:none;margin-bottom:12px;">
+                <button class="btn-back-glass" onclick="backToResults()">&#8592; Back to Search Results</button>
+            </div>
+
             <!-- Print bar -->
             <div class="print-bar">
                 <button class="btn-print-board"    onclick="doPrint(false)">&#128438; Print Board Record</button>
@@ -412,6 +421,8 @@ const CONFIG = {
 // Current loaded matter
 let currentMatter = null;
 let currentType   = null; // 'complaint' | 'dispute'
+let lastSearchResults = null;  // cached search results for Back to Results button
+let lastSearchQuery   = '';
 
 // =====================================================================
 // AUTH
@@ -554,6 +565,8 @@ function doSearch() {
 }
 
 function renderSearchResults(results, query) {
+    lastSearchResults = results;
+    lastSearchQuery   = query;
     var el = document.getElementById('searchResults');
     if (results.length === 0) {
         el.innerHTML = '<div class="info-notice">No matters found matching “' + escHtml(query) + '”.</div>';
@@ -583,13 +596,26 @@ function loadFromSearch(ref) {
     // Switch to reference tab, populate and load
     switchTab('ref');
     document.getElementById('refInput').value = ref;
-    loadMatter();
+    loadMatter(true); // true = came from search
+}
+
+// =====================================================================
+// BACK TO RESULTS
+// =====================================================================
+function backToResults() {
+    // Hide result panel, switch to search tab, re-render cached results
+    document.getElementById('resultPanel').style.display = 'none';
+    document.getElementById('backToResultsBar').style.display = 'none';
+    switchTab('search');
+    if (lastSearchResults !== null) {
+        renderSearchResults(lastSearchResults, lastSearchQuery);
+    }
 }
 
 // =====================================================================
 // LOOKUP
 // =====================================================================
-function loadMatter() {
+function loadMatter(fromSearch) {
     const raw = (document.getElementById('refInput').value || '').trim().toUpperCase();
     const errEl = document.getElementById('lookupError');
     errEl.innerHTML = '';
@@ -640,6 +666,7 @@ function loadMatter() {
 
         currentMatter = data.complaint || data.dispute;
         currentType   = isComplaint ? 'complaint' : 'dispute';
+        document.getElementById('backToResultsBar').style.display = (fromSearch && lastSearchResults) ? '' : 'none';
         renderMatter();
     };
 
