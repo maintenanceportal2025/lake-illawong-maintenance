@@ -6,13 +6,17 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.4
+  Frontend Version: V3.0.5
   Backend:          ComplaintsManager V3.0.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.5 (Jun 2026): Search input added to filter bar. Filters allComplaints
+    by residentName and unitNumber (case-insensitive partial match).
+    Frontend-only, no backend call needed.
+
   V3.0.4 (Jun 2026): Three fixes:
     1. doConvertToDispute -- intermediate confirm panel removed.
        Clicking Convert to Dispute button immediately opens
@@ -823,6 +827,13 @@ TECHNICAL:
         }
 
         .filter-bar select option { background: #1e3a8a; color: white; }
+        .filter-bar input[type="text"] {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 2px; color: white; padding: 6px 10px; font-size: 0.85rem;
+            min-height: 36px; width: 200px;
+        }
+        .filter-bar input[type="text"]::placeholder { color: rgba(255,255,255,0.45); }
+        .filter-bar input[type="text"]:focus { outline: none; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.45); }
 
         .btn-refresh {
             margin-left: auto;
@@ -1548,6 +1559,7 @@ TECHNICAL:
 
     <!-- Filter bar -->
     <div class="filter-bar">
+        <input type="text" id="filterSearch" placeholder="&#128269; Search name or unit&hellip;" oninput="applyFilters()" style="margin-right:10px;">
         <label for="filterStatus">Status:</label>
         <select id="filterStatus" onchange="applyFilters()">
             <option value="">All</option>
@@ -1816,9 +1828,17 @@ TECHNICAL:
     function applyFilters() {
         const statusFilter  = document.getElementById('filterStatus').value;
         const overdueFilter = document.getElementById('filterOverdue').value;
+        const searchFilter  = (document.getElementById('filterSearch').value || '').trim().toLowerCase();
         let filtered = allComplaints;
         if (statusFilter)                filtered = filtered.filter(c => c.status === statusFilter);
         if (overdueFilter === 'overdue') filtered = filtered.filter(c => isOverdue(c));
+        if (searchFilter) {
+            filtered = filtered.filter(function(c) {
+                var name = (c.residentName || '').toLowerCase();
+                var unit = (c.unitNumber   || '').toLowerCase();
+                return name.indexOf(searchFilter) !== -1 || unit.indexOf(searchFilter) !== -1;
+            });
+        }
         renderComplaints(filtered);
     }
 
