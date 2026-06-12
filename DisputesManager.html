@@ -6,14 +6,16 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.17
+  Frontend Version: V3.0.18
   Backend:          DisputesManager V3.0.9
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
-  V3.0.17 (Jun 2026): Referred to VicAssist renamed to Referred to External Body.
+  V3.0.18 (Jun 2026): Referred to VicAssist renamed to Referred to External Body.
+    addComment button now shows Saving…/Saved instead of Sending…/Sent
+    (comment only writes to Activity Log, no email sent).
     Dropdown option, terminal status array, action panel heading and button,
     referral statement label, outcome label and placeholder, confirmation dialogs,
     status/pill/badge mappings, pane labels, and print record section titles all
@@ -1448,18 +1450,26 @@ TECHNICAL:
         const userName = currentUserName();
         if (!comment) { feedback(fbId, 'Comment text is required.', false); return; }
 
+        // Comment only writes to Activity Log -- use Saving/Saved labels, not Sending/Sent
         const btnElC = getSendBtn(fbId);
-        btnSending(fbId, btnElC);
+        if (btnElC) { btnElC._origText = btnElC.textContent; btnElC.textContent = 'Saving…'; btnElC.disabled = true; }
+        feedback(fbId, '', null);
+
         jsonp({ action: 'addDisputeComment', ref: ref, comment: comment, userName: userName },
             function(data) {
+                if (btnElC) { btnElC.textContent = btnElC._origText || 'Add Comment'; btnElC.disabled = false; }
                 if (data.success) {
-                    btnDone(fbId, btnElC, true, '');
+                    var timeStr = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+                    feedback(fbId, '✓ Saved — ' + timeStr, true);
                     document.getElementById('comment-' + ref) && (document.getElementById('comment-' + ref).value = '');
                     if (data.activityLog) updateActivityLog(ref, data.activityLog);
                 } else {
-                    btnDone(fbId, btnElC, false, data.error || 'Failed to add comment.');
+                    feedback(fbId, '✗ ' + (data.error || 'Failed to add comment.'), false);
                 }
-            }, function(err) { btnDone(fbId, btnElC, false, err); });
+            }, function(err) {
+                if (btnElC) { btnElC.textContent = btnElC._origText || 'Add Comment'; btnElC.disabled = false; }
+                feedback(fbId, '✗ ' + err, false);
+            });
     }
 
     // ── LOG DISPUTE MODAL ─────────────────────────────────────────────────
