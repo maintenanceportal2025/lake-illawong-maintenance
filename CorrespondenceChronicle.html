@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.8
+  Frontend Version: V1.0.9
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
@@ -27,6 +27,13 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
+  V1.0.9 (Jun 2026): Search by Name/Unit added. Two-tab lookup panel:
+    Reference tab (existing) and Search tab (new). Search calls
+    getComplaintsByUnit/getComplaintsByName and getDisputesByUnit/
+    getDisputesByName simultaneously, merges results sorted newest
+    first. Click result to load Chronicle. Requires Complaints backend
+    V3.0.3 and Disputes backend V3.0.11 for name search.
+
   V1.0.8 (Jun 2026): Style fixes -- logo corrected to logo.png; back button
     moved to below header divider, styled as portal-back-btn consistent
     with DisputesManager; label updated to Back to Admin Portal.
@@ -337,13 +344,35 @@ body {
 
         <!-- Lookup panel -->
         <div class="glass-panel lookup-panel">
-            <div class="lookup-label">Matter Reference Lookup</div>
-            <div class="lookup-row">
-                <input type="text" id="refInput" class="glass-input"
-                       placeholder="e.g. COMP-20260601-001 or DISP-20260601-001"
-                       onkeydown="if(event.key==='Enter')loadMatter()">
-                <button id="loadBtn" class="btn-load" onclick="loadMatter()">Load Matter</button>
+            <!-- Tab row -->
+            <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.15);">
+                <button id="tabRef" onclick="switchTab('ref')" style="background:rgba(255,255,255,0.15);border:none;border-bottom:2px solid white;color:white;padding:8px 20px;font-size:0.85rem;font-weight:700;cursor:pointer;border-radius:2px 2px 0 0;">Reference</button>
+                <button id="tabSearch" onclick="switchTab('search')" style="background:transparent;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,0.55);padding:8px 20px;font-size:0.85rem;font-weight:600;cursor:pointer;border-radius:2px 2px 0 0;">Search by Name / Unit</button>
             </div>
+
+            <!-- Reference lookup -->
+            <div id="panelRef">
+                <div class="lookup-label">Enter Reference Number</div>
+                <div class="lookup-row">
+                    <input type="text" id="refInput" class="glass-input"
+                           placeholder="e.g. COMP-20260601-001 or DISP-20260601-001"
+                           onkeydown="if(event.key==='Enter')loadMatter()">
+                    <button id="loadBtn" class="btn-load" onclick="loadMatter()">Load Matter</button>
+                </div>
+            </div>
+
+            <!-- Name / unit search -->
+            <div id="panelSearch" style="display:none;">
+                <div class="lookup-label">Search by Resident Name or Unit Number</div>
+                <div class="lookup-row">
+                    <input type="text" id="searchInput" class="glass-input"
+                           placeholder="e.g. Barnett or Unit 9"
+                           onkeydown="if(event.key==='Enter')doSearch()">
+                    <button id="searchBtn" class="btn-load" onclick="doSearch()">Search</button>
+                </div>
+                <div id="searchResults" style="margin-top:12px;"></div>
+            </div>
+
             <div id="lookupError"></div>
         </div>
 
@@ -415,6 +444,146 @@ function reVerify() {
     document.getElementById('deniedView').classList.add('hidden');
     VerificationModal.clearVerification();
     VerificationModal.show();
+}
+
+// =====================================================================
+// TAB SWITCHING
+// =====================================================================
+function switchTab(tab) {
+    var isRef = tab === 'ref';
+    document.getElementById('panelRef').style.display    = isRef ? '' : 'none';
+    document.getElementById('panelSearch').style.display = isRef ? 'none' : '';
+    document.getElementById('tabRef').style.background        = isRef ? 'rgba(255,255,255,0.15)' : 'transparent';
+    document.getElementById('tabRef').style.borderBottomColor = isRef ? 'white' : 'transparent';
+    document.getElementById('tabRef').style.color             = isRef ? 'white' : 'rgba(255,255,255,0.55)';
+    document.getElementById('tabSearch').style.background        = isRef ? 'transparent' : 'rgba(255,255,255,0.15)';
+    document.getElementById('tabSearch').style.borderBottomColor = isRef ? 'transparent' : 'white';
+    document.getElementById('tabSearch').style.color             = isRef ? 'rgba(255,255,255,0.55)' : 'white';
+    document.getElementById('lookupError').innerHTML = '';
+    document.getElementById('searchResults').innerHTML = '';
+}
+
+// =====================================================================
+// SEARCH
+// =====================================================================
+function doSearch() {
+    var query = (document.getElementById('searchInput').value || '').trim();
+    if (!query) {
+        document.getElementById('lookupError').innerHTML = '<div class="error-notice">Please enter a name or unit number to search.</div>';
+        return;
+    }
+
+    var resultsEl = document.getElementById('searchResults');
+    var btn       = document.getElementById('searchBtn');
+    var errEl     = document.getElementById('lookupError');
+    errEl.innerHTML = '';
+    resultsEl.innerHTML = '<div class="info-notice">Searching…</div>';
+    btn.disabled = true; btn.textContent = 'Searching…';
+
+    // Determine search type: unit if starts with digit or "unit"
+    var isUnit = /^(unit\s*)?\d/i.test(query);
+    // Normalise unit query -- strip leading "unit " prefix if present for backend match
+    var unitQuery = query.replace(/^unit\s*/i, '').trim();
+
+    var complaints = null, disputes = null;
+    var done = 0;
+
+    function onBothDone() {
+        btn.disabled = false; btn.textContent = 'Search';
+        var results = [];
+        if (complaints) {
+            complaints.forEach(function(c) {
+                results.push({
+                    type:     'complaint',
+                    ref:      c.referenceNumber,
+                    name:     c.residentName,
+                    unit:     c.unitNumber,
+                    status:   c.status,
+                    date:     c.submittedAt,
+                    category: c.category
+                });
+            });
+        }
+        if (disputes) {
+            disputes.forEach(function(d) {
+                results.push({
+                    type:     'dispute',
+                    ref:      d.referenceNumber,
+                    name:     (d.partyAName || '') + ' / ' + (d.partyBName || ''),
+                    unit:     (d.partyAUnit || '') + ' / ' + (d.partyBUnit || ''),
+                    status:   d.status,
+                    date:     d.loggedAt
+                });
+            });
+        }
+        // Sort newest first
+        results.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+        renderSearchResults(results, query);
+    }
+
+    function fetchComplaints() {
+        var cbName = 'searchCb_comp_' + Date.now();
+        var action = isUnit ? 'getComplaintsByUnit' : 'getComplaintsByName';
+        var param  = isUnit ? 'unit=' + encodeURIComponent(unitQuery) : 'name=' + encodeURIComponent(query);
+        var url = CONFIG.COMPLAINTS_BACKEND + '?action=' + action + '&' + param + '&callback=' + cbName;
+        var t = setTimeout(function() { delete window[cbName]; complaints = []; done++; if (done === 2) onBothDone(); }, 10000);
+        window[cbName] = function(data) {
+            clearTimeout(t); delete window[cbName];
+            complaints = (data && data.success && data.complaints) ? data.complaints : [];
+            done++; if (done === 2) onBothDone();
+        };
+        var s = document.createElement('script'); s.src = url; document.head.appendChild(s);
+    }
+
+    function fetchDisputes() {
+        var cbName = 'searchCb_disp_' + Date.now();
+        var action = isUnit ? 'getDisputesByUnit' : 'getDisputesByName';
+        var param  = isUnit ? 'unit=' + encodeURIComponent(unitQuery) : 'name=' + encodeURIComponent(query);
+        var url = CONFIG.DISPUTES_BACKEND + '?action=' + action + '&' + param + '&callback=' + cbName;
+        var t = setTimeout(function() { delete window[cbName]; disputes = []; done++; if (done === 2) onBothDone(); }, 10000);
+        window[cbName] = function(data) {
+            clearTimeout(t); delete window[cbName];
+            disputes = (data && data.success && data.disputes) ? data.disputes : [];
+            done++; if (done === 2) onBothDone();
+        };
+        var s = document.createElement('script'); s.src = url; document.head.appendChild(s);
+    }
+
+    fetchComplaints();
+    fetchDisputes();
+}
+
+function renderSearchResults(results, query) {
+    var el = document.getElementById('searchResults');
+    if (results.length === 0) {
+        el.innerHTML = '<div class="info-notice">No matters found matching “' + escHtml(query) + '”.</div>';
+        return;
+    }
+
+    var html = '<div style="font-size:0.78rem;color:var(--glass-text-muted);margin-bottom:8px;">' + results.length + ' matter' + (results.length !== 1 ? 's' : '') + ' found — click to load Chronicle</div>';
+    results.forEach(function(r) {
+        var typeColor = r.type === 'complaint' ? '#bfdbfe' : '#99f6e4';
+        var typeBg    = r.type === 'complaint' ? 'rgba(59,130,246,0.3)' : 'rgba(13,148,136,0.3)';
+        var typeBorder= r.type === 'complaint' ? 'rgba(96,165,250,0.6)' : 'rgba(13,148,136,0.6)';
+        html += '<div onclick="loadFromSearch(\u0027' + r.ref + '\u0027)" style="cursor:pointer;padding:10px 12px;margin-bottom:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:2px;transition:background 0.15s;">'
+            + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+            + '<span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:0.68rem;font-weight:700;text-transform:uppercase;background:' + typeBg + ';color:' + typeColor + ';border:1px solid ' + typeBorder + ';">' + r.type + '</span>'
+            + '<span style="font-size:0.85rem;font-weight:700;color:white;">' + escHtml(r.ref) + '</span>'
+            + '<span style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-left:auto;">' + formatDate(r.date) + '</span>'
+            + '</div>'
+            + '<div style="font-size:0.82rem;color:rgba(255,255,255,0.85);">' + escHtml(r.name) + ' &mdash; ' + escHtml(r.unit) + '</div>'
+            + (r.category ? '<div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-top:2px;">' + escHtml(r.category) + '</div>' : '')
+            + '<div style="font-size:0.72rem;color:rgba(255,255,255,0.45);margin-top:2px;">' + escHtml(r.status) + '</div>'
+            + '</div>';
+    });
+    el.innerHTML = html;
+}
+
+function loadFromSearch(ref) {
+    // Switch to reference tab, populate and load
+    switchTab('ref');
+    document.getElementById('refInput').value = ref;
+    loadMatter();
 }
 
 // =====================================================================
