@@ -6,13 +6,17 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.25
+  Frontend Version: V3.0.26
   Backend:          DisputesManager V3.0.9
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.26 (Jun 2026): Search input added to filter bar. Filters allDisputes
+    by partyAName, partyBName, partyAUnit, partyBUnit (case-insensitive
+    partial match). Frontend-only, no backend call needed.
+
   V3.0.25 (Jun 2026): Extract pill rendering into shared renderLogEntries()
     function. updateActivityLog now uses it so pills are preserved
     after draft saves and comment adds without requiring a page refresh.
@@ -328,6 +332,13 @@ TECHNICAL:
             font-size: 0.85rem; color: white; cursor: pointer;
         }
         .filter-bar select option { background: #1e3a8a; color: white; }
+        .filter-bar input[type="text"] {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 2px; color: white; padding: 6px 10px; font-size: 0.85rem;
+            min-height: 36px; width: 200px;
+        }
+        .filter-bar input[type="text"]::placeholder { color: rgba(255,255,255,0.45); }
+        .filter-bar input[type="text"]:focus { outline: none; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.45); }
 
         .btn-refresh {
             background: rgba(255,255,255,0.15);
@@ -842,6 +853,7 @@ TECHNICAL:
 
         <!-- Filter bar -->
         <div class="filter-bar">
+            <input type="text" id="filterSearch" placeholder="&#128269; Search name or unit&hellip;" oninput="applyFilters()" style="margin-right:10px;">
             <label for="filterStatus">Status:</label>
             <select id="filterStatus" onchange="applyFilters()">
                 <option value="">All</option>
@@ -1127,10 +1139,19 @@ TECHNICAL:
     function applyFilters() {
         const statusF  = document.getElementById('filterStatus').value;
         const overdueF = document.getElementById('filterOverdue').value;
+        const searchF  = (document.getElementById('filterSearch').value || '').trim().toLowerCase();
 
         const filtered = allDisputes.filter(function(d) {
             if (statusF && d.status !== statusF) return false;
             if (overdueF === 'overdue' && !isOverdue(d)) return false;
+            if (searchF) {
+                var partyA = (d.partyAName || '').toLowerCase();
+                var partyB = (d.partyBName || '').toLowerCase();
+                var unitA  = (d.partyAUnit || '').toLowerCase();
+                var unitB  = (d.partyBUnit || '').toLowerCase();
+                if (partyA.indexOf(searchF) === -1 && partyB.indexOf(searchF) === -1 &&
+                    unitA.indexOf(searchF)  === -1 && unitB.indexOf(searchF)  === -1) return false;
+            }
             return true;
         });
 
