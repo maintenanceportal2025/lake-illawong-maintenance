@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.22
+  Frontend Version: V3.0.23
   Backend:          DisputesManager V3.0.9
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.23 (Jun 2026): Resolution Summary and Referral Statement panes now
+    have Save Draft button. Existing saved text pre-populated into
+    textarea. saveDisputeDraft() added -- calls updateDispute without
+    status change or andSend, no new backend action required.
+
   V3.0.22 (Jun 2026): Activity Log card view now shows colour-coded pills
     (Board Log/Inbound/Board Comment/System) with timestamp and actor
     on separate meta line. Matches Chronicle pill design.
@@ -1355,14 +1360,16 @@ TECHNICAL:
         }
 
         else if (status === 'Under Review') {
-            // Resolve or Refer to VicAssist
+            // Resolve or Refer to External Body
             html += '<hr class="action-separator">' +
             '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve Dispute</div>' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="res-' + ref + '" placeholder="Summarise how the dispute was resolved and what was agreed by both parties."></textarea>' +
+                '<textarea id="res-' + ref + '" placeholder="Summarise how the dispute was resolved and what was agreed by both parties.">' + escHtml(d.resolutionSummary || '') + '</textarea>' +
             '</div></div>' +
-            '<button class="btn-action" onclick="doResolve(\'' + ref + '\')">Mark Resolved &amp; Notify Both Parties</button>' +
+            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Mark Resolved &amp; Notify Both Parties</strong> to finalise.</i></div>' +
+            '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'resolution\')">Save Draft</button>' +
+            '<button class="btn-action" style="margin-left:8px;" onclick="doResolve(\'' + ref + '\')">Mark Resolved &amp; Notify Both Parties</button>' +
             '<span id="fb-res-' + ref + '" class="save-feedback"></span>' +
 
             '<hr class="action-separator">' +
@@ -1370,9 +1377,11 @@ TECHNICAL:
             '<div class="action-note" style="margin-bottom:8px;">Use this path if the dispute has not been resolved within 28 days, or if the Board determines referral is warranted sooner. Both parties will be notified separately.</div>' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>External Body &amp; Referral Statement <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="ref-' + ref + '" placeholder="Identify the external body (e.g. VicAssist, VCAT, Consumer Affairs Victoria) and describe the reasons for referral. This will be included in notifications sent to both parties."></textarea>' +
+                '<textarea id="ref-' + ref + '" placeholder="Identify the external body (e.g. VicAssist, VCAT, Consumer Affairs Victoria) and describe the reasons for referral. This will be included in notifications sent to both parties.">' + escHtml(d.referralNarrative || '') + '</textarea>' +
             '</div></div>' +
-            '<button class="btn-danger-action" onclick="doRefer(\'' + ref + '\')">Refer to External Body &amp; Notify Both Parties</button>' +
+            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Refer to External Body &amp; Notify Both Parties</strong> to finalise.</i></div>' +
+            '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'referral\')">Save Draft</button>' +
+            '<button class="btn-danger-action" style="margin-left:8px;" onclick="doRefer(\'' + ref + '\')">Refer to External Body &amp; Notify Both Parties</button>' +
             '<span id="fb-ref-' + ref + '" class="save-feedback"></span>';
         }
 
@@ -1453,6 +1462,33 @@ TECHNICAL:
                     btnDone(fbIdRes, btnElRes, false, data.error || 'Update failed.');
                 }
             }, function(err) { btnDone(fbIdRes, btnElRes, false, err); });
+    }
+
+    function saveDisputeDraft(ref, type) {
+        var fbId, fieldVal, payload;
+        if (type === 'resolution') {
+            fieldVal = val('res-' + ref);
+            fbId     = 'fb-res-' + ref;
+            if (!fieldVal) { feedback(fbId, 'Please enter a resolution summary before saving.', false); return; }
+            payload  = { action: 'updateDispute', ref: ref, resolutionSummary: fieldVal, userName: currentUserName() };
+        } else {
+            fieldVal = val('ref-' + ref);
+            fbId     = 'fb-ref-' + ref;
+            if (!fieldVal) { feedback(fbId, 'Please enter a referral statement before saving.', false); return; }
+            payload  = { action: 'updateDispute', ref: ref, referralNarrative: fieldVal, userName: currentUserName() };
+        }
+        var btnEl = document.querySelector('#fb-' + (type === 'resolution' ? 'res' : 'ref') + '-' + ref + ' ~ button, button[onclick*="saveDisputeDraft"]');
+        feedback(fbId, 'Saving…', null);
+        jsonp(payload,
+            function(data) {
+                if (data.success) {
+                    var timeStr = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+                    feedback(fbId, '✓ Draft saved — ' + timeStr, true);
+                    if (data.activityLog) updateActivityLog(ref, data.activityLog);
+                } else {
+                    feedback(fbId, '✗ ' + (data.error || 'Save failed.'), false);
+                }
+            }, function(err) { feedback(fbId, '✗ ' + err, false); });
     }
 
     function doRefer(ref) {
