@@ -6,13 +6,17 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.24
+  Frontend Version: V3.0.25
   Backend:          DisputesManager V3.0.9
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.25 (Jun 2026): Extract pill rendering into shared renderLogEntries()
+    function. updateActivityLog now uses it so pills are preserved
+    after draft saves and comment adds without requiring a page refresh.
+
   V3.0.24 (Jun 2026): saveDisputeDraft now passes skipLog=true so draft
     saves write to sheet without creating Activity Log entries.
     Requires backend V3.0.10.
@@ -1268,47 +1272,7 @@ TECHNICAL:
             ? d.activityLog.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse()
             : [];
         const logHtml = logEntries.length
-            ? logEntries.map(function(e) {
-                var isBoardLog = e.indexOf('[BOARD LOG]') !== -1;
-                var isInbound  = e.indexOf('[INBOUND]')   !== -1;
-                var isSystem   = e.indexOf('| SYSTEM |')  !== -1;
-                var isComment  = !isSystem; // non-system entries are Board Comments
-
-                var borderColor, pillBg, pillColor, pillLabel;
-                if (isBoardLog) {
-                    borderColor = 'rgba(59,130,246,0.6)';
-                    pillBg = 'rgba(59,130,246,0.3)'; pillColor = '#bfdbfe'; pillLabel = 'Board Log';
-                } else if (isInbound) {
-                    borderColor = 'rgba(245,158,11,0.6)';
-                    pillBg = 'rgba(245,158,11,0.3)'; pillColor = '#fde68a'; pillLabel = 'Inbound';
-                } else if (isComment) {
-                    borderColor = 'rgba(168,85,247,0.6)';
-                    pillBg = 'rgba(168,85,247,0.3)'; pillColor = '#e9d5ff'; pillLabel = 'Board Comment';
-                } else {
-                    borderColor = 'rgba(255,255,255,0.15)';
-                    pillBg = 'rgba(255,255,255,0.1)'; pillColor = 'rgba(255,255,255,0.6)'; pillLabel = 'System';
-                }
-
-                var pill = '<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-right:6px;background:' + pillBg + ';color:' + pillColor + ';">' + pillLabel + '</span>';
-
-                // Parse timestamp and actor from entry header
-                var headerMatch = e.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*\|\s*([^|]+)\|\s*([\s\S]*)$/);
-                var metaLine = '';
-                var bodyText = e;
-                if (headerMatch) {
-                    var ts    = headerMatch[1].trim();
-                    var actor = headerMatch[2].trim();
-                    var body  = headerMatch[3].trim();
-                    var actorDisplay = actor === 'SYSTEM' ? '' : ' — ' + actor;
-                    metaLine = '<div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-bottom:3px;">' + pill + ts + actorDisplay + '</div>';
-                    bodyText = body;
-                }
-
-                return '<div style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.06);border-left:3px solid ' + borderColor + ';margin-bottom:2px;background:rgba(255,255,255,0.03);">'
-                    + metaLine
-                    + '<div style="font-size:0.8rem;color:rgba(255,255,255,0.8);white-space:pre-wrap;">' + escHtml(bodyText) + '</div>'
-                    + '</div>';
-              }).join('')
+            ? renderLogEntries(logEntries)
             : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No activity recorded yet.</div>';
 
         html += accordionPane('pane-log-' + ref,
@@ -1840,6 +1804,50 @@ TECHNICAL:
         });
     }
 
+    function renderLogEntries(entries) {
+        // Shared pill renderer -- used by both card build and updateActivityLog
+        return entries.map(function(e) {
+            var isBoardLog = e.indexOf('[BOARD LOG]') !== -1;
+            var isInbound  = e.indexOf('[INBOUND]')   !== -1;
+            var isSystem   = e.indexOf('| SYSTEM |')  !== -1;
+            var isComment  = !isSystem;
+
+            var borderColor, pillBg, pillColor, pillLabel;
+            if (isBoardLog) {
+                borderColor = 'rgba(59,130,246,0.6)';
+                pillBg = 'rgba(59,130,246,0.3)'; pillColor = '#bfdbfe'; pillLabel = 'Board Log';
+            } else if (isInbound) {
+                borderColor = 'rgba(245,158,11,0.6)';
+                pillBg = 'rgba(245,158,11,0.3)'; pillColor = '#fde68a'; pillLabel = 'Inbound';
+            } else if (isComment) {
+                borderColor = 'rgba(168,85,247,0.6)';
+                pillBg = 'rgba(168,85,247,0.3)'; pillColor = '#e9d5ff'; pillLabel = 'Board Comment';
+            } else {
+                borderColor = 'rgba(255,255,255,0.15)';
+                pillBg = 'rgba(255,255,255,0.1)'; pillColor = 'rgba(255,255,255,0.6)'; pillLabel = 'System';
+            }
+
+            var pill = '<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-right:6px;background:' + pillBg + ';color:' + pillColor + ';">' + pillLabel + '</span>';
+
+            var headerMatch = e.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*\|\s*([^|]+)\|\s*([\s\S]*)$/);
+            var metaLine = '';
+            var bodyText = e;
+            if (headerMatch) {
+                var ts    = headerMatch[1].trim();
+                var actor = headerMatch[2].trim();
+                var body  = headerMatch[3].trim();
+                var actorDisplay = actor === 'SYSTEM' ? '' : ' \u2014 ' + actor;
+                metaLine = '<div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-bottom:3px;">' + pill + ts + actorDisplay + '</div>';
+                bodyText = body;
+            }
+
+            return '<div style="padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.06);border-left:3px solid ' + borderColor + ';margin-bottom:2px;background:rgba(255,255,255,0.03);">'
+                + metaLine
+                + '<div style="font-size:0.8rem;color:rgba(255,255,255,0.8);white-space:pre-wrap;">' + escHtml(bodyText) + '</div>'
+                + '</div>';
+        }).join('');
+    }
+
     function updateActivityLog(ref, logText) {
         const pane = document.getElementById('pane-log-' + ref);
         if (!pane) return;
@@ -1847,9 +1855,9 @@ TECHNICAL:
         if (!body) return;
 
         const entries = logText.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse();
-        const logHtml = entries.map(function(e) {
-            return '<div style="font-size:0.8rem;color:rgba(255,255,255,0.65);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.06);white-space:pre-wrap;">' + escHtml(e) + '</div>';
-        }).join('');
+        const logHtml = entries.length
+            ? renderLogEntries(entries)
+            : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No activity recorded yet.</div>';
 
         const commentEl = body.querySelector('div[style*="border-top"]');
         body.innerHTML = logHtml + (commentEl ? commentEl.outerHTML : buildCommentInput(ref));
