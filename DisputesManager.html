@@ -6,13 +6,18 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.19
+  Frontend Version: V3.0.20
   Backend:          DisputesManager V3.0.9
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.20 (Jun 2026): Summary print now includes filtered Activity Log --
+    System events only, Board Comments/Board Log/Inbound stripped.
+    Same filter logic as Chronicle Resident Copy. Summary banner text
+    updated to reflect what is withheld.
+
   V3.0.19 (Jun 2026): Print Report Activity Log now displays oldest-to-newest
     (chronological) to match Chronicle. Was displaying newest-to-oldest.
 
@@ -2079,20 +2084,32 @@ TECHNICAL:
               + '<div class="field-value">' + escHtml(d.externalReferralOutcome) + '</div></div>'
             : '';
 
-        // Activity log (full record only)
+        // Activity log:
+        //   Full Record -- all entries
+        //   Summary     -- system entries only (Board Comments, Board Log, Inbound stripped)
+        //                  same filter logic as Chronicle Resident Copy
         var activityBlock = '';
-        if (fullRecord && d.activityLog) {
-            var entries = d.activityLog.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse();
-            activityBlock = '<div class="section-title">Activity Log</div>'
-                + '<div class="activity-log-print">'
-                + entries.map(function(e) {
-                    return '<div class="activity-log-entry-print">' + escHtml(e) + '</div>';
-                  }).join('')
-                + '</div>';
+        if (d.activityLog) {
+            var allEntries = d.activityLog.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse();
+            var filteredEntries = fullRecord ? allEntries : allEntries.filter(function(e) {
+                // Keep only SYSTEM entries that are not Board Log or Inbound
+                var isSystem   = e.indexOf('| SYSTEM |') !== -1;
+                var isBoardLog = e.indexOf('[BOARD LOG]') !== -1;
+                var isInbound  = e.indexOf('[INBOUND]') !== -1;
+                return isSystem && !isBoardLog && !isInbound;
+            });
+            if (filteredEntries.length > 0) {
+                activityBlock = '<div class="section-title">Activity Log' + (!fullRecord ? ' (System Events)' : '') + '</div>'
+                    + '<div class="activity-log-print">'
+                    + filteredEntries.map(function(e) {
+                        return '<div class="activity-log-entry-print">' + escHtml(e) + '</div>';
+                      }).join('')
+                    + '</div>';
+            }
         }
 
         var summaryBanner = !fullRecord
-            ? '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#0f766e;font-weight:600;">SUMMARY — Activity Log and contact details withheld</div>'
+            ? '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#0f766e;font-weight:600;">SUMMARY — Board comments, correspondence logs, and contact details withheld</div>'
             : '';
 
         var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
