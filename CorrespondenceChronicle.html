@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.3
+  Frontend Version: V1.0.4
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
@@ -27,6 +27,12 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
+  V1.0.4 (Jun 2026): Fix parseActivityLog splitting on all \n including
+    those within multi-line Board Log entries. Now splits only on \n
+    immediately followed by a timestamp, keeping each entry intact.
+    Replaced reverse() with explicit timestamp sort for correct
+    chronological order.
+
   V1.0.3 (Jun 2026): Fix parseActivityLog using wrong entry separator for
     Disputes. Was splitting on \n\n (double newline) causing entire Activity
     Log to be treated as one entry -- no entries rendered. Both Complaints
@@ -673,12 +679,25 @@ var PATHWAY_PATTERNS = [
 function parseActivityLog(raw, isComp, residentOnly) {
     if (!raw) return [];
 
-    // Both Complaints and Disputes entries are separated by \n
-    var sep     = '\n';
-    var entries = raw.split(sep).filter(function(e) { return e.trim(); });
+    // Entries start with a timestamp: YYYY-MM-DD HH:MM | actor | content
+    // We split on newlines that are immediately followed by a timestamp pattern,
+    // so that multi-line entries (e.g. Board Log with quoted email thread) are
+    // kept together as a single entry.
+    var timestampPattern = /\n(?=\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s*\|)/g;
+    var entries = raw.split(timestampPattern).filter(function(e) { return e.trim(); });
 
-    // Complaints are prepended (newest first in sheet) -- reverse to chronological
-    entries = entries.reverse();
+    // If no entries matched the pattern, fall back to plain \n split
+    if (entries.length <= 1 && raw.indexOf('\n') !== -1) {
+        entries = raw.split('\n').filter(function(e) { return e.trim(); });
+    }
+
+    // Sort chronologically by leading timestamp (oldest first)
+    entries.sort(function(a, b) {
+        var ta = a.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+        var tb = b.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+        if (!ta || !tb) return 0;
+        return ta[1] < tb[1] ? -1 : ta[1] > tb[1] ? 1 : 0;
+    });
 
     var result = [];
     entries.forEach(function(rawEntry) {
