@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.3
+  Frontend Version: V1.0.4
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
@@ -27,6 +27,11 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
+  V1.0.4 (Jun 2026): parseBoardLogBody fully rewritten based on actual
+    sheet storage format. Fields are on separate \n-delimited lines;
+    body wrapped by \n---\n delimiters; body uses \r\n line endings.
+    Previous versions assumed single-line format -- incorrect.
+
   V1.0.3 (Jun 2026): Fix parseBoardLogBody > and --- stripping. Replaced
     regex with explicit string splits to avoid JS regex flag issues.
     Disputes entry separator confirmed \n\n (correct in V1.0.2).
@@ -731,47 +736,64 @@ function parseEntry(raw) {
 }
 
 function parseBoardLogBody(body) {
-    // Raw log format (single line in sheet):
-    // [BOARD LOG] Forwarded to log by <sender> Received: <date> Subject: <subject> --- <email body>
-    // The --- separates the metadata header from the email body content.
-    // > quoting prefixes (email client thread notation) and --- delimiters stripped from body.
+    // Actual format stored in sheet (multi-line, \n separated):
+    // [BOARD LOG] Forwarded to log by <sender>
+    // Received: <date>
+    // Subject:  <subject>
+    // ---
+    // <email body with \r\n line endings>
+    // ---
 
     var text = body.replace('[BOARD LOG]', '').trim();
 
-    // Isolate metadata (before first ' --- ') and body (after it)
-    var dashIdx = text.indexOf(' --- ');
-    var metadata  = dashIdx !== -1 ? text.substring(0, dashIdx).trim() : text;
-    var emailBody = dashIdx !== -1 ? text.substring(dashIdx + 5).trim() : '';
+    // Split on \n to get individual lines
+    var lines = text.split('\n');
 
-    // Extract header fields from the metadata section
-    var senderMatch   = metadata.match(/Forwarded to log by\s+(.+?)\s+Received:/);
-    var receivedMatch = metadata.match(/Received:\s*(.+?)\s+Subject:/);
-    var subjectMatch  = metadata.match(/Subject:\s*(.+)/);
-
-    // Clean the body:
-    // 1. Remove any --- delimiters
-    // 2. Strip > quoting prefixes: replace ' > ' and '> ' patterns with a space
-    //    (simple string replacement rather than regex to avoid JS flag issues)
-    var cleanBody = emailBody;
-    cleanBody = cleanBody.split(' --- ').join(' ');   // remove --- delimiters
-    cleanBody = cleanBody.split(' >  ').join(' ');    // strip '>  ' (with 2 spaces)
-    cleanBody = cleanBody.split(' > ').join(' ');     // strip '> '
-    cleanBody = cleanBody.split('>  ').join('');      // strip leading '>  '
-    cleanBody = cleanBody.split('> ').join('');       // strip leading '> '
-    // Collapse multiple spaces
-    while (cleanBody.indexOf('  ') !== -1) {
-        cleanBody = cleanBody.split('  ').join(' ');
+    // Find the --- delimiter lines that wrap the body
+    var firstDash = -1;
+    var lastDash  = -1;
+    for (var i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === '---') {
+            if (firstDash === -1) firstDash = i;
+            else lastDash = i;
+        }
     }
-    cleanBody = cleanBody.trim();
 
-    // Build structured output: header block then body
-    var lines = [];
-    if (senderMatch)   lines.push('From:     ' + senderMatch[1].trim());
-    if (receivedMatch) lines.push('Received: ' + receivedMatch[1].trim());
-    if (subjectMatch)  lines.push('Subject:  ' + subjectMatch[1].trim());
-    if (cleanBody)     lines.push('', cleanBody);
+    // Metadata lines are before the first ---
+    var metaLines = firstDash !== -1 ? lines.slice(0, firstDash) : lines;
+    // Body lines are between the --- delimiters (or after first --- if no second)
+    var bodyEnd   = lastDash !== -1 ? lastDash : lines.length;
+    var bodyLines = firstDash !== -1 ? lines.slice(firstDash + 1, bodyEnd) : [];
 
-    return lines.join('\n');
+    // Extract header fields from metadata lines
+    var fullMeta   = metaLines.join(' ');
+    var senderMatch   = fullMeta.match(/Forwarded to log by\s+(.+?)(?:\s+Received:|$)/);
+    var receivedLine  = metaLines.find(function(l) { return l.trim().indexOf('Received:') === 0; });
+    var subjectLine   = metaLines.find(function(l) { return l.trim().indexOf('Subject:')  === 0; });
+    var receivedVal   = receivedLine  ? receivedLine.replace('Received:', '').trim()  : '';
+    var subjectVal    = subjectLine   ? subjectLine.replace('Subject:',  '').trim()  : '';
+
+    // Clean body: strip \r, strip > quoting prefixes, strip blank lines
+    var cleanLines = [];
+    bodyLines.forEach(function(line) {
+        line = line.replace(/\r/g, '').trim();  // remove \r
+        line = line.replace(/^>+\s*/,  '');     // strip leading > or >>
+        line = line.replace(/^\s*>\s*/, '');   // strip lone >
+        cleanLines.push(line);
+    });
+    // Remove leading/trailing blank lines
+    while (cleanLines.length && !cleanLines[0])           cleanLines.shift();
+    while (cleanLines.length && !cleanLines[cleanLines.length-1]) cleanLines.pop();
+    var cleanBody = cleanLines.join('\n');
+
+    // Build structured output
+    var out = [];
+    if (senderMatch)  out.push('From:     ' + senderMatch[1].trim());
+    if (receivedVal)  out.push('Received: ' + receivedVal);
+    if (subjectVal)   out.push('Subject:  ' + subjectVal);
+    if (cleanBody)    out.push('', cleanBody);
+
+    return out.join('\n');
 }
 
 function stripPathwayBlocks(text) {
