@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.5
-  Backend:          ComplaintsManager V3.0.0
+  Frontend Version: V3.0.6
+  Backend:          ComplaintsManager V3.0.5
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.6 (Jun 2026): Board Notes pane added.
+    New accordion pane "Board Notes" inserted between Action Panel
+    and Activity Log in every complaint card. Contains two fields:
+    Internal Notes (col Y -- Board only, never shown to resident) and
+    Note to Resident (col Z -- Board narrative, included in Chronicle
+    Resident Copy print). Pane starts closed. Single Save button calls
+    saveNotes backend action. saveNotes() JS function added.
+    Activity Log "Add to Activity Log" textarea and button removed --
+    Activity Log is now a read-only display. addComment() JS function
+    removed. Backend updated to ComplaintsManager V3.0.5.
+
   V3.0.5 (Jun 2026): Search input added to filter bar. Filters allComplaints
     by residentName and unitNumber (case-insensitive partial match).
     Frontend-only, no backend call needed.
@@ -1911,6 +1922,7 @@ TECHNICAL:
             <div class="card-detail">
                 ${buildAccordion(c)}
                 ${buildActionPanel(c)}
+                ${buildNotesPane(c)}
                 ${buildActivityLogPane(c)}
             </div>
         </div>`;
@@ -2228,14 +2240,43 @@ TECHNICAL:
                 </div>
                 <div class="accordion-body">
                     <div class="activity-log-block">${commentEntries}</div>
-                    <div class="update-row" style="margin-top:12px;">
+                </div>
+            </div>`;
+    }
+
+    // ── BUILD NOTES PANE ─────────────────────────────────────────────
+    // Board Notes: Internal Notes (admin only) + Note to Resident (Chronicle).
+    // Starts closed. Save button calls saveNotes backend action.
+    function buildNotesPane(c) {
+        const safeRef = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
+        return `
+            <div class="accordion-pane pane-notes" id="pane-notes-${safeRef}">
+                <div class="accordion-pane-header" onclick="togglePane('pane-notes-${safeRef}')">
+                    <div class="accordion-pane-header-left">
+                        <span class="pane-title">Board Notes</span>
+                        <span class="pane-date">Not sent to resident</span>
+                    </div>
+                    <span class="accordion-chevron">&#9660;</span>
+                </div>
+                <div class="accordion-body">
+                    <div class="update-row">
                         <div class="update-field">
-                            <label for="comment-${safeRef}">Add to Activity Log (timestamped, permanent record)</label>
-                            <textarea id="comment-${safeRef}" placeholder="Add a note \u2014 e.g. VicAssist correspondence received, VCAT referral..."></textarea>
+                            <label for="internal-notes-${safeRef}">Internal Notes</label>
+                            <p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:0 0 6px;">Board use only — never shown to the resident or included in any print.</p>
+                            <textarea id="internal-notes-${safeRef}" rows="4" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="Internal Board notes…">${escHtml(c.internalNotes || '')}</textarea>
                         </div>
                     </div>
-                    <button class="btn-add-comment" id="addcomment-${safeRef}" onclick="addComment('${safeRef}')">Add to Activity Log</button>
-                    <span class="comment-feedback" id="commentfeedback-${safeRef}"></span>
+                    <div class="update-row" style="margin-top:12px;">
+                        <div class="update-field">
+                            <label for="note-to-resident-${safeRef}">Note to Resident</label>
+                            <p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:0 0 6px;">Board’s written narrative to the resident about how their matter was handled. Included in the Chronicle Resident Copy print.</p>
+                            <textarea id="note-to-resident-${safeRef}" rows="4" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="Note to the resident…">${escHtml(c.noteToResident || '')}</textarea>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <button class="btn-save" id="save-notes-btn-${safeRef}" onclick="saveNotes('${safeRef}')">Save Notes</button>
+                        <span class="save-feedback" id="save-notes-feedback-${safeRef}"></span>
+                    </div>
                 </div>
             </div>`;
     }
@@ -2923,66 +2964,52 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    function addComment(ref) {
-        const comment  = (document.getElementById('comment-'        + ref).value || '').trim();
-        const btn      = document.getElementById('addcomment-'      + ref);
-        const feedback = document.getElementById('commentfeedback-' + ref);
-
-        if (!comment) { feedback.textContent = 'Please enter a comment.'; feedback.className = 'comment-feedback error'; return; }
-
-        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+    function saveNotes(ref) {
+        const internalNotes  = (document.getElementById('internal-notes-'    + ref) || {}).value || '';
+        const noteToResident = (document.getElementById('note-to-resident-'  + ref) || {}).value || '';
+        const btn            = document.getElementById('save-notes-btn-'     + ref);
+        const feedback       = document.getElementById('save-notes-feedback-' + ref);
 
         btn.disabled    = true;
-        btn.textContent = 'Adding...';
+        btn.textContent = 'Saving...';
         feedback.textContent = '';
-        feedback.className   = 'comment-feedback';
+        feedback.className   = 'save-feedback';
 
-        const callbackName = 'commentCallback_' + Date.now();
+        const callbackName = 'saveNotesCallback_' + Date.now();
         const url = CONFIG.BACKEND_URL
-            + '?action=addComment'
-            + '&ref='      + encodeURIComponent(ref)
-            + '&comment='  + encodeURIComponent(comment)
-            + '&userName=' + encodeURIComponent(userName)
-            + '&callback=' + callbackName;
+            + '?action=saveNotes'
+            + '&ref='            + encodeURIComponent(ref)
+            + '&internalNotes='  + encodeURIComponent(internalNotes)
+            + '&noteToResident=' + encodeURIComponent(noteToResident)
+            + '&callback='       + callbackName;
 
         const timeout = setTimeout(function () {
             cleanup(callbackName);
-            btn.disabled = false; btn.textContent = 'Add Comment';
-            feedback.textContent = 'Timed out — please try again.'; feedback.className = 'comment-feedback error';
+            btn.disabled = false; btn.textContent = 'Save Notes';
+            feedback.textContent = 'Timed out — please try again.'; feedback.className = 'save-feedback error';
         }, 15000);
 
         window[callbackName] = function (data) {
             clearTimeout(timeout); cleanup(callbackName);
-            btn.disabled = false; btn.textContent = 'Add Comment';
+            btn.disabled = false; btn.textContent = 'Save Notes';
             if (data.success) {
-                feedback.textContent = 'Comment added.'; feedback.className = 'comment-feedback success';
-                document.getElementById('comment-' + ref).value = '';
-                // Append new entry to bottom of log (display is oldest-first)
-                const logBlock = document.querySelector('#card-' + ref + ' .activity-log-block');
-                if (logBlock) {
-                    const emptyEl = logBlock.querySelector('.activity-log-empty');
-                    if (emptyEl) emptyEl.remove();
-                    const entry = document.createElement('div');
-                    entry.className   = 'activity-log-entry';
-                    entry.textContent = data.entry;
-                    logBlock.appendChild(entry);
-                }
+                feedback.textContent = 'Notes saved.'; feedback.className = 'save-feedback success';
                 // Update allComplaints cache
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
                 if (idx !== -1) {
-                    const existing = allComplaints[idx].activityLog || '';
-                    allComplaints[idx].activityLog = existing ? data.entry + '\n' + existing : data.entry;
+                    allComplaints[idx].internalNotes  = data.internalNotes;
+                    allComplaints[idx].noteToResident = data.noteToResident;
                 }
             } else {
-                feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'comment-feedback error';
+                feedback.textContent = 'Error: ' + (data.error || 'Unknown error.'); feedback.className = 'save-feedback error';
             }
         };
 
         const script = document.createElement('script');
         script.onerror = function () {
             clearTimeout(timeout); cleanup(callbackName);
-            btn.disabled = false; btn.textContent = 'Add Comment';
-            feedback.textContent = 'Network error — please try again.'; feedback.className = 'comment-feedback error';
+            btn.disabled = false; btn.textContent = 'Save Notes';
+            feedback.textContent = 'Network error — please try again.'; feedback.className = 'save-feedback error';
         };
         script.src = url;
         document.head.appendChild(script);
