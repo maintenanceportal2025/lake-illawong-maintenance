@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.11
+  Frontend Version: V1.0.12
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
@@ -27,6 +27,24 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
+  V1.0.12 (Jun 2026): Board Notes fields added to screen view and all print versions.
+    Complaints -- noteToResident (col Z) and internalNotes (col Y) added.
+      Board Record print: both fields shown.
+      Resident Copy print: noteToResident only.
+      Screen view: both fields always shown (Board-only view).
+    Disputes -- notePartyA (col Z), notePartyB (col AA), noteShared (col AB),
+      noteInternal (col AC) added.
+      Board Record print: all four fields shown.
+      Party A Copy print: notePartyA + noteShared.
+      Party B Copy print: notePartyB + noteShared.
+    Print buttons: disputes now shows Print Party A Copy and Print Party B Copy
+      instead of single Print Resident Copy. Complaints unchanged.
+    doPrint(residentOnly) extended to doPrint(residentOnly, party) where
+      party is null (complaints), A or B (disputes).
+    Print bar rendered dynamically after matter loads via renderPrintBar().
+    buildPrintNotes(m, isComp, party) added.
+    buildSections updated to show Board Notes section on screen view.
+
   V1.0.11 (Jun 2026): Back to Search Results button moved to alongside
     Load Matter button in the reference panel -- stays at top of page.
 
@@ -393,12 +411,8 @@ body {
             <!-- Chronicle sections -->
             <div id="chronicleSections"></div>
 
-            <!-- Print bar -->
-            <div class="print-bar">
-                <button class="btn-print-board"    onclick="doPrint(false)">&#128438; Print Board Record</button>
-                <button class="btn-print-resident" onclick="doPrint(true)">&#128209; Print Resident Copy</button>
-                <span class="print-note">Board Record includes all entries &mdash; Resident Copy omits Board Comments, Board Log emails, inbound replies, and internal notes.</span>
-            </div>
+            <!-- Print bar -- rendered dynamically by renderPrintBar() after matter loads -->
+            <div class="print-bar" id="printBar" style="display:none;"></div>
 
         </div>
 
@@ -707,12 +721,33 @@ function renderMatter() {
     // ── Chronicle sections
     document.getElementById('chronicleSections').innerHTML = buildSections(m, isComp);
 
+    // ── Print bar (dynamic -- disputes get party-specific buttons)
+    renderPrintBar(isComp);
+
     document.getElementById('lookupError').innerHTML = '';
     const rp = document.getElementById('resultPanel');
     rp.style.display = 'block';
 }
 
-function buildMetaFields(m, isComp) {
+function renderPrintBar(isComp) {
+    var bar = document.getElementById('printBar');
+    if (!bar) return;
+    if (isComp) {
+        bar.innerHTML =
+            '<button class="btn-print-board" onclick="doPrint(false, null)">&#128438; Print Board Record</button>' +
+            '<button class="btn-print-resident" onclick="doPrint(true, null)">&#128209; Print Resident Copy</button>' +
+            '<span class="print-note">Board Record includes all entries &mdash; Resident Copy omits Board Comments, Board Log emails, inbound replies, and internal notes. Note to Resident shown in both.</span>';
+    } else {
+        bar.innerHTML =
+            '<button class="btn-print-board" onclick="doPrint(false, null)">&#128438; Print Board Record</button>' +
+            '<button class="btn-print-resident" onclick="doPrint(true, \'A\')">&#128209; Print Party A Copy</button>' +
+            '<button class="btn-print-resident" onclick="doPrint(true, \'B\')">&#128209; Print Party B Copy</button>' +
+            '<span class="print-note">Board Record includes all note fields &mdash; Party copies include Shared Notes and the relevant party-specific notes only.</span>';
+    }
+    bar.style.display = '';
+}
+
+
     var fields = [];
     if (isComp) {
         fields.push(['Resident',    m.residentName + ' (' + m.unitNumber + ')']);
@@ -774,6 +809,21 @@ function buildSections(m, isComp) {
     } else {
         html += section('Correspondence Timeline',
             '<div style="color:var(--glass-text-muted);font-size:0.875rem;font-style:italic;">No correspondence entries recorded.</div>');
+    }
+
+    // ── 7. Board Notes (screen view always shows all fields -- Board only)
+    var notesHtml = '';
+    if (isComp) {
+        if (m.noteToResident)  notesHtml += fieldBlock('Note to Resident', m.noteToResident);
+        if (m.internalNotes)   notesHtml += fieldBlock('Internal Notes (Board only)', m.internalNotes);
+    } else {
+        if (m.notePartyA)   notesHtml += fieldBlock('Party A Notes', m.notePartyA);
+        if (m.notePartyB)   notesHtml += fieldBlock('Party B Notes', m.notePartyB);
+        if (m.noteShared)   notesHtml += fieldBlock('Shared Notes', m.noteShared);
+        if (m.noteInternal) notesHtml += fieldBlock('Internal Notes (Board only)', m.noteInternal);
+    }
+    if (notesHtml) {
+        html += section('Board Notes', notesHtml);
     }
 
     return html;
@@ -1069,11 +1119,15 @@ function renderEntry(e) {
 // =====================================================================
 // PRINT
 // =====================================================================
-function doPrint(residentOnly) {
+function doPrint(residentOnly, party) {
     if (!currentMatter) return;
     const m      = currentMatter;
     const isComp = currentType === 'complaint';
-    const title  = residentOnly ? 'Resident Copy' : 'Board Record';
+    var title;
+    if (!residentOnly)       title = 'Board Record';
+    else if (party === 'A')  title = 'Party A Copy';
+    else if (party === 'B')  title = 'Party B Copy';
+    else                     title = 'Resident Copy';
     const norm   = normaliseStatus(m.status);
 
     var entries = parseActivityLog(m.activityLog, isComp, residentOnly);
@@ -1212,6 +1266,10 @@ function doPrint(residentOnly) {
     }
     html += printSection('Correspondence Timeline', timelineHtml);
 
+    // 7. Board Notes
+    var notesSection = buildPrintNotes(m, isComp, party, residentOnly);
+    if (notesSection) html += notesSection;
+
     // ── Footer
     var printedBy = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Board of Management';
     var now = new Date();
@@ -1316,6 +1374,35 @@ function buildPrintDisputeClosure(m) {
     if (m.closedAt)        html += pfr('Closed', formatDate(m.closedAt));
     if (m.vicAssistOutcome) html += pfb('External Body Outcome', m.vicAssistOutcome);
     return html;
+}
+
+function buildPrintNotes(m, isComp, party, residentOnly) {
+    // Returns a printSection string or empty string if no relevant notes exist.
+    // party: null (complaints), 'A', or 'B' (disputes).
+    var html = '';
+    if (isComp) {
+        // Complaints -- noteToResident in both versions, internalNotes Board only
+        if (m.noteToResident)             html += pfb('Note to Resident', m.noteToResident);
+        if (m.internalNotes && !residentOnly) html += pfb('Internal Notes (Board only)', m.internalNotes);
+    } else {
+        // Disputes
+        if (!residentOnly) {
+            // Board Record -- all four fields
+            if (m.notePartyA)   html += pfb('Party A Notes', m.notePartyA);
+            if (m.notePartyB)   html += pfb('Party B Notes', m.notePartyB);
+            if (m.noteShared)   html += pfb('Shared Notes', m.noteShared);
+            if (m.noteInternal) html += pfb('Internal Notes (Board only)', m.noteInternal);
+        } else if (party === 'A') {
+            // Party A Copy -- Party A Notes + Shared Notes
+            if (m.notePartyA) html += pfb('Board Notes', m.notePartyA);
+            if (m.noteShared) html += pfb('Shared Notes', m.noteShared);
+        } else if (party === 'B') {
+            // Party B Copy -- Party B Notes + Shared Notes
+            if (m.notePartyB) html += pfb('Board Notes', m.notePartyB);
+            if (m.noteShared) html += pfb('Shared Notes', m.noteShared);
+        }
+    }
+    return html ? printSection('Board Notes', html) : '';
 }
 
 function renderPrintEntry(e) {
