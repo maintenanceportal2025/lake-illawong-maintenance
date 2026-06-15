@@ -6,13 +6,25 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.26
-  Backend:          DisputesManager V3.0.9
+  Frontend Version: V3.0.27
+  Backend:          DisputesManager V3.0.14
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.27 (Jun 2026): Board Notes pane added.
+    New accordion pane "Board Notes" inserted after Action Panel in
+    every dispute card. Contains four fields:
+    Note to Party A (col Z -- shown in Chronicle Party A copy),
+    Note to Party B (col AA -- shown in Chronicle Party B copy),
+    Shared Note (col AB -- shown in both Chronicle party copies),
+    Internal Note (col AC -- Board only, never shown to parties).
+    Pane starts closed. Single Save Notes button calls saveDisputeNotes
+    backend action. saveDisputeNotes() JS function added.
+    margin-bottom added to .action-panel and notes pane for spacing.
+    Backend updated to DisputesManager V3.0.14.
+
   V3.0.26 (Jun 2026): Search input added to filter bar. Filters allDisputes
     by partyAName, partyBName, partyAUnit, partyBUnit (case-insensitive
     partial match). Frontend-only, no backend call needed.
@@ -503,7 +515,7 @@ TECHNICAL:
         .action-panel {
             background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 2px; padding: 16px; margin-top: 4px;
+            border-radius: 2px; padding: 16px; margin-top: 4px; margin-bottom: 16px;
         }
 
         .action-title {
@@ -1302,10 +1314,46 @@ TECHNICAL:
             logHtml + buildCommentInput(ref),
             false);
 
+        // ── BOARD NOTES PANE ──
+        html += buildNotesPane(d);
+
         return html;
     }
 
-    function accordionPane(id, title, dateStr, bodyHtml, openByDefault) {
+    function buildNotesPane(d) {
+        const ref = d.referenceNumber;
+        return '<div class="accordion-pane" id="pane-notes-' + escHtml(ref) + '" style="margin-bottom:16px;">' +
+            '<div class="accordion-pane-header" onclick="togglePane(\'pane-notes-' + escHtml(ref) + '\')">' +
+                '<span class="pane-title">Board Notes</span>' +
+                '<span class="pane-date">Not sent to parties</span>' +
+                '<span class="accordion-chevron">&#9660;</span>' +
+            '</div>' +
+            '<div class="accordion-body">' +
+                '<div style="margin-bottom:12px;">' +
+                    '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.45);">Note to Party A</label>' +
+                    '<p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:4px 0 6px;">Included in the Chronicle Party A copy print.</p>' +
+                    '<textarea id="note-partyA-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" placeholder="Board\'s note to Party A\u2026">' + escHtml(d.notePartyA || '') + '</textarea>' +
+                '</div>' +
+                '<div style="margin-bottom:12px;">' +
+                    '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.45);">Note to Party B</label>' +
+                    '<p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:4px 0 6px;">Included in the Chronicle Party B copy print.</p>' +
+                    '<textarea id="note-partyB-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" placeholder="Board\'s note to Party B\u2026">' + escHtml(d.notePartyB || '') + '</textarea>' +
+                '</div>' +
+                '<div style="margin-bottom:12px;">' +
+                    '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.45);">Shared Note</label>' +
+                    '<p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:4px 0 6px;">Included in both Chronicle party copy prints.</p>' +
+                    '<textarea id="note-shared-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" placeholder="Note sent to both parties\u2026">' + escHtml(d.noteShared || '') + '</textarea>' +
+                '</div>' +
+                '<div style="margin-bottom:12px;">' +
+                    '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.45);">Internal Note</label>' +
+                    '<p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:4px 0 6px;">Board use only \u2014 never shown to parties or included in any print.</p>' +
+                    '<textarea id="note-internal-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" placeholder="Internal Board notes\u2026">' + escHtml(d.noteInternal || '') + '</textarea>' +
+                '</div>' +
+                '<button onclick="saveDisputeNotes(\'' + escHtml(ref) + '\')" style="background:rgba(13,148,136,0.2);border:1px solid rgba(13,148,136,0.5);color:#99f6e4;padding:8px 18px;border-radius:2px;font-size:0.85rem;font-weight:600;cursor:pointer;" id="save-notes-btn-' + escHtml(ref) + '">Save Notes</button>' +
+                '<span id="save-notes-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>' +
+            '</div>' +
+        '</div>';
+    }
         return '<div class="accordion-pane' + (openByDefault ? ' open' : '') + '" id="' + id + '">' +
             '<div class="accordion-pane-header" onclick="togglePane(\'' + id + '\')">' +
                 '<span class="pane-title">' + escHtml(title) + '</span>' +
@@ -1545,6 +1593,47 @@ TECHNICAL:
                 if (btnElC) { btnElC.textContent = btnElC._origText || 'Add Comment'; btnElC.disabled = false; }
                 feedback(fbId, '✗ ' + err, false);
             });
+    }
+
+    // ── SAVE DISPUTE NOTES ────────────────────────────────────────────────
+
+    function saveDisputeNotes(ref) {
+        const notePartyA   = (document.getElementById('note-partyA-'   + ref) || {}).value || '';
+        const notePartyB   = (document.getElementById('note-partyB-'   + ref) || {}).value || '';
+        const noteShared   = (document.getElementById('note-shared-'   + ref) || {}).value || '';
+        const noteInternal = (document.getElementById('note-internal-'  + ref) || {}).value || '';
+        const btn          = document.getElementById('save-notes-btn-'  + ref);
+        const fbId         = 'save-notes-fb-' + ref;
+
+        if (btn) { btn.textContent = 'Saving\u2026'; btn.disabled = true; }
+        feedback(fbId, '', null);
+
+        jsonp({
+            action:       'saveDisputeNotes',
+            ref:          ref,
+            notePartyA:   notePartyA,
+            notePartyB:   notePartyB,
+            noteShared:   noteShared,
+            noteInternal: noteInternal
+        }, function(data) {
+            if (btn) { btn.textContent = 'Save Notes'; btn.disabled = false; }
+            if (data.success) {
+                var timeStr = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+                feedback(fbId, '\u2713 Saved \u2014 ' + timeStr, true);
+                var idx = allDisputes.findIndex(function(d) { return d.referenceNumber === ref; });
+                if (idx !== -1) {
+                    allDisputes[idx].notePartyA   = data.notePartyA;
+                    allDisputes[idx].notePartyB   = data.notePartyB;
+                    allDisputes[idx].noteShared   = data.noteShared;
+                    allDisputes[idx].noteInternal = data.noteInternal;
+                }
+            } else {
+                feedback(fbId, '\u2717 ' + (data.error || 'Failed to save notes.'), false);
+            }
+        }, function(err) {
+            if (btn) { btn.textContent = 'Save Notes'; btn.disabled = false; }
+            feedback(fbId, '\u2717 ' + err, false);
+        });
     }
 
     // ── LOG DISPUTE MODAL ─────────────────────────────────────────────────
