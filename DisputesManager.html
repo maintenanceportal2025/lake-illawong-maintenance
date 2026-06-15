@@ -6,13 +6,19 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.28
+  Frontend Version: V3.0.29
   Backend:          DisputesManager V3.0.14
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.29 (Jun 2026): Card section order rationalised.
+    buildCardDetail reordered: Action Panel (Next Step) first, then
+    Accordion panes (case record), then Activity Log, then Board Notes.
+    Activity Log extracted from buildAccordion into standalone
+    buildActivityLogPane(d) function so it can be positioned independently.
+
   V3.0.28 (Jun 2026): Board Notes pane refinements.
     Note field labels renamed: Note to Party A -> Party A Notes,
     Note to Party B -> Party B Notes, Shared Note -> Shared Notes,
@@ -1267,11 +1273,14 @@ TECHNICAL:
         html += detailField('Nature of Dispute', d.natureOfDispute || '—', true);
         html += '</div>';
 
-        // ── ACCORDION PANES ──
+        // ── ACTION PANEL (Next Step -- first) ──
+        html += buildActionPanel(d);
+
+        // ── ACCORDION PANES (case record) ──
         html += buildAccordion(d);
 
-        // ── ACTION PANEL ──
-        html += buildActionPanel(d);
+        // ── ACTIVITY LOG ──
+        html += buildActivityLogPane(d);
 
         // ── BOARD NOTES PANE ──
         html += buildNotesPane(d);
@@ -1311,7 +1320,11 @@ TECHNICAL:
                 true);
         }
 
-        // Activity Log pane -- always shown
+        return html;
+    }
+
+    function buildActivityLogPane(d) {
+        const ref = d.referenceNumber;
         // Split on double-newline (entry separator) to keep multi-line
         // entries intact, then reverse so newest entry appears first.
         const logEntries = d.activityLog
@@ -1320,14 +1333,11 @@ TECHNICAL:
         const logHtml = logEntries.length
             ? renderLogEntries(logEntries)
             : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No activity recorded yet.</div>';
-
-        html += accordionPane('pane-log-' + ref,
+        return accordionPane('pane-log-' + ref,
             'Activity Log',
             '',
             logHtml + buildCommentInput(ref),
             false);
-
-        return html;
     }
 
     function buildNotesPane(d) {
@@ -1379,7 +1389,7 @@ TECHNICAL:
     function buildCommentInput(ref) {
         return '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">'
             + '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.7);">Add Board Comment</label>'
-            + '<p style="font-size:0.78rem;color:rgba(255,255,255,0.6);margin:4px 0 6px;">For timestamped event records only — e.g. <em>Meeting held with both parties.</em> For narrative notes about this dispute, use the Board Notes section below.</p>'
+            + '<p style="font-size:0.78rem;color:rgba(255,255,255,0.6);margin:4px 0 6px;">For timestamped event records only — e.g. <em>Meeting held with both parties.</em> For narrative notes about this dispute, use the Board Notes section above.</p>'
             + '<textarea id="comment-' + escHtml(ref) + '" rows="2" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;margin-top:6px;" placeholder="e.g. Meeting held with both parties — 15 June 2026."></textarea>'
             + '<button onclick="addComment(\'' + escHtml(ref) + '\')" style="margin-top:6px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;padding:6px 14px;border-radius:2px;font-size:0.8rem;font-weight:600;cursor:pointer;">Add Comment</button>'
             + '<span id="comment-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>'
