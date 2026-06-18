@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.9
+  Frontend Version: V3.0.10
   Backend:          ComplaintsManager V3.0.7
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.10 (Jun 2026): Print record updated.
+    _eventCache added -- keyed by ref, populated by loadMatterHistory,
+    maintained by handleNewEvent. Allows doPrint to read events
+    synchronously without additional JSONP calls.
+    doPrint: Activity Log renamed System Events in print output.
+    Three new print sections added: Resident Events (both copies),
+    Matter History (full record only), Board Notes (full record only).
+    Print dialog text updated to reflect new section names.
+    Print Record button added to Responded action panel (was missing).
+
   V3.0.9 (Jun 2026): Pane architecture rationalised.
     Board Notes editable fields removed -- data now enters via
     Event Entry Modal with appropriate visibility selection.
@@ -1659,6 +1669,7 @@ TECHNICAL:
     };
 
     let allComplaints = [];
+    const _eventCache = {};  // keyed by referenceNumber, stores loaded events array
 
     // Frontend copy of backend NON_RESOLUTION_FIXED_BLOCK constant
     const NON_RESOLUTION_FIXED_BLOCK =
@@ -3091,6 +3102,9 @@ TECHNICAL:
             clearTimeout(timeout); cleanup(cbName);
             const events = (data.success && data.events) ? data.events : [];
 
+            // Cache events for print use
+            _eventCache[ref] = events;
+
             // Matter History -- all events
             if (panes.all) {
                 panes.all.innerHTML = events.length
@@ -3169,6 +3183,10 @@ TECHNICAL:
     function handleNewEvent(ref, event) {
         const safeRef = ref.replace(/[^A-Z0-9-]/g, '');
         const html    = renderEventEntry(event);
+
+        // Update event cache -- prepend since events are newest first
+        if (!_eventCache[ref]) _eventCache[ref] = [];
+        _eventCache[ref].unshift(event);
 
         function prependTo(containerId) {
             const container = document.getElementById(containerId);
@@ -3458,11 +3476,11 @@ TECHNICAL:
                 <div style="color:rgba(255,255,255,0.7);font-size:0.85rem;margin-bottom:24px;">${escHtml(ref)}</div>
                 <button onclick="doPrint('${ref}', true)"  style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">
                     &#128438; Print Full Record
-                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Activity Log (admin use only)</div>
+                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes System Events, Matter History and all Board Notes</div>
                 </button>
                 <button onclick="doPrint('${ref}', false)" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">
                     &#128196; Print Resident Copy
-                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Excludes Activity Log</div>
+                    <div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Resident Events only — excludes Board Notes and System Events</div>
                 </button>
                 <button onclick="document.getElementById('printDialog').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>
             </div>`;
@@ -3579,8 +3597,62 @@ TECHNICAL:
         }
 
         const activityBlock = fullRecord && c.activityLog
-            ? '<div class="section-title">Activity Log</div><div class="activity-log-print">'
+            ? '<div class="section-title">System Events</div><div class="activity-log-print">'
               + c.activityLog.split('\n').reverse().map(line => '<div class="activity-log-entry-print">' + escHtml(line) + '</div>').join('')
+              + '</div>'
+            : '';
+
+        // Events from Events tab -- read from cache populated when card was opened
+        const cachedEvents = _eventCache[ref] || [];
+
+        function renderPrintEvent(ev) {
+            const isEmail = ['Email Received', 'Email Sent'].indexOf(ev.eventType) !== -1;
+            let detail = '';
+            if (isEmail) {
+                if (ev.emailDate)    detail += '<div class="field-label" style="margin:4px 0 1px;">Date: ' + escHtml(ev.emailDate) + '</div>';
+                if (ev.emailFrom)    detail += '<div class="field-label" style="margin:1px 0;">From: ' + escHtml(ev.emailFrom) + '</div>';
+                if (ev.emailTo)      detail += '<div class="field-label" style="margin:1px 0;">To: ' + escHtml(ev.emailTo) + '</div>';
+                if (ev.emailSubject) detail += '<div class="field-label" style="margin:1px 0 4px;">Subject: ' + escHtml(ev.emailSubject) + '</div>';
+            } else if (ev.reference) {
+                detail += '<div class="field-label" style="margin:4px 0;">Ref: ' + escHtml(ev.reference) + '</div>';
+            }
+            if (ev.extendedNotes) detail += '<div style="font-style:italic;color:#4b5563;margin-top:4px;">' + escHtml(ev.extendedNotes) + '</div>';
+            return '<div class="activity-log-entry-print" style="padding:6px 0;">'
+                + '<span style="color:#1e3a8a;font-weight:600;">' + escHtml(ev.timestamp) + '</span>'
+                + ' &mdash; <span style="font-weight:600;">' + escHtml(ev.user) + '</span>'
+                + ' [' + escHtml(ev.eventType) + ']'
+                + ' <span style="font-size:7.5pt;background:#e5e7eb;padding:1px 4px;border-radius:2px;">' + escHtml(ev.visibility) + '</span>'
+                + '<div style="margin-top:3px;">' + escHtml(ev.summary) + '</div>'
+                + detail
+                + '</div>';
+        }
+
+        // Matter History -- all events (full record only)
+        const matterHistoryBlock = fullRecord && cachedEvents.length
+            ? '<div class="section-title">Matter History</div><div class="activity-log-print">'
+              + cachedEvents.map(renderPrintEvent).join('')
+              + '</div>'
+            : fullRecord
+              ? '<div class="section-title">Matter History</div><div class="activity-log-print"><div class="activity-log-entry-print" style="color:#6b7280;font-style:italic;">No events recorded. Open the complaint card to load events before printing.</div></div>'
+              : '';
+
+        // Resident Events -- visibility Resident or All (both copies)
+        const residentEvents = cachedEvents.filter(function(e) {
+            return e.visibility === 'Resident' || e.visibility === 'All';
+        });
+        const residentEventsBlock = residentEvents.length
+            ? '<div class="section-title">Resident Events</div><div class="activity-log-print">'
+              + residentEvents.map(renderPrintEvent).join('')
+              + '</div>'
+            : '';
+
+        // Board Notes -- visibility Board or All (full record only)
+        const boardEvents = cachedEvents.filter(function(e) {
+            return e.visibility === 'Board' || e.visibility === 'All';
+        });
+        const boardNotesBlock = fullRecord && boardEvents.length
+            ? '<div class="section-title">Board Notes</div><div class="activity-log-print">'
+              + boardEvents.map(renderPrintEvent).join('')
               + '</div>'
             : '';
 
@@ -3632,6 +3704,9 @@ TECHNICAL:
             ${nrnBlock}
             ${escalationBlock}
             ${escalatedClosureBlock}
+            ${residentEventsBlock}
+            ${matterHistoryBlock}
+            ${boardNotesBlock}
             ${activityBlock}
             ${printFooter()}
             </body></html>`;
