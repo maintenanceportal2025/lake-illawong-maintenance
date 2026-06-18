@@ -6,13 +6,27 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.8
+  Frontend Version: V3.0.9
   Backend:          ComplaintsManager V3.0.7
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.9 (Jun 2026): Pane architecture rationalised.
+    Board Notes editable fields removed -- data now enters via
+    Event Entry Modal with appropriate visibility selection.
+    buildNotesPane() removed.
+    Three filtered event panes replace single Matter History:
+      Matter History -- all events unfiltered (master record).
+      Resident Events -- visibility Resident or All.
+      Board Notes -- visibility Board or All.
+    All three panes loaded from single getEvents call on card open.
+    Client-side filtering -- no additional backend calls.
+    Visibility options in modal updated: Resident, Board, All.
+    handleNewEvent updated to append to correct filtered panes.
+    buildFilteredPane() helper added.
+
   V3.0.8 (Jun 2026): Event Entry Modal integrated.
     EventEntryModal_V1_0.js added as script include.
     Add Event button added to each complaint card.
@@ -1954,8 +1968,9 @@ TECHNICAL:
             <div class="card-detail">
                 ${buildAccordion(c)}
                 ${buildActionPanel(c)}
-                ${buildNotesPane(c)}
-                ${buildMatterHistoryPane(c)}
+                ${buildFilteredPane(c, 'all',      'Matter History',   'All board-recorded events')}
+                ${buildFilteredPane(c, 'resident', 'Resident Events',  'Visibility: Resident or All')}
+                ${buildFilteredPane(c, 'board',    'Board Notes',      'Visibility: Board or All')}
                 ${buildActivityLogPane(c)}
                 <div style="margin-top:12px;text-align:right;">
                     <button class="btn-save" onclick="openEventEntry('${escHtml(c.referenceNumber)}')">+ Add Event</button>
@@ -2258,22 +2273,26 @@ TECHNICAL:
         return `<div class="accordion-stack">${panesHtml}</div>`;
     }
 
-    // ── BUILD MATTER HISTORY PANE ─────────────────────────────────────
-    // Renders Board-entered events from the Events tab. Loaded via
-    // loadMatterHistory() after card opens. Starts with loading state.
-    function buildMatterHistoryPane(c) {
+    // ── BUILD FILTERED EVENT PANE ─────────────────────────────────────
+    // filter: 'all' | 'resident' | 'board'
+    // Renders a pane that shows events filtered client-side after load.
+    // All three panes share the same getEvents call via loadMatterHistory.
+    function buildFilteredPane(c, filter, title, subtitle) {
         const safeRef = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
+        const paneId  = 'pane-' + filter + '-' + safeRef;
+        const entryId = 'events-' + filter + '-' + safeRef;
+        const isOpen  = filter === 'all'; // Matter History open by default
         return `
-            <div class="accordion-pane pane-activity open" id="pane-history-${safeRef}" style="margin-bottom:16px;">
-                <div class="accordion-pane-header" onclick="togglePane('pane-history-${safeRef}')">
+            <div class="accordion-pane pane-activity ${isOpen ? 'open' : ''}" id="${paneId}" style="margin-bottom:12px;">
+                <div class="accordion-pane-header" onclick="togglePane('${paneId}')">
                     <div class="accordion-pane-header-left">
-                        <span class="pane-title">Matter History</span>
-                        <span class="pane-date">Board-recorded events</span>
+                        <span class="pane-title">${title}</span>
+                        <span class="pane-date">${subtitle}</span>
                     </div>
                     <span class="accordion-chevron">&#9660;</span>
                 </div>
                 <div class="accordion-body">
-                    <div id="matter-history-entries-${safeRef}" class="activity-log-block">
+                    <div id="${entryId}" class="activity-log-block">
                         <div class="activity-log-empty">Loading\u2026</div>
                     </div>
                 </div>
@@ -2298,43 +2317,6 @@ TECHNICAL:
                 </div>
                 <div class="accordion-body">
                     <div class="activity-log-block">${commentEntries}</div>
-                </div>
-            </div>`;
-    }
-
-    // ── BUILD NOTES PANE ─────────────────────────────────────────────
-    // Board Notes: Internal Notes (admin only) + Note to Resident (Chronicle).
-    // Starts closed. Save button calls saveNotes backend action.
-    function buildNotesPane(c) {
-        const safeRef = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
-        return `
-            <div class="accordion-pane pane-notes" id="pane-notes-${safeRef}" style="margin-bottom:16px;">
-                <div class="accordion-pane-header" onclick="togglePane('pane-notes-${safeRef}')">
-                    <div class="accordion-pane-header-left">
-                        <span class="pane-title">Board Notes</span>
-                        <span class="pane-date">Not sent to resident</span>
-                    </div>
-                    <span class="accordion-chevron">&#9660;</span>
-                </div>
-                <div class="accordion-body">
-                    <div class="update-row">
-                        <div class="update-field">
-                            <label for="internal-notes-${safeRef}">Internal Notes</label>
-                            <p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:0 0 6px;">Board use only — never shown to the resident or included in any print.</p>
-                            <textarea id="internal-notes-${safeRef}" rows="4" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="Internal Board notes…">${escHtml(c.internalNotes || '')}</textarea>
-                        </div>
-                    </div>
-                    <div class="update-row" style="margin-top:12px;">
-                        <div class="update-field">
-                            <label for="note-to-resident-${safeRef}">Note to Resident</label>
-                            <p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:0 0 6px;">Board’s written narrative to the resident about how their matter was handled. Included in the Chronicle Resident Copy print.</p>
-                            <textarea id="note-to-resident-${safeRef}" rows="4" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:8px 10px;font-size:0.85rem;font-family:inherit;color:white;resize:vertical;" placeholder="Note to the resident…">${escHtml(c.noteToResident || '')}</textarea>
-                        </div>
-                    </div>
-                    <div style="margin-top:10px;">
-                        <button class="btn-save" id="save-notes-btn-${safeRef}" onclick="saveNotes('${safeRef}')">Save Notes</button>
-                        <span class="save-feedback" id="save-notes-feedback-${safeRef}"></span>
-                    </div>
                 </div>
             </div>`;
     }
@@ -2535,7 +2517,7 @@ TECHNICAL:
         card.classList.toggle('expanded');
         // Load Matter History on first open
         if (card.classList.contains('expanded')) {
-            const container = document.getElementById('matter-history-entries-' + ref);
+            const container = document.getElementById('events-all-' + ref);
             if (container && container.querySelector('.activity-log-empty')) {
                 loadMatterHistory(ref);
             }
@@ -3082,10 +3064,14 @@ TECHNICAL:
     }
 
     // ── MATTER HISTORY -- load events from Events tab ─────────────────
+    // Single getEvents call populates all three filtered panes client-side.
     function loadMatterHistory(ref) {
-        const safeRef    = ref.replace(/[^A-Z0-9-]/g, '');
-        const container  = document.getElementById('matter-history-entries-' + safeRef);
-        if (!container) return;
+        const safeRef = ref.replace(/[^A-Z0-9-]/g, '');
+        const panes = {
+            all:      document.getElementById('events-all-'      + safeRef),
+            resident: document.getElementById('events-resident-' + safeRef),
+            board:    document.getElementById('events-board-'    + safeRef)
+        };
 
         const cbName = 'mhCallback_' + Date.now();
         const url    = CONFIG.BACKEND_URL
@@ -3095,22 +3081,49 @@ TECHNICAL:
 
         const timeout = setTimeout(function () {
             cleanup(cbName);
-            container.innerHTML = '<div class="activity-log-empty">Could not load events — please refresh.</div>';
+            Object.values(panes).forEach(function(p) {
+                if (p) p.innerHTML = '<div class="activity-log-empty">Could not load — please refresh.</div>';
+            });
         }, 12000);
 
         window[cbName] = function (data) {
             clearTimeout(timeout); cleanup(cbName);
-            if (data.success && data.events && data.events.length) {
-                container.innerHTML = data.events.map(renderEventEntry).join('');
-            } else {
-                container.innerHTML = '<div class="activity-log-empty">No events recorded yet.</div>';
+            const events = (data.success && data.events) ? data.events : [];
+
+            // Matter History -- all events
+            if (panes.all) {
+                panes.all.innerHTML = events.length
+                    ? events.map(renderEventEntry).join('')
+                    : '<div class="activity-log-empty">No events recorded yet.</div>';
+            }
+
+            // Resident Events -- visibility Resident or All
+            const residentEvents = events.filter(function(e) {
+                return e.visibility === 'Resident' || e.visibility === 'All';
+            });
+            if (panes.resident) {
+                panes.resident.innerHTML = residentEvents.length
+                    ? residentEvents.map(renderEventEntry).join('')
+                    : '<div class="activity-log-empty">No resident events recorded yet.</div>';
+            }
+
+            // Board Notes -- visibility Board or All
+            const boardEvents = events.filter(function(e) {
+                return e.visibility === 'Board' || e.visibility === 'All';
+            });
+            if (panes.board) {
+                panes.board.innerHTML = boardEvents.length
+                    ? boardEvents.map(renderEventEntry).join('')
+                    : '<div class="activity-log-empty">No board notes recorded yet.</div>';
             }
         };
 
         const script = document.createElement('script');
         script.onerror = function () {
             clearTimeout(timeout); cleanup(cbName);
-            container.innerHTML = '<div class="activity-log-empty">Error loading events.</div>';
+            Object.values(panes).forEach(function(p) {
+                if (p) p.innerHTML = '<div class="activity-log-empty">Error loading events.</div>';
+            });
         };
         script.src = url;
         document.head.appendChild(script);
@@ -3153,14 +3166,31 @@ TECHNICAL:
     }
 
     function handleNewEvent(ref, event) {
-        const safeRef   = ref.replace(/[^A-Z0-9-]/g, '');
-        const container = document.getElementById('matter-history-entries-' + safeRef);
-        if (!container) return;
-        const emptyEl = container.querySelector('.activity-log-empty');
-        if (emptyEl) emptyEl.remove();
-        const div = document.createElement('div');
-        div.innerHTML = renderEventEntry(event);
-        container.insertBefore(div.firstChild, container.firstChild);
+        const safeRef = ref.replace(/[^A-Z0-9-]/g, '');
+        const html    = renderEventEntry(event);
+
+        function prependTo(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const emptyEl = container.querySelector('.activity-log-empty');
+            if (emptyEl) emptyEl.remove();
+            const div = document.createElement('div');
+            div.innerHTML = html;
+            container.insertBefore(div.firstChild, container.firstChild);
+        }
+
+        // Always add to Matter History
+        prependTo('events-all-' + safeRef);
+
+        // Add to Resident Events if visibility is Resident or All
+        if (event.visibility === 'Resident' || event.visibility === 'All') {
+            prependTo('events-resident-' + safeRef);
+        }
+
+        // Add to Board Notes if visibility is Board or All
+        if (event.visibility === 'Board' || event.visibility === 'All') {
+            prependTo('events-board-' + safeRef);
+        }
     }
 
     function doSendToResident(ref) {
