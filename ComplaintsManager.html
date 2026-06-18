@@ -6,13 +6,35 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.6
-  Backend:          ComplaintsManager V3.0.5
+  Frontend Version: V3.0.8
+  Backend:          ComplaintsManager V3.0.7
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.8 (Jun 2026): Event Entry Modal integrated.
+    EventEntryModal_V1_0.js added as script include.
+    Add Event button added to each complaint card.
+    Matter History pane added -- loads events from Events tab via
+    getEvents backend action, renders newest first, filtered to
+    Resident and Board visibility (all events for this matter).
+    loadMatterHistory(ref) function added -- JSONP call on card open.
+    handleNewEvent(event) callback -- prepends new event to pane.
+    Activity Log pane renamed System Events -- read-only, no input.
+    addActivityEntry panel removed -- Event Entry Modal replaces it.
+    addActivityEntry() JS function removed.
+    Backend updated to ComplaintsManager V3.0.7.
+
+  V3.0.7 (Jun 2026): Add Activity Entry panel added to Activity Log pane.
+    Replaces the removed Board Comment textarea with a structured entry:
+    Event Type dropdown (Meeting, Phone Call, Inspection, Correspondence,
+    Board Decision, Comment) + textarea + Add Entry button.
+    Calls addComment backend action with eventType param.
+    Entry displayed in log with [TYPE] tag prepended.
+    addActivityEntry() JS function added.
+    Backend updated to ComplaintsManager V3.0.6.
+
   V3.0.6 (Jun 2026): Board Notes pane added.
     New accordion pane "Board Notes" inserted between Action Panel
     and Activity Log in every complaint card. Contains two fields:
@@ -682,6 +704,7 @@ TECHNICAL:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Complaints Manager - Lake Illawong</title>
     <script src="VerificationModal_V1_0.js"></script>
+    <script src="EventEntryModal_V1_0.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1174,6 +1197,14 @@ TECHNICAL:
         .activity-log-entry { font-size: 0.82rem; color: rgba(255,255,255,0.8); padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-family: monospace; white-space: pre-wrap; }
         .activity-log-entry:last-child { border-bottom: none; }
         .activity-log-empty { font-size: 0.82rem; color: rgba(255,255,255,0.4); font-style: italic; }
+        .event-header { font-size:0.78rem; color:rgba(255,255,255,0.55); margin-bottom:4px; }
+        .event-timestamp { color:rgba(255,255,255,0.6); }
+        .event-user { color:rgba(255,255,255,0.7); font-weight:600; }
+        .event-type { color:#93c5fd; font-weight:600; }
+        .event-visibility { font-size:0.72rem; background:rgba(255,255,255,0.1); border-radius:2px; padding:1px 5px; margin-left:4px; }
+        .event-summary { font-size:0.85rem; color:white; margin-bottom:4px; }
+        .event-detail { font-size:0.78rem; color:rgba(255,255,255,0.55); margin-top:2px; }
+        .event-notes { font-style:italic; margin-top:4px; }
 
         .btn-send-resident { padding: 10px 20px; background: rgba(110,231,183,0.15); border: 1px solid rgba(110,231,183,0.5); border-radius: 2px; color: #6ee7b7; font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-left: 8px; }
         .btn-send-resident:hover { background: rgba(110,231,183,0.25); }
@@ -1924,7 +1955,11 @@ TECHNICAL:
                 ${buildAccordion(c)}
                 ${buildActionPanel(c)}
                 ${buildNotesPane(c)}
+                ${buildMatterHistoryPane(c)}
                 ${buildActivityLogPane(c)}
+                <div style="margin-top:12px;text-align:right;">
+                    <button class="btn-save" onclick="openEventEntry('${escHtml(c.referenceNumber)}')">+ Add Event</button>
+                </div>
             </div>
         </div>`;
     }
@@ -2223,19 +2258,41 @@ TECHNICAL:
         return `<div class="accordion-stack">${panesHtml}</div>`;
     }
 
-    // ── BUILD ACTIVITY LOG PANE (always last, always expanded) ────────
+    // ── BUILD MATTER HISTORY PANE ─────────────────────────────────────
+    // Renders Board-entered events from the Events tab. Loaded via
+    // loadMatterHistory() after card opens. Starts with loading state.
+    function buildMatterHistoryPane(c) {
+        const safeRef = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
+        return `
+            <div class="accordion-pane pane-activity open" id="pane-history-${safeRef}" style="margin-bottom:16px;">
+                <div class="accordion-pane-header" onclick="togglePane('pane-history-${safeRef}')">
+                    <div class="accordion-pane-header-left">
+                        <span class="pane-title">Matter History</span>
+                        <span class="pane-date">Board-recorded events</span>
+                    </div>
+                    <span class="accordion-chevron">&#9660;</span>
+                </div>
+                <div class="accordion-body">
+                    <div id="matter-history-entries-${safeRef}" class="activity-log-block">
+                        <div class="activity-log-empty">Loading\u2026</div>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    // ── BUILD SYSTEM EVENTS PANE (read-only system-generated events) ──
     function buildActivityLogPane(c) {
         const safeRef        = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
         const activityLog    = c.activityLog || '';
         const commentEntries = activityLog
             ? activityLog.split('\n').reverse().map(line => `<div class="activity-log-entry">${escHtml(line)}</div>`).join('')
-            : '<div class="activity-log-empty">No entries recorded.</div>';
+            : '<div class="activity-log-empty">No system events recorded.</div>';
         return `
-            <div class="accordion-pane pane-activity open" id="pane-activity-${safeRef}">
-                <div class="accordion-pane-header" onclick="togglePane('pane-activity-${safeRef}')">
+            <div class="accordion-pane pane-activity" id="pane-sysevents-${safeRef}">
+                <div class="accordion-pane-header" onclick="togglePane('pane-sysevents-${safeRef}')">
                     <div class="accordion-pane-header-left">
-                        <span class="pane-title">Activity Log</span>
-                        <span class="pane-date">Admin only</span>
+                        <span class="pane-title">System Events</span>
+                        <span class="pane-date">Auto-generated only</span>
                     </div>
                     <span class="accordion-chevron">&#9660;</span>
                 </div>
@@ -2474,7 +2531,15 @@ TECHNICAL:
     }
 
     function toggleCard(ref) {
-        document.getElementById('card-' + ref).classList.toggle('expanded');
+        const card = document.getElementById('card-' + ref);
+        card.classList.toggle('expanded');
+        // Load Matter History on first open
+        if (card.classList.contains('expanded')) {
+            const container = document.getElementById('matter-history-entries-' + ref);
+            if (container && container.querySelector('.activity-log-empty')) {
+                loadMatterHistory(ref);
+            }
+        }
     }
 
     function acknowledgeManual(ref) {
@@ -3014,6 +3079,88 @@ TECHNICAL:
         };
         script.src = url;
         document.head.appendChild(script);
+    }
+
+    // ── MATTER HISTORY -- load events from Events tab ─────────────────
+    function loadMatterHistory(ref) {
+        const safeRef    = ref.replace(/[^A-Z0-9-]/g, '');
+        const container  = document.getElementById('matter-history-entries-' + safeRef);
+        if (!container) return;
+
+        const cbName = 'mhCallback_' + Date.now();
+        const url    = CONFIG.BACKEND_URL
+            + '?action=getEvents'
+            + '&matterRef=' + encodeURIComponent(ref)
+            + '&callback='  + cbName;
+
+        const timeout = setTimeout(function () {
+            cleanup(cbName);
+            container.innerHTML = '<div class="activity-log-empty">Could not load events — please refresh.</div>';
+        }, 12000);
+
+        window[cbName] = function (data) {
+            clearTimeout(timeout); cleanup(cbName);
+            if (data.success && data.events && data.events.length) {
+                container.innerHTML = data.events.map(renderEventEntry).join('');
+            } else {
+                container.innerHTML = '<div class="activity-log-empty">No events recorded yet.</div>';
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function () {
+            clearTimeout(timeout); cleanup(cbName);
+            container.innerHTML = '<div class="activity-log-empty">Error loading events.</div>';
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
+
+    function renderEventEntry(ev) {
+        const isEmail = ['Email Received', 'Email Sent'].indexOf(ev.eventType) !== -1;
+        let detail = '';
+        if (isEmail) {
+            detail += ev.emailDate   ? '<div class="event-detail">Date: '    + escHtml(ev.emailDate)   + '</div>' : '';
+            detail += ev.emailFrom   ? '<div class="event-detail">From: '    + escHtml(ev.emailFrom)   + '</div>' : '';
+            detail += ev.emailTo     ? '<div class="event-detail">To: '      + escHtml(ev.emailTo)     + '</div>' : '';
+            detail += ev.emailSubject? '<div class="event-detail">Subject: ' + escHtml(ev.emailSubject)+ '</div>' : '';
+        } else {
+            detail += ev.reference   ? '<div class="event-detail">Ref: '     + escHtml(ev.reference)   + '</div>' : '';
+        }
+        detail += ev.extendedNotes   ? '<div class="event-detail event-notes">'  + escHtml(ev.extendedNotes) + '</div>' : '';
+
+        return '<div class="activity-log-entry">'
+            + '<div class="event-header">'
+            +   '<span class="event-timestamp">' + escHtml(ev.timestamp) + '</span>'
+            +   ' <span class="event-user">' + escHtml(ev.user) + '</span>'
+            +   ' &mdash; <span class="event-type">[' + escHtml(ev.eventType) + ']</span>'
+            +   ' <span class="event-visibility">' + escHtml(ev.visibility) + '</span>'
+            + '</div>'
+            + '<div class="event-summary">' + escHtml(ev.summary) + '</div>'
+            + detail
+            + '</div>';
+    }
+
+    function openEventEntry(ref) {
+        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+        EventEntryModal.open({
+            matterRef:  ref,
+            matterType: 'Complaint',
+            backendUrl: CONFIG.BACKEND_URL,
+            userName:   userName,
+            onSuccess:  function(event) { handleNewEvent(ref, event); }
+        });
+    }
+
+    function handleNewEvent(ref, event) {
+        const safeRef   = ref.replace(/[^A-Z0-9-]/g, '');
+        const container = document.getElementById('matter-history-entries-' + safeRef);
+        if (!container) return;
+        const emptyEl = container.querySelector('.activity-log-empty');
+        if (emptyEl) emptyEl.remove();
+        const div = document.createElement('div');
+        div.innerHTML = renderEventEntry(event);
+        container.insertBefore(div.firstChild, container.firstChild);
     }
 
     function doSendToResident(ref) {
