@@ -6,13 +6,37 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.29
-  Backend:          DisputesManager V3.0.14
+  Frontend Version: V3.0.30
+  Backend:          DisputesManager V3.0.17
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.30 (Jun 2026): Event Entry Modal integrated, pane architecture
+    rationalised to match ComplaintsManager V3.0.11.
+    EventEntryModal_V1_2.js added as script include.
+    buildNotesPane() removed -- four editable text fields (Party A Notes,
+    Party B Notes, Shared Notes, Internal Notes) eliminated. Data now
+    enters via Event Entry Modal with appropriate visibility selection.
+    saveDisputeNotes() JS function removed.
+    Activity Log pane renamed System Events -- read-only, no input.
+    buildCommentInput() and addComment() removed -- Event Entry Modal
+    replaces manual Board Comment entry.
+    Four new filtered event panes added, all loaded from single getEvents
+    call on card open:
+      Matter History -- all events unfiltered (master record).
+      Party A Events -- visibility Party A, Shared, or All.
+      Party B Events -- visibility Party B, Shared, or All.
+      Board Notes -- visibility Board or All.
+    loadMatterHistory(ref) -- JSONP call via existing jsonp() helper.
+    handleNewEvent(ref, event) -- routes new event to all matching panes
+    without reload.
+    _eventCache added -- keyed by ref, enables doDisputePrint to read
+    events synchronously without additional JSONP calls.
+    + Add Event button added to each dispute card, calls openEventEntry().
+    Backend updated to DisputesManager V3.0.17.
+
   V3.0.29 (Jun 2026): Card section order rationalised.
     buildCardDetail reordered: Action Panel (Next Step) first, then
     Accordion panes (case record), then Activity Log, then Board Notes.
@@ -253,6 +277,7 @@ TECHNICAL:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Disputes Manager - Lake Illawong</title>
     <script src="VerificationModal_V1_0.js"></script>
+    <script src="EventEntryModal_V1_2.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -525,6 +550,16 @@ TECHNICAL:
             font-size: 0.85rem; color: rgba(255,255,255,0.82);
             line-height: 1.6; white-space: pre-wrap;
         }
+        .activity-log-entry { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .activity-log-entry:last-child { border-bottom: none; }
+        .event-header { font-size:0.78rem; color:rgba(255,255,255,0.55); margin-bottom:4px; }
+        .event-timestamp { color:rgba(255,255,255,0.6); }
+        .event-user { color:rgba(255,255,255,0.7); font-weight:600; }
+        .event-type { color:#93c5fd; font-weight:600; }
+        .event-visibility { font-size:0.72rem; background:rgba(255,255,255,0.1); border-radius:2px; padding:1px 5px; margin-left:4px; }
+        .event-summary { font-size:0.85rem; color:white; margin-bottom:4px; }
+        .event-detail { font-size:0.78rem; color:rgba(255,255,255,0.55); margin-top:2px; }
+        .event-notes { font-style:italic; margin-top:4px; }
 
         /* ── ACTION PANEL ────────────────────────────────────────── */
         .action-panel {
@@ -1279,11 +1314,19 @@ TECHNICAL:
         // ── ACCORDION PANES (case record) ──
         html += buildAccordion(d);
 
-        // ── ACTIVITY LOG ──
+        // ── FILTERED EVENT PANES (from Events tab) ──
+        html += buildFilteredPane(d, 'all',    'Matter History', 'All board-recorded events');
+        html += buildFilteredPane(d, 'partyA', 'Party A Events',  'Visibility: Party A, Shared, or All');
+        html += buildFilteredPane(d, 'partyB', 'Party B Events',  'Visibility: Party B, Shared, or All');
+        html += buildFilteredPane(d, 'board',  'Board Notes',     'Visibility: Board or All');
+
+        // ── SYSTEM EVENTS (read-only, auto-generated) ──
         html += buildActivityLogPane(d);
 
-        // ── BOARD NOTES PANE ──
-        html += buildNotesPane(d);
+        // ── ADD EVENT BUTTON ──
+        html += '<div style="margin-top:12px;text-align:right;">' +
+            '<button class="btn-save" onclick="openEventEntry(\'' + escHtml(ref) + '\')">+ Add Event</button>' +
+        '</div>';
 
         return html;
     }
@@ -1332,45 +1375,30 @@ TECHNICAL:
             : [];
         const logHtml = logEntries.length
             ? renderLogEntries(logEntries)
-            : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No activity recorded yet.</div>';
-        return accordionPane('pane-log-' + ref,
-            'Activity Log',
-            '',
-            logHtml + buildCommentInput(ref),
+            : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No system events recorded.</div>';
+        return accordionPane('pane-sysevents-' + ref,
+            'System Events',
+            'Auto-generated only',
+            logHtml,
             false);
     }
 
-    function buildNotesPane(d) {
-        const ref = d.referenceNumber;
-        return '<div class="accordion-pane" id="pane-notes-' + escHtml(ref) + '" style="margin-bottom:16px;">' +
-            '<div class="accordion-pane-header" onclick="togglePane(\'pane-notes-' + escHtml(ref) + '\')">' +
-                '<span class="pane-title">Board Notes</span>' +
-                '<span class="pane-date">Not sent to parties</span>' +
+    // ── BUILD FILTERED EVENT PANE ─────────────────────────────────────────
+    // filter: 'all' | 'partyA' | 'partyB' | 'board'
+    // Renders a pane populated client-side after loadMatterHistory() runs.
+    function buildFilteredPane(d, filter, title, subtitle) {
+        const ref     = d.referenceNumber;
+        const paneId  = 'pane-' + filter + '-' + ref;
+        const entryId = 'events-' + filter + '-' + ref;
+        const isOpen  = filter === 'all'; // Matter History open by default
+        return '<div class="accordion-pane' + (isOpen ? ' open' : '') + '" id="' + paneId + '" style="margin-bottom:12px;">' +
+            '<div class="accordion-pane-header" onclick="togglePane(\'' + paneId + '\')">' +
+                '<span class="pane-title">' + escHtml(title) + '</span>' +
+                '<span class="pane-date">' + escHtml(subtitle) + '</span>' +
                 '<span class="accordion-chevron">&#9660;</span>' +
             '</div>' +
             '<div class="accordion-body">' +
-                '<div style="margin-bottom:12px;">' +
-                    '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.7);">Party A Notes</label>' +
-                    '<p style="font-size:0.8rem;color:rgba(255,255,255,0.6);margin:4px 0 6px;">Board record of Party A involvement \u2014 included in the Chronicle Party A print.</p>' +
-                    '<textarea id="note-partyA-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" placeholder="Board\'s note to Party A\u2026">' + escHtml(d.notePartyA || '') + '</textarea>' +
-                '</div>' +
-                '<div style="margin-bottom:12px;">' +
-                    '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.7);">Party B Notes</label>' +
-                    '<p style="font-size:0.8rem;color:rgba(255,255,255,0.6);margin:4px 0 6px;">Board record of Party B involvement \u2014 included in the Chronicle Party B print.</p>' +
-                    '<textarea id="note-partyB-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" placeholder="Board\'s note to Party B\u2026">' + escHtml(d.notePartyB || '') + '</textarea>' +
-                '</div>' +
-                '<div style="margin-bottom:12px;">' +
-                    '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.7);">Shared Notes</label>' +
-                    '<p style="font-size:0.8rem;color:rgba(255,255,255,0.6);margin:4px 0 6px;">Board narrative shown to both parties \u2014 included in both Chronicle party prints.</p>' +
-                    '<textarea id="note-shared-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" placeholder="Note sent to both parties\u2026">' + escHtml(d.noteShared || '') + '</textarea>' +
-                '</div>' +
-                '<div style="margin-bottom:12px;">' +
-                    '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.7);">Internal Notes</label>' +
-                    '<p style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin:4px 0 6px;">Board use only \u2014 never shown to parties or included in any print.</p>' +
-                    '<textarea id="note-internal-' + escHtml(ref) + '" rows="3" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;" placeholder="Internal Board notes\u2026">' + escHtml(d.noteInternal || '') + '</textarea>' +
-                '</div>' +
-                '<button onclick="saveDisputeNotes(\'' + escHtml(ref) + '\')" style="background:rgba(13,148,136,0.2);border:1px solid rgba(13,148,136,0.5);color:#99f6e4;padding:8px 18px;border-radius:2px;font-size:0.85rem;font-weight:600;cursor:pointer;" id="save-notes-btn-' + escHtml(ref) + '">Save Notes</button>' +
-                '<span id="save-notes-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>' +
+                '<div id="' + entryId + '" class="pane-text" style="color:rgba(255,255,255,0.4);">Loading\u2026</div>' +
             '</div>' +
         '</div>';
     }
@@ -1384,16 +1412,6 @@ TECHNICAL:
             '</div>' +
             '<div class="accordion-body">' + bodyHtml + '</div>' +
         '</div>';
-    }
-
-    function buildCommentInput(ref) {
-        return '<div style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">'
-            + '<label style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.7);">Add Board Comment</label>'
-            + '<p style="font-size:0.78rem;color:rgba(255,255,255,0.6);margin:4px 0 6px;">For timestamped event records only — e.g. <em>Meeting held with both parties.</em> For narrative notes about this dispute, use the Board Notes section below.</p>'
-            + '<textarea id="comment-' + escHtml(ref) + '" rows="2" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:8px;color:white;font-size:0.82rem;font-family:inherit;resize:vertical;margin-top:6px;" placeholder="e.g. Meeting held with both parties — 15 June 2026."></textarea>'
-            + '<button onclick="addComment(\'' + escHtml(ref) + '\')" style="margin-top:6px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;padding:6px 14px;border-radius:2px;font-size:0.8rem;font-weight:600;cursor:pointer;">Add Comment</button>'
-            + '<span id="comment-fb-' + escHtml(ref) + '" class="save-feedback" style="margin-left:8px;"></span>'
-        + '</div>';
     }
 
     // ── ACTION PANEL ──────────────────────────────────────────────────────
@@ -1474,6 +1492,12 @@ TECHNICAL:
         const card = document.getElementById('card-' + ref);
         if (!card) return;
         card.classList.toggle('expanded');
+        if (card.classList.contains('expanded')) {
+            const container = document.getElementById('events-all-' + ref);
+            if (container && container.classList.contains('pane-text')) {
+                loadMatterHistory(ref);
+            }
+        }
     }
 
     function togglePane(id) {
@@ -1590,73 +1614,126 @@ TECHNICAL:
     }
 
 
-    function addComment(ref) {
-        const comment  = val('comment-' + ref);
-        const fbId     = 'comment-fb-' + ref;
-        const userName = currentUserName();
-        if (!comment) { feedback(fbId, 'Comment text is required.', false); return; }
+    // ── MATTER HISTORY -- load events from Events tab ─────────────────────
+    // Single getEvents call populates all four filtered panes client-side.
+    const _eventCache = {};  // keyed by referenceNumber, for print use
 
-        // Comment only writes to Activity Log -- use Saving/Saved labels, not Sending/Sent
-        const btnElC = getSendBtn(fbId);
-        if (btnElC) { btnElC._origText = btnElC.textContent; btnElC.textContent = 'Saving…'; btnElC.disabled = true; }
-        feedback(fbId, '', null);
+    function loadMatterHistory(ref) {
+        const panes = {
+            all:    document.getElementById('events-all-'    + ref),
+            partyA: document.getElementById('events-partyA-' + ref),
+            partyB: document.getElementById('events-partyB-' + ref),
+            board:  document.getElementById('events-board-'  + ref)
+        };
 
-        jsonp({ action: 'addDisputeComment', ref: ref, comment: comment, userName: userName },
+        jsonp({ action: 'getEvents', matterRef: ref },
             function(data) {
-                if (btnElC) { btnElC.textContent = btnElC._origText || 'Add Comment'; btnElC.disabled = false; }
-                if (data.success) {
-                    var timeStr = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
-                    feedback(fbId, '✓ Saved — ' + timeStr, true);
-                    document.getElementById('comment-' + ref) && (document.getElementById('comment-' + ref).value = '');
-                    if (data.activityLog) updateActivityLog(ref, data.activityLog);
-                } else {
-                    feedback(fbId, '✗ ' + (data.error || 'Failed to add comment.'), false);
+                const events = (data.success && data.events) ? data.events : [];
+                _eventCache[ref] = events;
+
+                if (panes.all) {
+                    panes.all.innerHTML = events.length
+                        ? events.map(renderEventEntry).join('')
+                        : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No events recorded yet.</div>';
                 }
-            }, function(err) {
-                if (btnElC) { btnElC.textContent = btnElC._origText || 'Add Comment'; btnElC.disabled = false; }
-                feedback(fbId, '✗ ' + err, false);
+
+                const partyAEvents = events.filter(function(e) {
+                    return e.visibility === 'Party A' || e.visibility === 'Shared' || e.visibility === 'All';
+                });
+                if (panes.partyA) {
+                    panes.partyA.innerHTML = partyAEvents.length
+                        ? partyAEvents.map(renderEventEntry).join('')
+                        : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No Party A events recorded yet.</div>';
+                }
+
+                const partyBEvents = events.filter(function(e) {
+                    return e.visibility === 'Party B' || e.visibility === 'Shared' || e.visibility === 'All';
+                });
+                if (panes.partyB) {
+                    panes.partyB.innerHTML = partyBEvents.length
+                        ? partyBEvents.map(renderEventEntry).join('')
+                        : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No Party B events recorded yet.</div>';
+                }
+
+                const boardEvents = events.filter(function(e) {
+                    return e.visibility === 'Board' || e.visibility === 'All';
+                });
+                if (panes.board) {
+                    panes.board.innerHTML = boardEvents.length
+                        ? boardEvents.map(renderEventEntry).join('')
+                        : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No board notes recorded yet.</div>';
+                }
+            },
+            function(err) {
+                Object.values(panes).forEach(function(p) {
+                    if (p) p.innerHTML = '<div class="pane-text" style="color:rgba(255,255,255,0.4);">Error loading events: ' + escHtml(err) + '</div>';
+                });
             });
     }
 
-    // ── SAVE DISPUTE NOTES ────────────────────────────────────────────────
+    function renderEventEntry(ev) {
+        const isEmail = ['Email Received', 'Email Sent'].indexOf(ev.eventType) !== -1;
+        let detail = '';
+        if (isEmail) {
+            if (ev.emailDate)    detail += '<div class="event-detail">Date: '    + escHtml(ev.emailDate)    + '</div>';
+            if (ev.emailFrom)    detail += '<div class="event-detail">From: '    + escHtml(ev.emailFrom)    + '</div>';
+            if (ev.emailTo)      detail += '<div class="event-detail">To: '      + escHtml(ev.emailTo)      + '</div>';
+            if (ev.emailSubject) detail += '<div class="event-detail">Subject: ' + escHtml(ev.emailSubject) + '</div>';
+        } else if (ev.reference) {
+            detail += '<div class="event-detail">Ref: ' + escHtml(ev.reference) + '</div>';
+        }
+        if (ev.extendedNotes) detail += '<div class="event-detail event-notes">' + escHtml(ev.extendedNotes) + '</div>';
 
-    function saveDisputeNotes(ref) {
-        const notePartyA   = (document.getElementById('note-partyA-'   + ref) || {}).value || '';
-        const notePartyB   = (document.getElementById('note-partyB-'   + ref) || {}).value || '';
-        const noteShared   = (document.getElementById('note-shared-'   + ref) || {}).value || '';
-        const noteInternal = (document.getElementById('note-internal-'  + ref) || {}).value || '';
-        const btn          = document.getElementById('save-notes-btn-'  + ref);
-        const fbId         = 'save-notes-fb-' + ref;
+        return '<div class="activity-log-entry">' +
+            '<div class="event-header">' +
+                '<span class="event-timestamp">' + escHtml(ev.timestamp) + '</span>' +
+                ' <span class="event-user">' + escHtml(ev.user) + '</span>' +
+                ' &mdash; <span class="event-type">[' + escHtml(ev.eventType) + ']</span>' +
+                ' <span class="event-visibility">' + escHtml(ev.visibility) + '</span>' +
+            '</div>' +
+            '<div class="event-summary">' + escHtml(ev.summary) + '</div>' +
+            detail +
+        '</div>';
+    }
 
-        if (btn) { btn.textContent = 'Saving\u2026'; btn.disabled = true; }
-        feedback(fbId, '', null);
-
-        jsonp({
-            action:       'saveDisputeNotes',
-            ref:          ref,
-            notePartyA:   notePartyA,
-            notePartyB:   notePartyB,
-            noteShared:   noteShared,
-            noteInternal: noteInternal
-        }, function(data) {
-            if (btn) { btn.textContent = 'Save Notes'; btn.disabled = false; }
-            if (data.success) {
-                var timeStr = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
-                feedback(fbId, '\u2713 Saved \u2014 ' + timeStr, true);
-                var idx = allDisputes.findIndex(function(d) { return d.referenceNumber === ref; });
-                if (idx !== -1) {
-                    allDisputes[idx].notePartyA   = data.notePartyA;
-                    allDisputes[idx].notePartyB   = data.notePartyB;
-                    allDisputes[idx].noteShared   = data.noteShared;
-                    allDisputes[idx].noteInternal = data.noteInternal;
-                }
-            } else {
-                feedback(fbId, '\u2717 ' + (data.error || 'Failed to save notes.'), false);
-            }
-        }, function(err) {
-            if (btn) { btn.textContent = 'Save Notes'; btn.disabled = false; }
-            feedback(fbId, '\u2717 ' + err, false);
+    function openEventEntry(ref) {
+        const userName = currentUserName();
+        EventEntryModal.open({
+            matterRef:  ref,
+            matterType: 'Dispute',
+            backendUrl: CONFIG.BACKEND_URL,
+            userName:   userName,
+            onSuccess:  function(event) { handleNewEvent(ref, event); }
         });
+    }
+
+    function handleNewEvent(ref, event) {
+        const html = renderEventEntry(event);
+
+        if (!_eventCache[ref]) _eventCache[ref] = [];
+        _eventCache[ref].unshift(event);
+
+        function prependTo(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const div = document.createElement('div');
+            div.innerHTML = html;
+            const emptyEl = container.querySelector('.pane-text');
+            if (emptyEl && emptyEl.parentElement === container) container.innerHTML = '';
+            container.insertBefore(div.firstChild, container.firstChild);
+        }
+
+        prependTo('events-all-' + ref);
+
+        if (event.visibility === 'Party A' || event.visibility === 'Shared' || event.visibility === 'All') {
+            prependTo('events-partyA-' + ref);
+        }
+        if (event.visibility === 'Party B' || event.visibility === 'Shared' || event.visibility === 'All') {
+            prependTo('events-partyB-' + ref);
+        }
+        if (event.visibility === 'Board' || event.visibility === 'All') {
+            prependTo('events-board-' + ref);
+        }
     }
 
     // ── LOG DISPUTE MODAL ─────────────────────────────────────────────────
