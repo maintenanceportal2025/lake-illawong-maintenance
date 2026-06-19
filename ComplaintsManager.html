@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.10
+  Frontend Version: V3.0.11
   Backend:          ComplaintsManager V3.0.8
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.11 (Jun 2026): Convert to Dispute button added to Acknowledged
+    panel (previously only on Responded panel) -- allows earlier
+    redirection before drafting a Board Response.
+    doConvertToDispute now writes an Administrative event to the
+    Events tab (visibility Board) before opening DisputesManager,
+    recording that the conversion occurred. Previously unlogged.
+
   V3.0.10 (Jun 2026): Print record updated.
     _eventCache added -- keyed by ref, populated by loadMatterHistory,
     maintained by handleNewEvent. Allows doPrint to read events
@@ -3453,6 +3460,28 @@ TECHNICAL:
     function doConvertToDispute(ref) {
         const c = allComplaints.find(function(x) { return x.referenceNumber === ref; });
         if (!c) { alert('Complaint record not found.'); return; }
+
+        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+
+        // Log the conversion as a Board event before opening DisputesManager
+        const cbName = 'convertLogCallback_' + Date.now();
+        const logUrl = CONFIG.BACKEND_URL
+            + '?action=addEvent'
+            + '&matterRef='     + encodeURIComponent(ref)
+            + '&matterType='    + encodeURIComponent('Complaint')
+            + '&user='          + encodeURIComponent(userName)
+            + '&eventType='     + encodeURIComponent('Administrative')
+            + '&visibility='    + encodeURIComponent('Board')
+            + '&summary='       + encodeURIComponent('Complaint converted to Dispute')
+            + '&extendedNotes=' + encodeURIComponent('Initiated by ' + userName + '. A new dispute record has been opened referencing this complaint as the originating matter.')
+            + '&callback='      + cbName;
+
+        window[cbName] = function () { cleanup(cbName); };
+        const script = document.createElement('script');
+        script.onerror = function () { cleanup(cbName); };
+        script.src = logUrl;
+        document.head.appendChild(script);
+
         var params = new URLSearchParams({
             autoLog:        'true',
             originatingRef: ref,
