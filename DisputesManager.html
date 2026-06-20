@@ -6,13 +6,25 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.31
+  Frontend Version: V3.0.32
   Backend:          DisputesManager V3.0.17
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.32 (Jun 2026): Print record updated to include Events tab content.
+    doDisputePrint reads from _eventCache (populated by loadMatterHistory
+    when card was opened) -- same pattern as ComplaintsManager V3.0.10.
+    Activity Log renamed System Events in print output.
+    Four new print sections added:
+      Party A Events -- visibility Party A, Shared, or All (both versions).
+      Party B Events -- visibility Party B, Shared, or All (both versions).
+      Matter History -- all events (Full Record only).
+      Board Notes -- visibility Board or All (Full Record only).
+    Print dialog text updated to reflect new section names.
+    renderPrintEvent() helper added for print-formatted event rendering.
+
   V3.0.31 (Jun 2026): .btn-save CSS class added -- was missing entirely,
     causing + Add Event button to render unstyled. Matches ComplaintsManager
     styling exactly.
@@ -2292,11 +2304,11 @@ TECHNICAL:
             + '<div style="color:rgba(255,255,255,0.7);font-size:0.85rem;margin-bottom:24px;">' + escHtml(ref) + '</div>'
             + '<button id="dpb-full" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
             + '&#128438; Print Full Record'
-            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Activity Log and contact details (Board use only)</div>'
+            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes System Events, Matter History, Board Notes, Party Events and contact details</div>'
             + '</button>'
             + '<button id="dpb-summary" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
             + '&#128196; Print Summary'
-            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Excludes Activity Log and contact details</div>'
+            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Party A and Party B Events only — excludes System Events, Matter History, Board Notes and contact details</div>'
             + '</button>'
             + '<button id="dpb-cancel" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>'
             + '</div>';
@@ -2401,7 +2413,7 @@ TECHNICAL:
               + '<div class="field-value">' + escHtml(d.externalReferralOutcome) + '</div></div>'
             : '';
 
-        // Activity log:
+        // Activity log (System Events):
         //   Full Record -- all entries
         //   Summary     -- system entries only (Board Comments, Board Log, Inbound stripped)
         //                  same filter logic as Chronicle Resident Copy
@@ -2416,7 +2428,7 @@ TECHNICAL:
                 return isSystem && !isBoardLog && !isInbound;
             });
             if (filteredEntries.length > 0) {
-                activityBlock = '<div class="section-title">Activity Log' + (!fullRecord ? ' (System Events)' : '') + '</div>'
+                activityBlock = '<div class="section-title">System Events' + (!fullRecord ? '' : '') + '</div>'
                     + '<div class="activity-log-print">'
                     + filteredEntries.map(function(e) {
                         return '<div class="activity-log-entry-print">' + escHtml(e) + '</div>';
@@ -2424,6 +2436,70 @@ TECHNICAL:
                     + '</div>';
             }
         }
+
+        // Events from Events tab -- read from cache populated when card was opened
+        var cachedEvents = _eventCache[ref] || [];
+
+        function renderPrintEvent(ev) {
+            var isEmail = ['Email Received', 'Email Sent'].indexOf(ev.eventType) !== -1;
+            var detail = '';
+            if (isEmail) {
+                if (ev.emailDate)    detail += '<div class="field-label" style="margin:4px 0 1px;">Date: '    + escHtml(ev.emailDate)    + '</div>';
+                if (ev.emailFrom)    detail += '<div class="field-label" style="margin:1px 0;">From: '       + escHtml(ev.emailFrom)    + '</div>';
+                if (ev.emailTo)      detail += '<div class="field-label" style="margin:1px 0;">To: '         + escHtml(ev.emailTo)      + '</div>';
+                if (ev.emailSubject) detail += '<div class="field-label" style="margin:1px 0 4px;">Subject: ' + escHtml(ev.emailSubject) + '</div>';
+            } else if (ev.reference) {
+                detail += '<div class="field-label" style="margin:4px 0;">Ref: ' + escHtml(ev.reference) + '</div>';
+            }
+            if (ev.extendedNotes) detail += '<div style="font-style:italic;color:#4b5563;margin-top:4px;">' + escHtml(ev.extendedNotes) + '</div>';
+            return '<div class="activity-log-entry-print" style="padding:6px 0;">'
+                + '<span style="color:#0d9488;font-weight:600;">' + escHtml(ev.timestamp) + '</span>'
+                + ' &mdash; <span style="font-weight:600;">' + escHtml(ev.user) + '</span>'
+                + ' [' + escHtml(ev.eventType) + ']'
+                + ' <span style="font-size:7.5pt;background:#e5e7eb;padding:1px 4px;border-radius:2px;">' + escHtml(ev.visibility) + '</span>'
+                + '<div style="margin-top:3px;">' + escHtml(ev.summary) + '</div>'
+                + detail
+                + '</div>';
+        }
+
+        // Party A Events -- visibility Party A, Shared, or All (both versions)
+        var partyAEvents = cachedEvents.filter(function(e) {
+            return e.visibility === 'Party A' || e.visibility === 'Shared' || e.visibility === 'All';
+        });
+        var partyAEventsBlock = partyAEvents.length
+            ? '<div class="section-title">Party A Events</div><div class="activity-log-print">'
+              + partyAEvents.map(renderPrintEvent).join('')
+              + '</div>'
+            : '';
+
+        // Party B Events -- visibility Party B, Shared, or All (both versions)
+        var partyBEvents = cachedEvents.filter(function(e) {
+            return e.visibility === 'Party B' || e.visibility === 'Shared' || e.visibility === 'All';
+        });
+        var partyBEventsBlock = partyBEvents.length
+            ? '<div class="section-title">Party B Events</div><div class="activity-log-print">'
+              + partyBEvents.map(renderPrintEvent).join('')
+              + '</div>'
+            : '';
+
+        // Matter History -- all events (Full Record only)
+        var matterHistoryBlock = fullRecord && cachedEvents.length
+            ? '<div class="section-title">Matter History</div><div class="activity-log-print">'
+              + cachedEvents.map(renderPrintEvent).join('')
+              + '</div>'
+            : fullRecord
+              ? '<div class="section-title">Matter History</div><div class="activity-log-print"><div class="activity-log-entry-print" style="color:#6b7280;font-style:italic;">No events recorded. Open the dispute card to load events before printing.</div></div>'
+              : '';
+
+        // Board Notes -- visibility Board or All (Full Record only)
+        var boardEvents = cachedEvents.filter(function(e) {
+            return e.visibility === 'Board' || e.visibility === 'All';
+        });
+        var boardNotesBlock = fullRecord && boardEvents.length
+            ? '<div class="section-title">Board Notes</div><div class="activity-log-print">'
+              + boardEvents.map(renderPrintEvent).join('')
+              + '</div>'
+            : '';
 
         var summaryBanner = !fullRecord
             ? '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#0f766e;font-weight:600;">SUMMARY — Board comments, correspondence logs, and contact details withheld</div>'
@@ -2446,6 +2522,10 @@ TECHNICAL:
             + resBlock
             + refBlock
             + vaBlock
+            + partyAEventsBlock
+            + partyBEventsBlock
+            + matterHistoryBlock
+            + boardNotesBlock
             + activityBlock
             + printDisputeFooter()
             + '</body></html>';
