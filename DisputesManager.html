@@ -6,13 +6,27 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.33
-  Backend:          DisputesManager V3.0.18
+  Frontend Version: V3.0.34
+  Backend:          DisputesManager V3.0.19
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.34 (Jun 2026): Visibility multi-select support.
+    EventEntryModal_V1_3.js included (checkboxes replace single-select
+    visibility dropdown -- Board can tick any combination of Party A,
+    Party B, Board for a single event).
+    visMatch(visibility, tag) helper added -- replaces all exact-match
+    visibility comparisons (=== 'Party A' etc, including the old "Shared"
+    and "All" special-cases) with comma-split contains logic, since
+    visibility is now stored as e.g. "Party A,Board".
+    Applied to: Party A Events pane filter, Party B Events pane filter,
+    Board Notes pane filter, handleNewEvent routing, print record
+    filtering and visibility pill rendering (both screen and print --
+    displayed as "Party A + Board").
+    Backend updated to DisputesManager V3.0.19.
+
   V3.0.33 (Jun 2026): Description Sent to Parties added to Details Grid.
     Previously this field had no on-screen display at all -- it only ever
     appeared embedded in the lodgement Activity Log entry text (now removed
@@ -300,7 +314,7 @@ TECHNICAL:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Disputes Manager - Lake Illawong</title>
     <script src="VerificationModal_V1_0.js"></script>
-    <script src="EventEntryModal_V1_2.js"></script>
+    <script src="EventEntryModal_V1_3.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1675,7 +1689,7 @@ TECHNICAL:
                 }
 
                 const partyAEvents = events.filter(function(e) {
-                    return e.visibility === 'Party A' || e.visibility === 'Shared' || e.visibility === 'All';
+                    return visMatch(e.visibility, 'Party A');
                 });
                 if (panes.partyA) {
                     panes.partyA.innerHTML = partyAEvents.length
@@ -1684,7 +1698,7 @@ TECHNICAL:
                 }
 
                 const partyBEvents = events.filter(function(e) {
-                    return e.visibility === 'Party B' || e.visibility === 'Shared' || e.visibility === 'All';
+                    return visMatch(e.visibility, 'Party B');
                 });
                 if (panes.partyB) {
                     panes.partyB.innerHTML = partyBEvents.length
@@ -1693,7 +1707,7 @@ TECHNICAL:
                 }
 
                 const boardEvents = events.filter(function(e) {
-                    return e.visibility === 'Board' || e.visibility === 'All';
+                    return visMatch(e.visibility, 'Board');
                 });
                 if (panes.board) {
                     panes.board.innerHTML = boardEvents.length
@@ -1720,13 +1734,14 @@ TECHNICAL:
             detail += '<div class="event-detail">Ref: ' + escHtml(ev.reference) + '</div>';
         }
         if (ev.extendedNotes) detail += '<div class="event-detail event-notes">' + escHtml(ev.extendedNotes) + '</div>';
+        var visLabel = (ev.visibility || '').split(',').map(function(v) { return v.trim(); }).join(' + ');
 
         return '<div class="activity-log-entry">' +
             '<div class="event-header">' +
                 '<span class="event-timestamp">' + escHtml(ev.timestamp) + '</span>' +
                 ' <span class="event-user">' + escHtml(ev.user) + '</span>' +
                 ' &mdash; <span class="event-type">[' + escHtml(ev.eventType) + ']</span>' +
-                ' <span class="event-visibility">' + escHtml(ev.visibility) + '</span>' +
+                ' <span class="event-visibility">' + escHtml(visLabel) + '</span>' +
             '</div>' +
             '<div class="event-summary">' + escHtml(ev.summary) + '</div>' +
             detail +
@@ -1762,13 +1777,13 @@ TECHNICAL:
 
         prependTo('events-all-' + ref);
 
-        if (event.visibility === 'Party A' || event.visibility === 'Shared' || event.visibility === 'All') {
+        if (visMatch(event.visibility, 'Party A')) {
             prependTo('events-partyA-' + ref);
         }
-        if (event.visibility === 'Party B' || event.visibility === 'Shared' || event.visibility === 'All') {
+        if (visMatch(event.visibility, 'Party B')) {
             prependTo('events-partyB-' + ref);
         }
-        if (event.visibility === 'Board' || event.visibility === 'All') {
+        if (visMatch(event.visibility, 'Board')) {
             prependTo('events-board-' + ref);
         }
     }
@@ -2163,6 +2178,14 @@ TECHNICAL:
             .replace(/"/g, '&quot;');
     }
 
+    // Checks whether a comma-separated visibility string includes a given tag.
+    // Visibility is now multi-select (e.g. "Party A,Board") since
+    // EventEntryModal V1.3 -- this replaces the old exact-match comparisons.
+    function visMatch(visibility, tag) {
+        if (!visibility) return false;
+        return visibility.split(',').map(function(v) { return v.trim(); }).indexOf(tag) !== -1;
+    }
+
     function feedback(id, msg, ok) {
         var el = document.getElementById(id);
         if (!el) return;
@@ -2460,11 +2483,12 @@ TECHNICAL:
                 detail += '<div class="field-label" style="margin:4px 0;">Ref: ' + escHtml(ev.reference) + '</div>';
             }
             if (ev.extendedNotes) detail += '<div style="font-style:italic;color:#4b5563;margin-top:4px;">' + escHtml(ev.extendedNotes) + '</div>';
+            var printVisLabel = (ev.visibility || '').split(',').map(function(v) { return v.trim(); }).join(' + ');
             return '<div class="activity-log-entry-print" style="padding:6px 0;">'
                 + '<span style="color:#0d9488;font-weight:600;">' + escHtml(ev.timestamp) + '</span>'
                 + ' &mdash; <span style="font-weight:600;">' + escHtml(ev.user) + '</span>'
                 + ' [' + escHtml(ev.eventType) + ']'
-                + ' <span style="font-size:7.5pt;background:#e5e7eb;padding:1px 4px;border-radius:2px;">' + escHtml(ev.visibility) + '</span>'
+                + ' <span style="font-size:7.5pt;background:#e5e7eb;padding:1px 4px;border-radius:2px;">' + escHtml(printVisLabel) + '</span>'
                 + '<div style="margin-top:3px;">' + escHtml(ev.summary) + '</div>'
                 + detail
                 + '</div>';
@@ -2472,7 +2496,7 @@ TECHNICAL:
 
         // Party A Events -- visibility Party A, Shared, or All (both versions)
         var partyAEvents = cachedEvents.filter(function(e) {
-            return e.visibility === 'Party A' || e.visibility === 'Shared' || e.visibility === 'All';
+            return visMatch(e.visibility, 'Party A');
         });
         var partyAEventsBlock = partyAEvents.length
             ? '<div class="section-title">Party A Events</div><div class="activity-log-print">'
@@ -2482,7 +2506,7 @@ TECHNICAL:
 
         // Party B Events -- visibility Party B, Shared, or All (both versions)
         var partyBEvents = cachedEvents.filter(function(e) {
-            return e.visibility === 'Party B' || e.visibility === 'Shared' || e.visibility === 'All';
+            return visMatch(e.visibility, 'Party B');
         });
         var partyBEventsBlock = partyBEvents.length
             ? '<div class="section-title">Party B Events</div><div class="activity-log-print">'
@@ -2501,7 +2525,7 @@ TECHNICAL:
 
         // Board Notes -- visibility Board or All (Full Record only)
         var boardEvents = cachedEvents.filter(function(e) {
-            return e.visibility === 'Board' || e.visibility === 'All';
+            return visMatch(e.visibility, 'Board');
         });
         var boardNotesBlock = fullRecord && boardEvents.length
             ? '<div class="section-title">Board Notes</div><div class="activity-log-print">'
