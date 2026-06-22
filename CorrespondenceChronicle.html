@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.13
+  Frontend Version: V1.0.14
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
@@ -28,6 +28,12 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
+  V1.0.14 (Jun 2026): Hide Review Due from dispute header once matter
+    is resolved, referred, or closed. Was showing a stale review date
+    on completed matters. buildMetaFields and print matter-summary both
+    updated with same condition: only show reviewDue if resolvedAt,
+    referredAt, and closedAt are all absent.
+
   V1.0.13 (Jun 2026): Events tab integration. Second JSONP call to
     getEvents fires on matter load; result populates five new sections.
     New screen sections: Matter History (all events), Resident Events /
@@ -849,7 +855,8 @@ function buildMetaFields(m, isComp) {
         if (m.partyAName) fields.push(['Party A', m.partyAName + (m.partyAUnit ? ' (' + m.partyAUnit + ')' : '')]);
         if (m.partyBName) fields.push(['Party B', m.partyBName + (m.partyBUnit ? ' (' + m.partyBUnit + ')' : '')]);
         fields.push(['Logged', formatDate(m.loggedAt || m.submittedAt)]);
-        if (m.reviewDue)    fields.push(['Review Due', formatDate(m.reviewDue)]);
+        // Hide Review Due once matter is resolved, referred, or closed (stale on completed matters)
+        if (m.reviewDue && !m.resolvedAt && !m.referredAt && !m.closedAt) fields.push(['Review Due', formatDate(m.reviewDue)]);
         if (m.resolvedAt)   fields.push(['Resolved',   formatDate(m.resolvedAt)]);
         if (m.referredAt)   fields.push(['Referred',   formatDate(m.referredAt)]);
         if (m.closedAt)     fields.push(['Closed',     formatDate(m.closedAt)]);
@@ -1399,7 +1406,8 @@ function doPrint(residentOnly, party) {
         if (m.partyBName) html += '<div style="font-size:12px;margin-bottom:4px;"><strong>Party B:</strong> ' + escHtml(m.partyBName) + (m.partyBUnit ? ' (' + escHtml(m.partyBUnit) + ')' : '') + '</div>';
         html += '<div class="matter-grid">';
         html += mf('Logged',  formatDate(m.loggedAt || m.submittedAt));
-        if (m.reviewDue)  html += mf('Review Due', formatDate(m.reviewDue));
+        // Hide Review Due once matter is resolved, referred, or closed
+        if (m.reviewDue && !m.resolvedAt && !m.referredAt && !m.closedAt) html += mf('Review Due', formatDate(m.reviewDue));
         if (m.resolvedAt) html += mf('Resolved',   formatDate(m.resolvedAt));
         if (m.referredAt) html += mf('Referred',   formatDate(m.referredAt));
         if (m.closedAt)   html += mf('Closed',     formatDate(m.closedAt));
