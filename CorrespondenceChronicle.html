@@ -7,108 +7,91 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.12
+  Frontend Version: V1.0.13
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 PURPOSE:
   Correspondence Chronicle -- unified, filtered correspondence record
-  for a single complaint or dispute matter. Reads from the existing
-  Activity Log and structured fields of each record. Produces two
-  print-ready report versions:
-    Board Version  -- full record including all internal entries,
-                      [BOARD LOG] email summaries (header only, body
-                      suppressed), pathway notice blocks stripped.
-    Resident Version -- same structure, further stripped of internal
-                      Board notes, [BOARD LOG] entries, and any entry
-                      marked as internal-only.
+  for a single complaint or dispute matter. Reads from the Activity Log
+  (System Events column) and the structured Events tab (Board-recorded
+  events via EventEntryModal). Produces print-ready report versions:
+    Board Record   -- full record: System Events, Matter History,
+                      all Events tab entries, Board Notes, and backward-
+                      compatible Saved Notes fields.
+    Resident Copy  -- complaints only: Resident Events and Note to
+                      Resident only. No Board Notes, no System Events.
+    Party A Copy   -- disputes only: Party A Events only.
+    Party B Copy   -- disputes only: Party B Events only.
   Accessed via Admin Portal. Requires Complaints-Manager or Developer
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
-  V1.0.12 (Jun 2026): Board Notes fields added to screen view and all print versions.
-    Complaints -- noteToResident (col Z) and internalNotes (col Y) added.
-      Board Record print: both fields shown.
-      Resident Copy print: noteToResident only.
-      Screen view: both fields always shown (Board-only view).
-    Disputes -- notePartyA (col Z), notePartyB (col AA), noteShared (col AB),
-      noteInternal (col AC) added.
-      Board Record print: all four fields shown.
-      Party A Copy print: notePartyA + noteShared.
-      Party B Copy print: notePartyB + noteShared.
-    Print buttons: disputes now shows Print Party A Copy and Print Party B Copy
-      instead of single Print Resident Copy. Complaints unchanged.
-    doPrint(residentOnly) extended to doPrint(residentOnly, party) where
-      party is null (complaints), A or B (disputes).
-    Print bar rendered dynamically after matter loads via renderPrintBar().
+  V1.0.13 (Jun 2026): Events tab integration. Second JSONP call to
+    getEvents fires on matter load; result populates five new sections.
+    New screen sections: Matter History (all events), Resident Events /
+    Party A Events / Party B Events (visibility-filtered), Board Notes
+    (Board-visibility events). "Correspondence Timeline" renamed to
+    "System Events" consistent with ComplaintsManager V3.0.12 and
+    DisputesManager V3.0.35. Print filtering updated per version:
+    Board Record shows all; Resident Copy shows Resident Events only;
+    Party copies show only their party's events. visMatch() helper added
+    for multi-value visibility strings (e.g. "Party A,Board").
+    renderEventEntry() and renderPrintEvent() added matching Manager
+    rendering. Guard added: if events still loading when Print clicked,
+    user is prompted to wait. .vb-party CSS class added for Party copy
+    version badge. Fixes: dispute externalReferralOutcome (was
+    vicAssistOutcome -- backend renamed at V3.0.9); referralNarrative
+    added to closure section; referredAt added to Resolution/Closure
+    trigger condition; print doc subtitle now uses dynamic title string.
+
+  V1.0.12 (Jun 2026): Board Notes fields added to screen view and all
+    print versions.
+    Complaints -- noteToResident (col Z) and internalNotes (col Y).
+      Board Record: both shown. Resident Copy: noteToResident only.
+    Disputes -- notePartyA (col Z), notePartyB (col AA), noteShared
+      (col AB), noteInternal (col AC).
+      Board Record: all four. Party A Copy: notePartyA + noteShared.
+      Party B Copy: notePartyB + noteShared.
+    Print bar dynamic per matter type. doPrint(residentOnly, party).
     buildPrintNotes(m, isComp, party) added.
-    buildSections updated to show Board Notes section on screen view.
 
   V1.0.11 (Jun 2026): Back to Search Results button moved to alongside
-    Load Matter button in the reference panel -- stays at top of page.
+    Load Matter button in the reference panel.
 
-  V1.0.10 (Jun 2026): Back to Search Results button added. Shown above
-    print bar when Chronicle loaded via search. Caches last search
-    results so returning restores the list without re-querying.
+  V1.0.10 (Jun 2026): Back to Search Results button added. Caches last
+    search results so returning restores the list without re-querying.
 
-  V1.0.9 (Jun 2026): Search by Name/Unit added. Two-tab lookup panel:
-    Reference tab (existing) and Search tab (new). Search calls
-    getComplaintsByUnit/getComplaintsByName and getDisputesByUnit/
-    getDisputesByName simultaneously, merges results sorted newest
-    first. Click result to load Chronicle. Requires Complaints backend
-    V3.0.3 and Disputes backend V3.0.11 for name search.
+  V1.0.9 (Jun 2026): Search by Name/Unit added. Two-tab lookup panel.
+    Requires Complaints backend V3.0.3 and Disputes backend V3.0.11.
 
-  V1.0.8 (Jun 2026): Style fixes -- logo corrected to logo.png; back button
-    moved to below header divider, styled as portal-back-btn consistent
-    with DisputesManager; label updated to Back to Admin Portal.
+  V1.0.8 (Jun 2026): Style fixes -- logo, back button, portal label.
 
   V1.0.7 (Jun 2026): Remove duplicate "Unit" prefix in party/resident
-    display -- partyAUnit/partyBUnit/unitNumber already contain "Unit XX"
-    so the hardcoded "Unit " prefix was producing "Unit Unit 14".
+    display.
 
-  V1.0.6 (Jun 2026): Resident Copy now correctly excludes Board Comments
-    (type=comment). Previously only boardlog, inbound, and internal keyword
-    entries were filtered. Updated print note to accurately describe
-    what is omitted from the Resident Copy.
+  V1.0.6 (Jun 2026): Resident Copy correctly excludes Board Comments.
 
-  V1.0.5 (Jun 2026): Skip bare --- separator lines in parseEntry -- these
-    appear between Board Log entries in the raw log and were rendering as
-    stray system entries above each Board Log block.
+  V1.0.5 (Jun 2026): Skip bare --- separator lines in parseEntry.
 
-  V1.0.4 (Jun 2026): parseBoardLogBody fully rewritten based on actual
-    sheet storage format. Fields are on separate \n-delimited lines;
-    body wrapped by \n---\n delimiters; body uses \r\n line endings.
-    Previous versions assumed single-line format -- incorrect.
+  V1.0.4 (Jun 2026): parseBoardLogBody fully rewritten.
 
-  V1.0.3 (Jun 2026): Fix parseBoardLogBody > and --- stripping. Replaced
-    regex with explicit string splits to avoid JS regex flag issues.
-    Disputes entry separator confirmed \n\n (correct in V1.0.2).
+  V1.0.3 (Jun 2026): parseBoardLogBody > and --- stripping fixes.
 
-  V1.0.2 (Jun 2026): parseBoardLogBody updated. [BOARD LOG] entries now
-    show full email body (complete correspondence record required for
-    regulatory compliance). Body extracted from after the --- delimiter.
-    > quoting prefixes and stray --- delimiters stripped from body text.
+  V1.0.2 (Jun 2026): parseBoardLogBody shows full email body.
 
   V1.0.0 (Jun 2026): Initial release.
-    Reference lookup (COMP- or DISP- prefix auto-detected).
-    Calls getComplaintByRef or getDisputeByRef backend action.
-    Board Version: structured matter header + submission details +
-      board response + escalation record + closure narrative +
-      filtered/formatted Activity Log.
-    Resident Version: same structure minus internal fields,
-      [BOARD LOG] entries, and internal-only Activity Log entries.
-    Print output via window.open() -- consistent with Managers.
-    RBAC: Complaints-Manager and Developer roles.
 
 BACKEND URLS:
-  Complaints: https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec,
-
-  Disputes: 'https://script.google.com/macros/s/AKfycbx2dwG5mP6Cv-UAqii38FAINvaUvrR2oq-6uv6U_mnKqG8Rzjq56C35lOVHFS9ZsCvw/exec,
+  Complaints: https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec
+  Disputes:   https://script.google.com/macros/s/AKfycbx2dwG5mP6Cv-UAqii38FAINvaUvrR2oq-6uv6U_mnKqG8Rzjq56C35lOVHFS9ZsCvw/exec
 
 DEPENDENCIES:
   VerificationModal_V1_0.js (OTP auth + RBAC)
   ManagementCentral backend (OTP verification)
+  ComplaintsManager V3.0.10 (addEvent / getEvents)
+  DisputesManager V3.0.16+ (addEvent / getEvents)
 =====================================================================
 -->
 <!DOCTYPE html>
@@ -255,7 +238,7 @@ body {
 .field-block-label { font-size: 0.8rem; color: var(--glass-text-muted); margin-bottom: 4px; }
 .field-block-value { color: rgba(255,255,255,0.88); font-size: 0.875rem; white-space: pre-wrap; line-height: 1.6; }
 
-/* ── ACTIVITY ENTRIES ── */
+/* ── ACTIVITY LOG ENTRIES (System Events / Activity Log) ── */
 .activity-entries { display: flex; flex-direction: column; gap: 8px; }
 .activity-entry {
     background: rgba(255,255,255,0.05); border-left: 3px solid rgba(255,255,255,0.2);
@@ -276,6 +259,21 @@ body {
 .tag-comment  { background: rgba(168,85,247,0.3);  color: #e9d5ff; }
 .entry-body   { color: rgba(255,255,255,0.85); white-space: pre-wrap; line-height: 1.5; margin-top: 4px; }
 .entry-suppressed { color: var(--glass-text-subtle); font-style: italic; font-size: 0.8rem; margin-top: 2px; }
+
+/* ── EVENT ENTRIES (Events tab -- Board-recorded structured events) ── */
+.activity-entry.entry-event { border-left-color: rgba(16,185,129,0.6); }
+.event-type-tag {
+    display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.68rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px;
+    background: rgba(16,185,129,0.3); color: #6ee7b7;
+}
+.event-vis-tag {
+    font-size: 0.68rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 2px; padding: 1px 5px; margin-left: 4px; color: var(--glass-text-subtle);
+}
+.event-detail { font-size: 0.78rem; color: var(--glass-text-muted); margin-top: 3px; }
+.event-detail.event-notes { font-style: italic; }
+.events-loading { color: var(--glass-text-muted); font-size: 0.875rem; font-style: italic; }
 
 /* ── PRINT BUTTONS ── */
 .print-bar {
@@ -321,6 +319,10 @@ body {
     background: rgba(239,68,68,0.3); border: 1px solid rgba(239,68,68,0.6); color: #fca5a5;
     padding: 10px 24px; border-radius: 2px; font-weight: 600; cursor: pointer; font-size: 0.9rem;
 }
+
+/* ── PRINT VERSION BADGE COLOURS ── */
+/* .vb-board and .vb-resident defined in print styles string */
+/* .vb-party -- Party A / B copies */
 
 @media (max-width: 480px) {
     .header-content { flex-direction: column; gap: 12px; }
@@ -433,8 +435,9 @@ const CONFIG = {
 
 // Current loaded matter
 let currentMatter = null;
-let currentType   = null; // 'complaint' | 'dispute'
-let lastSearchResults = null;  // cached search results for Back to Results button
+let currentType   = null;  // 'complaint' | 'dispute'
+let currentEvents = null;  // null = loading, [] | [...] = loaded
+let lastSearchResults = null;
 let lastSearchQuery   = '';
 
 // =====================================================================
@@ -498,50 +501,28 @@ function doSearch() {
     }
 
     var resultsEl = document.getElementById('searchResults');
-    var btn       = document.getElementById('searchBtn');
-    var errEl     = document.getElementById('lookupError');
-    errEl.innerHTML = '';
-    resultsEl.innerHTML = '<div class="info-notice">Searching…</div>';
-    btn.disabled = true; btn.textContent = 'Searching…';
+    resultsEl.innerHTML = '<div class="events-loading">Searching\u2026</div>';
 
-    // Determine search type: unit if starts with digit or "unit"
-    var isUnit = /^(unit\s*)?\d/i.test(query);
-    // Normalise unit query -- strip leading "unit " prefix if present for backend match
+    var isUnit = /^unit\s*\d+$/i.test(query) || /^\d+$/.test(query);
     var unitQuery = query.replace(/^unit\s*/i, '').trim();
 
-    var complaints = null, disputes = null;
+    var complaints = null;
+    var disputes   = null;
     var done = 0;
 
     function onBothDone() {
-        btn.disabled = false; btn.textContent = 'Search';
         var results = [];
-        if (complaints) {
-            complaints.forEach(function(c) {
-                results.push({
-                    type:     'complaint',
-                    ref:      c.referenceNumber,
-                    name:     c.residentName,
-                    unit:     c.unitNumber,
-                    status:   c.status,
-                    date:     c.submittedAt,
-                    category: c.category
-                });
-            });
-        }
-        if (disputes) {
-            disputes.forEach(function(d) {
-                results.push({
-                    type:     'dispute',
-                    ref:      d.referenceNumber,
-                    name:     (d.partyAName || '') + ' / ' + (d.partyBName || ''),
-                    unit:     (d.partyAUnit || '') + ' / ' + (d.partyBUnit || ''),
-                    status:   d.status,
-                    date:     d.loggedAt
-                });
-            });
-        }
-        // Sort newest first
-        results.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+        (complaints || []).forEach(function(c) {
+            results.push({ ref: c.referenceNumber, type: 'complaint', name: c.residentName,
+                           unit: c.unitNumber, date: c.submittedAt, status: c.status, category: c.category });
+        });
+        (disputes || []).forEach(function(d) {
+            var name = [d.partyAName, d.partyBName].filter(Boolean).join(' / ');
+            var unit = [d.partyAUnit, d.partyBUnit].filter(Boolean).join(' / ');
+            results.push({ ref: d.referenceNumber, type: 'dispute', name: name,
+                           unit: unit, date: d.loggedAt, status: d.status, category: '' });
+        });
+        results.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
         renderSearchResults(results, query);
     }
 
@@ -582,11 +563,11 @@ function renderSearchResults(results, query) {
     lastSearchQuery   = query;
     var el = document.getElementById('searchResults');
     if (results.length === 0) {
-        el.innerHTML = '<div class="info-notice">No matters found matching “' + escHtml(query) + '”.</div>';
+        el.innerHTML = '<div class="info-notice">No matters found matching "' + escHtml(query) + '".</div>';
         return;
     }
 
-    var html = '<div style="font-size:0.78rem;color:var(--glass-text-muted);margin-bottom:8px;">' + results.length + ' matter' + (results.length !== 1 ? 's' : '') + ' found — click to load Chronicle</div>';
+    var html = '<div style="font-size:0.78rem;color:var(--glass-text-muted);margin-bottom:8px;">' + results.length + ' matter' + (results.length !== 1 ? 's' : '') + ' found \u2014 click to load Chronicle</div>';
     results.forEach(function(r) {
         var typeColor = r.type === 'complaint' ? '#bfdbfe' : '#99f6e4';
         var typeBg    = r.type === 'complaint' ? 'rgba(59,130,246,0.3)' : 'rgba(13,148,136,0.3)';
@@ -597,7 +578,7 @@ function renderSearchResults(results, query) {
             + '<span style="font-size:0.85rem;font-weight:700;color:white;">' + escHtml(r.ref) + '</span>'
             + '<span style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-left:auto;">' + formatDate(r.date) + '</span>'
             + '</div>'
-            + '<div style="font-size:0.82rem;color:rgba(255,255,255,0.85);">' + escHtml(r.name) + ' &mdash; ' + escHtml(r.unit) + '</div>'
+            + '<div style="font-size:0.82rem;color:rgba(255,255,255,0.85);">' + escHtml(r.name) + ' \u2014 ' + escHtml(r.unit) + '</div>'
             + (r.category ? '<div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-top:2px;">' + escHtml(r.category) + '</div>' : '')
             + '<div style="font-size:0.72rem;color:rgba(255,255,255,0.45);margin-top:2px;">' + escHtml(r.status) + '</div>'
             + '</div>';
@@ -606,17 +587,15 @@ function renderSearchResults(results, query) {
 }
 
 function loadFromSearch(ref) {
-    // Switch to reference tab, populate and load
     switchTab('ref');
     document.getElementById('refInput').value = ref;
-    loadMatter(true); // true = came from search
+    loadMatter(true);
 }
 
 // =====================================================================
 // BACK TO RESULTS
 // =====================================================================
 function backToResults() {
-    // Hide result panel, switch to search tab, re-render cached results
     document.getElementById('resultPanel').style.display = 'none';
     document.getElementById('backToResultsBar').style.display = 'none';
     switchTab('search');
@@ -653,6 +632,7 @@ function loadMatter(fromSearch) {
     document.getElementById('resultPanel').style.display = 'none';
     currentMatter = null;
     currentType   = null;
+    currentEvents = null;
 
     const callbackName = 'chronicleCallback_' + Date.now();
     const backendUrl   = isComplaint ? CONFIG.COMPLAINTS_BACKEND : CONFIG.DISPUTES_BACKEND;
@@ -672,15 +652,18 @@ function loadMatter(fromSearch) {
         btn.disabled = false;
         btn.textContent = 'Load Matter';
 
-        if (!data || !data.success || !data.complaint && !data.dispute) {
+        if (!data || !data.success || (!data.complaint && !data.dispute)) {
             errEl.innerHTML = '<div class="error-notice">Matter not found: ' + escHtml(raw) + '</div>';
             return;
         }
 
         currentMatter = data.complaint || data.dispute;
         currentType   = isComplaint ? 'complaint' : 'dispute';
+        currentEvents = null; // events loading -- reset before renderMatter so placeholders show
+
         document.getElementById('backToResultsBar').style.display = (fromSearch && lastSearchResults) ? '' : 'none';
         renderMatter();
+        loadEvents(raw); // fire second JSONP call for Events tab
     };
 
     const script = document.createElement('script');
@@ -702,14 +685,121 @@ function cleanup(name) {
 }
 
 // =====================================================================
+// EVENTS TAB -- LOAD
+// =====================================================================
+function loadEvents(ref) {
+    const isComp  = ref.startsWith('COMP-');
+    const backend = isComp ? CONFIG.COMPLAINTS_BACKEND : CONFIG.DISPUTES_BACKEND;
+    const cbName  = 'eventsCallback_' + Date.now();
+
+    const timeout = setTimeout(function() {
+        delete window[cbName];
+        // Guard: discard if user has loaded a different matter since
+        if (!currentMatter || currentMatter.referenceNumber !== ref) return;
+        currentEvents = [];
+        updateEventSections([]);
+    }, 12000);
+
+    window[cbName] = function(data) {
+        clearTimeout(timeout);
+        delete window[cbName];
+        if (!currentMatter || currentMatter.referenceNumber !== ref) return;
+        currentEvents = (data && data.success && data.events) ? data.events : [];
+        updateEventSections(currentEvents);
+    };
+
+    const s = document.createElement('script');
+    s.onerror = function() {
+        clearTimeout(timeout);
+        delete window[cbName];
+        if (!currentMatter || currentMatter.referenceNumber !== ref) return;
+        currentEvents = [];
+        updateEventSections([]);
+    };
+    s.src = backend + '?action=getEvents&matterRef=' + encodeURIComponent(ref) + '&callback=' + cbName;
+    document.head.appendChild(s);
+}
+
+// =====================================================================
+// EVENTS TAB -- UPDATE DOM PLACEHOLDERS
+// =====================================================================
+function updateEventSections(events) {
+    const isComp = currentType === 'complaint';
+
+    function fill(id, filteredEvents, emptyMsg) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = filteredEvents.length
+            ? filteredEvents.map(renderEventEntry).join('')
+            : '<div class="events-loading">' + escHtml(emptyMsg) + '</div>';
+    }
+
+    // Matter History -- all events
+    fill('evtSection-all', events, 'No events recorded.');
+
+    if (isComp) {
+        // Resident Events -- visibility includes Resident
+        fill('evtSection-resident', events.filter(function(e) { return visMatch(e.visibility, 'Resident'); }),
+             'No resident-visible events recorded.');
+    } else {
+        // Party A Events
+        fill('evtSection-partyA', events.filter(function(e) { return visMatch(e.visibility, 'Party A'); }),
+             'No Party A events recorded.');
+        // Party B Events
+        fill('evtSection-partyB', events.filter(function(e) { return visMatch(e.visibility, 'Party B'); }),
+             'No Party B events recorded.');
+    }
+
+    // Board Notes -- visibility includes Board
+    fill('evtSection-board', events.filter(function(e) { return visMatch(e.visibility, 'Board'); }),
+         'No board notes recorded.');
+}
+
+// =====================================================================
+// visMatch -- multi-value visibility check
+// visibility is a comma-separated string e.g. "Party A,Board"
+// =====================================================================
+function visMatch(visibility, tag) {
+    if (!visibility) return false;
+    return visibility.split(',').map(function(v) { return v.trim(); }).indexOf(tag) !== -1;
+}
+
+// =====================================================================
+// RENDER EVENT ENTRY (screen)
+// =====================================================================
+function renderEventEntry(ev) {
+    var isEmail = ['Email Received', 'Email Sent'].indexOf(ev.eventType) !== -1;
+    var detail = '';
+    if (isEmail) {
+        if (ev.emailDate)    detail += '<div class="event-detail">Date: '    + escHtml(ev.emailDate)    + '</div>';
+        if (ev.emailFrom)    detail += '<div class="event-detail">From: '    + escHtml(ev.emailFrom)    + '</div>';
+        if (ev.emailTo)      detail += '<div class="event-detail">To: '      + escHtml(ev.emailTo)      + '</div>';
+        if (ev.emailSubject) detail += '<div class="event-detail">Subject: ' + escHtml(ev.emailSubject) + '</div>';
+    } else if (ev.reference) {
+        detail += '<div class="event-detail">Ref: ' + escHtml(ev.reference) + '</div>';
+    }
+    if (ev.extendedNotes) detail += '<div class="event-detail event-notes">' + escHtml(ev.extendedNotes) + '</div>';
+    var visLabel = (ev.visibility || '').split(',').map(function(v) { return v.trim(); }).join(' + ');
+    return '<div class="activity-entry entry-event">' +
+        '<div class="entry-meta">' +
+            '<span class="event-type-tag">' + escHtml(ev.eventType) + '</span>' +
+            escHtml(ev.timestamp) +
+            ' \u2014 ' + escHtml(ev.user) +
+            ' <span class="event-vis-tag">' + escHtml(visLabel) + '</span>' +
+        '</div>' +
+        '<div class="entry-body">' + escHtml(ev.summary) + '</div>' +
+        detail +
+    '</div>';
+}
+
+// =====================================================================
 // RENDER
 // =====================================================================
 function renderMatter() {
     const m = currentMatter;
     const isComp = currentType === 'complaint';
 
-    // ── Matter header
-    const status = normaliseStatus(isComp ? m.status : m.status);
+    const status = normaliseStatus(m.status);
     document.getElementById('matterHeader').innerHTML =
         '<div class="matter-ref">' + escHtml(m.referenceNumber) + '</div>' +
         '<span class="matter-type-badge ' + (isComp ? 'badge-complaint' : 'badge-dispute') + '">' +
@@ -718,10 +808,8 @@ function renderMatter() {
         '<span class="status-pill ' + statusPillClass(status, isComp) + '">' + escHtml(status) + '</span>' +
         '<div class="matter-meta">' + buildMetaFields(m, isComp) + '</div>';
 
-    // ── Chronicle sections
     document.getElementById('chronicleSections').innerHTML = buildSections(m, isComp);
 
-    // ── Print bar (dynamic -- disputes get party-specific buttons)
     renderPrintBar(isComp);
 
     document.getElementById('lookupError').innerHTML = '';
@@ -736,17 +824,16 @@ function renderPrintBar(isComp) {
         bar.innerHTML =
             '<button class="btn-print-board" onclick="doPrint(false, null)">&#128438; Print Board Record</button>' +
             '<button class="btn-print-resident" onclick="doPrint(true, null)">&#128209; Print Resident Copy</button>' +
-            '<span class="print-note">Board Record includes all entries &mdash; Resident Copy omits Board Comments, Board Log emails, inbound replies, and internal notes. Note to Resident shown in both.</span>';
+            '<span class="print-note">Board Record includes System Events, all Events tab entries, and Board Notes. Resident Copy includes Resident Events and Note to Resident only.</span>';
     } else {
         bar.innerHTML =
             '<button class="btn-print-board" onclick="doPrint(false, null)">&#128438; Print Board Record</button>' +
             '<button class="btn-print-resident" onclick="doPrint(true, \'A\')">&#128209; Print Party A Copy</button>' +
             '<button class="btn-print-resident" onclick="doPrint(true, \'B\')">&#128209; Print Party B Copy</button>' +
-            '<span class="print-note">Board Record includes all note fields &mdash; Party copies include Shared Notes and the relevant party-specific notes only.</span>';
+            '<span class="print-note">Board Record includes all sections. Party copies include only events visible to that party. Open the matter card to load events before printing.</span>';
     }
     bar.style.display = '';
 }
-
 
 function buildMetaFields(m, isComp) {
     var fields = [];
@@ -762,9 +849,10 @@ function buildMetaFields(m, isComp) {
         if (m.partyAName) fields.push(['Party A', m.partyAName + (m.partyAUnit ? ' (' + m.partyAUnit + ')' : '')]);
         if (m.partyBName) fields.push(['Party B', m.partyBName + (m.partyBUnit ? ' (' + m.partyBUnit + ')' : '')]);
         fields.push(['Logged', formatDate(m.loggedAt || m.submittedAt)]);
-        if (m.reviewDue)  fields.push(['Review Due', formatDate(m.reviewDue)]);
-        if (m.resolvedAt) fields.push(['Resolved',   formatDate(m.resolvedAt)]);
-        if (m.closedAt)   fields.push(['Closed',     formatDate(m.closedAt)]);
+        if (m.reviewDue)    fields.push(['Review Due', formatDate(m.reviewDue)]);
+        if (m.resolvedAt)   fields.push(['Resolved',   formatDate(m.resolvedAt)]);
+        if (m.referredAt)   fields.push(['Referred',   formatDate(m.referredAt)]);
+        if (m.closedAt)     fields.push(['Closed',     formatDate(m.closedAt)]);
     }
     return fields.map(function(f) {
         return '<div class="meta-item"><div class="meta-label">' + escHtml(f[0]) + '</div><div class="meta-value">' + escHtml(f[1] || '\u2014') + '</div></div>';
@@ -782,7 +870,7 @@ function buildSections(m, isComp) {
         html += section('Board Response', buildBoardResponse(m));
     }
 
-    // ── 3. Dispute process statement (disputes only)
+    // ── 3. Process Statement (disputes only)
     if (!isComp && m.processStatement) {
         html += section('Process Statement', '<div class="field-block-value">' + escHtml(m.processStatement) + '</div>');
     }
@@ -796,35 +884,69 @@ function buildSections(m, isComp) {
     if (isComp && m.closedAt) {
         html += section('Closure', buildClosure(m));
     }
-    if (!isComp && (m.resolvedAt || m.closedAt)) {
+    // referredAt added to trigger condition (V1.0.13 fix)
+    if (!isComp && (m.resolvedAt || m.closedAt || m.referredAt)) {
         html += section('Resolution / Closure', buildDisputeClosure(m));
     }
 
-    // ── 6. Correspondence Timeline (Activity Log)
-    var entries = parseActivityLog(m.activityLog, isComp, false);
-    if (entries.length > 0) {
-        html += section('Correspondence Timeline',
+    // ── 6. System Events (Activity Log -- renamed from "Correspondence Timeline")
+    var sysEntries = parseActivityLog(m.activityLog, isComp, false);
+    if (sysEntries.length > 0) {
+        html += section('System Events',
             '<div class="activity-entries">' +
-            entries.map(renderEntry).join('') +
+            sysEntries.map(renderEntry).join('') +
             '</div>');
     } else {
-        html += section('Correspondence Timeline',
-            '<div style="color:var(--glass-text-muted);font-size:0.875rem;font-style:italic;">No correspondence entries recorded.</div>');
+        html += section('System Events',
+            '<div style="color:var(--glass-text-muted);font-size:0.875rem;font-style:italic;">No system events recorded.</div>');
     }
 
-    // ── 7. Board Notes (screen view always shows all fields -- Board only)
-    var notesHtml = '';
+    // ── 7. Events tab sections (placeholders filled by updateEventSections)
+
+    // Matter History -- all Events tab entries
+    html += section('Matter History',
+        '<div id="evtSection-all" class="activity-entries">' +
+        '<div class="events-loading">Loading events\u2026</div>' +
+        '</div>');
+
     if (isComp) {
-        if (m.noteToResident)  notesHtml += fieldBlock('Note to Resident', m.noteToResident);
-        if (m.internalNotes)   notesHtml += fieldBlock('Internal Notes (Board only)', m.internalNotes);
+        // Resident Events
+        html += section('Resident Events',
+            '<div id="evtSection-resident" class="activity-entries">' +
+            '<div class="events-loading">Loading events\u2026</div>' +
+            '</div>');
     } else {
-        if (m.notePartyA)   notesHtml += fieldBlock('Party A Notes', m.notePartyA);
-        if (m.notePartyB)   notesHtml += fieldBlock('Party B Notes', m.notePartyB);
-        if (m.noteShared)   notesHtml += fieldBlock('Shared Notes', m.noteShared);
-        if (m.noteInternal) notesHtml += fieldBlock('Internal Notes (Board only)', m.noteInternal);
+        // Party A Events
+        html += section('Party A Events',
+            '<div id="evtSection-partyA" class="activity-entries">' +
+            '<div class="events-loading">Loading events\u2026</div>' +
+            '</div>');
+        // Party B Events
+        html += section('Party B Events',
+            '<div id="evtSection-partyB" class="activity-entries">' +
+            '<div class="events-loading">Loading events\u2026</div>' +
+            '</div>');
     }
-    if (notesHtml) {
-        html += section('Board Notes', notesHtml);
+
+    // Board Notes (Events tab -- Board-visibility events)
+    html += section('Board Notes',
+        '<div id="evtSection-board" class="activity-entries">' +
+        '<div class="events-loading">Loading events\u2026</div>' +
+        '</div>');
+
+    // ── 8. Saved Notes (static note fields -- backward compat for pre-EventModal records)
+    var savedNotesHtml = '';
+    if (isComp) {
+        if (m.noteToResident)             savedNotesHtml += fieldBlock('Note to Resident', m.noteToResident);
+        if (m.internalNotes)              savedNotesHtml += fieldBlock('Internal Notes (Board only)', m.internalNotes);
+    } else {
+        if (m.notePartyA)   savedNotesHtml += fieldBlock('Party A Notes', m.notePartyA);
+        if (m.notePartyB)   savedNotesHtml += fieldBlock('Party B Notes', m.notePartyB);
+        if (m.noteShared)   savedNotesHtml += fieldBlock('Shared Notes', m.noteShared);
+        if (m.noteInternal) savedNotesHtml += fieldBlock('Internal Notes (Board only)', m.noteInternal);
+    }
+    if (savedNotesHtml) {
+        html += section('Saved Notes', savedNotesHtml);
     }
 
     return html;
@@ -848,8 +970,8 @@ function buildSubmission(m, isComp) {
         if (m.previousActions)  html += fieldBlock('Previous Actions Taken', m.previousActions);
         html += fieldRow('Submitted via', m.howSubmitted || 'Digital');
     } else {
-        html += fieldBlock('Nature of Dispute', m.natureOfDispute);
-        if (m.partyDescription) html += fieldBlock('Description (sent to parties)', m.partyDescription);
+        html += fieldBlock('Nature of Dispute (Internal)', m.natureOfDispute);
+        if (m.partyDescription) html += fieldBlock('Description Sent to Parties', m.partyDescription);
         html += fieldRow('Logged by', m.loggedBy || '\u2014');
     }
     return html;
@@ -858,7 +980,6 @@ function buildSubmission(m, isComp) {
 function buildBoardResponse(m) {
     var html = '';
     if (!m.boardResponse) return '<span style="color:var(--glass-text-muted);font-style:italic;">No Board Response recorded.</span>';
-    // Parse entries: split on double-newline timestamp boundary
     var parts = m.boardResponse.split(/\n\n(?=\[\d{4}-\d{2}-\d{2})/);
     parts.forEach(function(part) {
         var hasSent = part.indexOf('[SENT]') !== -1;
@@ -907,20 +1028,23 @@ function buildDisputeClosure(m) {
         html += fieldRow('Resolved', formatDate(m.resolvedAt));
         if (m.resolutionSummary) html += fieldBlock('Resolution Summary', m.resolutionSummary);
     }
-    if (m.closedAt) html += fieldRow('Closed', formatDate(m.closedAt));
-    if (m.vicAssistOutcome) html += fieldBlock('External Body Outcome', m.vicAssistOutcome);
+    if (m.referredAt)              html += fieldRow('Referred', formatDate(m.referredAt));
+    if (m.referralNarrative)       html += fieldBlock('External Referral Statement', m.referralNarrative);
+    if (m.closedAt)                html += fieldRow('Closed', formatDate(m.closedAt));
+    // V1.0.13: externalReferralOutcome (was vicAssistOutcome -- renamed in backend V3.0.9)
+    if (m.externalReferralOutcome) html += fieldBlock('External Body Outcome', m.externalReferralOutcome);
     return html;
 }
 
 // =====================================================================
-// ACTIVITY LOG PARSING
+// ACTIVITY LOG PARSING (System Events column)
 // =====================================================================
 // Entry types:
-//   [BOARD LOG]  — Board-forwarded email. Board version: header only. Resident: omitted.
-//   [INBOUND]    — Stray inbound reply. Board version: one line. Resident: omitted.
-//   SYSTEM       — Automated system events. Both versions: include (pathway blocks stripped).
-//   userName     — Board comment. Both versions: include.
-//   Internal keywords that trigger resident omission: checked per entry.
+//   [BOARD LOG] -- Board-forwarded email. Board: header + body. Party/Resident: omitted.
+//   [INBOUND]   -- Stray inbound reply. Board: shown. Party/Resident: omitted.
+//   SYSTEM      -- Automated system events. Board: all. Resident: shown (system only).
+//                  Disputes party copies: omitted entirely (caller controls this).
+//   userName    -- Board comment. Board: shown. Party/Resident: omitted.
 
 var INTERNAL_KEYWORDS = [
     'Internal note',
@@ -930,7 +1054,6 @@ var INTERNAL_KEYWORDS = [
     'board only'
 ];
 
-// Pathway block patterns to strip in ALL versions
 var PATHWAY_PATTERNS = [
     /OUTCOME OF ESCALATION PROCESS[\s\S]*?-{10,}/g,
     /YOUR RIGHTS FOLLOWING[\s\S]*?-{10,}/g,
@@ -954,14 +1077,12 @@ function parseActivityLog(raw, isComp, residentOnly) {
         var e = parseEntry(rawEntry.trim());
         if (!e) return;
 
-        // Strip pathway blocks from body
         e.body = stripPathwayBlocks(e.body);
 
-        // Determine if this entry is resident-safe
         if (residentOnly) {
-            if (e.type === 'boardlog')  return; // never shown to resident
-            if (e.type === 'inbound')   return; // never shown to resident
-            if (e.type === 'comment')   return; // Board Comments are internal -- never shown to resident
+            if (e.type === 'boardlog')  return;
+            if (e.type === 'inbound')   return;
+            if (e.type === 'comment')   return;
             if (containsInternalKeyword(e.body)) return;
         }
 
@@ -973,22 +1094,17 @@ function parseActivityLog(raw, isComp, residentOnly) {
 
 function parseEntry(raw) {
     if (!raw) return null;
-
-    // Skip bare --- separator lines (log delimiters between entries, not content)
     if (raw.trim() === '---') return null;
 
-    // Format: YYYY-MM-DD HH:MM | actor | content
     var headerMatch = raw.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*\|\s*([^|]+)\|\s*([\s\S]*)$/);
     if (!headerMatch) {
-        // Doesn't match format -- include as-is, type=system
         return { date: '', actor: '', body: raw, type: 'system', raw: raw };
     }
 
     var date  = headerMatch[1].trim();
     var actor = headerMatch[2].trim();
     var body  = headerMatch[3].trim();
-
-    var type = 'comment'; // default -- Board comment
+    var type  = 'comment';
 
     if (actor === 'SYSTEM') {
         if (body.indexOf('[BOARD LOG]') !== -1) {
@@ -1005,20 +1121,8 @@ function parseEntry(raw) {
 }
 
 function parseBoardLogBody(body) {
-    // Actual format stored in sheet (multi-line, \n separated):
-    // [BOARD LOG] Forwarded to log by <sender>
-    // Received: <date>
-    // Subject:  <subject>
-    // ---
-    // <email body with \r\n line endings>
-    // ---
-
     var text = body.replace('[BOARD LOG]', '').trim();
-
-    // Split on \n to get individual lines
     var lines = text.split('\n');
-
-    // Find the --- delimiter lines that wrap the body
     var firstDash = -1;
     var lastDash  = -1;
     for (var i = 0; i < lines.length; i++) {
@@ -1028,40 +1132,33 @@ function parseBoardLogBody(body) {
         }
     }
 
-    // Metadata lines are before the first ---
     var metaLines = firstDash !== -1 ? lines.slice(0, firstDash) : lines;
-    // Body lines are between the --- delimiters (or after first --- if no second)
-    var bodyEnd   = lastDash !== -1 ? lastDash : lines.length;
+    var bodyEnd   = lastDash  !== -1 ? lastDash : lines.length;
     var bodyLines = firstDash !== -1 ? lines.slice(firstDash + 1, bodyEnd) : [];
 
-    // Extract header fields from metadata lines
-    var fullMeta   = metaLines.join(' ');
+    var fullMeta      = metaLines.join(' ');
     var senderMatch   = fullMeta.match(/Forwarded to log by\s+(.+?)(?:\s+Received:|$)/);
     var receivedLine  = metaLines.find(function(l) { return l.trim().indexOf('Received:') === 0; });
     var subjectLine   = metaLines.find(function(l) { return l.trim().indexOf('Subject:')  === 0; });
-    var receivedVal   = receivedLine  ? receivedLine.replace('Received:', '').trim()  : '';
-    var subjectVal    = subjectLine   ? subjectLine.replace('Subject:',  '').trim()  : '';
+    var receivedVal   = receivedLine ? receivedLine.replace('Received:', '').trim() : '';
+    var subjectVal    = subjectLine  ? subjectLine.replace('Subject:',  '').trim() : '';
 
-    // Clean body: strip \r, strip > quoting prefixes, strip blank lines
     var cleanLines = [];
     bodyLines.forEach(function(line) {
-        line = line.replace(/\r/g, '').trim();  // remove \r
-        line = line.replace(/^>+\s*/,  '');     // strip leading > or >>
-        line = line.replace(/^\s*>\s*/, '');   // strip lone >
+        line = line.replace(/\r/g, '').trim();
+        line = line.replace(/^>+\s*/,  '');
+        line = line.replace(/^\s*>\s*/, '');
         cleanLines.push(line);
     });
-    // Remove leading/trailing blank lines
-    while (cleanLines.length && !cleanLines[0])           cleanLines.shift();
+    while (cleanLines.length && !cleanLines[0])                   cleanLines.shift();
     while (cleanLines.length && !cleanLines[cleanLines.length-1]) cleanLines.pop();
     var cleanBody = cleanLines.join('\n');
 
-    // Build structured output
     var out = [];
-    if (senderMatch)  out.push('From:     ' + senderMatch[1].trim());
-    if (receivedVal)  out.push('Received: ' + receivedVal);
-    if (subjectVal)   out.push('Subject:  ' + subjectVal);
-    if (cleanBody)    out.push('', cleanBody);
-
+    if (senderMatch) out.push('From:     ' + senderMatch[1].trim());
+    if (receivedVal) out.push('Received: ' + receivedVal);
+    if (subjectVal)  out.push('Subject:  ' + subjectVal);
+    if (cleanBody)   out.push('', cleanBody);
     return out.join('\n');
 }
 
@@ -1070,7 +1167,6 @@ function stripPathwayBlocks(text) {
     PATHWAY_PATTERNS.forEach(function(pattern) {
         text = text.replace(pattern, '[Pathway notice omitted]');
     });
-    // Clean up multiple consecutive omission markers
     text = text.replace(/(\[Pathway notice omitted\]\s*){2,}/g, '[Pathway notice omitted]\n');
     return text.trim();
 }
@@ -1107,7 +1203,7 @@ function renderEntry(e) {
         meta = '<div class="entry-meta">' +
                '<span class="entry-tag ' + tagClass + '">' + tagLabel + '</span>' +
                (e.date  ? escHtml(e.date)  : '') +
-               (e.actor && e.actor !== 'SYSTEM' ? ' &mdash; ' + escHtml(e.actor) : '') +
+               (e.actor && e.actor !== 'SYSTEM' ? ' \u2014 ' + escHtml(e.actor) : '') +
                '</div>';
     }
 
@@ -1122,6 +1218,13 @@ function renderEntry(e) {
 // =====================================================================
 function doPrint(residentOnly, party) {
     if (!currentMatter) return;
+
+    // Guard: events must be loaded before printing
+    if (currentEvents === null) {
+        alert('Events are still loading \u2014 please wait a moment and try again.');
+        return;
+    }
+
     const m      = currentMatter;
     const isComp = currentType === 'complaint';
     var title;
@@ -1129,38 +1232,111 @@ function doPrint(residentOnly, party) {
     else if (party === 'A')  title = 'Party A Copy';
     else if (party === 'B')  title = 'Party B Copy';
     else                     title = 'Resident Copy';
-    const norm   = normaliseStatus(m.status);
+    const norm = normaliseStatus(m.status);
 
-    var entries = parseActivityLog(m.activityLog, isComp, residentOnly);
+    // Determine version badge class
+    var vbClass = !residentOnly ? 'vb-board'
+                : (party === 'A' || party === 'B') ? 'vb-party'
+                : 'vb-resident';
 
+    // ── System Events (Activity Log) ──────────────────────────────────
+    // Complaints: shown in both versions (Resident Copy filtered to system-only entries)
+    // Disputes:   shown in Board Record only; party copies omit entirely
+    var sysEventsHtml = '';
+    if (isComp) {
+        var sysEntries = parseActivityLog(m.activityLog, isComp, residentOnly);
+        if (sysEntries.length > 0) {
+            sysEventsHtml = printSection('System Events',
+                sysEntries.map(renderPrintEntry).join(''));
+        }
+    } else if (!residentOnly) {
+        var sysEntries = parseActivityLog(m.activityLog, isComp, false);
+        if (sysEntries.length > 0) {
+            sysEventsHtml = printSection('System Events',
+                sysEntries.map(renderPrintEntry).join(''));
+        }
+    }
+
+    // ── Events tab sections ───────────────────────────────────────────
+    var cachedEvents = currentEvents || [];
+
+    // Matter History -- all events; Board Record only
+    var matterHistoryHtml = '';
+    if (!residentOnly) {
+        matterHistoryHtml = cachedEvents.length
+            ? printSection('Matter History', cachedEvents.map(renderPrintEvent).join(''))
+            : printSection('Matter History', '<div style="color:#94a3b8;font-style:italic;font-size:12px;">No events recorded.</div>');
+    }
+
+    // Filtered event sections
+    var eventsHtml = '';
+    if (isComp) {
+        // Resident Events -- both versions
+        var residentEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Resident'); });
+        if (residentEvents.length) {
+            eventsHtml += printSection('Resident Events', residentEvents.map(renderPrintEvent).join(''));
+        }
+        // Board Notes (Events tab) -- Board Record only
+        if (!residentOnly) {
+            var boardEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Board'); });
+            if (boardEvents.length) {
+                eventsHtml += printSection('Board Notes', boardEvents.map(renderPrintEvent).join(''));
+            }
+        }
+    } else {
+        // Party A Events -- Full Record and Party A Copy
+        var partyAEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Party A'); });
+        if ((!residentOnly || party === 'A') && partyAEvents.length) {
+            eventsHtml += printSection('Party A Events', partyAEvents.map(renderPrintEvent).join(''));
+        }
+        // Party B Events -- Full Record and Party B Copy
+        var partyBEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Party B'); });
+        if ((!residentOnly || party === 'B') && partyBEvents.length) {
+            eventsHtml += printSection('Party B Events', partyBEvents.map(renderPrintEvent).join(''));
+        }
+        // Board Notes (Events tab) -- Board Record only
+        if (!residentOnly) {
+            var boardEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Board'); });
+            if (boardEvents.length) {
+                eventsHtml += printSection('Board Notes', boardEvents.map(renderPrintEvent).join(''));
+            }
+        }
+    }
+
+    // ── Party copy banner (disputes only) ────────────────────────────
+    var partyCopyBanner = '';
+    if (!isComp && residentOnly) {
+        var partyLabel = party === 'A' ? 'PARTY A COPY' : 'PARTY B COPY';
+        partyCopyBanner = '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:10px;color:#0f766e;font-weight:700;">'
+            + partyLabel + ' \u2014 Board Notes, Matter History and System Events are not included in this copy.'
+            + '</div>';
+    }
+
+    // ── Build HTML ────────────────────────────────────────────────────
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
     '<title>Correspondence Chronicle \u2014 ' + escHtml(m.referenceNumber) + ' \u2014 ' + title + '</title>' +
     '<style>' +
     'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;font-size:12px;color:#1e293b;margin:0;padding:0;}' +
     '.page{max-width:780px;margin:0 auto;padding:30px 32px;}' +
-    // Header
     '.doc-header{border-bottom:3px solid #1e40af;padding-bottom:14px;margin-bottom:20px;}' +
     '.doc-org{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;}' +
     '.doc-title{font-size:20px;font-weight:700;color:#1e293b;margin-bottom:2px;}' +
     '.doc-sub{font-size:11px;color:#64748b;}' +
     '.doc-ref{font-size:14px;font-weight:700;color:#1e40af;margin-top:8px;}' +
-    // Matter summary
     '.matter-summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:14px 16px;margin-bottom:18px;}' +
     '.matter-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;}' +
     '.matter-field{}.mf-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;}' +
     '.mf-value{font-size:12px;font-weight:600;color:#1e293b;margin-top:1px;}' +
-    // Version badge
     '.version-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;}' +
     '.vb-board{background:#dbeafe;color:#1d4ed8;}' +
     '.vb-resident{background:#d1fae5;color:#065f46;}' +
-    // Status badge
+    '.vb-party{background:#e0f2fe;color:#0369a1;}' +
     '.status-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;margin-left:8px;}' +
     '.badge-open{background:#dbeafe;color:#1d4ed8;} .badge-acknowledged{background:#bbf7d0;color:#047857;}' +
     '.badge-responded{background:#e9d5ff;color:#7c3aed;} .badge-closed{background:#f3f4f6;color:#374151;}' +
     '.badge-escalated{background:#fed7aa;color:#92400e;} .badge-escalated-closed{background:#ede9fe;color:#6d28d9;}' +
     '.badge-converted{background:#ccfbf1;color:#0f766e;} .badge-dispute-open{background:#ccfbf1;color:#0f766e;}' +
     '.badge-under-review{background:#fef3c7;color:#b45309;} .badge-referred{background:#ffedd5;color:#c2410c;}' +
-    // Sections
     '.section{margin-bottom:18px;page-break-inside:avoid;}' +
     '.section-heading{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#1e40af;' +
       'border-bottom:1px solid #e2e8f0;padding-bottom:5px;margin-bottom:10px;}' +
@@ -1170,43 +1346,45 @@ function doPrint(residentOnly, party) {
     '.field-block{margin-bottom:10px;}' +
     '.fb-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;}' +
     '.fb-value{font-size:12px;color:#1e293b;white-space:pre-wrap;line-height:1.6;background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;padding:8px 10px;}' +
-    // Board response
     '.br-entry{margin-bottom:10px;padding:8px 10px;border-left:3px solid #8b5cf6;background:#f9f7ff;border-radius:0 3px 3px 0;}' +
     '.br-ts{font-size:10px;color:#64748b;margin-bottom:3px;}' +
     '.br-sent{display:inline-block;background:#d1fae5;color:#065f46;font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;margin-right:5px;}' +
     '.br-text{font-size:12px;color:#1e293b;white-space:pre-wrap;line-height:1.6;}' +
-    // Activity entries
     '.entry{margin-bottom:8px;padding:8px 10px;border-radius:3px;page-break-inside:avoid;}' +
     '.entry-boardlog{border-left:3px solid #3b82f6;background:#eff6ff;}' +
     '.entry-inbound {border-left:3px solid #f59e0b;background:#fffbeb;}' +
     '.entry-system  {border-left:3px solid #e2e8f0;background:#f8fafc;}' +
     '.entry-comment {border-left:3px solid #8b5cf6;background:#faf5ff;}' +
+    '.entry-event   {border-left:3px solid #10b981;background:#f0fdf4;}' +
     '.entry-meta{font-size:10px;color:#64748b;margin-bottom:3px;}' +
     '.entry-tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;text-transform:uppercase;margin-right:5px;}' +
     '.tag-boardlog{background:#dbeafe;color:#1d4ed8;} .tag-inbound{background:#fef3c7;color:#b45309;}' +
     '.tag-system{background:#f1f5f9;color:#64748b;} .tag-comment{background:#ede9fe;color:#6d28d9;}' +
+    '.tag-event{background:#d1fae5;color:#065f46;}' +
     '.entry-body{font-size:12px;color:#1e293b;white-space:pre-wrap;line-height:1.5;}' +
-    // Footer
     '.doc-footer{border-top:1px solid #e2e8f0;margin-top:24px;padding-top:10px;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between;}' +
     '@media print{.no-print{display:none;} body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}' +
     '</style></head><body><div class="page">';
 
-    // ── Doc header
+    // Doc header
     html += '<div class="doc-header">' +
-            '<div class="doc-org">Lake Illawong Residential Club &mdash; Board of Management</div>' +
+            '<div class="doc-org">Lake Illawong Residential Club \u2014 Board of Management</div>' +
             '<div class="doc-title">Correspondence Chronicle</div>' +
-            '<div class="doc-sub">Case correspondence record &mdash; ' + (residentOnly ? 'Resident Copy' : 'Board Record (Confidential)') + '</div>' +
-            '<div class="doc-ref">' + escHtml(m.referenceNumber) + ' &mdash; ' + (isComp ? 'Complaint' : 'Dispute') + '</div>' +
+            '<div class="doc-sub">Case correspondence record \u2014 ' + escHtml(title) + (!residentOnly ? ' (Confidential)' : '') + '</div>' +
+            '<div class="doc-ref">' + escHtml(m.referenceNumber) + ' \u2014 ' + (isComp ? 'Complaint' : 'Dispute') + '</div>' +
             '</div>';
 
     // Version badge + status
-    html += '<span class="version-badge ' + (residentOnly ? 'vb-resident' : 'vb-board') + '">' + title + '</span>' +
+    html += '<span class="version-badge ' + vbClass + '">' + title + '</span>' +
             '<span class="status-badge ' + printStatusBadgeClass(norm, isComp) + '">' + escHtml(norm) + '</span>';
 
-    // ── Matter summary box
+    // Party copy banner (disputes)
+    html += partyCopyBanner;
+
+    // Matter summary box
     html += '<div class="matter-summary">';
     if (isComp) {
-        html += '<div style="font-size:13px;font-weight:600;">' + escHtml(m.residentName) + ' &mdash; ' + escHtml(m.unitNumber) + '</div>';
+        html += '<div style="font-size:13px;font-weight:600;">' + escHtml(m.residentName) + ' \u2014 ' + escHtml(m.unitNumber) + '</div>';
         html += '<div style="font-size:11px;color:#64748b;margin-top:2px;">' + escHtml(m.category) + '</div>';
         html += '<div class="matter-grid">';
         html += mf('Lodged',       formatDate(m.submittedAt));
@@ -1223,66 +1401,63 @@ function doPrint(residentOnly, party) {
         html += mf('Logged',  formatDate(m.loggedAt || m.submittedAt));
         if (m.reviewDue)  html += mf('Review Due', formatDate(m.reviewDue));
         if (m.resolvedAt) html += mf('Resolved',   formatDate(m.resolvedAt));
+        if (m.referredAt) html += mf('Referred',   formatDate(m.referredAt));
         if (m.closedAt)   html += mf('Closed',     formatDate(m.closedAt));
         html += '</div>';
     }
     html += '</div>'; // /matter-summary
 
-    // ── Sections
     // 1. Submission
     html += printSection('Original Submission', buildPrintSubmission(m, isComp, residentOnly));
 
-    // 2. Board Response (complaints, board version only or if not internal)
+    // 2. Board Response (complaints -- both versions)
     if (isComp && m.boardResponse) {
         html += printSection('Board Response', buildPrintBoardResponse(m));
     }
 
-    // 3. Process Statement (disputes)
+    // 3. Process Statement (disputes -- all versions)
     if (!isComp && m.processStatement) {
         html += printSection('Process Statement', '<div class="fb-value">' + escHtml(m.processStatement) + '</div>');
     }
 
-    // 4. Escalation (complaints)
+    // 4. Escalation Record (complaints -- Board Record only)
     if (isComp && m.escalatedAt && !residentOnly) {
         html += printSection('Escalation Record', buildPrintEscalation(m));
     }
 
-    // 5. Closure
+    // 5. Closure (complaints -- both versions)
     if (isComp && m.closedAt) {
         html += printSection('Closure', buildPrintClosure(m, residentOnly));
     }
-    if (!isComp && (m.resolvedAt || m.closedAt)) {
+    // 6. Resolution/Closure (disputes -- all versions; referredAt added to trigger)
+    if (!isComp && (m.resolvedAt || m.closedAt || m.referredAt)) {
         html += printSection('Resolution / Closure', buildPrintDisputeClosure(m));
     }
 
-    // 6. Correspondence timeline
-    var printEntries = parseActivityLog(m.activityLog, isComp, residentOnly);
-    var timelineHtml = '';
-    if (printEntries.length > 0) {
-        printEntries.forEach(function(e) {
-            timelineHtml += renderPrintEntry(e);
-        });
-    } else {
-        timelineHtml = '<div style="color:#94a3b8;font-style:italic;font-size:12px;">No correspondence entries recorded.</div>';
-    }
-    html += printSection('Correspondence Timeline', timelineHtml);
+    // 7. System Events
+    html += sysEventsHtml;
 
-    // 7. Board Notes
-    var notesSection = buildPrintNotes(m, isComp, party, residentOnly);
-    if (notesSection) html += notesSection;
+    // 8. Events tab sections (filtered per version)
+    html += eventsHtml;
 
-    // ── Footer
+    // 9. Matter History (Board Record only)
+    html += matterHistoryHtml;
+
+    // 10. Saved Notes (static note fields -- backward compat)
+    html += buildPrintNotes(m, isComp, party, residentOnly);
+
+    // Footer
     var printedBy = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Board of Management';
     var now = new Date();
     html += '<div class="doc-footer">' +
-            '<span>Lake Illawong Residential Club &mdash; Management Central System</span>' +
+            '<span>Lake Illawong Residential Club \u2014 Management Central System</span>' +
             '<span>Printed ' + now.toLocaleDateString('en-AU', {day:'numeric',month:'long',year:'numeric'}) +
             ' by ' + escHtml(printedBy) + '</span>' +
             '</div>';
 
     if (!residentOnly) {
         html += '<div class="doc-footer" style="margin-top:6px;">' +
-                '<span style="color:#ef4444;font-weight:600;">CONFIDENTIAL &mdash; Board of Management use only. Not for distribution.</span>' +
+                '<span style="color:#ef4444;font-weight:600;">CONFIDENTIAL \u2014 Board of Management use only. Not for distribution.</span>' +
                 '</div>';
     }
 
@@ -1303,6 +1478,9 @@ function mf(label, value) {
     return '<div class="matter-field"><div class="mf-label">' + label + '</div><div class="mf-value">' + escHtml(value || '\u2014') + '</div></div>';
 }
 
+// =====================================================================
+// PRINT -- SECTION BUILDERS
+// =====================================================================
 function buildPrintSubmission(m, isComp, residentOnly) {
     var html = '';
     if (isComp) {
@@ -1314,8 +1492,9 @@ function buildPrintSubmission(m, isComp, residentOnly) {
         if (m.previousActions)  html += pfb('Previous Actions Taken', m.previousActions);
         html += pfr('Submitted via', m.howSubmitted || 'Digital');
     } else {
+        // Nature of Dispute is internal -- omit in party copies (residentOnly = true for party copies)
         if (!residentOnly) html += pfb('Nature of Dispute (Internal)', m.natureOfDispute);
-        if (m.partyDescription) html += pfb('Description sent to Parties', m.partyDescription);
+        if (m.partyDescription) html += pfb('Description Sent to Parties', m.partyDescription);
         html += pfr('Logged by', m.loggedBy || '\u2014');
     }
     return html;
@@ -1372,42 +1551,40 @@ function buildPrintDisputeClosure(m) {
         html += pfr('Resolved', formatDate(m.resolvedAt));
         if (m.resolutionSummary) html += pfb('Resolution Summary', m.resolutionSummary);
     }
-    if (m.closedAt)        html += pfr('Closed', formatDate(m.closedAt));
-    if (m.vicAssistOutcome) html += pfb('External Body Outcome', m.vicAssistOutcome);
+    if (m.referredAt)              html += pfr('Referred', formatDate(m.referredAt));
+    if (m.referralNarrative)       html += pfb('External Referral Statement', m.referralNarrative);
+    if (m.closedAt)                html += pfr('Closed', formatDate(m.closedAt));
+    // V1.0.13: externalReferralOutcome (was vicAssistOutcome -- renamed in backend V3.0.9)
+    if (m.externalReferralOutcome) html += pfb('External Body Outcome', m.externalReferralOutcome);
     return html;
 }
 
 function buildPrintNotes(m, isComp, party, residentOnly) {
     // Returns a printSection string or empty string if no relevant notes exist.
-    // party: null (complaints), 'A', or 'B' (disputes).
+    // Static note fields -- backward compat for records created before EventEntryModal.
     var html = '';
     if (isComp) {
-        // Complaints -- noteToResident in both versions, internalNotes Board only
-        if (m.noteToResident)             html += pfb('Note to Resident', m.noteToResident);
+        if (m.noteToResident)                 html += pfb('Note to Resident', m.noteToResident);
         if (m.internalNotes && !residentOnly) html += pfb('Internal Notes (Board only)', m.internalNotes);
     } else {
-        // Disputes
         if (!residentOnly) {
-            // Board Record -- all four fields
             if (m.notePartyA)   html += pfb('Party A Notes', m.notePartyA);
             if (m.notePartyB)   html += pfb('Party B Notes', m.notePartyB);
             if (m.noteShared)   html += pfb('Shared Notes', m.noteShared);
             if (m.noteInternal) html += pfb('Internal Notes (Board only)', m.noteInternal);
         } else if (party === 'A') {
-            // Party A Copy -- Party A Notes + Shared Notes
             if (m.notePartyA) html += pfb('Board Notes', m.notePartyA);
             if (m.noteShared) html += pfb('Shared Notes', m.noteShared);
         } else if (party === 'B') {
-            // Party B Copy -- Party B Notes + Shared Notes
             if (m.notePartyB) html += pfb('Board Notes', m.notePartyB);
             if (m.noteShared) html += pfb('Shared Notes', m.noteShared);
         }
     }
-    return html ? printSection('Board Notes', html) : '';
+    return html ? printSection('Saved Notes', html) : '';
 }
 
 function renderPrintEntry(e) {
-    var cls = { boardlog:'entry-boardlog', inbound:'entry-inbound', system:'entry-system', comment:'entry-comment' }[e.type] || 'entry-system';
+    var cls    = { boardlog:'entry-boardlog', inbound:'entry-inbound', system:'entry-system', comment:'entry-comment' }[e.type] || 'entry-system';
     var tagCls = { boardlog:'tag-boardlog', inbound:'tag-inbound', system:'tag-system', comment:'tag-comment' }[e.type] || 'tag-system';
     var tagLbl = { boardlog:'Board Log', inbound:'Inbound', system:'System', comment:'Board Comment' }[e.type] || 'System';
     var meta = '';
@@ -1415,11 +1592,39 @@ function renderPrintEntry(e) {
         meta = '<div class="entry-meta">' +
                '<span class="entry-tag ' + tagCls + '">' + tagLbl + '</span>' +
                escHtml(e.date || '') +
-               (e.actor && e.actor !== 'SYSTEM' ? ' &mdash; ' + escHtml(e.actor) : '') +
+               (e.actor && e.actor !== 'SYSTEM' ? ' \u2014 ' + escHtml(e.actor) : '') +
                '</div>';
     }
     return '<div class="entry ' + cls + '">' + meta +
            '<div class="entry-body">' + escHtml(e.body) + '</div></div>';
+}
+
+// =====================================================================
+// PRINT -- EVENT ENTRY RENDERER (Events tab structured events)
+// =====================================================================
+function renderPrintEvent(ev) {
+    var isEmail = ['Email Received', 'Email Sent'].indexOf(ev.eventType) !== -1;
+    var detail  = '';
+    if (isEmail) {
+        if (ev.emailDate)    detail += '<div class="entry-meta" style="margin-top:3px;">Date:    ' + escHtml(ev.emailDate)    + '</div>';
+        if (ev.emailFrom)    detail += '<div class="entry-meta">From:    ' + escHtml(ev.emailFrom)    + '</div>';
+        if (ev.emailTo)      detail += '<div class="entry-meta">To:      ' + escHtml(ev.emailTo)      + '</div>';
+        if (ev.emailSubject) detail += '<div class="entry-meta">Subject: ' + escHtml(ev.emailSubject) + '</div>';
+    } else if (ev.reference) {
+        detail += '<div class="entry-meta" style="margin-top:3px;">Ref: ' + escHtml(ev.reference) + '</div>';
+    }
+    if (ev.extendedNotes) detail += '<div class="entry-meta" style="margin-top:3px;font-style:italic;">' + escHtml(ev.extendedNotes) + '</div>';
+    var visLabel = (ev.visibility || '').split(',').map(function(v) { return v.trim(); }).join(' + ');
+    return '<div class="entry entry-event">' +
+        '<div class="entry-meta">' +
+            '<span class="entry-tag tag-event">' + escHtml(ev.eventType) + '</span>' +
+            escHtml(ev.timestamp) +
+            ' \u2014 ' + escHtml(ev.user) +
+            ' <span style="font-size:9px;background:#e5e7eb;color:#374151;padding:1px 4px;border-radius:2px;">' + escHtml(visLabel) + '</span>' +
+        '</div>' +
+        '<div class="entry-body">' + escHtml(ev.summary) + '</div>' +
+        detail +
+    '</div>';
 }
 
 function pfr(label, value) {
@@ -1492,14 +1697,12 @@ function fieldBlock(label, value) {
     return '<div class="field-block"><div class="field-block-label">' + escHtml(label) + '</div><div class="field-block-value">' + escHtml(value || '\u2014') + '</div></div>';
 }
 
-// Extract escalating org from Activity Log (ESCALATION BODY: entry)
 function getEscalationBody(actLog) {
     if (!actLog) return '';
     var m = actLog.match(/ESCALATION BODY: (.+)/);
     return m ? m[1].trim() : '';
 }
 
-// Extract Final Note from Activity Log (FINAL NOTE: entry)
 function getFinalNote(actLog) {
     if (!actLog) return '';
     var m = actLog.match(/FINAL NOTE: ([\s\S]+?)(?:\n\d{4}-\d{2}-\d{2}|$)/);
