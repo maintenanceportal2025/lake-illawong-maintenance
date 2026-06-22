@@ -6,13 +6,25 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.34
+  Frontend Version: V3.0.35
   Backend:          DisputesManager V3.0.19
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.35 (Jun 2026): Print split into three versions.
+    showDisputePrintDialog now offers Full Record, Party A Copy, Party B Copy.
+    doDisputePrint(ref, fullRecord) replaced by doDisputePrint(ref, printType)
+    where printType is "full", "partyA", or "partyB".
+    Full Record: all sections including Nature of Dispute, Matter History,
+      Board Notes, System Events, contact details for both parties.
+    Party A Copy: Party A details (full contact), Party B name/unit only,
+      Party A Events, timeline, process/resolution/referral -- no Board Notes,
+      no Matter History, no System Events.
+    Party B Copy: same but from Party B perspective.
+    Party copy banner added clearly labelling the version and what is excluded.
+
   V3.0.34 (Jun 2026): Visibility multi-select support.
     EventEntryModal_V1_4.js included (checkboxes replace single-select
     visibility dropdown -- Board can tick any combination of Party A,
@@ -2335,28 +2347,36 @@ TECHNICAL:
             + '<div style="color:rgba(255,255,255,0.7);font-size:0.85rem;margin-bottom:24px;">' + escHtml(ref) + '</div>'
             + '<button id="dpb-full" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
             + '&#128438; Print Full Record'
-            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes System Events, Matter History, Board Notes, Party Events and contact details</div>'
+            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">All sections — Board only. Includes contact details, Matter History, Board Notes and System Events.</div>'
             + '</button>'
-            + '<button id="dpb-summary" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
-            + '&#128196; Print Summary'
-            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Includes Party A and Party B Events only — excludes System Events, Matter History, Board Notes and contact details</div>'
+            + '<button id="dpb-partyA" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '&#128196; Print Party A Copy'
+            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Party A details and events visible to Party A. Excludes Party B contact details, Board Notes and System Events.</div>'
+            + '</button>'
+            + '<button id="dpb-partyB" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '&#128196; Print Party B Copy'
+            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">Party B details and events visible to Party B. Excludes Party A contact details, Board Notes and System Events.</div>'
             + '</button>'
             + '<button id="dpb-cancel" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>'
             + '</div>';
         document.body.appendChild(dialog);
 
-        // Wire button handlers after insertion -- avoids all inline quote issues
-        document.getElementById('dpb-full').addEventListener('click', function() { doDisputePrint(ref, true); });
-        document.getElementById('dpb-summary').addEventListener('click', function() { doDisputePrint(ref, false); });
+        document.getElementById('dpb-full').addEventListener('click',   function() { doDisputePrint(ref, 'full'); });
+        document.getElementById('dpb-partyA').addEventListener('click', function() { doDisputePrint(ref, 'partyA'); });
+        document.getElementById('dpb-partyB').addEventListener('click', function() { doDisputePrint(ref, 'partyB'); });
         document.getElementById('dpb-cancel').addEventListener('click', function() { dialog.remove(); });
     }
 
-    function doDisputePrint(ref, fullRecord) {
+    function doDisputePrint(ref, printType) {
         var dlg = document.getElementById('disputePrintDialog');
         if (dlg) dlg.remove();
 
         var d = allDisputes.find(function(x) { return x.referenceNumber === ref; });
         if (!d) { alert('Dispute record not found.'); return; }
+
+        var isFull   = printType === 'full';
+        var isPartyA = printType === 'partyA';
+        var isPartyB = printType === 'partyB';
 
         var statusBadgeClass = {
             'Open':                  'badge-open',
@@ -2372,103 +2392,100 @@ TECHNICAL:
             return isNaN(dt) ? dateStr : dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
         };
 
-        // Party blocks
+        // Party A block
+        // Full: name, unit, email, mobile
+        // Party A copy: name, unit, email, mobile (own details in full)
+        // Party B copy: name, unit only (no contact details)
         var partyABlock = '<div class="section-title">Party A</div>'
             + '<div class="party-block"><div class="field-grid">'
-            + disputeFieldRow('Name',   d.partyAName,   false)
-            + disputeFieldRow('Unit',   d.partyAUnit,   false)
-            + (fullRecord ? disputeFieldRow('Email',  d.partyAEmail,  false)
-                          + disputeFieldRow('Mobile', d.partyAMobile, false) : '')
+            + disputeFieldRow('Name', d.partyAName, false)
+            + disputeFieldRow('Unit', d.partyAUnit, false)
+            + (isFull || isPartyA ? disputeFieldRow('Email',  d.partyAEmail,  false)
+                                  + disputeFieldRow('Mobile', d.partyAMobile, false) : '')
             + '</div></div>';
 
+        // Party B block
+        // Full: name, unit, email, mobile
+        // Party B copy: name, unit, email, mobile (own details in full)
+        // Party A copy: name, unit only
         var partyBBlock = d.partyBName
             ? '<div class="section-title">Party B</div>'
               + '<div class="party-block"><div class="field-grid">'
-              + disputeFieldRow('Name',   d.partyBName,   false)
-              + disputeFieldRow('Unit',   d.partyBUnit,   false)
-              + (fullRecord ? disputeFieldRow('Email',  d.partyBEmail,  false)
-                            + disputeFieldRow('Mobile', d.partyBMobile, false) : '')
+              + disputeFieldRow('Name', d.partyBName, false)
+              + disputeFieldRow('Unit', d.partyBUnit, false)
+              + (isFull || isPartyB ? disputeFieldRow('Email',  d.partyBEmail,  false)
+                                    + disputeFieldRow('Mobile', d.partyBMobile, false) : '')
               + '</div></div>'
             : '';
 
-        // Timeline block
+        // Timeline -- all versions
         var timelineBlock = '<div class="section-title">Timeline</div>'
             + '<div class="field-grid">'
-            + disputeFieldRow('Logged',         fmtD(d.loggedAt),         false)
-            + disputeFieldRow('Logged By',       d.loggedBy,               false)
-            + disputeFieldRow('Review Due',      fmtD(d.reviewDue),        false)
-            + disputeFieldRow('Acknowledged',    d.acknowledgedAt ? fmtD(d.acknowledgedAt) : 'Not yet acknowledged', false)
+            + disputeFieldRow('Logged',           fmtD(d.loggedAt),         false)
+            + disputeFieldRow('Logged By',         d.loggedBy,               false)
+            + disputeFieldRow('Review Due',        fmtD(d.reviewDue),        false)
+            + disputeFieldRow('Acknowledged',      d.acknowledgedAt ? fmtD(d.acknowledgedAt) : 'Not yet acknowledged', false)
             + disputeFieldRow('Process Statement', d.processStatementAt ? fmtD(d.processStatementAt) : '—', false)
-            + disputeFieldRow('Resolved',        d.resolvedAt   ? fmtD(d.resolvedAt)   : '—', false)
-            + disputeFieldRow('Referred',        d.referredAt   ? fmtD(d.referredAt)   : '—', false)
-            + disputeFieldRow('Closed',          d.closedAt     ? fmtD(d.closedAt)     : '—', false)
+            + disputeFieldRow('Resolved',          d.resolvedAt   ? fmtD(d.resolvedAt)   : '—', false)
+            + disputeFieldRow('Referred',          d.referredAt   ? fmtD(d.referredAt)   : '—', false)
+            + disputeFieldRow('Closed',            d.closedAt     ? fmtD(d.closedAt)     : '—', false)
             + '</div>';
 
-        // Nature of dispute (full record only)
-        var natureBlock = fullRecord && d.natureOfDispute
+        // Nature of dispute -- full record only (internal)
+        var natureBlock = isFull && d.natureOfDispute
             ? '<div class="section-title">Nature of Dispute (Internal)</div>'
               + '<div class="content-block"><div class="field-value">' + escHtml(d.natureOfDispute) + '</div></div>'
             : '';
 
-        // Description sent to parties (both full record and summary -- it was sent to residents)
+        // Description sent to parties -- all versions
         var partyDescBlock = d.partyDescription
             ? '<div class="section-title">Description Sent to Parties</div>'
               + '<div class="content-block" style="border-left-color:#6366f1;">'
               + '<div class="field-value">' + escHtml(d.partyDescription) + '</div></div>'
             : '';
 
-        // Process statement
+        // Process statement -- all versions
         var psBlock = d.processStatement
             ? '<div class="section-title">Board Process Statement</div>'
               + '<div class="content-block"><div class="field-value">' + escHtml(d.processStatement) + '</div></div>'
             : '';
 
-        // Resolution summary
+        // Resolution summary -- all versions
         var resBlock = d.resolutionSummary
             ? '<div class="section-title">Resolution Summary</div>'
               + '<div class="content-block" style="border-left-color:#10b981;">'
               + '<div class="field-value">' + escHtml(d.resolutionSummary) + '</div></div>'
             : '';
 
-        // Referral narrative
+        // Referral narrative -- all versions
         var refBlock = d.referralNarrative
             ? '<div class="section-title">External Referral — Board Statement</div>'
               + '<div class="content-block" style="border-left-color:#f97316;">'
               + '<div class="field-value">' + escHtml(d.referralNarrative) + '</div></div>'
             : '';
 
-        // VicAssist outcome
+        // External outcome -- all versions
         var vaBlock = d.externalReferralOutcome
             ? '<div class="section-title">External Referral Outcome</div>'
               + '<div class="content-block" style="border-left-color:#6b7280;">'
               + '<div class="field-value">' + escHtml(d.externalReferralOutcome) + '</div></div>'
             : '';
 
-        // Activity log (System Events):
-        //   Full Record -- all entries
-        //   Summary     -- system entries only (Board Comments, Board Log, Inbound stripped)
-        //                  same filter logic as Chronicle Resident Copy
+        // System Events -- full record only
         var activityBlock = '';
-        if (d.activityLog) {
+        if (isFull && d.activityLog) {
             var allEntries = d.activityLog.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse();
-            var filteredEntries = fullRecord ? allEntries : allEntries.filter(function(e) {
-                // Keep only SYSTEM entries that are not Board Log or Inbound
-                var isSystem   = e.indexOf('| SYSTEM |') !== -1;
-                var isBoardLog = e.indexOf('[BOARD LOG]') !== -1;
-                var isInbound  = e.indexOf('[INBOUND]') !== -1;
-                return isSystem && !isBoardLog && !isInbound;
-            });
-            if (filteredEntries.length > 0) {
-                activityBlock = '<div class="section-title">System Events' + (!fullRecord ? '' : '') + '</div>'
+            if (allEntries.length > 0) {
+                activityBlock = '<div class="section-title">System Events</div>'
                     + '<div class="activity-log-print">'
-                    + filteredEntries.map(function(e) {
+                    + allEntries.map(function(e) {
                         return '<div class="activity-log-entry-print">' + escHtml(e) + '</div>';
                       }).join('')
                     + '</div>';
             }
         }
 
-        // Events from Events tab -- read from cache populated when card was opened
+        // Events from Events tab
         var cachedEvents = _eventCache[ref] || [];
 
         function renderPrintEvent(ev) {
@@ -2494,57 +2511,51 @@ TECHNICAL:
                 + '</div>';
         }
 
-        // Party A Events -- visibility Party A, Shared, or All (both versions)
-        var partyAEvents = cachedEvents.filter(function(e) {
-            return visMatch(e.visibility, 'Party A');
-        });
-        var partyAEventsBlock = partyAEvents.length
+        // Party A Events -- shown in Full and Party A copy
+        var partyAEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Party A'); });
+        var partyAEventsBlock = (isFull || isPartyA) && partyAEvents.length
             ? '<div class="section-title">Party A Events</div><div class="activity-log-print">'
-              + partyAEvents.map(renderPrintEvent).join('')
-              + '</div>'
+              + partyAEvents.map(renderPrintEvent).join('') + '</div>'
             : '';
 
-        // Party B Events -- visibility Party B, Shared, or All (both versions)
-        var partyBEvents = cachedEvents.filter(function(e) {
-            return visMatch(e.visibility, 'Party B');
-        });
-        var partyBEventsBlock = partyBEvents.length
+        // Party B Events -- shown in Full and Party B copy
+        var partyBEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Party B'); });
+        var partyBEventsBlock = (isFull || isPartyB) && partyBEvents.length
             ? '<div class="section-title">Party B Events</div><div class="activity-log-print">'
-              + partyBEvents.map(renderPrintEvent).join('')
-              + '</div>'
+              + partyBEvents.map(renderPrintEvent).join('') + '</div>'
             : '';
 
-        // Matter History -- all events (Full Record only)
-        var matterHistoryBlock = fullRecord && cachedEvents.length
+        // Matter History -- full record only
+        var matterHistoryBlock = isFull && cachedEvents.length
             ? '<div class="section-title">Matter History</div><div class="activity-log-print">'
-              + cachedEvents.map(renderPrintEvent).join('')
-              + '</div>'
-            : fullRecord
+              + cachedEvents.map(renderPrintEvent).join('') + '</div>'
+            : isFull
               ? '<div class="section-title">Matter History</div><div class="activity-log-print"><div class="activity-log-entry-print" style="color:#6b7280;font-style:italic;">No events recorded. Open the dispute card to load events before printing.</div></div>'
               : '';
 
-        // Board Notes -- visibility Board or All (Full Record only)
-        var boardEvents = cachedEvents.filter(function(e) {
-            return visMatch(e.visibility, 'Board');
-        });
-        var boardNotesBlock = fullRecord && boardEvents.length
+        // Board Notes -- full record only
+        var boardEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Board'); });
+        var boardNotesBlock = isFull && boardEvents.length
             ? '<div class="section-title">Board Notes</div><div class="activity-log-print">'
-              + boardEvents.map(renderPrintEvent).join('')
-              + '</div>'
+              + boardEvents.map(renderPrintEvent).join('') + '</div>'
             : '';
 
-        var summaryBanner = !fullRecord
-            ? '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#0f766e;font-weight:600;">SUMMARY — Board comments, correspondence logs, and contact details withheld</div>'
+        // Print title and banner
+        var printTitle = isFull ? 'Dispute Record' : (isPartyA ? 'Party A Copy' : 'Party B Copy');
+        var partyCopyBanner = !isFull
+            ? '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#0f766e;font-weight:600;">'
+              + (isPartyA ? 'PARTY A COPY' : 'PARTY B COPY')
+              + ' — Contact details for the other party, Board Notes, Matter History and System Events are not included in this copy.</div>'
             : '';
 
         var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
-            + '<title>Dispute Record — ' + escHtml(ref) + '</title>'
+            + '<title>' + printTitle + ' — ' + escHtml(ref) + '</title>'
             + '<style>' + printDisputeStyles() + '</style></head><body>'
             + printDisputeHeader(
-                'Dispute Record <span class="status-badge ' + statusBadgeClass + '">' + escHtml(d.status) + '</span>',
+                printTitle + ' <span class="status-badge ' + statusBadgeClass + '">' + escHtml(d.status) + '</span>',
                 escHtml(ref)
               )
-            + summaryBanner
+            + partyCopyBanner
             + partyABlock
             + partyBBlock
             + timelineBlock
