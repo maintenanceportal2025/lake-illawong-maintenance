@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.35
-  Backend:          DisputesManager V3.0.19
+  Frontend Version: V3.0.36
+  Backend:          DisputesManager V3.0.20
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.36 (Jun 2026): Closed status split and 2 business day acknowledgement.
+    (1) Closed status split into Closed - Resolved and Closed - Referred.
+        terminal list updated throughout. Filter dropdown updated.
+        Status/pill/badge maps updated. Summary strip Closed count covers
+        all three closed variants. Resolved status now has a Next Step
+        action panel: Confirm Closure & Notify Both Parties -- triggers
+        Closed - Resolved via new doResolvedClose() function.
+        Referred to External Body action panel updated: doClose() now
+        submits Closed - Referred status.
+    (2) Backend updated to DisputesManager V3.0.20.
+
   V3.0.35 (Jun 2026): Print split into three versions.
     showDisputePrintDialog now offers Full Record, Party A Copy, Party B Copy.
     doDisputePrint(ref, fullRecord) replaced by doDisputePrint(ref, printType)
@@ -986,7 +997,8 @@ TECHNICAL:
                 <option value="Under Review">Under Review</option>
                 <option value="Resolved">Resolved</option>
                 <option value="Referred to External Body">Referred to External Body</option>
-                <option value="Closed">Closed</option>
+                <option value="Closed - Resolved">Closed - Resolved</option>
+                <option value="Closed - Referred">Closed - Referred</option>
             </select>
             <label for="filterOverdue">Show:</label>
             <select id="filterOverdue" onchange="applyFilters()">
@@ -1248,7 +1260,7 @@ TECHNICAL:
             if (d.status === 'Under Review')           counts.UnderReview++;
             if (d.status === 'Resolved')               counts.Resolved++;
             if (d.status === 'Referred to External Body')  counts.Referred++;
-            if (d.status === 'Closed')                 counts.Closed++;
+            if (d.status === 'Closed - Resolved' || d.status === 'Closed - Referred' || d.status === 'Closed') counts.Closed++;
             if (isOverdue(d))                          counts.overdue++;
         });
         document.getElementById('countOpen').textContent        = counts.Open;
@@ -1285,7 +1297,7 @@ TECHNICAL:
 
     function isOverdue(d) {
         if (!d.reviewDue) return false;
-        const terminal = ['Resolved', 'Referred to External Body', 'Closed'];
+        const terminal = ['Resolved', 'Referred to External Body', 'Closed - Resolved', 'Closed - Referred', 'Closed'];
         if (terminal.indexOf(d.status) !== -1) return false;
         return new Date(d.reviewDue) < new Date();
     }
@@ -1482,7 +1494,7 @@ TECHNICAL:
     function buildActionPanel(d) {
         const ref    = d.referenceNumber;
         const status = d.status;
-        const terminal = ['Resolved', 'Closed'];
+        const terminal = ['Resolved', 'Closed - Resolved', 'Closed - Referred', 'Closed'];
 
         var html = '<div class="action-panel">';
         html += '<div class="action-title">Next Step</div>';
@@ -1527,14 +1539,21 @@ TECHNICAL:
         }
 
         else if (status === 'Referred to External Body') {
-            // Record VicAssist outcome + Close
-            html += '<div class="action-note" style="margin-bottom:10px;">Record the outcome once VicAssist has concluded the conciliation process.</div>' +
+            // Record external referral outcome + Close as Closed - Referred
+            html += '<div class="action-note" style="margin-bottom:10px;">Record the outcome once the external body has concluded the process.</div>' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>External Referral Outcome <span style="color:#fca5a5">*</span></label>' +
                 '<textarea id="va-' + ref + '" placeholder="Identify the external body and summarise the outcome of the conciliation or other process."></textarea>' +
             '</div></div>' +
             '<button class="btn-action" onclick="doClose(\'' + ref + '\')">Record Outcome &amp; Close Dispute</button>' +
             '<span id="fb-va-' + ref + '" class="save-feedback"></span>';
+        }
+
+        else if (status === 'Resolved') {
+            // Confirm closure as Closed - Resolved
+            html += '<div class="action-note" style="margin-bottom:10px;">The dispute is recorded as Resolved. Confirm closure to notify both parties and close the record.</div>' +
+            '<button class="btn-action" onclick="doResolvedClose(\'' + ref + '\')">&#10003; Confirm Closure &amp; Notify Both Parties</button>' +
+            '<span id="fb-rc-' + ref + '" class="save-feedback"></span>';
         }
 
         else if (terminal.indexOf(status) !== -1) {
@@ -1665,7 +1684,7 @@ TECHNICAL:
         const fbIdVa = 'fb-va-' + ref;
         const btnElVa = getSendBtn(fbIdVa);
         btnSending(fbIdVa, btnElVa);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Closed', vicAssistOutcome: outcome, userName: userName, andSend: 'true' },
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Closed - Referred', vicAssistOutcome: outcome, userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
                     btnDone(fbIdVa, btnElVa, true, '');
@@ -1676,6 +1695,23 @@ TECHNICAL:
             }, function(err) { btnDone(fbIdVa, btnElVa, false, err); });
     }
 
+
+    function doResolvedClose(ref) {
+        if (!confirm('Confirm closure of this dispute as Resolved? Both parties will be notified.')) return;
+        const userName = currentUserName();
+        const fbId  = 'fb-rc-' + ref;
+        const btnEl = getSendBtn(fbId);
+        btnSending(fbId, btnEl);
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Closed - Resolved', userName: userName, andSend: 'true' },
+            function(data) {
+                if (data.success) {
+                    btnDone(fbId, btnEl, true, '');
+                    refreshCard(ref, data.activityLog);
+                } else {
+                    btnDone(fbId, btnEl, false, data.error || 'Update failed.');
+                }
+            }, function(err) { btnDone(fbId, btnEl, false, err); });
+    }
 
     // ── MATTER HISTORY -- load events from Events tab ─────────────────────
     // Single getEvents call populates all four filtered panes client-side.
@@ -2145,6 +2181,8 @@ TECHNICAL:
             'Under Review':           'status-under-review',
             'Resolved':               'status-resolved',
             'Referred to External Body':  'status-referred',
+            'Closed - Resolved':       'status-closed',
+            'Closed - Referred':       'status-closed',
             'Closed':                 'status-closed'
         }[status] || 'status-open';
     }
@@ -2155,6 +2193,8 @@ TECHNICAL:
             'Under Review':           'pill-under-review',
             'Resolved':               'pill-resolved',
             'Referred to External Body':  'pill-referred',
+            'Closed - Resolved':       'pill-closed',
+            'Closed - Referred':       'pill-closed',
             'Closed':                 'pill-closed'
         }[status] || 'pill-open';
     }
@@ -2383,6 +2423,8 @@ TECHNICAL:
             'Under Review':          'badge-under-review',
             'Resolved':              'badge-resolved',
             'Referred to External Body': 'badge-referred',
+            'Closed - Resolved':      'badge-closed',
+            'Closed - Referred':      'badge-closed',
             'Closed':                'badge-closed'
         }[d.status] || 'badge-open';
 
