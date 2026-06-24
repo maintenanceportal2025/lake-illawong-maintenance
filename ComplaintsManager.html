@@ -6,13 +6,26 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.12
+  Frontend Version: V3.0.13
   Backend:          ComplaintsManager V3.0.10
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.13 (Jun 2026): Determination Notice rename and 72-hour notice corrections.
+    (1) Board Response renamed to Determination Notice throughout --
+        pane title, textarea label, placeholder, accordion label, detail
+        display label, print view label, and hint text updated.
+    (2) sendBoardResponse JSONP action renamed to sendDeterminationNotice.
+    (3) Save Only hint text updated -- informs Gary Determination Notice
+        locks on Save & Send and resident has 14 days to respond.
+    (4) 72-hour action panel notices corrected -- now direct Gary to
+        record an internal action plan via Add Event (Board visibility)
+        rather than send a response to the resident.
+    (5) No Determination Notice recorded message updated.
+    Backend updated to ComplaintsManager V3.0.11.
+
   V3.0.12 (Jun 2026): Visibility multi-select support.
     EventEntryModal_V1_4.js included (checkboxes replace single-select
     visibility dropdown -- Board can tick any combination of Resident
@@ -2174,16 +2187,16 @@ TECHNICAL:
             let respBody = '';
             if (c.boardResponse) {
                 respBody = `
-                    <div class="detail-label" style="margin-bottom:6px;">Board Response</div>
+                    <div class="detail-label" style="margin-bottom:6px;">Determination Notice</div>
                     <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
                     ${c.respondedAt ? `<div class="response-notice notice-sent" style="margin-top:8px;">&#10003; Sent to resident ${formatDate(c.respondedAt)} \u2014 field locked.</div>` : ''}`;
             } else {
-                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No Board Response recorded yet.</div>`;
+                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No Determination Notice recorded yet.</div>`;
             }
             panesHtml += pane(
                 'pane-response-' + safeRef,
                 'pane-response',
-                'Board Response',
+                'Determination Notice',
                 c.respondedAt ? formatDate(c.respondedAt) : '',
                 respBody
             );
@@ -2380,10 +2393,10 @@ TECHNICAL:
         let responseNotice = '';
         if (!isClosed && !isOpen && !c.respondedAt && !isEscalated) {
             if (!isNaN(submitted) && hoursElapsed > 72) {
-                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed \u2014 Board Response must be sent urgently.</div>';
+                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed — internal action plan must be recorded via Add Event (Board visibility).</div>';
             } else if (!isNaN(submitted)) {
                 const hoursLeft = Math.ceil(72 - hoursElapsed);
-                responseNotice = '<div class="response-notice notice-pending">&#9679; Board Response must be sent within 72 hours \u2014 ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
+                responseNotice = '<div class="response-notice notice-pending">&#9679; Internal action plan must be recorded via Add Event within 72 hours — ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
             }
         }
 
@@ -2408,12 +2421,12 @@ TECHNICAL:
         // ── ACKNOWLEDGED: Board Response textarea ─────────────────────
         if (normStatus === 'Acknowledged') {
             return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Board Response</div>
+                <div class="action-panel-title">Next Step — Determination Notice</div>
                 ${responseNotice}
                 <div class="update-field" style="width:100%;margin-bottom:12px;">
-                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Board Response</label>
-                    <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Enter the Board's formal response. Use Save Only to draft and revise, then Save &amp; Send when ready to send permanently.">${escHtml(c.boardResponse || '')}</textarea>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft at any time. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> \u2014 this locks the Board Response permanently.</div>
+                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Determination Notice</label>
+                    <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Enter the Board's Determination Notice. Use Save Only to draft and revise, then Save &amp; Send when ready to send permanently to the resident.">${escHtml(c.boardResponse || '')}</textarea>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to save your draft at any time. When satisfied, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> — this locks the Determination Notice permanently. The resident will have 14 days to respond.</div>
                 </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                 <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
@@ -3253,7 +3266,7 @@ TECHNICAL:
 
         const callbackName = 'sendCallback_' + Date.now();
         const url = CONFIG.BACKEND_URL
-            + '?action=sendBoardResponse'
+            + '?action=sendDeterminationNotice'
             + '&ref='      + encodeURIComponent(ref)
             + '&userName=' + encodeURIComponent(userName)
             + '&callback=' + callbackName;
@@ -3278,7 +3291,7 @@ TECHNICAL:
                     const pad      = n => n.toString().padStart(2, '0');
                     const dateStr  = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
                     const timeStr  = pad(now.getHours()) + ':' + pad(now.getMinutes());
-                    const entry    = dateStr + ' ' + timeStr + ' | SYSTEM | Board Response sent to resident. Status set to Responded.';
+                    const entry    = dateStr + ' ' + timeStr + ' | SYSTEM | Determination Notice sent to resident. Status set to Responded.';
                     const existing = allComplaints[idx].activityLog || '';
                     allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
                     const cardEl = document.getElementById('card-' + ref);
@@ -3558,7 +3571,7 @@ TECHNICAL:
         }[normSt] || '';
 
         const boardBlock = c.boardResponse
-            ? '<div class="board-response"><div class="field-label">Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
+            ? '<div class="board-response"><div class="field-label">Determination Notice</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
             : '';
 
         // Standard Non-Resolution Notice block
