@@ -2957,62 +2957,6 @@ TECHNICAL:
     }
 
 
-        if (feedbackEl) { feedbackEl.textContent = 'Updating…'; feedbackEl.className = 'save-feedback'; }
-
-        const callbackName = 'statusReviewCallback_' + Date.now();
-        const url = CONFIG.BACKEND_URL
-            + '?action=updateComplaint'
-            + '&ref='      + encodeURIComponent(ref)
-            + '&status='   + encodeURIComponent(newStatus)
-            + '&userName=' + encodeURIComponent(userName)
-            + '&callback=' + callbackName;
-
-        const timeout = setTimeout(function() {
-            cleanup(callbackName);
-            if (feedbackEl) { feedbackEl.textContent = 'Timed out.'; feedbackEl.className = 'save-feedback error'; }
-        }, 15000);
-
-        window[callbackName] = function(data) {
-            clearTimeout(timeout); cleanup(callbackName);
-            if (data.success) {
-                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-                if (idx !== -1) {
-                    allComplaints[idx].status = newStatus;
-                    if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                    // Set quick resolved flag BEFORE card re-render so buildActionPanel sees it
-                    if (path === 'resolved') {
-                        window._quickResolved = window._quickResolved || {};
-                        window._quickResolved[ref] = true;
-                    }
-                    const cardEl = document.getElementById('card-' + ref);
-                    if (cardEl) {
-                        const wasExpanded = cardEl.classList.contains('expanded');
-                        cardEl.outerHTML = buildCard(allComplaints[idx]);
-                        const newCard = document.getElementById('card-' + ref);
-                        if (newCard && wasExpanded) {
-                            newCard.classList.add('expanded');
-                            if (path === 'resolved') {
-                                setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
-                            }
-                        }
-                    }
-                    updateSummary(allComplaints);
-                }
-            } else {
-                if (feedbackEl) { feedbackEl.textContent = 'Error: ' + (data.error || 'Unknown.'); feedbackEl.className = 'save-feedback error'; }
-            }
-        };
-
-        const script = document.createElement('script');
-        script.onerror = function() {
-            cleanup(callbackName);
-            if (feedbackEl) { feedbackEl.textContent = 'Network error.'; feedbackEl.className = 'save-feedback error'; }
-        };
-        script.src = url;
-        document.head.appendChild(script);
-    }
-
-
     function showClosurePanel(ref, type) {
         const nrnPanel     = document.getElementById('nrn-panel-' + ref);
         const crPanel      = document.getElementById('cr-panel-'  + ref);
