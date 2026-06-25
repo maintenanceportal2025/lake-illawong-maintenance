@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.16
+  Frontend Version: V3.0.17
   Backend:          ComplaintsManager V3.0.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.17 (Jun 2026): Fix doStatusReview orphaned code and logic.
+    Resolved path now sets allComplaints[idx].status = Responded in
+    local cache only (no backend call). Card re-renders showing Responded
+    panel with closure buttons. showClosurePanel auto-opens resolved panel.
+    Status in sheet stays Acknowledged until Save & Send fires closure.
+    Orphaned code from previous partial replacements removed.
+    _quickResolved flag approach removed entirely.
+
   V3.0.16 (Jun 2026): Fix status pill on quick resolution path.
     doStatusReview resolved path no longer makes a backend call -- status
     stays Acknowledged until Save & Send fires the closure and sets the
@@ -2481,49 +2489,6 @@ TECHNICAL:
 
         // ── STATUS REVIEW (NOT RESOLVED): Initial Board Response ──────
         if (normStatus === 'Status Review') {
-            // Quick resolution path -- show closure buttons directly
-            if (window._quickResolved && window._quickResolved[safeRef]) {
-                return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Close This Complaint</div>
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.</p>
-                <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
-                <button class="btn-close-type" id="close-partial-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'partially')">&#8776; Close as Partially Resolved</button>
-                <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
-                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
-                <span class="save-feedback" id="feedback-${safeRef}"></span>
-                <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
-                <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
-                    <div id="cr-saved-${safeRef}" style="display:none;margin-bottom:10px;">
-                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
-                        <div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);white-space:pre-wrap;" id="cr-saved-text-${safeRef}"></div>
-                    </div>
-                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="cr-summary-${safeRef}" placeholder="Describe what was agreed or actioned to resolve this complaint..."></textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Resolved closure notice</div>
-                    <div class="nrn-fixed-block">${escHtml(CLOSURE_RESOLVED_FIXED_BLOCK)}</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
-                <div id="partial-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#f59e0b;">Closure Statement — Partially Resolved</div>
-                    <label for="partial-resolved-${safeRef}">What was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="partial-resolved-${safeRef}" placeholder="Describe what aspects of the complaint were resolved and how..."></textarea>
-                    <label for="partial-reason-${safeRef}" style="margin-top:10px;display:block;">What remains outstanding <span style="color:#fca5a5">*</span></label>
-                    <textarea id="partial-reason-${safeRef}" placeholder="Describe what aspects could not be resolved and why..."></textarea>
-                    <label for="partial-actions-${safeRef}" style="margin-top:10px;display:block;">Actions taken during the process <span style="color:#fca5a5">*</span></label>
-                    <textarea id="partial-actions-${safeRef}" placeholder="Describe the steps the Board took to investigate and address the complaint..."></textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Closure Statement</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-partial-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-partial-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
-            </div>`;
-            }
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Initial Board Response</div>
                 ${responseNotice}
@@ -2885,16 +2850,19 @@ TECHNICAL:
     }
 
     function doStatusReview(ref, path) {
-        // Resolved path: no backend call -- go straight to closure panel locally.
-        // Status only changes when Gary clicks Save & Send on the closure.
-        // Not Resolved path: JSONP call to set Status Review in the sheet.
+        const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+        if (idx === -1) return;
+
         if (path === 'resolved') {
-            const confirmed = confirm('Proceed to closure?\n\nComplete the Resolution Summary to close this complaint.');
-            if (!confirmed) return;
-            const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-            if (idx === -1) return;
-            window._quickResolved = window._quickResolved || {};
-            window._quickResolved[ref] = true;
+            // Quick resolution -- no backend call.
+            // Temporarily set status to Responded in local cache so the
+            // Responded action panel renders with closure buttons.
+            // The actual status in the sheet stays Acknowledged until
+            // Save & Send fires the closure (Acknowledged -> Closed - Resolved
+            // is handled directly by the closure path in updateComplaint).
+            if (!confirm('Proceed to closure?\n\nComplete the Resolution Summary to close this complaint.')) return;
+            allComplaints[idx]._quickResolved = true;
+            allComplaints[idx].status = 'Responded';
             const cardEl = document.getElementById('card-' + ref);
             if (cardEl) {
                 const wasExpanded = cardEl.classList.contains('expanded');
@@ -2905,10 +2873,11 @@ TECHNICAL:
                     setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
                 }
             }
+            updateSummary(allComplaints);
             return;
         }
 
-        // Not Resolved path -- set Status Review in backend
+        // Not Resolved -- set Status Review in backend
         const userName   = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         const feedbackEl = document.getElementById('feedback-' + ref);
         if (feedbackEl) { feedbackEl.textContent = 'Updating…'; feedbackEl.className = 'save-feedback'; }
@@ -2929,19 +2898,16 @@ TECHNICAL:
         window[callbackName] = function(data) {
             clearTimeout(timeout); cleanup(callbackName);
             if (data.success) {
-                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-                if (idx !== -1) {
-                    allComplaints[idx].status = 'Status Review';
-                    if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                    const cardEl = document.getElementById('card-' + ref);
-                    if (cardEl) {
-                        const wasExpanded = cardEl.classList.contains('expanded');
-                        cardEl.outerHTML = buildCard(allComplaints[idx]);
-                        const newCard = document.getElementById('card-' + ref);
-                        if (newCard && wasExpanded) newCard.classList.add('expanded');
-                    }
-                    updateSummary(allComplaints);
+                allComplaints[idx].status = 'Status Review';
+                if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
+                const cardEl = document.getElementById('card-' + ref);
+                if (cardEl) {
+                    const wasExpanded = cardEl.classList.contains('expanded');
+                    cardEl.outerHTML = buildCard(allComplaints[idx]);
+                    const newCard = document.getElementById('card-' + ref);
+                    if (newCard && wasExpanded) newCard.classList.add('expanded');
                 }
+                updateSummary(allComplaints);
             } else {
                 if (feedbackEl) { feedbackEl.textContent = 'Error: ' + (data.error || 'Unknown.'); feedbackEl.className = 'save-feedback error'; }
             }
@@ -2955,7 +2921,6 @@ TECHNICAL:
         script.src = url;
         document.head.appendChild(script);
     }
-
 
     function showClosurePanel(ref, type) {
         const nrnPanel     = document.getElementById('nrn-panel-' + ref);
