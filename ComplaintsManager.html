@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.15
+  Frontend Version: V3.0.16
   Backend:          ComplaintsManager V3.0.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.16 (Jun 2026): Fix status pill on quick resolution path.
+    doStatusReview resolved path no longer makes a backend call -- status
+    stays Acknowledged until Save & Send fires the closure and sets the
+    final closed status. _quickResolved flag set locally, card re-renders
+    with closure panel open. Status pill and System log no longer show
+    Status Review on the quick resolution path.
+    Not Resolved path unchanged -- still sets Status Review in backend.
+
   V3.0.15 (Jun 2026): Closure and pane fixes.
     (1) Initial Board Response pane always shown once acknowledged --
         removed hide condition that suppressed it on quick resolution path.
@@ -2877,15 +2885,77 @@ TECHNICAL:
     }
 
     function doStatusReview(ref, path) {
-        // path: 'resolved' = quick closure, 'not_resolved' = open Initial Board Response
+        // Resolved path: no backend call -- go straight to closure panel locally.
+        // Status only changes when Gary clicks Save & Send on the closure.
+        // Not Resolved path: JSONP call to set Status Review in the sheet.
+        if (path === 'resolved') {
+            const confirmed = confirm('Proceed to closure?\n\nComplete the Resolution Summary to close this complaint.');
+            if (!confirmed) return;
+            const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+            if (idx === -1) return;
+            window._quickResolved = window._quickResolved || {};
+            window._quickResolved[ref] = true;
+            const cardEl = document.getElementById('card-' + ref);
+            if (cardEl) {
+                const wasExpanded = cardEl.classList.contains('expanded');
+                cardEl.outerHTML = buildCard(allComplaints[idx]);
+                const newCard = document.getElementById('card-' + ref);
+                if (newCard && wasExpanded) {
+                    newCard.classList.add('expanded');
+                    setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
+                }
+            }
+            return;
+        }
+
+        // Not Resolved path -- set Status Review in backend
         const userName   = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         const feedbackEl = document.getElementById('feedback-' + ref);
-        const newStatus  = 'Status Review'; // both paths go to Status Review; _quickResolved flag handles closure rendering
+        if (feedbackEl) { feedbackEl.textContent = 'Updating…'; feedbackEl.className = 'save-feedback'; }
 
-        if (path === 'resolved') {
-            const confirmed = confirm('Mark this complaint as resolved and proceed to closure?\n\nYou will complete the Resolution Summary on the next screen.');
-            if (!confirmed) return;
-        }
+        const callbackName = 'statusReviewCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=updateComplaint'
+            + '&ref='      + encodeURIComponent(ref)
+            + '&status=Status%20Review'
+            + '&userName=' + encodeURIComponent(userName)
+            + '&callback=' + callbackName;
+
+        const timeout = setTimeout(function() {
+            cleanup(callbackName);
+            if (feedbackEl) { feedbackEl.textContent = 'Timed out.'; feedbackEl.className = 'save-feedback error'; }
+        }, 15000);
+
+        window[callbackName] = function(data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            if (data.success) {
+                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                if (idx !== -1) {
+                    allComplaints[idx].status = 'Status Review';
+                    if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
+                    const cardEl = document.getElementById('card-' + ref);
+                    if (cardEl) {
+                        const wasExpanded = cardEl.classList.contains('expanded');
+                        cardEl.outerHTML = buildCard(allComplaints[idx]);
+                        const newCard = document.getElementById('card-' + ref);
+                        if (newCard && wasExpanded) newCard.classList.add('expanded');
+                    }
+                    updateSummary(allComplaints);
+                }
+            } else {
+                if (feedbackEl) { feedbackEl.textContent = 'Error: ' + (data.error || 'Unknown.'); feedbackEl.className = 'save-feedback error'; }
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function() {
+            cleanup(callbackName);
+            if (feedbackEl) { feedbackEl.textContent = 'Network error.'; feedbackEl.className = 'save-feedback error'; }
+        };
+        script.src = url;
+        document.head.appendChild(script);
+    }
+
 
         if (feedbackEl) { feedbackEl.textContent = 'Updating…'; feedbackEl.className = 'save-feedback'; }
 
