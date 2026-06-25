@@ -2824,50 +2824,65 @@ TECHNICAL:
 
     function doStatusReview(ref, path) {
         // path: 'resolved' = quick closure, 'not_resolved' = open Initial Board Response
-        const userName     = currentUserName();
-        const feedbackEl   = document.getElementById('feedback-' + ref);
-        const newStatus    = path === 'resolved' ? 'Closed - Resolved' : 'Status Review';
+        const userName   = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+        const feedbackEl = document.getElementById('feedback-' + ref);
+        const newStatus  = path === 'resolved' ? 'Closed - Resolved' : 'Status Review';
 
         if (path === 'resolved') {
-            // Quick resolution -- move to Responded then straight to closure panel
-            // Status set to Status Review first, then immediately show closure panel
             const confirmed = confirm('Mark this complaint as resolved and proceed to closure?\n\nYou will complete the Resolution Summary on the next screen.');
             if (!confirmed) return;
         }
 
-        if (feedbackEl) { feedbackEl.textContent = 'Updating\u2026'; feedbackEl.className = 'save-feedback'; }
+        if (feedbackEl) { feedbackEl.textContent = 'Updating…'; feedbackEl.className = 'save-feedback'; }
 
-        jsonp({ action: 'updateComplaint', ref: ref, status: newStatus, userName: userName },
-            function(data) {
-                if (data.success) {
-                    const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-                    if (idx !== -1) {
-                        allComplaints[idx].status = newStatus;
-                        if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                        const cardEl = document.getElementById('card-' + ref);
-                        if (cardEl) {
-                            const wasExpanded = cardEl.classList.contains('expanded');
-                            cardEl.outerHTML = buildCard(allComplaints[idx]);
-                            const newCard = document.getElementById('card-' + ref);
-                            if (newCard && wasExpanded) {
-                                newCard.classList.add('expanded');
-                                // Quick resolution: auto-open resolved closure panel
-                                if (path === 'resolved') {
-                                    setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
-                                }
+        const callbackName = 'statusReviewCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=updateComplaint'
+            + '&ref='      + encodeURIComponent(ref)
+            + '&status='   + encodeURIComponent(newStatus)
+            + '&userName=' + encodeURIComponent(userName)
+            + '&callback=' + callbackName;
+
+        const timeout = setTimeout(function() {
+            cleanup(callbackName);
+            if (feedbackEl) { feedbackEl.textContent = 'Timed out.'; feedbackEl.className = 'save-feedback error'; }
+        }, 15000);
+
+        window[callbackName] = function(data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            if (data.success) {
+                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                if (idx !== -1) {
+                    allComplaints[idx].status = newStatus;
+                    if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
+                    const cardEl = document.getElementById('card-' + ref);
+                    if (cardEl) {
+                        const wasExpanded = cardEl.classList.contains('expanded');
+                        cardEl.outerHTML = buildCard(allComplaints[idx]);
+                        const newCard = document.getElementById('card-' + ref);
+                        if (newCard && wasExpanded) {
+                            newCard.classList.add('expanded');
+                            if (path === 'resolved') {
+                                setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
                             }
                         }
-                        updateSummary(allComplaints);
                     }
-                } else {
-                    if (feedbackEl) { feedbackEl.textContent = 'Error: ' + (data.error || 'Unknown.'); feedbackEl.className = 'save-feedback error'; }
+                    updateSummary(allComplaints);
                 }
-            },
-            function(err) {
-                if (feedbackEl) { feedbackEl.textContent = 'Network error.'; feedbackEl.className = 'save-feedback error'; }
+            } else {
+                if (feedbackEl) { feedbackEl.textContent = 'Error: ' + (data.error || 'Unknown.'); feedbackEl.className = 'save-feedback error'; }
             }
-        );
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function() {
+            cleanup(callbackName);
+            if (feedbackEl) { feedbackEl.textContent = 'Network error.'; feedbackEl.className = 'save-feedback error'; }
+        };
+        script.src = url;
+        document.head.appendChild(script);
     }
+
 
     function showClosurePanel(ref, type) {
         const nrnPanel     = document.getElementById('nrn-panel-' + ref);
