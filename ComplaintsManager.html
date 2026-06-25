@@ -6,13 +6,38 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.13
-  Backend:          ComplaintsManager V3.0.10
+  Frontend Version: V3.0.14
+  Backend:          ComplaintsManager V3.0.12
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.14 (Jun 2026): Status Review step and process restructure.
+    (1) Acknowledged action panel replaced by Status Review panel.
+        Two buttons: Resolved (quick path -> closure) and Not Resolved
+        (-> Status Review status -> Initial Board Response panel).
+        doStatusReview() function handles both paths via JSONP.
+        Quick resolution path auto-opens resolved closure panel after
+        card re-render.
+    (2) Status Review status action panel added -- shows Initial Board
+        Response textarea when complaint is in Status Review status
+        (Not Resolved path). Same Save Only / Save & Send pattern as
+        before, locks on Send & Send.
+    (3) Closed - Partially Resolved status added throughout: filter
+        dropdown, summary strip count, isClosedStatus(), status pill
+        map, badge map, new active-partial CSS class.
+    (4) Partially Resolved closure panel (partial-panel) added to
+        Responded action panel alongside Resolved and Unresolved panels.
+        Three fields: What was resolved, What remains outstanding,
+        Actions taken. saveUpdate() handles [TYPE:PARTIALLY_RESOLVED]
+        closureNarrative tag.
+    (5) showClosurePanel() updated: handles 'partially' type, resets
+        all three panels before showing selected one.
+    (6) Non-Resolution Notice panel title renamed Closure Statement.
+    (7) 72-hour notices updated to reference Initial Board Response.
+    Backend updated to ComplaintsManager V3.0.12.
+
   V3.0.13 (Jun 2026): Determination Notice rename and 72-hour notice corrections.
     (1) Board Response renamed to Determination Notice throughout --
         pane title, textarea label, placeholder, accordion label, detail
@@ -1667,6 +1692,7 @@ TECHNICAL:
             <option value="Responded">Responded</option>
             <option value="Escalated">Escalated</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
+                <option value="Closed - Partially Resolved">Closed - Partially Resolved</option>
             <option value="Closed - Unresolved">Closed - Unresolved</option>
             <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated)</option>
             <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated)</option>
@@ -1816,9 +1842,11 @@ TECHNICAL:
         if (card && value) {
             const previewClass = {
                 'Acknowledged':                    'status-acknowledged',
+                'Status Review':                   'status-acknowledged',
                 'Responded':                       'status-responded',
                 'Escalated':                       'status-escalated',
                 'Closed - Resolved':               'status-closed-resolved',
+                'Closed - Partially Resolved':     'status-closed-unresolved',
                 'Closed - Unresolved':             'status-closed-unresolved',
                 'Closed - Resolved (Escalated)':   'status-closed-resolved-escalated',
                 'Closed - Unresolved (Escalated)': 'status-closed-unresolved-escalated',
@@ -1894,7 +1922,7 @@ TECHNICAL:
             const s = normaliseStatus(c.status);
             if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
             if (s === 'Escalated') counts.Escalated++;
-            if (s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Closed - Converted to Dispute' || s === 'Closed') counts.Closed++;
+            if (s === 'Closed - Resolved' || s === 'Closed - Partially Resolved' || s === 'Closed - Unresolved' || s === 'Closed - Converted to Dispute' || s === 'Closed') counts.Closed++;
             if (s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)') counts.ClosedEscalated++;
             if (isOverdue(c)) counts.overdue++;
         });
@@ -1911,11 +1939,12 @@ TECHNICAL:
     // Normalise legacy 'Closed' to 'Closed - Resolved' for display
     function normaliseStatus(status) {
         if (status === 'Closed') return 'Closed - Resolved';
+        if (status === 'Status Review') return 'Status Review';
         return status;
     }
 
     function isClosedStatus(s) {
-        return s === 'Closed - Resolved' || s === 'Closed - Unresolved'
+        return s === 'Closed - Resolved' || s === 'Closed - Partially Resolved' || s === 'Closed - Unresolved'
             || s === 'Closed - Converted to Dispute'
             || s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
             || s === 'Closed';
@@ -2187,16 +2216,16 @@ TECHNICAL:
             let respBody = '';
             if (c.boardResponse) {
                 respBody = `
-                    <div class="detail-label" style="margin-bottom:6px;">Determination Notice</div>
+                    <div class="detail-label" style="margin-bottom:6px;">Initial Board Response</div>
                     <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
                     ${c.respondedAt ? `<div class="response-notice notice-sent" style="margin-top:8px;">&#10003; Sent to resident ${formatDate(c.respondedAt)} \u2014 field locked.</div>` : ''}`;
             } else {
-                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No Determination Notice recorded yet.</div>`;
+                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No Initial Board Response recorded yet.</div>`;
             }
             panesHtml += pane(
                 'pane-response-' + safeRef,
                 'pane-response',
-                'Determination Notice',
+                'Initial Board Response',
                 c.respondedAt ? formatDate(c.respondedAt) : '',
                 respBody
             );
@@ -2393,10 +2422,10 @@ TECHNICAL:
         let responseNotice = '';
         if (!isClosed && !isOpen && !c.respondedAt && !isEscalated) {
             if (!isNaN(submitted) && hoursElapsed > 72) {
-                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed — internal action plan must be recorded via Add Event (Board visibility).</div>';
+                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed — Initial Board Response must be sent to the resident.</div>';
             } else if (!isNaN(submitted)) {
                 const hoursLeft = Math.ceil(72 - hoursElapsed);
-                responseNotice = '<div class="response-notice notice-pending">&#9679; Internal action plan must be recorded via Add Event within 72 hours — ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
+                responseNotice = '<div class="response-notice notice-pending">&#9679; Initial Board Response must be sent within 72 hours — ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
             }
         }
 
@@ -2418,19 +2447,32 @@ TECHNICAL:
             </div>`;
         }
 
-        // ── ACKNOWLEDGED: Board Response textarea ─────────────────────
+        // ── ACKNOWLEDGED: Status Review ───────────────────────────────
         if (normStatus === 'Acknowledged') {
             return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Determination Notice</div>
+                <div class="action-panel-title">Next Step — Status Review</div>
+                ${responseNotice}
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:10px 0 14px;">Review the current status of this complaint. If resolved within 72 hours, proceed directly to closure. If not yet resolved, open the Initial Board Response panel.</p>
+                <button class="btn-ack" onclick="doStatusReview('${safeRef}', 'resolved')">&#10003; Resolved — Proceed to Closure</button>
+                <button class="btn-close-type" style="margin-left:8px;" onclick="doStatusReview('${safeRef}', 'not_resolved')">&#8594; Not Resolved — Open Initial Board Response</button>
+                <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;margin-top:10px;" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
+                <span class="save-feedback" id="feedback-${safeRef}"></span>
+            </div>`;
+        }
+
+        // ── STATUS REVIEW (NOT RESOLVED): Initial Board Response ──────
+        if (normStatus === 'Status Review') {
+            return `<div class="action-panel">
+                <div class="action-panel-title">Next Step — Initial Board Response</div>
                 ${responseNotice}
                 <div class="update-field" style="width:100%;margin-bottom:12px;">
-                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Determination Notice</label>
-                    <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Enter the Board's Determination Notice. Use Save Only to draft and revise, then Save &amp; Send when ready to send permanently to the resident.">${escHtml(c.boardResponse || '')}</textarea>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; The Determination Notice should be issued within 28 days of the complaint being lodged. Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to draft and revise at any time. When ready, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> — this locks the notice permanently. The resident will have 14 days to respond.</div>
+                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Initial Board Response</label>
+                    <textarea id="response-${safeRef}" style="width:100%;min-height:120px;" placeholder="Summarise the Board's understanding of the matter, the steps the Board intends to take, and the date by which the resident will be advised further.">${escHtml(c.boardResponse || '')}</textarea>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; The Initial Board Response must be issued within 72 hours of the complaint being lodged. Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to draft and revise. When ready, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> — this locks the response permanently.</div>
                 </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                 <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;margin-top:10px;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
+                <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;margin-top:10px;" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
                 <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
             </div>`;
@@ -2442,6 +2484,7 @@ TECHNICAL:
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.</p>
                 <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
+                <button class="btn-close-type" id="close-partial-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'partially')">&#8776; Close as Partially Resolved</button>
                 <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
@@ -2463,7 +2506,7 @@ TECHNICAL:
                     </div>
                 </div>
                 <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title">Non-Resolution Notice</div>
+                    <div class="nrn-panel-title">Closure Statement</div>
                     <div id="nrn-saved-${safeRef}" style="display:none;margin-bottom:10px;">
                         <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
                         <div class="board-response-readonly" style="border-color:rgba(107,114,128,0.3);white-space:pre-wrap;" id="nrn-saved-text-${safeRef}"></div>
@@ -2531,8 +2574,25 @@ TECHNICAL:
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
                 <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
-                <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);">
-                    <div class="detail-label" style="margin-bottom:8px;">If this complaint has been escalated for external dispute resolution:</div>
+                <div id="partial-panel-${safeRef}" class="nrn-panel" style="display:none;">
+                    <div class="nrn-panel-title" style="border-left-color:#f59e0b;">Closure Statement — Partially Resolved</div>
+                    <div id="partial-saved-${safeRef}" style="display:none;margin-bottom:10px;">
+                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
+                        <div class="board-response-readonly" style="border-color:rgba(245,158,11,0.25);white-space:pre-wrap;" id="partial-saved-text-${safeRef}"></div>
+                    </div>
+                    <label for="partial-resolved-${safeRef}">What was resolved <span style="color:#fca5a5">*</span></label>
+                    <textarea id="partial-resolved-${safeRef}" placeholder="Describe what aspects of the complaint were resolved and how..."></textarea>
+                    <label for="partial-reason-${safeRef}" style="margin-top:10px;display:block;">What remains outstanding <span style="color:#fca5a5">*</span></label>
+                    <textarea id="partial-reason-${safeRef}" placeholder="Describe what aspects could not be resolved and why..."></textarea>
+                    <label for="partial-actions-${safeRef}" style="margin-top:10px;display:block;">Actions taken during the process <span style="color:#fca5a5">*</span></label>
+                    <textarea id="partial-actions-${safeRef}" placeholder="Describe the steps the Board took to investigate and address the complaint..."></textarea>
+                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Closure Statement</div>
+                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
+                    <div style="margin-top:12px;">
+                        <button class="btn-save" id="save-partial-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                        <button class="btn-send-resident" id="send-partial-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                    </div>
+                </div>
                     <select id="status-${safeRef}" onchange="onStatusChange('${safeRef}', this.value)" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:7px 10px;font-size:0.85rem;color:white;cursor:pointer;">
                         <option value="">(no action)</option>
                         <option value="Escalated">Set to Escalated</option>
@@ -2762,21 +2822,80 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
+    function doStatusReview(ref, path) {
+        // path: 'resolved' = quick closure, 'not_resolved' = open Initial Board Response
+        const userName     = currentUserName();
+        const feedbackEl   = document.getElementById('feedback-' + ref);
+        const newStatus    = path === 'resolved' ? 'Closed - Resolved' : 'Status Review';
+
+        if (path === 'resolved') {
+            // Quick resolution -- move to Responded then straight to closure panel
+            // Status set to Status Review first, then immediately show closure panel
+            const confirmed = confirm('Mark this complaint as resolved and proceed to closure?\n\nYou will complete the Resolution Summary on the next screen.');
+            if (!confirmed) return;
+        }
+
+        if (feedbackEl) { feedbackEl.textContent = 'Updating\u2026'; feedbackEl.className = 'save-feedback'; }
+
+        jsonp({ action: 'updateComplaint', ref: ref, status: newStatus, userName: userName },
+            function(data) {
+                if (data.success) {
+                    const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+                    if (idx !== -1) {
+                        allComplaints[idx].status = newStatus;
+                        if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
+                        const cardEl = document.getElementById('card-' + ref);
+                        if (cardEl) {
+                            const wasExpanded = cardEl.classList.contains('expanded');
+                            cardEl.outerHTML = buildCard(allComplaints[idx]);
+                            const newCard = document.getElementById('card-' + ref);
+                            if (newCard && wasExpanded) {
+                                newCard.classList.add('expanded');
+                                // Quick resolution: auto-open resolved closure panel
+                                if (path === 'resolved') {
+                                    setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
+                                }
+                            }
+                        }
+                        updateSummary(allComplaints);
+                    }
+                } else {
+                    if (feedbackEl) { feedbackEl.textContent = 'Error: ' + (data.error || 'Unknown.'); feedbackEl.className = 'save-feedback error'; }
+                }
+            },
+            function(err) {
+                if (feedbackEl) { feedbackEl.textContent = 'Network error.'; feedbackEl.className = 'save-feedback error'; }
+            }
+        );
+    }
+
     function showClosurePanel(ref, type) {
-        const nrnPanel = document.getElementById('nrn-panel-' + ref);
-        const crPanel  = document.getElementById('cr-panel-'  + ref);
-        const btnRes   = document.getElementById('close-resolved-btn-'   + ref);
-        const btnUnres = document.getElementById('close-unresolved-btn-' + ref);
+        const nrnPanel     = document.getElementById('nrn-panel-' + ref);
+        const crPanel      = document.getElementById('cr-panel-'  + ref);
+        const partialPanel = document.getElementById('partial-panel-' + ref);
+        const btnRes       = document.getElementById('close-resolved-btn-'   + ref);
+        const btnPartial   = document.getElementById('close-partial-btn-'    + ref);
+        const btnUnres     = document.getElementById('close-unresolved-btn-' + ref);
+
+        // Hide all panels first
+        if (nrnPanel)     nrnPanel.style.display     = 'none';
+        if (crPanel)      crPanel.style.display      = 'none';
+        if (partialPanel) partialPanel.style.display = 'none';
+
+        // Reset button styles
+        if (btnRes)     btnRes.className     = 'btn-close-type';
+        if (btnPartial) btnPartial.className = 'btn-close-type';
+        if (btnUnres)   btnUnres.className   = 'btn-close-type';
+
         if (type === 'resolved') {
-            if (nrnPanel) nrnPanel.style.display = 'none';
             if (crPanel)  crPanel.style.display  = 'block';
-            if (btnRes)   btnRes.className   = 'btn-close-type active-resolved';
-            if (btnUnres) btnUnres.className = 'btn-close-type';
+            if (btnRes)   btnRes.className        = 'btn-close-type active-resolved';
+        } else if (type === 'partially') {
+            if (partialPanel) partialPanel.style.display = 'block';
+            if (btnPartial)   btnPartial.className       = 'btn-close-type active-partial';
         } else {
-            if (crPanel)  crPanel.style.display  = 'none';
             if (nrnPanel) nrnPanel.style.display = 'block';
-            if (btnUnres) btnUnres.className = 'btn-close-type active-unresolved';
-            if (btnRes)   btnRes.className   = 'btn-close-type';
+            if (btnUnres) btnUnres.className      = 'btn-close-type active-unresolved';
         }
     }
 
@@ -2827,6 +2946,35 @@ TECHNICAL:
         const nrnPanelEl = document.getElementById('nrn-panel-' + ref);
         const crVisible  = crPanelEl  && crPanelEl.style.display  !== 'none';
         const nrnVisible = nrnPanelEl && nrnPanelEl.style.display !== 'none';
+
+        // Partially resolved path
+        const partialPanelEl = document.getElementById('partial-panel-' + ref);
+        const partialVisible = partialPanelEl && partialPanelEl.style.display !== 'none';
+
+        if (partialVisible) {
+            const resolvedEl = document.getElementById('partial-resolved-' + ref);
+            const reasonEl2  = document.getElementById('partial-reason-'   + ref);
+            const actionsEl2 = document.getElementById('partial-actions-'  + ref);
+            const resolved2  = resolvedEl ? resolvedEl.value.trim() : '';
+            const reason2    = reasonEl2  ? reasonEl2.value.trim()  : '';
+            const actions2   = actionsEl2 ? actionsEl2.value.trim() : '';
+            if (resolved2 || reason2 || actions2) {
+                if (andSend && (!resolved2 || !reason2 || !actions2)) {
+                    setFeedback(feedback, 'All three fields are required before sending.', 'error'); return;
+                }
+                if (andSend) {
+                    const confirmed = confirm(
+                        'You are about to close this complaint as Partially Resolved.\n\n' +
+                        'A Closure Statement will be issued to the resident.\n' +
+                        'This action cannot be undone.\n\nProceed?'
+                    );
+                    if (!confirmed) return;
+                }
+                closureNarrative = '[TYPE:PARTIALLY_RESOLVED]\n[SUMMARY]\n' + (resolved2 || '') + '\n[/SUMMARY]\n[REASON]\n' + (reason2 || '') + '\n[/REASON]\n[ACTIONS]\n' + (actions2 || '') + '\n[/ACTIONS]';
+            } else if (andSend) {
+                setFeedback(feedback, 'All three fields are required before sending.', 'error'); return;
+            }
+        }
 
         // Resolved path
         if (crVisible) {
@@ -3266,7 +3414,7 @@ TECHNICAL:
 
         const callbackName = 'sendCallback_' + Date.now();
         const url = CONFIG.BACKEND_URL
-            + '?action=sendDeterminationNotice'
+            + '?action=sendInitialBoardResponse'
             + '&ref='      + encodeURIComponent(ref)
             + '&userName=' + encodeURIComponent(userName)
             + '&callback=' + callbackName;
@@ -3291,7 +3439,7 @@ TECHNICAL:
                     const pad      = n => n.toString().padStart(2, '0');
                     const dateStr  = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
                     const timeStr  = pad(now.getHours()) + ':' + pad(now.getMinutes());
-                    const entry    = dateStr + ' ' + timeStr + ' | SYSTEM | Determination Notice sent to resident. Status set to Responded.';
+                    const entry    = dateStr + ' ' + timeStr + ' | SYSTEM | Initial Board Response sent to resident. Status set to Responded.';
                     const existing = allComplaints[idx].activityLog || '';
                     allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
                     const cardEl = document.getElementById('card-' + ref);
@@ -3571,7 +3719,7 @@ TECHNICAL:
         }[normSt] || '';
 
         const boardBlock = c.boardResponse
-            ? '<div class="board-response"><div class="field-label">Determination Notice</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
+            ? '<div class="board-response"><div class="field-label">Initial Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
             : '';
 
         // Standard Non-Resolution Notice block
