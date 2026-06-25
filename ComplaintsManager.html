@@ -2211,8 +2211,8 @@ TECHNICAL:
             );
         }
 
-        // ── PANE 3: BOARD RESPONSE (once ack'd, stays forever) ────────
-        if (c.acknowledgedAt) {
+        // ── PANE 3: INITIAL BOARD RESPONSE (once ack'd, hidden if quick resolved) ──
+        if (c.acknowledgedAt && (c.boardResponse || !isClosedStatus(normStatus))) {
             let respBody = '';
             if (c.boardResponse) {
                 respBody = `
@@ -2220,7 +2220,11 @@ TECHNICAL:
                     <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
                     ${c.respondedAt ? `<div class="response-notice notice-sent" style="margin-top:8px;">&#10003; Sent to resident ${formatDate(c.respondedAt)} \u2014 field locked.</div>` : ''}`;
             } else {
-                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No Initial Board Response recorded yet.</div>`;
+                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">`
+                    + (isClosedStatus(normStatus) && !c.respondedAt
+                        ? 'No Initial Board Response required — matter resolved within 72 hours.'
+                        : 'No Initial Board Response recorded yet.')
+                    + `</div>`;
             }
             panesHtml += pane(
                 'pane-response-' + safeRef,
@@ -2869,7 +2873,7 @@ TECHNICAL:
         // path: 'resolved' = quick closure, 'not_resolved' = open Initial Board Response
         const userName   = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         const feedbackEl = document.getElementById('feedback-' + ref);
-        const newStatus  = path === 'resolved' ? 'Responded' : 'Status Review';
+        const newStatus  = 'Status Review'; // both paths go to Status Review; _quickResolved flag handles closure rendering
 
         if (path === 'resolved') {
             const confirmed = confirm('Mark this complaint as resolved and proceed to closure?\n\nYou will complete the Resolution Summary on the next screen.');
