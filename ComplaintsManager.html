@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.21
+  Frontend Version: V3.0.22
   Backend:          ComplaintsManager V3.0.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.22 (Jun 2026): Rename Initial Board Response to Initial Determination
+    and Resolution Summary to Closure Statement throughout.
+    Quick resolution path: Initial Determination pane hidden when closed
+    with no boardResponse (resolved within 72hrs -- no determination needed).
+    Responded status panel: Close as Partially Resolved and Close as
+    Unresolved buttons hidden on quick resolution path (no boardResponse).
+    Context-aware description text on Responded panel.
+    JSONP action sendInitialBoardResponse -> sendInitialDetermination.
+    Activity log, 72hr notices, confirm dialog, print record, accordion
+    pane labels all updated. Frontend only -- backend change is V3.0.14.
+
   V3.0.21 (Jun 2026): Closure panel structured placeholder prompts.
     Resolved panel (cr-summary): three prompts -- complaint/investigation,
     findings, actions taken. min-height 150px.
@@ -312,7 +323,7 @@ VERSION HISTORY:
   V2.5.5 (Jun 2026): Two further doPrint() fixes. (1) resolvedBlock and nrnBlock
     now guard on [TYPE:RESOLVED] / [TYPE:UNRESOLVED] tag within c.closureNarrative --
     prevents a complaint that was Closed - Unresolved before escalation bleeding its
-    raw narrative tags into the Resolution Summary when it reaches
+    raw narrative tags into the Closure Statement when it reaches
     Closed - Resolved (Escalated). (2) getFinalNote() rewritten to collect
     continuation lines -- multi-line Final Note text split across newlines in the
     Activity Log is now fully extracted. white-space:pre-wrap added to Final Note
@@ -603,7 +614,7 @@ VERSION HISTORY:
     btn-resend CSS added. Backend ComplaintsManager V2.3.3.
 
   V2.2.7 (May 2026): Read-only panel for closed complaints now displays Board
-    Response and closure narrative (Resolution Summary for Closed - Resolved,
+    Response and closure narrative (Closure Statement for Closed - Resolved,
     Non-Resolution Notice reason and actions for Closed - Unresolved). Both
     shown read-only using existing styling. Backend unchanged at V2.3.2.
 
@@ -646,7 +657,7 @@ VERSION HISTORY:
     summary narrative before save. Confirmation dialog required. Fixed resolved
     closure block shown read-only in panel. onStatusChange updated to show/hide
     cr-panel. saveUpdate validates and packages closureNarrative for both closed
-    statuses. Print output includes Resolution Summary section for Closed - Resolved.
+    statuses. Print output includes Closure Statement section for Closed - Resolved.
     nonResolutionNarrative cache references renamed to closureNarrative.
     Backend ComplaintsManager V2.3.1.
 
@@ -2268,25 +2279,21 @@ TECHNICAL:
             );
         }
 
-        // ── PANE 3: INITIAL BOARD RESPONSE (once ack'd, always shown) ──
-        if (c.acknowledgedAt) {
+        // ── PANE 3: INITIAL DETERMINATION (shown once ack'd, hidden on quick resolution path) ──
+        if (c.acknowledgedAt && (c.boardResponse || !isClosedStatus(normStatus))) {
             let respBody = '';
             if (c.boardResponse) {
                 respBody = `
-                    <div class="detail-label" style="margin-bottom:6px;">Initial Board Response</div>
+                    <div class="detail-label" style="margin-bottom:6px;">Initial Determination</div>
                     <div class="board-response-readonly">${formatBoardResponse(c.boardResponse)}</div>
                     ${c.respondedAt ? `<div class="response-notice notice-sent" style="margin-top:8px;">&#10003; Sent to resident ${formatDate(c.respondedAt)} \u2014 field locked.</div>` : ''}`;
             } else {
-                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">${
-                    isClosedStatus(normStatus)
-                        ? 'No Initial Board Response required \u2014 matter resolved within 72 hours.'
-                        : 'No Initial Board Response recorded yet.'
-                }</div>`;
+                respBody = `<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);font-style:italic;">No Initial Determination recorded yet.</div>`;
             }
             panesHtml += pane(
                 'pane-response-' + safeRef,
                 'pane-response',
-                'Initial Board Response',
+                'Initial Determination',
                 c.respondedAt ? formatDate(c.respondedAt) : '',
                 respBody
             );
@@ -2298,7 +2305,7 @@ TECHNICAL:
             if (normStatus === 'Closed - Resolved' && c.closureNarrative) {
                     const sm = c.closureNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
                     const st = sm ? sm[1].trim() : c.closureNarrative;
-                    closureBody = `<div class="detail-label" style="margin-bottom:6px;">Resolution Summary</div><div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);">${escHtml(st)}</div>`;
+                    closureBody = `<div class="detail-label" style="margin-bottom:6px;">Closure Statement</div><div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);">${escHtml(st)}</div>`;
             } else if (normStatus === 'Closed - Unresolved' && c.closureNarrative) {
                     const rm = c.closureNarrative.match(/\[REASON\]([\s\S]*?)\[\/REASON\]/);
                     const am = c.closureNarrative.match(/\[ACTIONS\]([\s\S]*?)\[\/ACTIONS\]/);
@@ -2355,7 +2362,7 @@ TECHNICAL:
                     if (isEscRes && sm) {
                         escalationBody += `
                         <div style="margin-top:12px;">
-                            <div class="detail-label" style="margin-bottom:6px;">Resolution Summary</div>
+                            <div class="detail-label" style="margin-bottom:6px;">Closure Statement</div>
                             <div class="board-response-readonly" style="border-color:rgba(167,139,250,0.3);">${escHtml(sm[1].trim())}</div>
                         </div>`;
                     } else if (!isEscRes && rm) {
@@ -2483,10 +2490,10 @@ TECHNICAL:
         let responseNotice = '';
         if (!isClosed && !isOpen && !c.respondedAt && !isEscalated) {
             if (!isNaN(submitted) && hoursElapsed > 72) {
-                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed — Initial Board Response must be sent to the resident.</div>';
+                responseNotice = '<div class="response-notice notice-overdue">&#9888; 72 hour deadline has passed — Initial Determination must be sent to the resident.</div>';
             } else if (!isNaN(submitted)) {
                 const hoursLeft = Math.ceil(72 - hoursElapsed);
-                responseNotice = '<div class="response-notice notice-pending">&#9679; Initial Board Response must be sent within 72 hours — ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
+                responseNotice = '<div class="response-notice notice-pending">&#9679; Initial Determination must be sent within 72 hours — ' + hoursLeft + ' hour' + (hoursLeft === 1 ? '' : 's') + ' remaining.</div>';
             }
         }
 
@@ -2513,23 +2520,23 @@ TECHNICAL:
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Status Review</div>
                 ${responseNotice}
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:10px 0 14px;">Review the current status of this complaint. If resolved within 72 hours, proceed directly to closure. If not yet resolved, open the Initial Board Response panel.</p>
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:10px 0 14px;">Review the current status of this complaint. If resolved within 72 hours, proceed directly to closure. If not yet resolved, open the Initial Determination panel.</p>
                 <button class="btn-ack" onclick="doStatusReview('${safeRef}', 'resolved')">&#10003; Resolved — Proceed to Closure</button>
-                <button class="btn-close-type" style="margin-left:8px;" onclick="doStatusReview('${safeRef}', 'not_resolved')">&#8594; Not Resolved — Open Initial Board Response</button>
+                <button class="btn-close-type" style="margin-left:8px;" onclick="doStatusReview('${safeRef}', 'not_resolved')">&#8594; Not Resolved — Open Initial Determination</button>
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;margin-top:10px;" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
             </div>`;
         }
 
-        // ── STATUS REVIEW (NOT RESOLVED): Initial Board Response ──────
+        // ── STATUS REVIEW (NOT RESOLVED): Initial Determination ─────────
         if (normStatus === 'Status Review') {
             return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Initial Board Response</div>
+                <div class="action-panel-title">Next Step — Initial Determination</div>
                 ${responseNotice}
                 <div class="update-field" style="width:100%;margin-bottom:12px;">
-                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Initial Board Response</label>
+                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Initial Determination</label>
                     <textarea id="response-${safeRef}" style="width:100%;min-height:150px;" placeholder="Why is this matter unresolved at this point?&#10;&#10;What actions are proposed or underway to resolve it?&#10;&#10;What is the expected timeframe for a further response?">${escHtml(c.boardResponse || '')}</textarea>
-                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; The Initial Board Response must be issued within 72 hours of the complaint being lodged. Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to draft and revise. When ready, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> — this locks the response permanently.</div>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; The Initial Determination must be issued within 72 hours of the complaint being lodged. Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to draft and revise. When ready, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> — this locks the Initial Determination permanently.</div>
                 </div>
                 <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                 <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
@@ -2539,20 +2546,24 @@ TECHNICAL:
             </div>`;
         }
 
-        // ── RESPONDED: Close This Complaint (Send & Send only) ────────
+        // ── RESPONDED: Close This Complaint ───────────────────────────
         if (normStatus === 'Responded') {
+            const quickPath = !c.boardResponse; // no Initial Determination = resolved within 72hrs
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.</p>
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">${quickPath
+                    ? 'This complaint was resolved within 72 hours. Complete the Closure Statement and click Save &amp; Send to close.'
+                    : 'Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.'
+                }</p>
                 <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
-                <button class="btn-close-type" id="close-partial-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'partially')">&#8776; Close as Partially Resolved</button>
-                <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
+                ${quickPath ? '' : `<button class="btn-close-type" id="close-partial-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'partially')">&#8776; Close as Partially Resolved</button>
+                <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>`}
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
                 <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
                 <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Resolution Summary</div>
+                    <div class="nrn-panel-title" style="border-left-color:#10b981;">Closure Statement</div>
                     <div id="cr-saved-${safeRef}" style="display:none;margin-bottom:10px;">
                         <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
                         <div class="board-response-readonly" style="border-color:rgba(16,185,129,0.25);white-space:pre-wrap;" id="cr-saved-text-${safeRef}"></div>
@@ -2893,7 +2904,7 @@ TECHNICAL:
             // The actual status in the sheet stays Acknowledged until
             // Save & Send fires the closure (Acknowledged -> Closed - Resolved
             // is handled directly by the closure path in updateComplaint).
-            if (!confirm('Proceed to closure?\n\nComplete the Resolution Summary to close this complaint.')) return;
+            if (!confirm('Proceed to closure?\n\nComplete the Closure Statement to close this complaint.')) return;
             allComplaints[idx]._quickResolved = true;
             allComplaints[idx].status = 'Responded';
             const cardEl = document.getElementById('card-' + ref);
@@ -3502,7 +3513,7 @@ TECHNICAL:
 
         const callbackName = 'sendCallback_' + Date.now();
         const url = CONFIG.BACKEND_URL
-            + '?action=sendInitialBoardResponse'
+            + '?action=sendInitialDetermination'
             + '&ref='      + encodeURIComponent(ref)
             + '&userName=' + encodeURIComponent(userName)
             + '&callback=' + callbackName;
@@ -3527,7 +3538,7 @@ TECHNICAL:
                     const pad      = n => n.toString().padStart(2, '0');
                     const dateStr  = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
                     const timeStr  = pad(now.getHours()) + ':' + pad(now.getMinutes());
-                    const entry    = dateStr + ' ' + timeStr + ' | SYSTEM | Initial Board Response sent to resident. Status set to Responded.';
+                    const entry    = dateStr + ' ' + timeStr + ' | SYSTEM | Initial Determination sent to resident. Status set to Responded.';
                     const existing = allComplaints[idx].activityLog || '';
                     allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
                     const cardEl = document.getElementById('card-' + ref);
@@ -3807,7 +3818,7 @@ TECHNICAL:
         }[normSt] || '';
 
         const boardBlock = c.boardResponse
-            ? '<div class="board-response"><div class="field-label">Initial Board Response</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
+            ? '<div class="board-response"><div class="field-label">Initial Determination</div><div class="field-value">' + escHtml(c.boardResponse) + '</div></div>'
             : '';
 
         // Standard Non-Resolution Notice block
@@ -3834,7 +3845,7 @@ TECHNICAL:
                 + '</div>';
         }
 
-        // Standard Resolution Summary block
+        // Standard Closure Statement block
         // Renders for both Closed - Resolved and Closed - Resolved (Escalated).
         // Guards on [TYPE:RESOLVED] tag so an escalated-resolved complaint that was
         // previously closed as unresolved cannot bleed its [TYPE:UNRESOLVED] narrative through.
@@ -3844,7 +3855,7 @@ TECHNICAL:
             var resNarrative  = c.closureNarrative;
             var summaryMatch  = resNarrative.match(/\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/);
             var summaryText   = summaryMatch ? summaryMatch[1].trim() : resNarrative;
-            resolvedBlock = '<div class="section-title">Resolution Summary</div>'
+            resolvedBlock = '<div class="section-title">Closure Statement</div>'
                 + '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #10b981;padding:10px 12px;border-radius:3px;margin-bottom:10px;">'
                 + '<div class="field-label" style="margin-bottom:6px;">How this matter was resolved</div>'
                 + '<div class="field-value" style="margin-bottom:12px;">' + escHtml(summaryText) + '</div>'
