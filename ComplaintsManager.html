@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.22
+  Frontend Version: V3.0.23
   Backend:          ComplaintsManager V3.0.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.23 (Jun 2026): Fix quick resolution path pane/button visibility.
+    V3.0.22 used !c.boardResponse to detect quick path but _quickResolved
+    flag was never read in buildCard. Fixed: both Initial Determination
+    pane guard and Responded panel quickPath check now use
+    c._quickResolved || !c.boardResponse so the flag correctly suppresses
+    the pane and extra closure buttons on the quick path. Frontend only.
+
   V3.0.22 (Jun 2026): Rename Initial Board Response to Initial Determination
     and Resolution Summary to Closure Statement throughout.
     Quick resolution path: Initial Determination pane hidden when closed
@@ -2280,7 +2287,7 @@ TECHNICAL:
         }
 
         // ── PANE 3: INITIAL DETERMINATION (shown once ack'd, hidden on quick resolution path) ──
-        if (c.acknowledgedAt && (c.boardResponse || !isClosedStatus(normStatus))) {
+        if (c.acknowledgedAt && (c.boardResponse || !isClosedStatus(normStatus)) && !c._quickResolved) {
             let respBody = '';
             if (c.boardResponse) {
                 respBody = `
@@ -2548,7 +2555,7 @@ TECHNICAL:
 
         // ── RESPONDED: Close This Complaint ───────────────────────────
         if (normStatus === 'Responded') {
-            const quickPath = !c.boardResponse; // no Initial Determination = resolved within 72hrs
+            const quickPath = c._quickResolved || !c.boardResponse; // quick resolution = resolved within 72hrs
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">${quickPath
