@@ -6,15 +6,22 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.27
+  Frontend Version: V3.0.28
   Backend:          ComplaintsManager V3.0.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
-  V3.0.27 (Jun 2026): Remove saveUpdate diagnostic console log added in
-    V3.0.26. resolutionPathway confirmed working end-to-end. Frontend only.
+  V3.0.28 (Jun 2026): Initial Determination pane deferred to Status Review.
+    Pane was appearing at Acknowledged status before Status Review had
+    been actioned. Guard condition updated -- pane now only shows when
+    status is Status Review, Responded, closed, or boardResponse exists.
+    Default open pane at Acknowledged now correctly opens pane-ack
+    rather than pane-response (which was invisible at that stage).
+    Quick path suppression unchanged. Frontend only.
+
+  V3.0.27 (Jun 2026): Remove saveUpdate diagnostic console log.
 
   V3.0.26 (Jun 2026): Diagnostic console log added to saveUpdate to
     confirm _quickResolved flag state at closure time. Temporary.
@@ -2251,7 +2258,8 @@ TECHNICAL:
         const openPane = isEscalated || isEscalatedClosed ? 'pane-escalation-' + safeRef
             : isClosed                ? 'pane-closure-' + safeRef
             : c.respondedAt           ? 'pane-response-' + safeRef
-            : c.acknowledgedAt        ? 'pane-response-' + safeRef
+            : normStatus === 'Status Review' ? 'pane-response-' + safeRef
+            : c.acknowledgedAt        ? 'pane-ack-' + safeRef
             : 'pane-details-' + safeRef;
 
         function pane(id, typeClass, title, dateStr, bodyHtml) {
@@ -2306,8 +2314,14 @@ TECHNICAL:
             );
         }
 
-        // ── PANE 3: INITIAL DETERMINATION (shown once ack'd, hidden on quick resolution path) ──
-        if (c.acknowledgedAt && (c.boardResponse || !isClosedStatus(normStatus)) && !c._quickResolved) {
+        // ── PANE 3: INITIAL DETERMINATION (only shown from Status Review onwards, hidden on quick path) ──
+        const showDetermPane = !c._quickResolved && (
+          normStatus === 'Status Review' ||
+          normStatus === 'Responded' ||
+          c.boardResponse ||
+          isClosedStatus(normStatus)
+        );
+        if (c.acknowledgedAt && showDetermPane) {
             let respBody = '';
             if (c.boardResponse) {
                 respBody = `
