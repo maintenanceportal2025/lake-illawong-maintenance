@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.28
+  Frontend Version: V3.0.29
   Backend:          ComplaintsManager V3.0.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.29 (Jun 2026): Fix event panes not reloading after card rebuild.
+    Matter History, Board Notes and Resident Events showed Loading or
+    stale data after any action that rebuilds the card (Status Review,
+    Save Only, Save & Send, doSendToResident) because loadMatterHistory
+    was only called from toggleCard on first expand -- never on rebuild.
+    Fix: rebuildAndRestoreCard helper added -- calls buildCard, restores
+    expanded class, then calls loadMatterHistory unconditionally so events
+    always reload after any rebuild. All 5 rebuild sites converted to use
+    the helper. toggleCard unchanged. Frontend only.
+
   V3.0.28 (Jun 2026): Initial Determination pane deferred to Status Review.
     Pane was appearing at Acknowledged status before Status Review had
     been actioned. Guard condition updated -- pane now only shows when
@@ -2729,6 +2739,19 @@ TECHNICAL:
         return '';
     }
 
+    // Rebuild a card in place, restoring expanded state and reloading events if needed.
+    function rebuildAndRestoreCard(ref, idx) {
+        const cardEl = document.getElementById('card-' + ref);
+        if (!cardEl) return;
+        const wasExpanded = cardEl.classList.contains('expanded');
+        cardEl.outerHTML = buildCard(allComplaints[idx]);
+        const newCard = document.getElementById('card-' + ref);
+        if (newCard && wasExpanded) {
+            newCard.classList.add('expanded');
+            loadMatterHistory(ref);
+        }
+    }
+
     function toggleCard(ref) {
         const card = document.getElementById('card-' + ref);
         card.classList.toggle('expanded');
@@ -2770,13 +2793,7 @@ TECHNICAL:
                     allComplaints[idx].status        = 'Acknowledged';
                     allComplaints[idx].acknowledgedAt = new Date().toString();
                     if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                    const cardEl = document.getElementById('card-' + ref);
-                    if (cardEl) {
-                        const wasExpanded = cardEl.classList.contains('expanded');
-                        cardEl.outerHTML = buildCard(allComplaints[idx]);
-                        const newCard = document.getElementById('card-' + ref);
-                        if (newCard && wasExpanded) newCard.classList.add('expanded');
-                    }
+                    rebuildAndRestoreCard(ref, idx);
                     updateSummary(allComplaints);
                 }
             } else {
@@ -2907,13 +2924,7 @@ TECHNICAL:
                     }
                     allComplaints[idx].finalNoteDraft = '';
                     if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                    const cardEl = document.getElementById('card-' + ref);
-                    if (cardEl) {
-                        const wasExpanded = cardEl.classList.contains('expanded');
-                        cardEl.outerHTML = buildCard(allComplaints[idx]);
-                        const newCard = document.getElementById('card-' + ref);
-                        if (newCard && wasExpanded) newCard.classList.add('expanded');
-                    }
+                    rebuildAndRestoreCard(ref, idx);
                     updateSummary(allComplaints);
                 }
             } else {
@@ -2948,16 +2959,8 @@ TECHNICAL:
             if (!confirm('Proceed to closure?\n\nComplete the Closure Statement to close this complaint.')) return;
             allComplaints[idx]._quickResolved = true;
             allComplaints[idx].status = 'Responded';
-            const cardEl = document.getElementById('card-' + ref);
-            if (cardEl) {
-                const wasExpanded = cardEl.classList.contains('expanded');
-                cardEl.outerHTML = buildCard(allComplaints[idx]);
-                const newCard = document.getElementById('card-' + ref);
-                if (newCard && wasExpanded) {
-                    newCard.classList.add('expanded');
-                    setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
-                }
-            }
+            rebuildAndRestoreCard(ref, idx);
+            setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
             updateSummary(allComplaints);
             return;
         }
@@ -2985,13 +2988,7 @@ TECHNICAL:
             if (data.success) {
                 allComplaints[idx].status = 'Status Review';
                 if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                const cardEl = document.getElementById('card-' + ref);
-                if (cardEl) {
-                    const wasExpanded = cardEl.classList.contains('expanded');
-                    cardEl.outerHTML = buildCard(allComplaints[idx]);
-                    const newCard = document.getElementById('card-' + ref);
-                    if (newCard && wasExpanded) newCard.classList.add('expanded');
-                }
+                rebuildAndRestoreCard(ref, idx);
                 updateSummary(allComplaints);
             } else {
                 if (feedbackEl) { feedbackEl.textContent = 'Error: ' + (data.error || 'Unknown.'); feedbackEl.className = 'save-feedback error'; }
@@ -3247,25 +3244,15 @@ TECHNICAL:
                         setFeedback(feedback, 'Saved successfully.', 'success');
                     }
 
-                    const cardEl = document.getElementById('card-' + ref);
-                    if (cardEl && !(!andSend && closureNarrative)) {
-                        const wasExpanded = cardEl.classList.contains('expanded');
-                        cardEl.outerHTML  = buildCard(allComplaints[idx]);
-                        const newCard = document.getElementById('card-' + ref);
-                        if (newCard && wasExpanded) {
-                            newCard.classList.add('expanded');
-                            // Ensure Activity Log pane stays open after re-render
-                            const actPane = document.getElementById('pane-activity-' + ref);
-                            if (actPane) actPane.classList.add('open');
+                    if (!(!andSend && closureNarrative)) {
+                        const cardEl = document.getElementById('card-' + ref);
+                        if (cardEl) {
+                            rebuildAndRestoreCard(ref, idx);
+                            const newFeedback = document.getElementById('feedback-' + ref);
+                            const newStatusEl = document.getElementById('status-'   + ref);
+                            if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
+                            if (newStatusEl) newStatusEl.value = '';
                         }
-                        // Refresh from server to pick up SYSTEM notification entries.
-                        // Skip when andSend && boardResponse -- doSendToResident fires next
-                        // and owns the card re-render for that path.
-                        // activityLog updated from data.activityLog above -- no refresh needed
-                        const newFeedback = document.getElementById('feedback-' + ref);
-                        const newStatusEl = document.getElementById('status-'   + ref);
-                        if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
-                        if (newStatusEl) newStatusEl.value = '';
                     }
                     // If Board Response Save & Send -- trigger send
                     if (andSend && boardResponse && !closureNarrative) {
@@ -3583,16 +3570,10 @@ TECHNICAL:
                     const entry    = dateStr + ' ' + timeStr + ' | SYSTEM | Initial Determination sent to resident. Status set to Responded.';
                     const existing = allComplaints[idx].activityLog || '';
                     allComplaints[idx].activityLog = existing ? entry + '\n' + existing : entry;
-                    const cardEl = document.getElementById('card-' + ref);
-                    if (cardEl) {
-                        const wasExpanded = cardEl.classList.contains('expanded');
-                        cardEl.outerHTML  = buildCard(allComplaints[idx]);
-                        const newCard = document.getElementById('card-' + ref);
-                        if (newCard && wasExpanded) newCard.classList.add('expanded');
-                        const newFeedback = document.getElementById('sendfeedback-' + ref);
-                        if (newFeedback) { newFeedback.textContent = ''; }
-                    }
                     if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
+                    rebuildAndRestoreCard(ref, idx);
+                    const newFeedback = document.getElementById('sendfeedback-' + ref);
+                    if (newFeedback) { newFeedback.textContent = ''; }
                     updateSummary(allComplaints);
                 }
             } else {
