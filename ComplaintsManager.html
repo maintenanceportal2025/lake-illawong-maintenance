@@ -6,13 +6,22 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.32
-  Backend:          ComplaintsManager V3.0.13
+  Frontend Version: V3.0.33
+  Backend:          ComplaintsManager V3.0.25
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.33 (Jun 2026): Post-Referral Status Pathway (frontend). Escalated
+    closure panel: two-button resolved/unresolved replaced with four-option
+    "Reason for External Closure" dropdown. closeEscalated() passes the
+    selected type ('resolved','vcat','refused','unsuitable') to backend
+    V3.0.25. New status 'Closed - Unresolved (External Resolution Failed)'
+    added to: statusPillClass(), statusCardClass() / isEscalatedClosedStatus(),
+    isClosedStatus(), filter dropdown, stats counter, print badge map.
+    New CSS: .status-closed-ext-failed pill (slate) + card border.
+
   V3.0.32 (Jun 2026): Fix double rebuild on Save & Send to Resident path.
     saveUpdate was calling rebuildAndRestoreCard then immediately calling
     doSendToResident which did its own rebuildAndRestoreCard. Second rebuild
@@ -1141,6 +1150,8 @@ TECHNICAL:
         .complaint-card.status-closed-unresolved { border-left: 4px solid #9ca3af; background: rgba(156,163,175,0.3); backdrop-filter: none; }
         .complaint-card.status-closed-resolved-escalated   { border-left: 4px solid #a78bfa; background: rgba(167,139,250,0.15); backdrop-filter: none; }
         .complaint-card.status-closed-unresolved-escalated { border-left: 4px solid #7c3aed; background: rgba(124,58,237,0.15);  backdrop-filter: none; }
+        /* V3.0.33 -- Post-Referral failure */
+        .complaint-card.status-closed-ext-failed           { border-left: 4px solid #64748b; background: rgba(100,116,139,0.2);  backdrop-filter: none; }
         .complaint-card.status-converted-to-dispute        { border-left: 4px solid #0d9488; background: rgba(13,148,136,0.12);  backdrop-filter: none; }
         .complaint-card.status-closing-pending  { border-left: 4px solid #f59e0b; background: rgba(245,158,11,0.12);  backdrop-filter: none; }
 
@@ -1217,6 +1228,8 @@ TECHNICAL:
         .status-closed-unresolved { background: rgba(107,114,128,0.3);  color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
         .status-closed-resolved-escalated   { background: rgba(167,139,250,0.2); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.5); }
         .status-closed-unresolved-escalated { background: rgba(124,58,237,0.2);  color: #a78bfa; border: 1px solid rgba(124,58,237,0.5); }
+        /* V3.0.33 -- Post-Referral failure: slate/blue-grey, distinct from mid-grey unresolved */
+        .status-closed-ext-failed           { background: rgba(100,116,139,0.35); color: #e2e8f0; border: 1px solid rgba(100,116,139,0.6); }
         .status-converted-to-dispute        { background: rgba(13,148,136,0.25); color: #5eead4; border: 1px solid rgba(13,148,136,0.5); }
         .status-escalated    { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
         .status-closing-pending { background: rgba(245,158,11,0.3); color: #fde68a; border: 1px solid rgba(245,158,11,0.6); }
@@ -1825,6 +1838,7 @@ TECHNICAL:
             <option value="Closed - Unresolved">Closed - Unresolved</option>
             <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated)</option>
             <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated)</option>
+            <option value="Closed - Unresolved (External Resolution Failed)">Closed - Unresolved (Ext. Resolution Failed)</option>
             <option value="Closed - Converted to Dispute">Closed - Converted to Dispute</option>
         </select>
         <label for="filterOverdue">Show:</label>
@@ -1977,8 +1991,9 @@ TECHNICAL:
                 'Closed - Resolved':               'status-closed-resolved',
                 'Closed - Partially Resolved':     'status-closed-unresolved',
                 'Closed - Unresolved':             'status-closed-unresolved',
-                'Closed - Resolved (Escalated)':   'status-closed-resolved-escalated',
-                'Closed - Unresolved (Escalated)': 'status-closed-unresolved-escalated',
+                'Closed - Resolved (Escalated)':                   'status-closed-resolved-escalated',
+                'Closed - Unresolved (Escalated)':                 'status-closed-unresolved-escalated',
+                'Closed - Unresolved (External Resolution Failed)': 'status-closed-ext-failed',
                 'Closed - Converted to Dispute':   'status-converted-to-dispute',
                 'Closed - Converted to Dispute':   'status-converted-to-dispute'
             }[value];
@@ -2052,7 +2067,8 @@ TECHNICAL:
             if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
             if (s === 'Escalated') counts.Escalated++;
             if (s === 'Closed - Resolved' || s === 'Closed - Partially Resolved' || s === 'Closed - Unresolved' || s === 'Closed - Converted to Dispute' || s === 'Closed') counts.Closed++;
-            if (s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)') counts.ClosedEscalated++;
+            if (s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
+                || s === 'Closed - Unresolved (External Resolution Failed)') counts.ClosedEscalated++;
             if (isOverdue(c)) counts.overdue++;
         });
         document.getElementById('countOpen').textContent            = counts.Open;
@@ -2076,11 +2092,13 @@ TECHNICAL:
         return s === 'Closed - Resolved' || s === 'Closed - Partially Resolved' || s === 'Closed - Unresolved'
             || s === 'Closed - Converted to Dispute'
             || s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
+            || s === 'Closed - Unresolved (External Resolution Failed)'
             || s === 'Closed';
     }
 
     function isEscalatedClosedStatus(s) {
-        return s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)';
+        return s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
+            || s === 'Closed - Unresolved (External Resolution Failed)';
     }
 
     function applyFilters() {
@@ -2141,8 +2159,9 @@ TECHNICAL:
         else if (normStatus === 'Responded')                       borderClass = 'status-responded';
         else if (normStatus === 'Closed - Resolved')               borderClass = 'status-closed-resolved';
         else if (normStatus === 'Closed - Unresolved')             borderClass = 'status-closed-unresolved';
-        else if (normStatus === 'Closed - Resolved (Escalated)')   borderClass = 'status-closed-resolved-escalated';
-        else if (normStatus === 'Closed - Unresolved (Escalated)') borderClass = 'status-closed-unresolved-escalated';
+        else if (normStatus === 'Closed - Resolved (Escalated)')                    borderClass = 'status-closed-resolved-escalated';
+        else if (normStatus === 'Closed - Unresolved (Escalated)')                  borderClass = 'status-closed-unresolved-escalated';
+        else if (normStatus === 'Closed - Unresolved (External Resolution Failed)') borderClass = 'status-closed-ext-failed';
         else if (normStatus === 'Escalated')                       borderClass = 'status-escalated';
         else if (normStatus === 'Acknowledged')                    borderClass = 'status-acknowledged';
 
@@ -2675,13 +2694,22 @@ TECHNICAL:
             } else {
                 const escOrg = getEscalationBody(c.activityLog) || '';
                 escalatedActionBody = `
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Escalation Closure note recorded. Select the outcome to close this complaint.</p>
-                <button class="btn-close-type" id="esc-close-resolved-btn-${safeRef}" onclick="closeEscalated('${safeRef}', 'resolved')">&#10003; Close as Resolved (Escalated)</button>
-                <button class="btn-close-type" id="esc-close-unresolved-btn-${safeRef}" onclick="closeEscalated('${safeRef}', 'unresolved')">&#10005; Close as Unresolved (Escalated)</button>
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Escalation Closure note recorded. Select the reason for closure to close this complaint.</p>
+                <div style="margin-bottom:14px;">
+                    <label style="display:block;font-size:0.8rem;color:rgba(255,255,255,0.6);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:7px;">Reason for External Closure</label>
+                    <select id="esc-closure-reason-${safeRef}" class="glass-select" style="width:100%;max-width:480px;font-size:0.9rem;" onchange="onEscClosureReasonChange('${safeRef}')">
+                        <option value="">(select a reason to enable closure)</option>
+                        <option value="resolved">Resolved via VicAssist Conciliation</option>
+                        <option value="vcat">Proceeded to VCAT</option>
+                        <option value="refused">Terminated by VicAssist — Other Party Refused to Participate</option>
+                        <option value="unsuitable">Terminated by VicAssist — Matter Unsuitable for Conciliation</option>
+                    </select>
+                </div>
+                <button class="btn-close-type" id="esc-close-btn-${safeRef}" onclick="closeEscalated('${safeRef}')" disabled style="opacity:0.45;cursor:not-allowed;">&#10003; Close Complaint</button>
                 <span class="save-feedback" id="esc-feedback-${safeRef}"></span>
-                <div style="margin-top:14px;">
+                <div id="esc-preview-${safeRef}" style="margin-top:14px;display:none;">
                     <div class="nrn-fixed-label">Pathway notice — included automatically in the closure notice sent to the resident</div>
-                    <div class="nrn-fixed-block">${escHtml(buildEscalatedFixedBlock(escOrg, 'resolved'))}</div>
+                    <div class="nrn-fixed-block" id="esc-preview-text-${safeRef}"></div>
                 </div>`;
             }
             return `<div class="action-panel">
@@ -2895,22 +2923,79 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    function closeEscalated(ref, type) {
-        const isResolved = type === 'resolved';
-        const feedback   = document.getElementById('esc-feedback-' + ref);
-        const btnRes     = document.getElementById('esc-close-resolved-btn-' + ref);
-        const btnUnres   = document.getElementById('esc-close-unresolved-btn-' + ref);
-        const userName   = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-        const finalStatus = isResolved ? 'Closed - Resolved (Escalated)' : 'Closed - Unresolved (Escalated)';
+    // V3.0.33: fired when the closure reason dropdown changes.
+    // Enables/disables the close button and updates the pathway preview block.
+    function onEscClosureReasonChange(ref) {
+        const sel     = document.getElementById('esc-closure-reason-' + ref);
+        const btn     = document.getElementById('esc-close-btn-' + ref);
+        const preview = document.getElementById('esc-preview-' + ref);
+        const previewText = document.getElementById('esc-preview-text-' + ref);
+        const type    = sel ? sel.value : '';
+
+        if (btn) {
+            btn.disabled = !type;
+            btn.style.opacity = type ? '1' : '0.45';
+            btn.style.cursor  = type ? 'pointer' : 'not-allowed';
+        }
+
+        // Show pathway preview for the two new failure types only;
+        // resolved and vcat use existing fixed block text.
+        const complaint = allComplaints.find(c => c.referenceNumber === ref);
+        const escOrg    = complaint ? (getEscalationBody(complaint.activityLog) || '') : '';
+
+        if (preview && previewText) {
+            if (type === 'refused') {
+                previewText.textContent =
+                    'We have been advised by VicAssist that the formal conciliation process cannot proceed ' +
+                    'due to a lack of mutual participation. Because the village\'s internal and voluntary ' +
+                    'external options have now been fully exhausted, you have the right to escalate this ' +
+                    'matter independently to VCAT. Your complaint record, including the timeline of internal ' +
+                    'and external steps taken, remains available to you via the Resident Portal as evidence ' +
+                    'of your good-faith attempts to resolve the issue internally.';
+                preview.style.display = '';
+            } else if (type === 'unsuitable') {
+                previewText.textContent =
+                    'We have been advised by VicAssist that this matter is not suitable for their conciliation ' +
+                    'process. This is not a reflection on the merit of your complaint — some matters fall outside ' +
+                    'what conciliation can address. Because the village\'s internal options have now been exhausted, ' +
+                    'you have the right to escalate this matter independently to VCAT or seek independent legal ' +
+                    'advice. Your complaint record, including the timeline of steps taken, remains available to ' +
+                    'you via the Resident Portal.';
+                preview.style.display = '';
+            } else if (type === 'resolved' || type === 'vcat') {
+                previewText.textContent = buildEscalatedFixedBlock(escOrg, type === 'resolved' ? 'resolved' : 'unresolved');
+                preview.style.display = '';
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+    }
+
+    function closeEscalated(ref) {
+        const sel      = document.getElementById('esc-closure-reason-' + ref);
+        const type     = sel ? sel.value : '';
+        const btn      = document.getElementById('esc-close-btn-' + ref);
+        const feedback = document.getElementById('esc-feedback-' + ref);
+        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+
+        if (!type) { setFeedback(feedback, 'Please select a closure reason.', 'error'); return; }
+
+        const reasonLabels = {
+            resolved:   'Resolved via VicAssist Conciliation',
+            vcat:       'Proceeded to VCAT',
+            refused:    'Terminated by VicAssist — Other Party Refused to Participate',
+            unsuitable: 'Terminated by VicAssist — Matter Unsuitable for Conciliation'
+        };
 
         const confirmed = confirm(
-            'Close this complaint as ' + (isResolved ? 'Resolved (Escalated)' : 'Unresolved (Escalated)') + '?\n\n' +
+            'Close this complaint?\n\n' +
+            'Reason: ' + (reasonLabels[type] || type) + '\n\n' +
             'A closure notice will be sent to the resident.\nThis cannot be undone.\n\nProceed?'
         );
         if (!confirmed) return;
 
-        if (btnRes)   btnRes.disabled   = true;
-        if (btnUnres) btnUnres.disabled = true;
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; }
+        if (sel) sel.disabled = true;
         setFeedback(feedback, '', '');
 
         const callbackName = 'escCloseCallback_' + Date.now();
@@ -2923,8 +3008,8 @@ TECHNICAL:
 
         const timeout = setTimeout(function() {
             cleanup(callbackName);
-            if (btnRes)   btnRes.disabled   = false;
-            if (btnUnres) btnUnres.disabled = false;
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+            if (sel) sel.disabled = false;
             setFeedback(feedback, 'Timed out — please try again.', 'error');
         }, 20000);
 
@@ -2935,7 +3020,6 @@ TECHNICAL:
                 if (idx !== -1) {
                     allComplaints[idx].status   = data.finalStatus;
                     allComplaints[idx].closedAt = new Date().toString();
-                    // Write Final Note to Activity Log cache
                     if (data.finalNoteEntry) {
                         const existing = allComplaints[idx].activityLog || '';
                         allComplaints[idx].activityLog = data.finalNoteEntry + (existing ? '\n' + existing : '');
@@ -2946,8 +3030,8 @@ TECHNICAL:
                     updateSummary(allComplaints);
                 }
             } else {
-                if (btnRes)   btnRes.disabled   = false;
-                if (btnUnres) btnUnres.disabled = false;
+                if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+                if (sel) sel.disabled = false;
                 setFeedback(feedback, 'Error: ' + (data.error || 'Unknown.'), 'error');
             }
         };
@@ -2955,8 +3039,8 @@ TECHNICAL:
         const script = document.createElement('script');
         script.onerror = function() {
             cleanup(callbackName);
-            if (btnRes)   btnRes.disabled   = false;
-            if (btnUnres) btnUnres.disabled = false;
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+            if (sel) sel.disabled = false;
             setFeedback(feedback, 'Network error.', 'error');
         };
         script.src = url;
@@ -3673,8 +3757,9 @@ TECHNICAL:
             'Responded':          'status-responded',
             'Closed - Resolved':               'status-closed-resolved',
             'Closed - Unresolved':             'status-closed-unresolved',
-            'Closed - Resolved (Escalated)':   'status-closed-resolved-escalated',
-            'Closed - Unresolved (Escalated)': 'status-closed-unresolved-escalated',
+            'Closed - Resolved (Escalated)':                   'status-closed-resolved-escalated',
+            'Closed - Unresolved (Escalated)':                 'status-closed-unresolved-escalated',
+            'Closed - Unresolved (External Resolution Failed)': 'status-closed-ext-failed',
             'Escalated':          'status-escalated'
         }[s] || 'status-closed';
     }
@@ -3720,8 +3805,9 @@ TECHNICAL:
             .badge-acknowledged { background: #bbf7d0; color: #047857; }
             .badge-responded    { background: #e9d5ff; color: #7c3aed; }
             .badge-closed       { background: #f3f4f6; color: #374151; }
-            .badge-escalated    { background: #fef3c7; color: #b45309; }
+            .badge-escalated        { background: #fef3c7; color: #b45309; }
             .badge-escalated-closed { background: #ede9fe; color: #6d28d9; }
+            .badge-ext-failed       { background: #f1f5f9; color: #475569; }
             .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase;
                              letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;
                              padding-bottom: 4px; margin: 16px 0 10px; }
@@ -3857,8 +3943,9 @@ TECHNICAL:
             'Closed - Resolved':                 'badge-closed',
             'Closed - Unresolved':               'badge-closed',
             'Escalated':                         'badge-escalated',
-            'Closed - Resolved (Escalated)':     'badge-escalated-closed',
-            'Closed - Unresolved (Escalated)':   'badge-escalated-closed'
+            'Closed - Resolved (Escalated)':                   'badge-escalated-closed',
+            'Closed - Unresolved (Escalated)':                 'badge-escalated-closed',
+            'Closed - Unresolved (External Resolution Failed)': 'badge-ext-failed'
         }[normSt] || '';
 
         const boardBlock = c.boardResponse
