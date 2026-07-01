@@ -6,13 +6,22 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.33
-  Backend:          ComplaintsManager V3.0.25
+  Frontend Version: V3.0.34
+  Backend:          ComplaintsManager V3.0.26
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.34 (Jun 2026): Closed - No Further Action status (frontend).
+    New status pill (amber-grey), card border, print badge added.
+    statusPillClass() both maps, isClosedStatus(), filter dropdown,
+    stats counter all updated. Fix: JSONP callback race condition on
+    Escalated status save -- window[callbackName] now assigned before
+    script tag is appended, not after (was causing saveCallback is not
+    defined error when Apps Script responded faster than JS assignment).
+    Backend updated to V3.0.26.
+
   V3.0.33 (Jun 2026): Post-Referral Status Pathway (frontend). Escalated
     closure panel: two-button resolved/unresolved replaced with four-option
     "Reason for External Closure" dropdown. closeEscalated() passes the
@@ -1152,6 +1161,8 @@ TECHNICAL:
         .complaint-card.status-closed-unresolved-escalated { border-left: 4px solid #7c3aed; background: rgba(124,58,237,0.15);  backdrop-filter: none; }
         /* V3.0.33 -- Post-Referral failure */
         .complaint-card.status-closed-ext-failed           { border-left: 4px solid #64748b; background: rgba(100,116,139,0.2);  backdrop-filter: none; }
+        /* V3.0.34 -- No Further Action */
+        .complaint-card.status-closed-nfa                  { border-left: 4px solid #b49050; background: rgba(180,150,80,0.12);  backdrop-filter: none; }
         .complaint-card.status-converted-to-dispute        { border-left: 4px solid #0d9488; background: rgba(13,148,136,0.12);  backdrop-filter: none; }
         .complaint-card.status-closing-pending  { border-left: 4px solid #f59e0b; background: rgba(245,158,11,0.12);  backdrop-filter: none; }
 
@@ -1230,6 +1241,8 @@ TECHNICAL:
         .status-closed-unresolved-escalated { background: rgba(124,58,237,0.2);  color: #a78bfa; border: 1px solid rgba(124,58,237,0.5); }
         /* V3.0.33 -- Post-Referral failure: slate/blue-grey, distinct from mid-grey unresolved */
         .status-closed-ext-failed           { background: rgba(100,116,139,0.35); color: #e2e8f0; border: 1px solid rgba(100,116,139,0.6); }
+        /* V3.0.34 -- No Further Action: amber-grey, distinct from all other closed states */
+        .status-closed-nfa                  { background: rgba(180,150,80,0.3);   color: #fde68a; border: 1px solid rgba(180,150,80,0.55); }
         .status-converted-to-dispute        { background: rgba(13,148,136,0.25); color: #5eead4; border: 1px solid rgba(13,148,136,0.5); }
         .status-escalated    { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
         .status-closing-pending { background: rgba(245,158,11,0.3); color: #fde68a; border: 1px solid rgba(245,158,11,0.6); }
@@ -1839,6 +1852,7 @@ TECHNICAL:
             <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated)</option>
             <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated)</option>
             <option value="Closed - Unresolved (External Resolution Failed)">Closed - Unresolved (Ext. Resolution Failed)</option>
+            <option value="Closed - No Further Action">Closed - No Further Action</option>
             <option value="Closed - Converted to Dispute">Closed - Converted to Dispute</option>
         </select>
         <label for="filterOverdue">Show:</label>
@@ -1994,6 +2008,7 @@ TECHNICAL:
                 'Closed - Resolved (Escalated)':                   'status-closed-resolved-escalated',
                 'Closed - Unresolved (Escalated)':                 'status-closed-unresolved-escalated',
                 'Closed - Unresolved (External Resolution Failed)': 'status-closed-ext-failed',
+                'Closed - No Further Action':                       'status-closed-nfa',
                 'Closed - Converted to Dispute':   'status-converted-to-dispute',
                 'Closed - Converted to Dispute':   'status-converted-to-dispute'
             }[value];
@@ -2069,6 +2084,7 @@ TECHNICAL:
             if (s === 'Closed - Resolved' || s === 'Closed - Partially Resolved' || s === 'Closed - Unresolved' || s === 'Closed - Converted to Dispute' || s === 'Closed') counts.Closed++;
             if (s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
                 || s === 'Closed - Unresolved (External Resolution Failed)') counts.ClosedEscalated++;
+            if (s === 'Closed - No Further Action') counts.ClosedUnresolved++;
             if (isOverdue(c)) counts.overdue++;
         });
         document.getElementById('countOpen').textContent            = counts.Open;
@@ -2093,6 +2109,7 @@ TECHNICAL:
             || s === 'Closed - Converted to Dispute'
             || s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
             || s === 'Closed - Unresolved (External Resolution Failed)'
+            || s === 'Closed - No Further Action'
             || s === 'Closed';
     }
 
@@ -2162,6 +2179,7 @@ TECHNICAL:
         else if (normStatus === 'Closed - Resolved (Escalated)')                    borderClass = 'status-closed-resolved-escalated';
         else if (normStatus === 'Closed - Unresolved (Escalated)')                  borderClass = 'status-closed-unresolved-escalated';
         else if (normStatus === 'Closed - Unresolved (External Resolution Failed)') borderClass = 'status-closed-ext-failed';
+        else if (normStatus === 'Closed - No Further Action')                       borderClass = 'status-closed-nfa';
         else if (normStatus === 'Escalated')                       borderClass = 'status-escalated';
         else if (normStatus === 'Acknowledged')                    borderClass = 'status-acknowledged';
 
@@ -3760,6 +3778,7 @@ TECHNICAL:
             'Closed - Resolved (Escalated)':                   'status-closed-resolved-escalated',
             'Closed - Unresolved (Escalated)':                 'status-closed-unresolved-escalated',
             'Closed - Unresolved (External Resolution Failed)': 'status-closed-ext-failed',
+            'Closed - No Further Action':                       'status-closed-nfa',
             'Escalated':          'status-escalated'
         }[s] || 'status-closed';
     }
@@ -3808,6 +3827,7 @@ TECHNICAL:
             .badge-escalated        { background: #fef3c7; color: #b45309; }
             .badge-escalated-closed { background: #ede9fe; color: #6d28d9; }
             .badge-ext-failed       { background: #f1f5f9; color: #475569; }
+            .badge-nfa              { background: #fef9c3; color: #854d0e; }
             .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase;
                              letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;
                              padding-bottom: 4px; margin: 16px 0 10px; }
@@ -3945,7 +3965,8 @@ TECHNICAL:
             'Escalated':                         'badge-escalated',
             'Closed - Resolved (Escalated)':                   'badge-escalated-closed',
             'Closed - Unresolved (Escalated)':                 'badge-escalated-closed',
-            'Closed - Unresolved (External Resolution Failed)': 'badge-ext-failed'
+            'Closed - Unresolved (External Resolution Failed)': 'badge-ext-failed',
+            'Closed - No Further Action':                       'badge-nfa'
         }[normSt] || '';
 
         const boardBlock = c.boardResponse
