@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.36
-  Backend:          ComplaintsManager V3.0.26
+  Frontend Version: V3.0.37
+  Backend:          ComplaintsManager V3.0.27
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.37 (Jul 2026): Closure - Pending status (frontend). New amber pill
+    and card border. statusPillClass() both maps, card border assignment,
+    filter dropdown, print badge map all updated. NOT added to isClosedStatus()
+    -- window still open. Escalated button visible from Closure - Pending.
+    Status dropdown: Closed - Unresolved removed as selectable option (legacy
+    records still display correctly). Backend updated to V3.0.27.
+
   V3.0.36 (Jul 2026): Timeout standardisation and button alignment fixes.
     All JSONP calls that trigger notifications increased from 15s to 45s:
     acknowledgeManual, saveUpdate Escalated path, resendNotice. saveUpdate
@@ -1185,6 +1192,8 @@ TECHNICAL:
         .complaint-card.status-closed-ext-failed           { border-left: 4px solid #64748b; background: rgba(100,116,139,0.2);  backdrop-filter: none; }
         /* V3.0.34 -- No Further Action */
         .complaint-card.status-closed-nfa                  { border-left: 4px solid #b49050; background: rgba(180,150,80,0.12);  backdrop-filter: none; }
+        /* V3.0.37 -- Closure - Pending */
+        .complaint-card.status-closure-pending             { border-left: 4px solid #d97706; background: rgba(217,119,6,0.12);   backdrop-filter: none; }
         .complaint-card.status-converted-to-dispute        { border-left: 4px solid #0d9488; background: rgba(13,148,136,0.12);  backdrop-filter: none; }
         .complaint-card.status-closing-pending  { border-left: 4px solid #f59e0b; background: rgba(245,158,11,0.12);  backdrop-filter: none; }
 
@@ -1265,6 +1274,8 @@ TECHNICAL:
         .status-closed-ext-failed           { background: rgba(100,116,139,0.35); color: #e2e8f0; border: 1px solid rgba(100,116,139,0.6); }
         /* V3.0.34 -- No Further Action: amber-grey, distinct from all other closed states */
         .status-closed-nfa                  { background: rgba(180,150,80,0.3);   color: #fde68a; border: 1px solid rgba(180,150,80,0.55); }
+        /* V3.0.37 -- Closure - Pending: warm amber, active/in-progress feel, not a closed state */
+        .status-closure-pending             { background: rgba(217,119,6,0.25);   color: #fbbf24; border: 1px solid rgba(217,119,6,0.55); }
         .status-converted-to-dispute        { background: rgba(13,148,136,0.25); color: #5eead4; border: 1px solid rgba(13,148,136,0.5); }
         .status-escalated    { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
         .status-closing-pending { background: rgba(245,158,11,0.3); color: #fde68a; border: 1px solid rgba(245,158,11,0.6); }
@@ -1868,10 +1879,11 @@ TECHNICAL:
             <option value="Open">Open</option>
             <option value="Acknowledged">Acknowledged</option>
             <option value="Responded">Responded</option>
+            <option value="Closure - Pending">Closure - Pending</option>
             <option value="Escalated">Escalated</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
-                <option value="Closed - Partially Resolved">Closed - Partially Resolved</option>
-            <option value="Closed - Unresolved">Closed - Unresolved</option>
+            <option value="Closed - Partially Resolved">Closed - Partially Resolved</option>
+            <option value="Closed - Unresolved">Closed - Unresolved (legacy)</option>
             <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated)</option>
             <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated)</option>
             <option value="Closed - Unresolved (External Resolution Failed)">Closed - Unresolved (Ext. Resolution Failed)</option>
@@ -2030,6 +2042,7 @@ TECHNICAL:
                 'Closed - Resolved':               'status-closed-resolved',
                 'Closed - Partially Resolved':     'status-closed-unresolved',
                 'Closed - Unresolved':             'status-closed-unresolved',
+                'Closure - Pending':                               'status-closure-pending',
                 'Closed - Resolved (Escalated)':                   'status-closed-resolved-escalated',
                 'Closed - Unresolved (Escalated)':                 'status-closed-unresolved-escalated',
                 'Closed - Unresolved (External Resolution Failed)': 'status-closed-ext-failed',
@@ -2109,6 +2122,7 @@ TECHNICAL:
             if (s === 'Closed - Resolved' || s === 'Closed - Partially Resolved' || s === 'Closed - Unresolved' || s === 'Closed - Converted to Dispute' || s === 'Closed') counts.Closed++;
             if (s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
                 || s === 'Closed - Unresolved (External Resolution Failed)') counts.ClosedEscalated++;
+            if (s === 'Closure - Pending') counts.ClosurePending = (counts.ClosurePending || 0) + 1;
             if (s === 'Closed - No Further Action') counts.ClosedUnresolved++;
             if (isOverdue(c)) counts.overdue++;
         });
@@ -2201,6 +2215,7 @@ TECHNICAL:
         else if (normStatus === 'Responded')                       borderClass = 'status-responded';
         else if (normStatus === 'Closed - Resolved')               borderClass = 'status-closed-resolved';
         else if (normStatus === 'Closed - Unresolved')             borderClass = 'status-closed-unresolved';
+        else if (normStatus === 'Closure - Pending')                               borderClass = 'status-closure-pending';
         else if (normStatus === 'Closed - Resolved (Escalated)')                    borderClass = 'status-closed-resolved-escalated';
         else if (normStatus === 'Closed - Unresolved (Escalated)')                  borderClass = 'status-closed-unresolved-escalated';
         else if (normStatus === 'Closed - Unresolved (External Resolution Failed)') borderClass = 'status-closed-ext-failed';
@@ -2277,9 +2292,10 @@ TECHNICAL:
         const map = {
             'Open':                              ['Acknowledged'],
             'Acknowledged':                      ['Responded'],
-            'Responded':                         ['Closed - Resolved', 'Closed - Unresolved'],
+            'Responded':                         ['Closed - Resolved', 'Closure - Pending'],
+            'Closure - Pending':                 ['Escalated'],
             'Closed - Resolved':                 ['Escalated'],
-            'Closed - Unresolved':               ['Escalated'],
+            'Closed - Unresolved':               ['Escalated'],   // legacy records only
             'Escalated':                         ['Closed - Resolved (Escalated)', 'Closed - Unresolved (Escalated)'],
             'Closed - Resolved (Escalated)':     [],
             'Closed - Unresolved (Escalated)':   []
@@ -3805,6 +3821,7 @@ TECHNICAL:
             'Open':               'status-open',
             'Acknowledged':       'status-acknowledged',
             'Responded':          'status-responded',
+            'Closure - Pending':                               'status-closure-pending',
             'Closed - Resolved':               'status-closed-resolved',
             'Closed - Unresolved':             'status-closed-unresolved',
             'Closed - Resolved (Escalated)':                   'status-closed-resolved-escalated',
@@ -3860,6 +3877,7 @@ TECHNICAL:
             .badge-escalated-closed { background: #ede9fe; color: #6d28d9; }
             .badge-ext-failed       { background: #f1f5f9; color: #475569; }
             .badge-nfa              { background: #fef9c3; color: #854d0e; }
+            .badge-closure-pending  { background: #fffbeb; color: #b45309; }
             .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase;
                              letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb;
                              padding-bottom: 4px; margin: 16px 0 10px; }
@@ -3992,6 +4010,7 @@ TECHNICAL:
             'Open':                              'badge-open',
             'Acknowledged':                      'badge-acknowledged',
             'Responded':                         'badge-responded',
+            'Closure - Pending':                 'badge-closure-pending',
             'Closed - Resolved':                 'badge-closed',
             'Closed - Unresolved':               'badge-closed',
             'Escalated':                         'badge-escalated',
