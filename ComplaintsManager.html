@@ -6,13 +6,24 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.35
+  Frontend Version: V3.0.36
   Backend:          ComplaintsManager V3.0.26
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.36 (Jul 2026): Timeout standardisation and button alignment fixes.
+    All JSONP calls that trigger notifications increased from 15s to 45s:
+    acknowledgeManual, saveUpdate Escalated path, resendNotice. saveUpdate
+    already used 45s for andSend/closureNarrative paths -- extended to
+    also cover Escalated status (which sends resident escalation notice).
+    Added 'Sending...' feedback to Save & Send Closed - Unresolved path.
+    buildEscalatedFixedBlock: escalating org correctly excluded from the
+    pathway list shown on closure -- no point directing resident back to
+    the body that just closed their matter without resolution. Print Record / Resend Closure vertical alignment fixed:
+    matching padding on both buttons so they sit at same height.
+
   V3.0.35 (Jun 2026): Three fixes. (1) Escalated closure feedback: setFeedback
     to 'Sending...' before JSONP call so user sees activity during the 45s
     window. (2) Print Record / Resend Closure Notice alignment in escalated
@@ -1480,7 +1491,7 @@ TECHNICAL:
             background: rgba(59,130,246,0.15);
             border: 1px solid rgba(59,130,246,0.4);
             color: #93c5fd;
-            padding: 7px 16px;
+            padding: 10px 16px;
             border-radius: 2px;
             font-size: 0.85rem;
             font-weight: 600;
@@ -1974,7 +1985,9 @@ TECHNICAL:
             '  Retirement Villages Act 2024 (Vic).'
         ];
 
-        // Build pathway lines, excluding the one that was used
+        // Build pathway lines, excluding the org that was used for escalation --
+        // pointing the resident back to the same body that just closed their
+        // matter without resolution serves no purpose. V3.0.36 revert.
         var lines = [];
         Object.keys(pathways).forEach(function(key) {
             if (key !== org) {
@@ -2856,8 +2869,8 @@ TECHNICAL:
         const timeout = setTimeout(function () {
             cleanup(callbackName);
             if (btn) { btn.disabled = false; btn.textContent = '\u2713 Acknowledge Complaint'; }
-            if (feedback) { feedback.textContent = 'Timed out.'; feedback.className = 'save-feedback error'; }
-        }, 15000);
+            if (feedback) { feedback.textContent = 'Timed out — server may still be processing. Please refresh before retrying.'; feedback.className = 'save-feedback error'; }
+        }, 45000);
 
         window[callbackName] = function (data) {
             clearTimeout(timeout); cleanup(callbackName);
@@ -3296,7 +3309,14 @@ TECHNICAL:
         }
 
         if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-        setFeedback(feedback, '', '');
+        // Show contextual sending message for actions that trigger notifications
+        if (andSend && closureNarrative) {
+            setFeedback(feedback, 'Sending closure notice — please wait...', '');
+        } else if (effectiveStatus === 'Escalated') {
+            setFeedback(feedback, 'Saving and sending escalation notice — please wait...', '');
+        } else {
+            setFeedback(feedback, '', '');
+        }
 
         const callbackName = 'saveCallback_' + Date.now();
         let url = CONFIG.BACKEND_URL
@@ -3316,7 +3336,9 @@ TECHNICAL:
         const saveUserName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         url += '&userName=' + encodeURIComponent(saveUserName);
 
-        const timeoutMs = (andSend || closureNarrative) ? 45000 : 15000;
+        // 45s for any path that sends a notification: andSend, closureNarrative,
+        // or setting status to Escalated (fires resident escalation notice). 15s otherwise.
+        const timeoutMs = (andSend || closureNarrative || effectiveStatus === 'Escalated') ? 45000 : 15000;
         const timeout = setTimeout(function () {
             cleanup(callbackName); if (btn) { btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only'; }
             setFeedback(feedback, 'Timed out — server may still be processing. Please refresh before retrying.', 'error');
@@ -3429,8 +3451,8 @@ TECHNICAL:
         const timeout = setTimeout(function () {
             cleanup(callbackName);
             btn.disabled = false; btn.textContent = '\u21ba Resend Closure Notice';
-            feedback.textContent = 'Timed out — please try again.'; feedback.className = 'comment-feedback error';
-        }, 15000);
+            feedback.textContent = 'Timed out — server may still be processing. Please refresh before retrying.'; feedback.className = 'comment-feedback error';
+        }, 45000);
 
         window[callbackName] = function (data) {
             clearTimeout(timeout); cleanup(callbackName);
