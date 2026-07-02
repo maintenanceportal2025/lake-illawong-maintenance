@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.34
+  Frontend Version: V3.0.35
   Backend:          ComplaintsManager V3.0.26
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.35 (Jun 2026): Three fixes. (1) Escalated closure feedback: setFeedback
+    to 'Sending...' before JSONP call so user sees activity during the 45s
+    window. (2) Print Record / Resend Closure Notice alignment in escalated
+    closed panel: btn-print-record changed from display:block to
+    display:inline-block so both buttons sit on the same row. (3) Initial
+    Determination pane reverted to show from Acknowledged onwards (V3.0.28
+    had deferred it to Status Review, but in practice this left no time to
+    compose the determination when the 72h deadline fired). Pane now shows
+    as soon as acknowledgedAt is set, matching pre-V3.0.28 behaviour.
+
   V3.0.34 (Jun 2026): Closed - No Further Action status (frontend).
     New status pill (amber-grey), card border, print badge added.
     statusPillClass() both maps, isClosedStatus(), filter dropdown,
@@ -1135,7 +1145,8 @@ TECHNICAL:
             cursor: pointer;
             transition: background 0.2s;
             margin-top: 12px;
-            display: block;
+            display: inline-block;
+            vertical-align: middle;
         }
         .btn-print-record:hover { background: rgba(255,255,255,0.22); color: white; }
 
@@ -1476,6 +1487,7 @@ TECHNICAL:
             cursor: pointer;
             transition: background 0.2s;
             margin-left: 8px;
+            vertical-align: middle;
         }
         .btn-resend:hover    { background: rgba(59,130,246,0.28); }
         .btn-resend:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -2379,13 +2391,11 @@ TECHNICAL:
             );
         }
 
-        // ── PANE 3: INITIAL DETERMINATION (only shown from Status Review onwards, hidden on quick path) ──
-        const showDetermPane = !c._quickResolved && (
-          normStatus === 'Status Review' ||
-          normStatus === 'Responded' ||
-          c.boardResponse ||
-          isClosedStatus(normStatus)
-        );
+        // ── PANE 3: INITIAL DETERMINATION ────────────────────────────────
+        // Shown as soon as complaint is acknowledged, hidden on quick path.
+        // Reverted in V3.0.35 -- V3.0.28 had deferred this to Status Review
+        // but in practice left no time to compose when 72h deadline fired.
+        const showDetermPane = !c._quickResolved && !!c.acknowledgedAt;
         if (c.acknowledgedAt && showDetermPane) {
             let respBody = '';
             if (c.boardResponse) {
@@ -3014,7 +3024,7 @@ TECHNICAL:
 
         if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; }
         if (sel) sel.disabled = true;
-        setFeedback(feedback, '', '');
+        setFeedback(feedback, 'Sending closure notice — please wait...', '');
 
         const callbackName = 'escCloseCallback_' + Date.now();
         const url = CONFIG.BACKEND_URL
