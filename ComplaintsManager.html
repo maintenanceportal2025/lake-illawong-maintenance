@@ -6,13 +6,35 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.40
+  Frontend Version: V3.0.41
   Backend:          ComplaintsManager V3.0.31
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    July 2026
 
 VERSION HISTORY:
+  V3.0.41 (Jul 2026): Fix Escalate to External Body button from Closure -
+    Pending -- previously a dead end. showEscalationPanel() tried to
+    open/scroll to the Escalation accordion pane (pane-escalation-), but
+    that pane only renders once c.escalatedAt is already set -- from
+    Closure - Pending it never existed in the DOM yet, so the button did
+    nothing. Backend updateComplaint already fully supported newStatus=
+    Escalated + escalationOrg (writes escalatedAt, ESCALATION BODY activity
+    log entry, sends Board/RC alert and resident notice) -- no backend
+    change needed, no new deployment required. Fixed on the frontend only:
+    button now reveals an inline organisation-select form (same four org
+    options used throughout: VicAssist, VCAT, Consumer Affairs Victoria,
+    Legal representation) directly in the Closure - Pending action panel,
+    with a Confirm Escalation button (disabled until an org is selected,
+    matching the existing Escalated-closure dropdown pattern) and a Cancel
+    link. Confirming calls updateComplaint directly via the standard 45s
+    JSONP pattern. On success the card rebuilds and the Escalation
+    accordion pane then appears as the historical record, exactly as it
+    already does for complaints escalated via other paths.
+    showEscalationPanel() removed -- replaced by showEscalateFromPendingForm(),
+    hideEscalateFromPendingForm(), onEscalatePendingOrgChange(),
+    doEscalateFromPending().
+
   V3.0.40 (Jul 2026): Fix Closure - Pending expiry date not showing until
     page reload. Closure Save & Send success handler only ever set .status,
     .closedAt, .closureNarrative, .activityLog on the local cache object --
@@ -2375,15 +2397,116 @@ TECHNICAL:
         if (pane) pane.classList.toggle('open');
     }
 
-    // V3.0.38: opens the escalation accordion pane and scrolls to it.
-    // Called from the Closure - Pending action panel Escalate button.
-    function showEscalationPanel(ref) {
-        const safeRef = ref.replace(/[^A-Z0-9-]/g, '');
-        const pane    = document.getElementById('pane-escalation-' + safeRef);
-        if (pane) {
-            if (!pane.classList.contains('open')) pane.classList.add('open');
-            pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // V3.0.41: Escalate from Closure - Pending. Replaces the old
+    // showEscalationPanel(), which tried to open/scroll to the Escalation
+    // accordion pane -- that pane only renders once c.escalatedAt is already
+    // set (see buildAccordion below), so from Closure - Pending it never
+    // existed in the DOM yet and the button did nothing. These functions
+    // instead reveal an inline org-select form directly in the action panel
+    // and call the existing updateComplaint/Escalated backend path, which
+    // was already fully functional (writes escalatedAt, ESCALATION BODY
+    // activity log entry, sends Board/RC alert and resident notice) --
+    // it just had no reachable UI path from this state.
+    function showEscalateFromPendingForm(ref) {
+        const trigger = document.getElementById('escalate-pending-trigger-' + ref);
+        const form    = document.getElementById('escalate-pending-form-' + ref);
+        if (trigger) trigger.style.display = 'none';
+        if (form)    form.style.display    = 'block';
+    }
+
+    function hideEscalateFromPendingForm(ref) {
+        const trigger  = document.getElementById('escalate-pending-trigger-' + ref);
+        const form     = document.getElementById('escalate-pending-form-' + ref);
+        const sel      = document.getElementById('escalate-pending-org-' + ref);
+        const feedback = document.getElementById('escalate-pending-feedback-' + ref);
+        if (sel) sel.value = '';
+        if (feedback) { feedback.textContent = ''; feedback.className = 'save-feedback'; }
+        onEscalatePendingOrgChange(ref);
+        if (form)    form.style.display    = 'none';
+        if (trigger) trigger.style.display = 'block';
+    }
+
+    function onEscalatePendingOrgChange(ref) {
+        const sel    = document.getElementById('escalate-pending-org-' + ref);
+        const btn    = document.getElementById('escalate-pending-confirm-' + ref);
+        const hasOrg = sel && sel.value;
+        if (btn) {
+            btn.disabled       = !hasOrg;
+            btn.style.opacity  = hasOrg ? '1' : '0.45';
+            btn.style.cursor   = hasOrg ? 'pointer' : 'not-allowed';
         }
+    }
+
+    function doEscalateFromPending(ref) {
+        const sel      = document.getElementById('escalate-pending-org-' + ref);
+        const org      = sel ? sel.value : '';
+        const btn      = document.getElementById('escalate-pending-confirm-' + ref);
+        const feedback = document.getElementById('escalate-pending-feedback-' + ref);
+        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
+
+        if (!org) { setFeedback(feedback, 'Please select an organisation.', 'error'); return; }
+
+        const orgLabels = {
+            'VicAssist':                  'VicAssist Retirement Villages',
+            'VCAT':                       'Victorian Civil and Administrative Tribunal (VCAT)',
+            'Consumer Affairs Victoria':   'Consumer Affairs Victoria',
+            'Legal representation':       'Legal representation'
+        };
+
+        const confirmed = confirm(
+            'Escalate this complaint to ' + (orgLabels[org] || org) + '?\n\n' +
+            'The resident will be notified by email that their complaint has been escalated.\n' +
+            'This cannot be undone.\n\nProceed?'
+        );
+        if (!confirmed) return;
+
+        const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
+        if (idx === -1) return;
+
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; }
+        if (sel) sel.disabled = true;
+        setFeedback(feedback, 'Sending...', '');
+
+        const callbackName = 'escalatePendingCallback_' + Date.now();
+        const url = CONFIG.BACKEND_URL
+            + '?action=updateComplaint'
+            + '&ref='           + encodeURIComponent(ref)
+            + '&status=Escalated'
+            + '&escalationOrg=' + encodeURIComponent(org)
+            + '&userName='      + encodeURIComponent(userName)
+            + '&callback='      + callbackName;
+
+        const timeout = setTimeout(function() {
+            cleanup(callbackName);
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+            if (sel) sel.disabled = false;
+            setFeedback(feedback, 'Timed out — server may still be processing. Please refresh before retrying.', 'error');
+        }, 45000);
+
+        window[callbackName] = function(data) {
+            clearTimeout(timeout); cleanup(callbackName);
+            if (data.success) {
+                allComplaints[idx].status      = 'Escalated';
+                allComplaints[idx].escalatedAt = new Date().toString();
+                if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
+                rebuildAndRestoreCard(ref, idx);
+                updateSummary(allComplaints);
+            } else {
+                if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+                if (sel) sel.disabled = false;
+                setFeedback(feedback, 'Error: ' + (data.error || 'Unknown.'), 'error');
+            }
+        };
+
+        const script = document.createElement('script');
+        script.onerror = function() {
+            cleanup(callbackName);
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+            if (sel) sel.disabled = false;
+            setFeedback(feedback, 'Network error.', 'error');
+        };
+        script.src = url;
+        document.head.appendChild(script);
     }
 
     // ── BUILD ACCORDION ───────────────────────────────────────────────
@@ -2801,10 +2924,29 @@ TECHNICAL:
                 </div>
                 <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;margin-top:4px;">
                     <p style="font-size:0.82rem;color:rgba(255,255,255,0.55);margin:0 0 10px;">
-                        If the resident has contacted the Board and wishes to escalate to VicAssist, use the button below.
+                        If the resident has contacted the Board and wishes to escalate to an external body, use the button below.
                     </p>
-                    <button class="btn-close-type" style="border-color:rgba(251,191,36,0.5);color:#fbbf24;"
-                        onclick="showEscalationPanel('${safeRef}')">&#8599; Escalate to External Body</button>
+                    <div id="escalate-pending-trigger-${safeRef}">
+                        <button class="btn-close-type" style="border-color:rgba(251,191,36,0.5);color:#fbbf24;"
+                            onclick="showEscalateFromPendingForm('${safeRef}')">&#8599; Escalate to External Body</button>
+                    </div>
+                    <div id="escalate-pending-form-${safeRef}" style="display:none;">
+                        <label style="display:block;font-size:0.8rem;color:rgba(255,255,255,0.6);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:7px;">Escalating Organisation</label>
+                        <select id="escalate-pending-org-${safeRef}" class="glass-select" style="width:100%;max-width:480px;font-size:0.9rem;margin-bottom:10px;" onchange="onEscalatePendingOrgChange('${safeRef}')">
+                            <option value="">(select an organisation)</option>
+                            <option value="VicAssist">VicAssist Retirement Villages</option>
+                            <option value="VCAT">Victorian Civil and Administrative Tribunal (VCAT)</option>
+                            <option value="Consumer Affairs Victoria">Consumer Affairs Victoria</option>
+                            <option value="Legal representation">Legal representation</option>
+                        </select>
+                        <div>
+                            <button class="btn-close-type" id="escalate-pending-confirm-${safeRef}" onclick="doEscalateFromPending('${safeRef}')" disabled
+                                style="opacity:0.45;cursor:not-allowed;border-color:rgba(251,191,36,0.5);color:#fbbf24;">&#10003; Confirm Escalation</button>
+                            <button onclick="hideEscalateFromPendingForm('${safeRef}')"
+                                style="background:none;border:none;color:rgba(255,255,255,0.5);font-size:0.78rem;cursor:pointer;padding:4px 10px;text-decoration:underline;">Cancel</button>
+                        </div>
+                        <span class="save-feedback" id="escalate-pending-feedback-${safeRef}"></span>
+                    </div>
                 </div>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
