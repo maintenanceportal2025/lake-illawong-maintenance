@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.37
-  Backend:          ComplaintsManager V3.0.27
+  Frontend Version: V3.0.38
+  Backend:          ComplaintsManager V3.0.29
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    June 2026
 
 VERSION HISTORY:
+  V3.0.38 (Jul 2026): Closure - Pending action panel. When status is
+    Closure - Pending the card now shows a dedicated panel explaining the
+    14-day window is open, the date it expires, and a single Escalate
+    button the Board can use if the resident contacts them to escalate.
+    No manual close from this state -- auto-trigger handles formal closure.
+    Backend updated to V3.0.29.
+
   V3.0.37 (Jul 2026): Closure - Pending status (frontend). New amber pill
     and card border. statusPillClass() both maps, card border assignment,
     filter dropdown, print badge map all updated. NOT added to isClosedStatus()
@@ -2352,6 +2359,17 @@ TECHNICAL:
         if (pane) pane.classList.toggle('open');
     }
 
+    // V3.0.38: opens the escalation accordion pane and scrolls to it.
+    // Called from the Closure - Pending action panel Escalate button.
+    function showEscalationPanel(ref) {
+        const safeRef = ref.replace(/[^A-Z0-9-]/g, '');
+        const pane    = document.getElementById('pane-escalation-' + safeRef);
+        if (pane) {
+            if (!pane.classList.contains('open')) pane.classList.add('open');
+            pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
     // ── BUILD ACCORDION ───────────────────────────────────────────────
     function buildAccordion(c) {
         const safeRef    = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
@@ -2471,7 +2489,7 @@ TECHNICAL:
         }
 
         // ── PANE 5: ESCALATION (when escalated or escalated closed) ──
-        if (isEscalated || isEscalatedClosed || (isClosed && c.escalatedAt)) {
+        if (isEscalated || isEscalatedClosed || normStatus === 'Closure - Pending' || (isClosed && c.escalatedAt)) {
             const finalNoteDraft   = c.finalNoteDraft || '';
             const finalNote        = getFinalNote(c.activityLog);
             const escalationBody2  = getEscalationBody(c.activityLog);
@@ -2739,6 +2757,38 @@ TECHNICAL:
                         <button class="btn-send-resident" id="send-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                     </div>
                 </div>
+            </div>`;
+        }
+
+        // ── CLOSURE - PENDING: 14-day window open ────────────────────
+        if (normStatus === 'Closure - Pending') {
+            // Calculate expiry from acknowledgedAt or updatedAt as proxy --
+            // ClosedAt is not written for Closure - Pending (V3.0.27).
+            // Use the most recent activity log timestamp as the notice date.
+            const noticeDate  = c.updatedAt ? new Date(c.updatedAt) : null;
+            const expiryDate  = noticeDate ? new Date(noticeDate.getTime() + 14 * 24 * 60 * 60 * 1000) : null;
+            const expiryStr   = expiryDate
+                ? expiryDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+                : '(calculating...)';
+            return `<div class="action-panel">
+                <div class="action-panel-title">Closure - Pending: 14-Day Window Open</div>
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 10px;">
+                    The Non-Resolution Notice has been sent to the resident. They have 14 days to raise this matter
+                    with an external authority. If no action is taken by <strong style="color:#fbbf24;">${expiryStr}</strong>,
+                    the complaint will be automatically closed as <em>Closed - No Further Action</em>.
+                </p>
+                <div class="response-notice notice-pending" style="margin-bottom:14px;">
+                    &#9432; No action is required from the Board during this period unless the resident contacts you to escalate.
+                </div>
+                <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;margin-top:4px;">
+                    <p style="font-size:0.82rem;color:rgba(255,255,255,0.55);margin:0 0 10px;">
+                        If the resident has contacted the Board and wishes to escalate to VicAssist, use the button below.
+                    </p>
+                    <button class="btn-close-type" style="border-color:rgba(251,191,36,0.5);color:#fbbf24;"
+                        onclick="showEscalationPanel('${safeRef}')">&#8599; Escalate to External Body</button>
+                </div>
+                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                <span class="save-feedback" id="feedback-${safeRef}"></span>
             </div>`;
         }
 
