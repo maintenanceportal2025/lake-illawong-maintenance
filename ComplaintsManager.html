@@ -6,13 +6,29 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.39
-  Backend:          ComplaintsManager V3.0.29
+  Frontend Version: V3.0.40
+  Backend:          ComplaintsManager V3.0.31
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    June 2026
+  Last Modified:    July 2026
 
 VERSION HISTORY:
+  V3.0.40 (Jul 2026): Fix Closure - Pending expiry date not showing until
+    page reload. Closure Save & Send success handler only ever set .status,
+    .closedAt, .closureNarrative, .activityLog on the local cache object --
+    never .closurePendingAt, so the panel kept showing (calculating...)
+    until a full reload re-fetched via getComplaints. Now reads
+    data.closurePendingAt from the backend response (V3.0.31) and applies
+    it to the local cache immediately. Also: .closedAt was being stamped
+    unconditionally on every closure Save & Send, including
+    Closure - Pending, where it should stay unset until the 14-day trigger
+    formally closes the record -- now only set for terminal statuses.
+    Backend updated to V3.0.31.
+
+ V3.0.39 (Jul 2026): Fix Closure - Pending expiry date always showing
+    (calculating...). noticeDate was reading c.updatedAt, a field never
+    returned by rowToObject -- always undefined. Now reads
+    c.closurePendingAt (added backend V3.0.30). Backend updated to V3.0.30.
   V3.0.38 (Jul 2026): Closure - Pending action panel. When status is
     Closure - Pending the card now shows a dedicated panel explaining the
     14-day window is open, the date it expires, and a single Escalate
@@ -3425,7 +3441,17 @@ TECHNICAL:
                     // Closure Save & Send -- set final closed status from data.finalStatus
                     if (andSend && data.finalStatus) {
                         allComplaints[idx].status   = data.finalStatus;
-                        allComplaints[idx].closedAt = nowTs;
+                        // V3.0.40: closedAt only applies to terminal statuses -- Closure -
+                        // Pending stays open, real ClosedAt is written later by the 14-day
+                        // trigger. Previously stamped here regardless, which was cosmetically
+                        // wrong in the local cache for Closure - Pending until next reload.
+                        // closurePendingAt now read from the backend response (V3.0.31) so
+                        // the expiry date displays correctly immediately, no reload needed.
+                        if (data.finalStatus === 'Closure - Pending') {
+                            if (data.closurePendingAt) allComplaints[idx].closurePendingAt = data.closurePendingAt;
+                        } else {
+                            allComplaints[idx].closedAt = nowTs;
+                        }
                         if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
                         if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                         // Clear quick resolved flag on closure
