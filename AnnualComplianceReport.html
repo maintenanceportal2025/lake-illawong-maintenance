@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        AnnualComplianceReport.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Portal Module
-  Frontend Version: V1.0.1
+  Frontend Version: V1.0.2
   Status:           NEW -- pending deployment
   Created:          Jul 2026
 
@@ -37,6 +37,18 @@ PURPOSE:
   modules rather than ReportsHub's chart-heavy report pattern.
 
 VERSION HISTORY:
+  V1.0.2 (Jul 2026): Complaints Concluded/Open stat fix. renderStats
+    previously classified by outcome label -- anything other than
+    'Open as at report date' was counted as concluded, which wrongly
+    swept 'Pending resident decision on escalation' (Closure - Pending)
+    and 'Escalated to external body (in progress)' (Escalated) into
+    the concluded count. Now classifies by status prefix: status
+    beginning 'Closed' = concluded, everything else = ongoing. Tiles
+    relabelled Complaints Concluded / Complaints Ongoing to reflect
+    that the ongoing bucket includes escalated and pending-decision
+    matters, not just untouched ones. Per-record outcome labels in
+    tables and exports unchanged. Frontend-only change.
+
   V1.0.1 (Jul 2026): 72-hour quick-resolution flag surfaced (Complaints
     only -- resolutionPathway, col AA, has no Disputes equivalent).
     Requires ComplaintsManager backend V3.0.37+. New summary stat
@@ -322,7 +334,7 @@ TECHNICAL:
                 <div class="glass-stat"><div class="glass-stat-value" id="statTotalComplaints">0</div><div class="glass-stat-label">Complaints Received</div></div>
                 <div class="glass-stat"><div class="glass-stat-value" id="statQuickResolved">0</div><div class="glass-stat-label">Resolved &le; 72 Hours</div></div>
                 <div class="glass-stat"><div class="glass-stat-value" id="statComplaintsClosed">0</div><div class="glass-stat-label">Complaints Concluded</div></div>
-                <div class="glass-stat"><div class="glass-stat-value" id="statComplaintsOpen">0</div><div class="glass-stat-label">Complaints Open</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statComplaintsOpen">0</div><div class="glass-stat-label">Complaints Ongoing</div></div>
                 <div class="glass-stat"><div class="glass-stat-value" id="statTotalDisputes">0</div><div class="glass-stat-label">Disputes Received</div></div>
                 <div class="glass-stat"><div class="glass-stat-value" id="statDisputesResolved">0</div><div class="glass-stat-label">Disputes Resolved</div></div>
                 <div class="glass-stat"><div class="glass-stat-value" id="statDisputesReferred">0</div><div class="glass-stat-label">Disputes Referred</div></div>
@@ -542,12 +554,15 @@ TECHNICAL:
         document.getElementById('statDisputesReferred').textContent = d.referred || 0;
         document.getElementById('statDisputesOpen').textContent     = d.open || 0;
 
-        const openLabel = 'Open as at report date';
-        const complaintsOpen = (c.byOutcome && c.byOutcome[openLabel]) || 0;
+        // V1.0.2: classify by status prefix, not outcome label.
+        // Status beginning 'Closed' = concluded. Everything else --
+        // including Escalated (in progress) and Closure - Pending
+        // (awaiting resident decision) -- is still an ongoing matter.
         let complaintsClosed = 0;
-        Object.keys(c.byOutcome || {}).forEach(function(key) {
-            if (key !== openLabel) complaintsClosed += c.byOutcome[key];
+        lastComplaints.forEach(function(x) {
+            if ((x.status || '').indexOf('Closed') === 0) complaintsClosed++;
         });
+        const complaintsOpen = (c.total || 0) - complaintsClosed;
         document.getElementById('statComplaintsClosed').textContent = complaintsClosed;
         document.getElementById('statComplaintsOpen').textContent   = complaintsOpen;
     }
