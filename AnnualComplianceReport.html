@@ -1,0 +1,745 @@
+<!--
+=====================================================================
+AnnualComplianceReport.html - ANNUAL COMPLIANCE REPORT
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        AnnualComplianceReport.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Admin Portal Module
+  Frontend Version: V1.0.0
+  Status:           NEW -- pending deployment
+  Created:          Jul 2026
+
+PURPOSE:
+  RVA 2024 s.14 compliance reporting. Generates the annual report the
+  Board presents to residents at the AGM (complaints + disputes, number,
+  nature, outcome of each matter, changes made or proposed) and the
+  separate dispute-only report lodged with Consumer Affairs Victoria
+  via myCAV within 14 days of the AGM.
+
+  Financial year based (1 Jul - 30 Jun), not calendar year, to match
+  the CAV lodgement cycle.
+
+  Deliberately does not display or export resident names, unit numbers,
+  contact details, peopleInvolved, description text, or natureOfDispute
+  free text -- those fields are stripped server-side by
+  getAnnualReportData in both backends, not just hidden here. The
+  Board characterises dispute "nature" qualitatively in the narrative
+  section instead, since natureOfDispute cannot be guaranteed free of
+  identifying detail.
+
+  Export uses the same window.print() pattern already in production
+  for the Complaints Register export in ComplaintsManager.html
+  (open a formatted print window, browser print dialog handles
+  Save as PDF) rather than jsPDF/html2canvas -- simpler, no extra
+  CDN dependency, and consistent with the sibling Complaints/Disputes
+  modules rather than ReportsHub's chart-heavy report pattern.
+
+VERSION HISTORY:
+  V1.0.0 (Jul 2026): Initial release.
+    FY selector (defaults to the most recently completed financial
+    year). Generate Report pulls anonymised data from both
+    ComplaintsManager (getAnnualReportData) and DisputesManager
+    (getAnnualReportData), plus the Board's narrative for that FY
+    from ComplaintsManager (getAnnualNarrative). On-screen summary
+    stats, two anonymised data tables (Complaints, Disputes), and an
+    editable narrative section (saveAnnualNarrative). Two export
+    buttons: Export AGM Report (combined complaints + disputes) and
+    Export CAV Disputes Report (disputes only) -- both built from the
+    same generated data, per agreed design (one generation, two
+    exports), reflecting the Policy's CAV lodgement obligation being
+    textually disputes-only.
+
+AUTHENTICATION:
+  Session inherited from AdminPortal.html (portalAdminVerified).
+  Redirects to AdminPortal.html if session absent.
+  Allowed roles: Complaints-Manager, Developer.
+
+SYSTEM CONNECTIONS:
+  ComplaintsManager backend V3.0.36 -- actions: getAnnualReportData,
+    getAnnualNarrative, saveAnnualNarrative
+  DisputesManager backend V3.0.22 -- action: getAnnualReportData
+
+PORTAL:
+  Launched from AdminPortal.html.
+  Back button returns to AdminPortal.html.
+
+TECHNICAL:
+  Technology:   HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol: JSONP
+  Design:       Glass-morphism -- Lake Illawong Unified Design System v2.4
+  Hosting:      Netlify
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Annual Compliance Report - Lake Illawong</title>
+<script src="VerificationModal_V1_0.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+        --glass-bg:           rgba(255, 255, 255, 0.08);
+        --glass-bg-hover:     rgba(255, 255, 255, 0.12);
+        --glass-bg-strong:    rgba(255, 255, 255, 0.15);
+        --glass-border:       rgba(255, 255, 255, 0.15);
+        --glass-border-hover: rgba(255, 255, 255, 0.30);
+        --glass-blur:         blur(15px);
+        --glass-text:         #ffffff;
+        --glass-text-muted:   rgba(255, 255, 255, 0.70);
+        --glass-text-subtle:  rgba(255, 255, 255, 0.50);
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+        min-height: 100vh;
+        color: white;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    .hidden { display: none !important; }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+    .header { text-align: center; margin-bottom: 24px; }
+    .header-content { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+    .logo-image { width: 110px; height: 110px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .header-text { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+    .header-title { font-size: 2.2rem; font-weight: 700; color: white; margin: 0 0 5px 0; line-height: 1.1; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+    .header-subtitle { font-size: 1rem; color: rgba(255,255,255,0.9); font-weight: 500; }
+    .header-divider {
+        height: 2px;
+        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%,
+            rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+        border-radius: 2px; margin-top: 15px;
+    }
+
+    /* ── BACK BUTTON ─────────────────────────────────────────── */
+    .portal-back-btn {
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white; padding: 8px 18px; border-radius: 2px;
+        font-size: 0.88rem; font-weight: 600; cursor: pointer;
+        display: block; margin: 0 auto 20px auto; transition: background 0.2s;
+    }
+    .portal-back-btn:hover { background: rgba(255,255,255,0.25); }
+
+    /* ── ACCESS DENIED ───────────────────────────────────────── */
+    .denied-box {
+        background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4);
+        border-radius: 2px; padding: 32px; text-align: center; margin: 40px auto;
+        max-width: 480px;
+    }
+    .denied-box h2 { color: #fca5a5; font-size: 1.3rem; margin-bottom: 10px; }
+    .denied-box p  { color: rgba(255,255,255,0.75); font-size: 0.9rem; margin-bottom: 6px; }
+    .btn-reverify {
+        margin-top: 18px; background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.3); color: white;
+        padding: 10px 24px; border-radius: 2px; font-size: 0.88rem;
+        font-weight: 600; cursor: pointer;
+    }
+
+    /* ── GLASS PANEL / TOOLBAR ──────────────────────────────── */
+    .glass-panel {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        padding: 18px 20px;
+        margin-bottom: 18px;
+    }
+
+    .filter-bar {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+    }
+    .filter-group { display: flex; align-items: center; gap: 8px; }
+    .filter-label {
+        font-size: 0.75rem; color: var(--glass-text-muted); font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
+    }
+    .glass-select {
+        background: rgba(30, 64, 175, 0.7);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        color: var(--glass-text);
+        padding: 7px 12px;
+        font-size: 0.85rem;
+        min-height: 36px;
+        cursor: pointer;
+    }
+    .glass-select option { background: #1e3a8a; }
+    .glass-select:focus { outline: none; border-color: var(--glass-border-hover); }
+
+    .btn-glass-action {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        color: white;
+        padding: 9px 20px;
+        border-radius: 2px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-height: 40px;
+    }
+    .btn-glass-action:hover { background: var(--glass-bg-strong); border-color: var(--glass-border-hover); }
+    .btn-glass-action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status-text { font-size: 0.85rem; color: var(--glass-text-muted); margin: 6px 0 18px; }
+
+    /* ── STATS ROW ───────────────────────────────────────────── */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+    .glass-stat {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        padding: 14px 12px;
+        text-align: center;
+    }
+    .glass-stat-value { font-size: 1.7rem; font-weight: 700; color: var(--glass-text); line-height: 1; }
+    .glass-stat-label { font-size: 0.7rem; color: var(--glass-text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ── DATA TABLES (white, always) ────────────────────────── */
+    .section-heading { font-size: 1rem; font-weight: 700; color: white; margin: 22px 0 10px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3); }
+    .table-container { background: white; border-radius: 2px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    thead { background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%); color: white; }
+    thead th { padding: 9px 8px; text-align: left; font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid #f1f5f9; }
+    tbody tr:hover { background: #f8fafc; }
+    tbody td { padding: 8px 8px; vertical-align: middle; color: #374151; }
+
+    /* ── NARRATIVE ───────────────────────────────────────────── */
+    .glass-textarea {
+        width: 100%;
+        min-height: 140px;
+        background: rgba(30, 64, 175, 0.35);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        color: white;
+        padding: 12px 14px;
+        font-size: 0.9rem;
+        font-family: inherit;
+        resize: vertical;
+        line-height: 1.5;
+    }
+    .glass-textarea::placeholder { color: var(--glass-text-subtle); }
+    .glass-textarea:focus { outline: none; border-color: var(--glass-border-hover); }
+    .narrative-meta { font-size: 0.78rem; color: var(--glass-text-muted); margin-top: 8px; }
+
+    .export-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+
+    @media (max-width: 600px) {
+        .header-content { flex-direction: column; gap: 15px; }
+        .header-text    { align-items: center; text-align: center; }
+        .header-title   { font-size: 1.8rem; }
+        .logo-image     { width: 70px; height: 70px; }
+        .filter-bar     { flex-direction: column; align-items: flex-start; gap: 10px; }
+        .export-row     { flex-direction: column; }
+    }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="logo.png" alt="Lake Illawong Logo" class="logo-image" onerror="this.style.display='none'">
+            </div>
+            <div class="header-text">
+                <h1 class="header-title">Annual Compliance Report</h1>
+                <p class="header-subtitle">Lake Illawong Residential Village — RVA 2024 s.14 AGM &amp; CAV Reporting</p>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+    </div>
+
+    <!-- Back button -->
+    <button class="portal-back-btn" onclick="window.location.href='AdminPortal.html'">
+        &#8592; Back to Admin Portal
+    </button>
+
+    <!-- Access denied -->
+    <div id="deniedView" class="denied-box hidden">
+        <h2>&#128683; Access Denied</h2>
+        <p>You do not have permission to access the Annual Compliance Report.</p>
+        <p>Signed in as: <strong id="deniedName"></strong></p>
+        <p>Role: <strong id="deniedRoles"></strong></p>
+        <button class="btn-reverify" onclick="reVerify()">Try Again</button>
+    </div>
+
+    <!-- Main content -->
+    <div id="mainContent" class="hidden">
+
+        <!-- FY selector -->
+        <div class="filter-bar">
+            <div class="filter-group">
+                <span class="filter-label">Financial Year</span>
+                <select id="fySelect" class="glass-select"></select>
+            </div>
+            <button id="generateBtn" class="btn-glass-action" onclick="generateReport()">Generate Report</button>
+        </div>
+
+        <p id="reportStatus" class="status-text hidden"></p>
+
+        <!-- Report results -->
+        <div id="reportResults" class="hidden">
+
+            <div class="stats-grid">
+                <div class="glass-stat"><div class="glass-stat-value" id="statTotalComplaints">0</div><div class="glass-stat-label">Complaints Received</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statComplaintsClosed">0</div><div class="glass-stat-label">Complaints Concluded</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statComplaintsOpen">0</div><div class="glass-stat-label">Complaints Open</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statTotalDisputes">0</div><div class="glass-stat-label">Disputes Received</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statDisputesResolved">0</div><div class="glass-stat-label">Disputes Resolved</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statDisputesReferred">0</div><div class="glass-stat-label">Disputes Referred</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statDisputesOpen">0</div><div class="glass-stat-label">Disputes Open</div></div>
+            </div>
+
+            <div class="section-heading">Complaints — Number, Nature and Outcome</div>
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>Reference</th><th>Category</th><th>Submitted</th><th>Closed</th><th>Outcome</th></tr></thead>
+                    <tbody id="complaintsTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="section-heading">Disputes — Number and Outcome</div>
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>Reference</th><th>Logged</th><th>Closed</th><th>Outcome</th></tr></thead>
+                    <tbody id="disputesTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="glass-panel">
+                <div class="filter-label" style="margin-bottom:10px;">Changes Made or Proposed (Board narrative for this financial year)</div>
+                <textarea id="narrativeText" class="glass-textarea" placeholder="Describe any changes made or proposed in response to complaints or disputes during this financial year..."></textarea>
+                <div class="narrative-meta" id="narrativeMeta">Not yet recorded</div>
+                <div style="margin-top:12px;">
+                    <button id="saveNarrativeBtn" class="btn-glass-action" onclick="saveNarrative()">Save Narrative</button>
+                </div>
+            </div>
+
+            <div class="glass-panel">
+                <div class="filter-label" style="margin-bottom:10px;">Export</div>
+                <div class="export-row">
+                    <button class="btn-glass-action" onclick="exportAGMReport()">&#128196; Export AGM Report (combined)</button>
+                    <button class="btn-glass-action" onclick="exportCAVReport()">&#128196; Export CAV Disputes Report</button>
+                </div>
+            </div>
+
+        </div>
+        <!-- end reportResults -->
+
+    </div>
+    <!-- end mainContent -->
+
+</div>
+
+<script>
+    const CONFIG = {
+        COMPLAINTS_URL: 'https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec',
+        DISPUTES_URL:   'https://script.google.com/macros/s/AKfycbx2dwG5mP6Cv-UAqii38FAINvaUvrR2oq-6uv6U_mnKqG8Rzjq56C35lOVHFS9ZsCvw/exec',
+        SESSION_KEY:    'portalAdminVerified',
+        PORTAL_URL:     'AdminPortal.html',
+        ALLOWED_ROLES:  ['Complaints-Manager', 'Developer']
+    };
+
+    let currentFYLabel = '';
+    let lastComplaints = [];
+    let lastDisputes = [];
+    let lastAggregatesComplaints = {};
+    let lastAggregatesDisputes = {};
+
+    // ── AUTH ──────────────────────────────────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', function () {
+        buildFYOptions();
+
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Annual Compliance Report',
+            moduleIcon: '📋',
+            sessionKey: CONFIG.SESSION_KEY,
+            onSuccess:  handleVerificationSuccess
+        });
+        if (!alreadyVerified) { VerificationModal.show(); }
+    });
+
+    function handleVerificationSuccess(userData) {
+        window._sessionUser = userData;
+        const roles = userData.roleTags || [];
+        const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
+        if (!hasAccess) {
+            document.getElementById('deniedName').textContent  = userData.name || 'Unknown';
+            document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
+            document.getElementById('deniedView').classList.remove('hidden');
+            return;
+        }
+        document.getElementById('mainContent').classList.remove('hidden');
+    }
+
+    function reVerify() {
+        document.getElementById('deniedView').classList.add('hidden');
+        VerificationModal.clearVerification();
+        VerificationModal.show();
+    }
+
+    // ── FINANCIAL YEAR HELPERS ──────────────────────────────────────────
+
+    function buildFYOptions() {
+        const select = document.getElementById('fySelect');
+        const today = new Date();
+        // Victorian financial year: 1 Jul - 30 Jun. getMonth() is 0-indexed; 6 = July.
+        const currentFYStart      = today.getMonth() >= 6 ? today.getFullYear() : today.getFullYear() - 1;
+        const mostRecentCompleted = currentFYStart - 1;
+
+        select.innerHTML = '';
+        for (let startYear = currentFYStart; startYear >= currentFYStart - 5; startYear--) {
+            const label      = startYear + '-' + String(startYear + 1).slice(-2);
+            const inProgress = startYear === currentFYStart;
+            const opt = document.createElement('option');
+            opt.value = label;
+            opt.textContent = label + (inProgress ? ' (in progress)' : '');
+            if (startYear === mostRecentCompleted) opt.selected = true;
+            select.appendChild(opt);
+        }
+    }
+
+    function fyLabelToRange(fyLabel) {
+        const startYear = parseInt(fyLabel.split('-')[0], 10);
+        return {
+            fyStart: startYear + '-07-01',
+            fyEnd:   (startYear + 1) + '-07-01'
+        };
+    }
+
+    // ── JSONP ─────────────────────────────────────────────────────────────
+
+    function jsonp(baseUrl, params, onSuccess, onError, timeoutMs) {
+        const callbackName = 'acr_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        const qs = Object.keys(params).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+        const url = baseUrl + '?' + qs + '&callback=' + callbackName;
+
+        const timer = setTimeout(function () {
+            cleanup();
+            if (onError) onError(new Error('Server did not respond. Please try again.'));
+        }, timeoutMs || 20000);
+
+        window[callbackName] = function (data) {
+            clearTimeout(timer); cleanup();
+            if (onSuccess) onSuccess(data);
+        };
+
+        function cleanup() { delete window[callbackName]; }
+
+        const s = document.createElement('script');
+        s.onerror = function () {
+            clearTimeout(timer); cleanup();
+            if (onError) onError(new Error('Could not reach the server.'));
+        };
+        s.src = url;
+        document.head.appendChild(s);
+    }
+
+    function jsonpPromise(baseUrl, params, timeoutMs) {
+        return new Promise(function(resolve, reject) {
+            jsonp(baseUrl, params, resolve, reject, timeoutMs);
+        });
+    }
+
+    // ── GENERATE REPORT ───────────────────────────────────────────────────
+
+    async function generateReport() {
+        const fyLabel = document.getElementById('fySelect').value;
+        currentFYLabel = fyLabel;
+        const range = fyLabelToRange(fyLabel);
+
+        const genBtn = document.getElementById('generateBtn');
+        genBtn.disabled = true;
+        genBtn.textContent = 'Generating…';
+
+        document.getElementById('reportResults').classList.add('hidden');
+        const statusEl = document.getElementById('reportStatus');
+        statusEl.textContent = 'Loading data for FY ' + fyLabel + '…';
+        statusEl.classList.remove('hidden');
+
+        try {
+            const results = await Promise.all([
+                jsonpPromise(CONFIG.COMPLAINTS_URL, { action: 'getAnnualReportData', fyStart: range.fyStart, fyEnd: range.fyEnd }, 20000),
+                jsonpPromise(CONFIG.DISPUTES_URL,   { action: 'getAnnualReportData', fyStart: range.fyStart, fyEnd: range.fyEnd }, 20000),
+                jsonpPromise(CONFIG.COMPLAINTS_URL, { action: 'getAnnualNarrative',  fyLabel: fyLabel }, 20000)
+            ]);
+            const compRes = results[0], dispRes = results[1], narrRes = results[2];
+
+            if (!compRes.success) throw new Error(compRes.error || 'Failed to load complaints data');
+            if (!dispRes.success) throw new Error(dispRes.error || 'Failed to load disputes data');
+
+            lastComplaints           = compRes.complaints || [];
+            lastDisputes              = dispRes.disputes || [];
+            lastAggregatesComplaints  = compRes.aggregates || {};
+            lastAggregatesDisputes    = dispRes.aggregates || {};
+
+            renderStats();
+            renderComplaintsTable();
+            renderDisputesTable();
+            renderNarrative(narrRes);
+
+            statusEl.classList.add('hidden');
+            document.getElementById('reportResults').classList.remove('hidden');
+
+        } catch (err) {
+            statusEl.textContent = 'Error: ' + (err && err.message ? err.message : err);
+        } finally {
+            genBtn.disabled = false;
+            genBtn.textContent = 'Generate Report';
+        }
+    }
+
+    function renderStats() {
+        const c = lastAggregatesComplaints;
+        const d = lastAggregatesDisputes;
+
+        document.getElementById('statTotalComplaints').textContent = c.total || 0;
+        document.getElementById('statTotalDisputes').textContent   = d.total || 0;
+        document.getElementById('statDisputesResolved').textContent = d.resolved || 0;
+        document.getElementById('statDisputesReferred').textContent = d.referred || 0;
+        document.getElementById('statDisputesOpen').textContent     = d.open || 0;
+
+        const openLabel = 'Open as at report date';
+        const complaintsOpen = (c.byOutcome && c.byOutcome[openLabel]) || 0;
+        let complaintsClosed = 0;
+        Object.keys(c.byOutcome || {}).forEach(function(key) {
+            if (key !== openLabel) complaintsClosed += c.byOutcome[key];
+        });
+        document.getElementById('statComplaintsClosed').textContent = complaintsClosed;
+        document.getElementById('statComplaintsOpen').textContent   = complaintsOpen;
+    }
+
+    function renderComplaintsTable() {
+        const tbody = document.getElementById('complaintsTableBody');
+        if (!lastComplaints.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#94a3b8;">No complaints recorded for this financial year.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = lastComplaints.map(function(c) {
+            return '<tr><td>' + escHtml(c.referenceNumber) + '</td>' +
+                   '<td>' + escHtml(c.category) + '</td>' +
+                   '<td>' + formatDate(c.submittedAt) + '</td>' +
+                   '<td>' + (c.closedAt ? formatDate(c.closedAt) : '—') + '</td>' +
+                   '<td>' + escHtml(c.outcome) + '</td></tr>';
+        }).join('');
+    }
+
+    function renderDisputesTable() {
+        const tbody = document.getElementById('disputesTableBody');
+        if (!lastDisputes.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = lastDisputes.map(function(d) {
+            return '<tr><td>' + escHtml(d.referenceNumber) + '</td>' +
+                   '<td>' + formatDate(d.loggedAt) + '</td>' +
+                   '<td>' + (d.closedAt ? formatDate(d.closedAt) : '—') + '</td>' +
+                   '<td>' + escHtml(d.outcome) + '</td></tr>';
+        }).join('');
+    }
+
+    function renderNarrative(narrRes) {
+        document.getElementById('narrativeText').value = (narrRes && narrRes.narrative) || '';
+        const meta = (narrRes && narrRes.lastUpdatedBy)
+            ? 'Last updated by ' + narrRes.lastUpdatedBy + ' on ' + formatDate(narrRes.lastUpdatedAt)
+            : 'Not yet recorded';
+        document.getElementById('narrativeMeta').textContent = meta;
+    }
+
+    // ── SAVE NARRATIVE ─────────────────────────────────────────────────
+
+    async function saveNarrative() {
+        if (!currentFYLabel) { alert('Generate a report first.'); return; }
+        const narrative = document.getElementById('narrativeText').value.trim();
+        const userName  = (window._sessionUser && window._sessionUser.name) || 'Admin';
+        const btn = document.getElementById('saveNarrativeBtn');
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+        try {
+            const res = await jsonpPromise(CONFIG.COMPLAINTS_URL, {
+                action: 'saveAnnualNarrative', fyLabel: currentFYLabel, narrative: narrative, userName: userName
+            }, 20000);
+            if (!res.success) throw new Error(res.error || 'Save failed');
+            document.getElementById('narrativeMeta').textContent = 'Last updated by ' + userName + ' just now';
+        } catch (err) {
+            alert('Could not save narrative: ' + (err && err.message ? err.message : err));
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Narrative';
+        }
+    }
+
+    // ── EXPORT (window.print pattern, matching ComplaintsManager Register export) ──
+
+    function printStyles() {
+        return [
+            '* { margin: 0; padding: 0; box-sizing: border-box; }',
+            'body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background: white; }',
+            '.print-header { border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 20px; }',
+            '.print-village { font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #1e3a8a; margin-bottom: 4px; }',
+            '.print-title   { font-size: 16pt; font-weight: 700; color: #111; margin-bottom: 4px; }',
+            '.print-ref     { font-size: 10pt; color: #444; }',
+            '.print-confidential { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #dc2626; float: right; margin-top: 6px; }',
+            '.section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin: 20px 0 10px; }',
+            '.stat-row { display: flex; gap: 20px; margin-bottom: 10px; flex-wrap: wrap; }',
+            '.stat-box { border: 1px solid #e5e7eb; border-radius: 3px; padding: 8px 14px; text-align: center; }',
+            '.stat-box .num { font-size: 16pt; font-weight: 700; color: #1e3a8a; }',
+            '.stat-box .lbl { font-size: 8pt; text-transform: uppercase; color: #6b7280; letter-spacing: 0.4px; }',
+            'table  { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 6px; }',
+            'thead  { background: #1e3a8a; color: white; }',
+            'th     { padding: 7px 8px; text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.4px; }',
+            'td     { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }',
+            'tr:nth-child(even) td { background: #f8fafc; }',
+            '.narrative-block { border: 1px solid #e5e7eb; border-left: 4px solid #1e3a8a; padding: 10px 12px; border-radius: 3px; margin-top: 8px; font-size: 10pt; white-space: pre-wrap; }',
+            '.print-footer  { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 8pt; color: #374151; display: flex; justify-content: space-between; }'
+        ].join('\n');
+    }
+
+    function printHeader(title, subtitle) {
+        return '<div class="print-header">' +
+               '<div class="print-confidential">Confidential</div>' +
+               '<div class="print-village">Lake Illawong Residential Village</div>' +
+               '<div class="print-title">' + title + '</div>' +
+               '<div class="print-ref">' + subtitle + '</div>' +
+               '</div>';
+    }
+
+    function printFooter(label) {
+        const now = new Date().toLocaleString('en-AU', {
+            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+        return '<div class="print-footer"><span>Lake Illawong Residential Village — ' + label + '</span>' +
+               '<span>Printed ' + now + '</span></div>';
+    }
+
+    function openPrintWindow(html) {
+        const w = window.open('', '_blank', 'width=1000,height=900');
+        if (!w) { alert('Please allow pop-ups for this site to print.'); return; }
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(function() { w.print(); }, 300);
+    }
+
+    function exportAGMReport() {
+        if (!currentFYLabel) { alert('Generate a report first.'); return; }
+
+        const narrative = document.getElementById('narrativeText').value.trim();
+        const c = lastAggregatesComplaints, d = lastAggregatesDisputes;
+
+        const complaintRows = lastComplaints.length ? lastComplaints.map(function(x) {
+            return '<tr><td>' + escHtml(x.referenceNumber) + '</td><td>' + escHtml(x.category) + '</td><td>' +
+                   formatDate(x.submittedAt) + '</td><td>' + (x.closedAt ? formatDate(x.closedAt) : '—') + '</td><td>' +
+                   escHtml(x.outcome) + '</td></tr>';
+        }).join('') : '<tr><td colspan="5" style="text-align:center;color:#94a3b8;">No complaints recorded for this financial year.</td></tr>';
+
+        const disputeRows = lastDisputes.length ? lastDisputes.map(function(x) {
+            return '<tr><td>' + escHtml(x.referenceNumber) + '</td><td>' + formatDate(x.loggedAt) + '</td><td>' +
+                   (x.closedAt ? formatDate(x.closedAt) : '—') + '</td><td>' + escHtml(x.outcome) + '</td></tr>';
+        }).join('') : '<tr><td colspan="4" style="text-align:center;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
+
+        const html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+            '<title>Annual Complaints and Disputes Report — FY ' + currentFYLabel + '</title>' +
+            '<style>' + printStyles() + '</style></head><body>' +
+            printHeader('Annual Complaints and Disputes Report', 'Financial Year ' + currentFYLabel + ' — for presentation at Annual General Meeting') +
+            '<div class="section-title">Summary</div>' +
+            '<div class="stat-row">' +
+                '<div class="stat-box"><div class="num">' + (c.total || 0) + '</div><div class="lbl">Complaints Received</div></div>' +
+                '<div class="stat-box"><div class="num">' + (d.total || 0) + '</div><div class="lbl">Disputes Received</div></div>' +
+                '<div class="stat-box"><div class="num">' + (d.resolved || 0) + '</div><div class="lbl">Disputes Resolved</div></div>' +
+                '<div class="stat-box"><div class="num">' + (d.referred || 0) + '</div><div class="lbl">Disputes Referred</div></div>' +
+            '</div>' +
+            '<div class="section-title">Complaints — Number, Nature and Outcome</div>' +
+            '<table><thead><tr><th>Reference</th><th>Category</th><th>Submitted</th><th>Closed</th><th>Outcome</th></tr></thead>' +
+            '<tbody>' + complaintRows + '</tbody></table>' +
+            '<div class="section-title">Disputes — Number and Outcome</div>' +
+            '<table><thead><tr><th>Reference</th><th>Logged</th><th>Closed</th><th>Outcome</th></tr></thead>' +
+            '<tbody>' + disputeRows + '</tbody></table>' +
+            '<div class="section-title">Changes Made or Proposed</div>' +
+            '<div class="narrative-block">' + (narrative ? escHtml(narrative) : '<span style="color:#94a3b8;font-style:italic;">No narrative recorded for this financial year.</span>') + '</div>' +
+            '<p style="font-size:8pt;color:#6b7280;margin-top:16px;">No individual resident, party, or unit is identified in this report, in accordance with the Complaints and Disputes Policy and the Retirement Villages Act 2024 (Vic).</p>' +
+            printFooter('Annual Complaints and Disputes Report') +
+            '</body></html>';
+
+        openPrintWindow(html);
+    }
+
+    function exportCAVReport() {
+        if (!currentFYLabel) { alert('Generate a report first.'); return; }
+
+        const d = lastAggregatesDisputes;
+        const disputeRows = lastDisputes.length ? lastDisputes.map(function(x) {
+            return '<tr><td>' + escHtml(x.referenceNumber) + '</td><td>' + formatDate(x.loggedAt) + '</td><td>' +
+                   (x.closedAt ? formatDate(x.closedAt) : '—') + '</td><td>' + escHtml(x.outcome) + '</td></tr>';
+        }).join('') : '<tr><td colspan="4" style="text-align:center;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
+
+        const html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+            '<title>Dispute Report — FY ' + currentFYLabel + ' — Consumer Affairs Victoria</title>' +
+            '<style>' + printStyles() + '</style></head><body>' +
+            printHeader('Dispute Report', 'Financial Year ' + currentFYLabel + ' — for lodgement with Consumer Affairs Victoria via myCAV') +
+            '<div class="section-title">Summary</div>' +
+            '<div class="stat-row">' +
+                '<div class="stat-box"><div class="num">' + (d.total || 0) + '</div><div class="lbl">Disputes Received</div></div>' +
+                '<div class="stat-box"><div class="num">' + (d.resolved || 0) + '</div><div class="lbl">Resolved</div></div>' +
+                '<div class="stat-box"><div class="num">' + (d.referred || 0) + '</div><div class="lbl">Referred to External Body</div></div>' +
+                '<div class="stat-box"><div class="num">' + (d.open || 0) + '</div><div class="lbl">Open as at Report Date</div></div>' +
+            '</div>' +
+            '<div class="section-title">Disputes — Number and Outcome</div>' +
+            '<table><thead><tr><th>Reference</th><th>Logged</th><th>Closed</th><th>Outcome</th></tr></thead>' +
+            '<tbody>' + disputeRows + '</tbody></table>' +
+            '<p style="font-size:8pt;color:#6b7280;margin-top:16px;">No individual resident or party is identified in this report, in accordance with the Complaints and Disputes Policy and the Retirement Villages Act 2024 (Vic) s.14.</p>' +
+            printFooter('Dispute Report — CAV Lodgement') +
+            '</body></html>';
+
+        openPrintWindow(html);
+    }
+
+    // ── HELPERS ────────────────────────────────────────────────────────
+
+    function escHtml(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function formatDate(val) {
+        if (!val) return '';
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return String(val);
+        return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+</script>
+</body>
+</html>
