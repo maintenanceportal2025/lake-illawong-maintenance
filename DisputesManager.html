@@ -6,13 +6,42 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.36
-  Backend:          DisputesManager V3.0.20
+  Frontend Version: V3.0.37
+  Backend:          DisputesManager V3.0.28
   Status:           PRODUCTION
   Created:          June 2026
-  Last Modified:    June 2026
+  Last Modified:    July 2026
 
 VERSION HISTORY:
+  V3.0.37 (Jul 2026): Acknowledge and Process Statement split into two
+    separate actions (Policy 6.1: 2-day acknowledgement vs Policy 6.2:
+    distinct 72hr action plan -- previously conflated into one combined
+    mandatory step, which gave the Board only 48hrs to do what the
+    Policy actually allows 72 hours for, and forced a Process Statement
+    even on disputes resolved in minutes).
+    (1) doUnderReview() retired, replaced by two functions:
+        doAcknowledge() -- moves Open to Under Review only, no
+        notification sent to either party, no textarea. New action-note
+        states the 2-business-day compliance requirement directly on
+        the panel.
+        doProcessStatement() -- separate action, available once Under
+        Review and only while d.processStatementAt is unset. Sends the
+        andSend=true notification via the V3.0.28 backend fix (dispute
+        was previously unable to notify correctly when the Process
+        Statement was submitted in a call with no accompanying status
+        change). New action-note states the 72-hour compliance
+        requirement directly on the panel.
+    (2) Fast-path consequence: Resolve Dispute and Refer to External
+        Body sections (Under Review) are now reachable immediately after
+        Acknowledge, with no Process Statement required at all -- a
+        dispute resolved quickly needs nothing further; backend
+        resolutionPathway (V3.0.23) tags it 'quick' automatically.
+    (3) Logo size corrected 110x110 -> 90x90 per Design System V2.4
+        (unrelated housekeeping, agreed several sessions back, done here
+        since the frontend was already open).
+    testConnection unaffected (frontend has no equivalent fingerprint;
+    Frontend Version above is the authoritative marker for this file).
+
   V3.0.36 (Jun 2026): Closed status split and 2 business day acknowledgement.
     (1) Closed status split into Closed - Resolved and Closed - Referred.
         terminal list updated throughout. Filter dropdown updated.
@@ -366,7 +395,7 @@ TECHNICAL:
         }
 
         .logo-image {
-            width: 110px; height: 110px;
+            width: 90px; height: 90px;
             border-radius: 50%; object-fit: cover; flex-shrink: 0;
         }
 
@@ -1500,22 +1529,45 @@ TECHNICAL:
         html += '<div class="action-title">Next Step</div>';
 
         if (status === 'Open') {
-            // Move to Under Review + Process Statement
-            html += '<div class="action-row"><div class="action-field full-width">' +
-                '<label>Process Statement — describe the process the Board will follow <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="ps-' + ref + '" placeholder="e.g. The Board will meet with both parties separately within 7 days and provide a written summary of the meeting to each party. Both parties will be given an opportunity to respond before any determination is made."></textarea>' +
-            '</div></div>' +
-            '<div class="action-note">Changing status to <strong>Under Review</strong> and sending this Process Statement to both parties starts the 28-day review clock.</div>' +
+            // V3.0.37: Acknowledge and Process Statement are now two
+            // separate actions (Policy 6.1 vs 6.2 -- 2-day acknowledgement
+            // and the distinct 72hr action plan are different obligations,
+            // previously conflated into one combined mandatory step which
+            // effectively gave the Board only 48hrs to do what the Policy
+            // allows 72 for). Acknowledge alone moves to Under Review with
+            // no notification sent to either party.
+            html += '<div class="action-note">Acknowledging this dispute changes its status to <strong>Under Review</strong>. No notification is sent to either party at this stage -- the Process Statement (below, once acknowledged) is a separate step.</div>' +
+            '<div class="action-note" style="margin-top:6px;"><i>Regulations require acknowledgement within 2 business days of this dispute being logged.</i></div>' +
             '<div style="margin-top:10px;">' +
-                '<button class="btn-action" onclick="doUnderReview(\'' + ref + '\')">Send Process Statement &amp; Set Under Review</button>' +
+                '<button class="btn-action" onclick="doAcknowledge(\'' + ref + '\')">&#10003; Acknowledge Dispute</button>' +
                 '<span id="fb-' + ref + '" class="save-feedback"></span>' +
             '</div>';
         }
 
         else if (status === 'Under Review') {
-            // Resolve or Refer to External Body
-            html += '<hr class="action-separator">' +
-            '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve Dispute</div>' +
+            // Process Statement -- only shown until recorded. Once
+            // d.processStatementAt is set, this section is hidden here;
+            // the full statement remains visible in its own accordion
+            // pane elsewhere on the card.
+            if (!d.processStatementAt) {
+                html += '<div class="action-row"><div class="action-field full-width">' +
+                    '<label>Process Statement — describe the process the Board will follow <span style="color:#fca5a5">*</span></label>' +
+                    '<textarea id="ps-' + ref + '" placeholder="e.g. The Board will meet with both parties separately within 7 days and provide a written summary of the meeting to each party. Both parties will be given an opportunity to respond before any determination is made."></textarea>' +
+                '</div></div>' +
+                '<div class="action-note">Regulations require this Process Statement to be recorded and sent to both parties within <strong>72 hours</strong> of this dispute being logged, if the matter remains unresolved by then.</div>' +
+                '<div style="margin-top:10px;">' +
+                    '<button class="btn-action" onclick="doProcessStatement(\'' + ref + '\')">Send Process Statement &amp; Notify Both Parties</button>' +
+                    '<span id="fb-' + ref + '" class="save-feedback"></span>' +
+                '</div>' +
+                '<hr class="action-separator">';
+            }
+
+            // Resolve or Refer to External Body -- available regardless of
+            // whether a Process Statement has been recorded. This is the
+            // fast pathway: a dispute resolved quickly needs no Process
+            // Statement at all, and resolutionPathway (backend, V3.0.23)
+            // tags it 'quick' automatically based on elapsed time.
+            html += '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve Dispute</div>' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
                 '<textarea id="res-' + ref + '" placeholder="Summarise how the dispute was resolved and what was agreed by both parties.">' + escHtml(d.resolutionSummary || '') + '</textarea>' +
@@ -1593,14 +1645,36 @@ TECHNICAL:
 
     // ── ACTIONS ───────────────────────────────────────────────────────────
 
-    function doUnderReview(ref) {
+    function doAcknowledge(ref) {
+        if (!confirm('Acknowledge this dispute and move it to Under Review? No notification will be sent to either party.')) return;
+        const userName = currentUserName();
+        const fbId = 'fb-' + ref;
+        const btnEl = getSendBtn(fbId);
+        btnSending(fbId, btnEl);
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Under Review', userName: userName },
+            function(data) {
+                if (data.success) {
+                    btnDone(fbId, btnEl, true, '');
+                    refreshCard(ref, data.activityLog);
+                } else {
+                    btnDone(fbId, btnEl, false, data.error || 'Update failed.');
+                }
+            }, function(err) { btnDone(fbId, btnEl, false, err); });
+    }
+
+    function doProcessStatement(ref) {
         const ps = val('ps-' + ref);
         if (!ps) { feedback('fb-' + ref, 'Process statement is required.', false); return; }
         const userName = currentUserName();
         const fbId = 'fb-' + ref;
         const btnEl = getSendBtn(fbId);
         btnSending(fbId, btnEl);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Under Review', processStatement: ps, userName: userName, andSend: 'true' },
+        // No status param -- dispute is already Under Review (Acknowledge
+        // happens separately, earlier). andSend triggers the notification
+        // to both parties via the V3.0.28 backend fix (dispute.status
+        // check, not newStatus -- correct now for a call with no status
+        // change of its own).
+        jsonp({ action: 'updateDispute', ref: ref, processStatement: ps, userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
                     btnDone(fbId, btnEl, true, '');
