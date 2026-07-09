@@ -6,13 +6,82 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.37
-  Backend:          DisputesManager V3.0.28
+  Frontend Version: V3.1.0
+  Backend:          DisputesManager V3.1.1
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    July 2026
 
 VERSION HISTORY:
+  V3.1.0 (Jul 2026): Major alignment with ComplaintsManager's proven
+    architecture -- the original Disputes design (built well before
+    the Complaints architecture was established) diverged from it in
+    ways that no longer made sense once compared side by side. Backend
+    counterpart is DisputesManager V3.1.0/V3.1.1.
+
+    STATUS LIFECYCLE:
+    New 'Acknowledged' status between Open and Under Review. Mirrors
+    Complaints' Open -> Acknowledged -> Status Review -> Responded
+    exactly. Acknowledged is the decision point (Complaints' "Status
+    Review"): quick path skips Under Review entirely (Acknowledged ->
+    Resolved directly, tagged 'quick' automatically per backend V3.0.23
+    resolutionPathway); standard path requires a Process Statement to
+    reach Under Review (Complaints' "Responded" -- only reached once a
+    determination exists). Backend enforces this invariant server-side;
+    the frontend simply reflects it.
+
+    ACKNOWLEDGE NOW NOTIFIES:
+    doAcknowledge sends andSend:true, triggering backend
+    sendDisputeAcknowledgementNotice to both parties. Reverses V3.0.37's
+    deliberately-silent Acknowledge -- that was a design mismatch against
+    Complaints, not a considered choice.
+
+    STATUS REVIEW DECISION UI:
+    On Acknowledged, the Next Step pane shows a single decision screen:
+    Resolved -> Proceed to Closure, or Not Resolved -> Open Process
+    Statement. Same tracking pattern as Complaints' _quickResolved
+    (local session state via disputePathChoice{}). Not persisted --
+    refresh returns to the decision screen, but no data is lost (mirrors
+    Complaints' accepted limitation). Replaces V3.0.37's crammed Under
+    Review pane, which showed Process Statement + Resolve + Refer all
+    simultaneously.
+
+    INTAKE FORM SIMPLIFIED:
+    logNature + logPartyDescription merged into single logIssueDetail
+    field -- one Board-authored, tactfully-worded description, used both
+    as the internal record and sent verbatim to both parties (mirrors
+    Complaints' single description field). Reasoning: the original split
+    (V3.0.14) predates the Board Notes pane; any candid internal-only
+    characterisation now belongs in Board Notes instead.
+
+    NEW INTAKE FIELDS:
+    Category dropdown (populated via getDisputeCategories JSONP,
+    backend V3.1.0 -- own Dropdowns list 'Dispute Category', separate
+    from Complaints') and IncidentDateTime.
+
+    CONVERT-TO-DISPUTE REFINEMENT:
+    Reads originatingComplaintDescription URL param (sent by
+    ComplaintsManager V3.0.43's doConvertToDispute). Original complaint
+    text is shown as a read-only reference block above Issue Detail --
+    Operator reads it, writes a tactful summary for parties. Backend
+    also records it as a Party A Event (visibility 'Party A') on
+    submission (V3.1.1), so it stays available in the Party A Events
+    pane thereafter.
+
+    STATUS DISPLAY:
+    New pill/badge/border/summary-tile entries for Acknowledged
+    throughout: filter dropdown, summary strip, card border colour
+    (sky-blue between Open teal and Under Review amber), status pill,
+    print badge. Status class maps in statusCardClass/statusPillClass
+    and the print badge class map updated consistently.
+
+    PRINT RECORD:
+    Nature of Dispute (Internal) + Description Sent to Parties blocks
+    merged into single Issue Detail block. Deprecated PartyDescription
+    (col Y, pre-V3.1.0) still rendered as "Description Sent to Parties
+    (legacy record)" on Full Print if present -- historical records
+    read correctly, nothing silently lost.
+
   V3.0.37 (Jul 2026): Acknowledge and Process Statement split into two
     separate actions (Policy 6.1: 2-day acknowledgement vs Policy 6.2:
     distinct 72hr action plan -- previously conflated into one combined
@@ -509,6 +578,7 @@ TECHNICAL:
 
         /* Status border colours -- teal palette */
         .dispute-card.status-open            { border-left: 4px solid #2dd4bf; }
+        .dispute-card.status-acknowledged    { border-left: 4px solid #38bdf8; background: rgba(56,189,248,0.06); backdrop-filter: none; }
         .dispute-card.status-under-review    { border-left: 4px solid #fbbf24; background: rgba(251,191,36,0.08); backdrop-filter: none; }
         .dispute-card.status-resolved        { border-left: 4px solid #94a3b8; background: rgba(148,163,184,0.2); backdrop-filter: none; }
         .dispute-card.status-referred        { border-left: 4px solid #f97316; background: rgba(249,115,22,0.1);  backdrop-filter: none; }
@@ -550,6 +620,7 @@ TECHNICAL:
         }
 
         .pill-open          { background: rgba(20,184,166,0.35);  color: #99f6e4; border: 1px solid rgba(45,212,191,0.6); }
+        .pill-acknowledged  { background: rgba(56,189,248,0.3);   color: #bae6fd; border: 1px solid rgba(56,189,248,0.6); }
         .pill-under-review  { background: rgba(234,179,8,0.3);    color: #fef08a; border: 1px solid rgba(234,179,8,0.6); }
         .pill-resolved      { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
         .pill-referred      { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
@@ -1009,6 +1080,7 @@ TECHNICAL:
         <!-- Summary strip -->
         <div class="summary-strip" id="summaryStrip" style="display:none">
             <div class="summary-tile"><div class="tile-count" id="countOpen">—</div><div class="tile-label">Open</div></div>
+            <div class="summary-tile"><div class="tile-count" id="countAcknowledged">—</div><div class="tile-label">Acknowledged</div></div>
             <div class="summary-tile"><div class="tile-count" id="countUnderReview">—</div><div class="tile-label">Under Review</div></div>
             <div class="summary-tile"><div class="tile-count" id="countResolved">—</div><div class="tile-label">Resolved</div></div>
             <div class="summary-tile"><div class="tile-count" id="countReferred">—</div><div class="tile-label">Referred</div></div>
@@ -1023,6 +1095,7 @@ TECHNICAL:
             <select id="filterStatus" onchange="applyFilters()">
                 <option value="">All</option>
                 <option value="Open">Open</option>
+                <option value="Acknowledged">Acknowledged</option>
                 <option value="Under Review">Under Review</option>
                 <option value="Resolved">Resolved</option>
                 <option value="Referred to External Body">Referred to External Body</option>
@@ -1064,6 +1137,7 @@ TECHNICAL:
                 &#9878; Converting complaint <strong id="originatingRefLabel"></strong> to a dispute. The complaint will be closed automatically when this dispute is submitted.
             </div>
             <input type="hidden" id="logOriginatingRef" value="">
+            <input type="hidden" id="logOriginatingComplaintDescription" value="">
 
             <div class="modal-section-title">Logged By</div>
             <div class="form-row single">
@@ -1148,25 +1222,39 @@ TECHNICAL:
                 </span>
             </div>
 
-            <div class="modal-section-title">Nature of Dispute <span class="form-required">*</span></div>
+            <!-- Original complaint description -- reference only, shown when
+                 launched via Convert to Dispute. Not sent anywhere; the
+                 Operator reads this to write an appropriately-toned Issue
+                 Detail below. The raw text itself is recorded separately
+                 as a Party A Event on submission (V3.1.1 backend). -->
+            <div id="originatingDescriptionBlock" style="display:none;background:#fafaf9;border:1px solid #d6d3d1;border-radius:4px;padding:10px 14px;margin-bottom:16px;">
+                <div style="font-size:0.78rem;font-weight:600;color:#57534e;margin-bottom:4px;">ORIGINAL COMPLAINT DESCRIPTION — reference only, not sent to parties</div>
+                <div id="originatingDescriptionText" style="font-size:0.85rem;color:#44403c;white-space:pre-wrap;"></div>
+            </div>
+
+            <div class="modal-section-title">Issue Detail <span class="form-required">*</span></div>
             <div class="form-row single">
                 <div class="form-field">
-                    <label>Board's internal description <span class="form-required">*</span></label>
-                    <textarea id="logNature" placeholder="Describe the dispute in neutral, factual terms for the Board's internal record. Do not attribute blame. This description is never sent to parties."></textarea>
+                    <label>Board's tactfully-worded description <span class="form-required">*</span></label>
+                    <textarea id="logIssueDetail" placeholder="Write a neutral, factual, tactful description of the matter. This is used as the Board's record AND sent to both parties in the lodgement notification — do not attribute blame."></textarea>
                 </div>
             </div>
 
-            <div class="modal-section-title">Description for Parties <span class="form-required">*</span></div>
-            <div class="form-row single">
+            <div class="modal-section-title">Category &amp; Incident Details</div>
+            <div class="form-row">
                 <div class="form-field">
-                    <label>What parties will see in their notification email <span class="form-required">*</span></label>
-                    <textarea id="logPartyDescription" placeholder="Write a brief, tactful description of the matter for the parties. Keep it neutral and factual — this text will appear in the notification email sent to both parties within 30 minutes of lodgement."></textarea>
+                    <label>Category</label>
+                    <select id="logCategory"><option value="">— Select —</option></select>
+                </div>
+                <div class="form-field">
+                    <label>Incident Date/Time</label>
+                    <input type="datetime-local" id="logIncidentDateTime">
                 </div>
             </div>
 
             <div style="font-size:0.8rem;color:#6b7280;margin-top:8px;line-height:1.5;">
                 &#9432; Both parties will be notified by email within 30 minutes of lodgement.
-                Each notification will include the reference number, the description for parties
+                Each notification will include the reference number, the Issue Detail
                 above, the 28-day review period, and Board contact details.
                 The internal Nature of Dispute is not included in party notifications.
             </div>
@@ -1191,6 +1279,16 @@ TECHNICAL:
     };
 
     let allDisputes = [];
+
+    // V3.1.0: tracks the Status Review decision (Resolved / Not Resolved)
+    // per dispute reference, local to this page load only -- mirrors
+    // Complaints' _quickResolved pattern exactly. This is safe now in a
+    // way it wasn't in the discarded V3.0.38 draft: Acknowledged is a
+    // real, persisted status (V3.1.0 backend), so a refresh before the
+    // chosen form is submitted only loses which panel is showing, never
+    // any actual data -- the dispute correctly shows the Status Review
+    // decision screen again, same accepted limitation Complaints has.
+    let disputePathChoice = {};
     let allResidents = [];
 
     // ── AUTH ──────────────────────────────────────────────────────────────
@@ -1217,6 +1315,7 @@ TECHNICAL:
         }
         document.getElementById('mainContent').classList.remove('hidden');
         loadResidentList();
+        loadDisputeCategories();
         loadDisputes();
         checkAutoLog();
     }
@@ -1283,21 +1382,23 @@ TECHNICAL:
     // ── SUMMARY STRIP ─────────────────────────────────────────────────────
 
     function updateSummary(disputes) {
-        var counts = { Open: 0, UnderReview: 0, Resolved: 0, Referred: 0, Closed: 0, overdue: 0 };
+        var counts = { Open: 0, Acknowledged: 0, UnderReview: 0, Resolved: 0, Referred: 0, Closed: 0, overdue: 0 };
         disputes.forEach(function(d) {
             if (d.status === 'Open')                   counts.Open++;
+            if (d.status === 'Acknowledged')           counts.Acknowledged++;
             if (d.status === 'Under Review')           counts.UnderReview++;
             if (d.status === 'Resolved')               counts.Resolved++;
             if (d.status === 'Referred to External Body')  counts.Referred++;
             if (d.status === 'Closed - Resolved' || d.status === 'Closed - Referred' || d.status === 'Closed') counts.Closed++;
             if (isOverdue(d))                          counts.overdue++;
         });
-        document.getElementById('countOpen').textContent        = counts.Open;
-        document.getElementById('countUnderReview').textContent = counts.UnderReview;
-        document.getElementById('countResolved').textContent    = counts.Resolved;
-        document.getElementById('countReferred').textContent    = counts.Referred;
-        document.getElementById('countClosed').textContent      = counts.Closed;
-        document.getElementById('countOverdue').textContent     = counts.overdue;
+        document.getElementById('countOpen').textContent         = counts.Open;
+        document.getElementById('countAcknowledged').textContent = counts.Acknowledged;
+        document.getElementById('countUnderReview').textContent  = counts.UnderReview;
+        document.getElementById('countResolved').textContent     = counts.Resolved;
+        document.getElementById('countReferred').textContent     = counts.Referred;
+        document.getElementById('countClosed').textContent       = counts.Closed;
+        document.getElementById('countOverdue').textContent      = counts.overdue;
     }
 
     // ── FILTER ────────────────────────────────────────────────────────────
@@ -1408,8 +1509,9 @@ TECHNICAL:
         html += detailField('Logged By', d.loggedBy || '—');
         html += detailField('Review Due', d.reviewDue ? fmtDateLong(new Date(d.reviewDue)) : '—');
         html += detailField('Status', d.status || '—');
-        html += detailField('Nature of Dispute', d.natureOfDispute || '—', true);
-        html += detailField('Description Sent to Parties', d.partyDescription || '—', true);
+        html += detailField('Category', d.category || '—');
+        if (d.incidentDateTime) html += detailField('Incident Date/Time', fmtDateLong(new Date(d.incidentDateTime)));
+        html += detailField('Issue Detail', d.issueDetail || '—', true);
         html += '</div>';
 
         // ── ACTION PANEL (Next Step -- first) ──
@@ -1520,65 +1622,12 @@ TECHNICAL:
 
     // ── ACTION PANEL ──────────────────────────────────────────────────────
 
-    function buildActionPanel(d) {
-        const ref    = d.referenceNumber;
-        const status = d.status;
-        const terminal = ['Resolved', 'Closed - Resolved', 'Closed - Referred', 'Closed'];
-
-        var html = '<div class="action-panel">';
-        html += '<div class="action-title">Next Step</div>';
-
-        if (status === 'Open') {
-            // V3.0.37: Acknowledge and Process Statement are now two
-            // separate actions (Policy 6.1 vs 6.2 -- 2-day acknowledgement
-            // and the distinct 72hr action plan are different obligations,
-            // previously conflated into one combined mandatory step which
-            // effectively gave the Board only 48hrs to do what the Policy
-            // allows 72 for). Acknowledge alone moves to Under Review with
-            // no notification sent to either party.
-            html += '<div class="action-note">Acknowledging this dispute changes its status to <strong>Under Review</strong>. No notification is sent to either party at this stage -- the Process Statement (below, once acknowledged) is a separate step.</div>' +
-            '<div class="action-note" style="margin-top:6px;"><i>Regulations require acknowledgement within 2 business days of this dispute being logged.</i></div>' +
-            '<div style="margin-top:10px;">' +
-                '<button class="btn-action" onclick="doAcknowledge(\'' + ref + '\')">&#10003; Acknowledge Dispute</button>' +
-                '<span id="fb-' + ref + '" class="save-feedback"></span>' +
-            '</div>';
-        }
-
-        else if (status === 'Under Review') {
-            // Process Statement -- only shown until recorded. Once
-            // d.processStatementAt is set, this section is hidden here;
-            // the full statement remains visible in its own accordion
-            // pane elsewhere on the card.
-            if (!d.processStatementAt) {
-                html += '<div class="action-row"><div class="action-field full-width">' +
-                    '<label>Process Statement — describe the process the Board will follow <span style="color:#fca5a5">*</span></label>' +
-                    '<textarea id="ps-' + ref + '" placeholder="e.g. The Board will meet with both parties separately within 7 days and provide a written summary of the meeting to each party. Both parties will be given an opportunity to respond before any determination is made."></textarea>' +
-                '</div></div>' +
-                '<div class="action-note">Regulations require this Process Statement to be recorded and sent to both parties within <strong>72 hours</strong> of this dispute being logged, if the matter remains unresolved by then.</div>' +
-                '<div style="margin-top:10px;">' +
-                    '<button class="btn-action" onclick="doProcessStatement(\'' + ref + '\')">Send Process Statement &amp; Notify Both Parties</button>' +
-                    '<span id="fb-' + ref + '" class="save-feedback"></span>' +
-                '</div>' +
-                '<hr class="action-separator">';
-            }
-
-            // Resolve or Refer to External Body -- available regardless of
-            // whether a Process Statement has been recorded. This is the
-            // fast pathway: a dispute resolved quickly needs no Process
-            // Statement at all, and resolutionPathway (backend, V3.0.23)
-            // tags it 'quick' automatically based on elapsed time.
-            html += '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve Dispute</div>' +
-            '<div class="action-row"><div class="action-field">' +
-                '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="res-' + ref + '" placeholder="Summarise how the dispute was resolved and what was agreed by both parties.">' + escHtml(d.resolutionSummary || '') + '</textarea>' +
-            '</div></div>' +
-            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Mark Resolved &amp; Notify Both Parties</strong> to finalise.</i></div>' +
-            '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'resolution\')">Save Draft</button>' +
-            '<button class="btn-action" style="margin-left:8px;" onclick="doResolve(\'' + ref + '\')">Mark Resolved &amp; Notify Both Parties</button>' +
-            '<span id="fb-res-' + ref + '" class="save-feedback"></span>' +
-
-            '<hr class="action-separator">' +
-            '<div class="action-title" style="color:#fed7aa;">&#9888; Refer to External Body</div>' +
+    // Extracted so the Refer to External Body section can be reused both
+    // in the combined post-statement view and behind the secondary
+    // "Refer to External Body instead" link on the Status Review screen.
+    function buildReferSection(d) {
+        const ref = d.referenceNumber;
+        return '<div class="action-title" style="color:#fed7aa;">&#9888; Refer to External Body</div>' +
             '<div class="action-note" style="margin-bottom:8px;">Use this path if the dispute has not been resolved within 28 days, or if the Board determines referral is warranted sooner. Both parties will be notified separately.</div>' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>External Body &amp; Referral Statement <span style="color:#fca5a5">*</span></label>' +
@@ -1588,6 +1637,106 @@ TECHNICAL:
             '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'referral\')">Save Draft</button>' +
             '<button class="btn-danger-action" style="margin-left:8px;" onclick="doRefer(\'' + ref + '\')">Refer to External Body &amp; Notify Both Parties</button>' +
             '<span id="fb-ref-' + ref + '" class="save-feedback"></span>';
+    }
+
+    function buildActionPanel(d) {
+        const ref    = d.referenceNumber;
+        const status = d.status;
+        const terminal = ['Resolved', 'Closed - Resolved', 'Closed - Referred', 'Closed'];
+
+        var html = '<div class="action-panel">';
+        html += '<div class="action-title">Next Step</div>';
+
+        if (status === 'Open') {
+            // V3.1.0: Acknowledge now sends a real notification to both
+            // parties (was deliberately silent in V3.0.37 -- reversed to
+            // align with ComplaintsManager's proven acknowledgeComplaint
+            // pattern). Target status is 'Acknowledged', not 'Under
+            // Review' directly -- Acknowledged is now the genuine
+            // decision point (mirrors Complaints' Status Review).
+            html += '<div class="action-note">Acknowledging this dispute sends a notification to both parties confirming the Board has taken up the matter, and changes status to <strong>Acknowledged</strong>.</div>' +
+            '<div class="action-note" style="margin-top:6px;"><i>Regulations require acknowledgement within 2 business days of this dispute being logged.</i></div>' +
+            '<div style="margin-top:10px;">' +
+                '<button class="btn-action" onclick="doAcknowledge(\'' + ref + '\')">&#10003; Acknowledge Dispute</button>' +
+                '<span id="fb-' + ref + '" class="save-feedback"></span>' +
+            '</div>';
+        }
+
+        else if (status === 'Acknowledged') {
+            const choice = disputePathChoice[ref];
+
+            // ── STATUS REVIEW: decision point ─────────────────────────
+            // Mirrors Complaints' Acknowledged -> Status Review exactly:
+            // one screen, one decision. Acknowledged itself is a real,
+            // persisted status (V3.1.0 backend) -- only which panel is
+            // shown below is local/session state.
+            if (!choice) {
+                html += '<div class="action-title">Status Review</div>' +
+                '<div class="action-note" style="margin-bottom:12px;">Review the current status of this dispute. If already resolved, proceed directly to closure. If not yet resolved, open the Process Statement panel.</div>' +
+                '<button class="btn-action" onclick="doStatusReview(\'' + ref + '\', \'resolved\')">&#10003; Resolved — Proceed to Closure</button>' +
+                '<button class="btn-secondary-action" style="margin-left:8px;" onclick="doStatusReview(\'' + ref + '\', \'not_resolved\')">&#8594; Not Resolved — Open Process Statement</button>';
+                html += '<hr class="action-separator">';
+                html += '<button class="btn-print-record" onclick="showDisputePrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
+                return html + '</div>';
+            }
+
+            // ── NOT RESOLVED: Process Statement ───────────────────────
+            if (choice === 'not_resolved') {
+                html += '<div class="action-title">Process Statement</div>' +
+                '<div class="action-row"><div class="action-field full-width">' +
+                    '<label>Process Statement — describe the process the Board will follow <span style="color:#fca5a5">*</span></label>' +
+                    '<textarea id="ps-' + ref + '" placeholder="e.g. The Board will meet with both parties separately within 7 days and provide a written summary of the meeting to each party. Both parties will be given an opportunity to respond before any determination is made."></textarea>' +
+                '</div></div>' +
+                '<div class="action-note">Regulations require this Process Statement to be recorded and sent to both parties within <strong>72 hours</strong> of this dispute being logged, if the matter remains unresolved by then.</div>' +
+                '<div style="margin-top:10px;">' +
+                    '<button class="btn-action" onclick="doProcessStatement(\'' + ref + '\')">Send Process Statement &amp; Notify Both Parties</button>' +
+                    '<span id="fb-' + ref + '" class="save-feedback"></span>' +
+                '</div>' +
+                '<div style="margin-top:10px;">' +
+                    '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="disputePathChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Status Review</a>' +
+                '</div>';
+                html += '<hr class="action-separator">';
+                html += '<button class="btn-print-record" onclick="showDisputePrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
+                return html + '</div>';
+            }
+
+            // ── RESOLVED (quick path): Resolve Dispute only ───────────
+            // Skips Under Review entirely -- resolutionPathway (backend,
+            // V3.0.23) tags it 'quick' automatically based on elapsed time
+            // from LoggedAt, no Process Statement ever required.
+            html += '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve Dispute</div>' +
+            '<div class="action-row"><div class="action-field">' +
+                '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
+                '<textarea id="res-' + ref + '" placeholder="Summarise how the dispute was resolved and what was agreed by both parties.">' + escHtml(d.resolutionSummary || '') + '</textarea>' +
+            '</div></div>' +
+            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Mark Resolved &amp; Notify Both Parties</strong> to finalise.</i></div>' +
+            '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'resolution\')">Save Draft</button>' +
+            '<button class="btn-action" style="margin-left:8px;" onclick="doResolve(\'' + ref + '\')">Mark Resolved &amp; Notify Both Parties</button>' +
+            '<span id="fb-res-' + ref + '" class="save-feedback"></span>' +
+            '<div style="margin-top:10px;">' +
+                '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="disputePathChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Status Review</a>' +
+            '</div>';
+            html += '<hr class="action-separator">';
+            html += '<button class="btn-print-record" onclick="showDisputePrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
+            return html + '</div>';
+        }
+
+        else if (status === 'Under Review') {
+            // A Process Statement always exists by the time a dispute
+            // reaches Under Review (enforced server-side, V3.1.0) -- no
+            // need to check/show it here. Resolve and Refer together, as
+            // both are genuinely live options at this stage.
+            html += '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve Dispute</div>' +
+            '<div class="action-row"><div class="action-field">' +
+                '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
+                '<textarea id="res-' + ref + '" placeholder="Summarise how the dispute was resolved and what was agreed by both parties.">' + escHtml(d.resolutionSummary || '') + '</textarea>' +
+            '</div></div>' +
+            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Mark Resolved &amp; Notify Both Parties</strong> to finalise.</i></div>' +
+            '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'resolution\')">Save Draft</button>' +
+            '<button class="btn-action" style="margin-left:8px;" onclick="doResolve(\'' + ref + '\')">Mark Resolved &amp; Notify Both Parties</button>' +
+            '<span id="fb-res-' + ref + '" class="save-feedback"></span>' +
+            '<hr class="action-separator">' +
+            buildReferSection(d);
         }
 
         else if (status === 'Referred to External Body') {
@@ -1646,12 +1795,17 @@ TECHNICAL:
     // ── ACTIONS ───────────────────────────────────────────────────────────
 
     function doAcknowledge(ref) {
-        if (!confirm('Acknowledge this dispute and move it to Under Review? No notification will be sent to either party.')) return;
+        if (!confirm('Acknowledge this dispute? A notification will be sent to both parties confirming the Board has taken up the matter.')) return;
         const userName = currentUserName();
         const fbId = 'fb-' + ref;
         const btnEl = getSendBtn(fbId);
         btnSending(fbId, btnEl);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Under Review', userName: userName },
+        // V3.1.0: target status is now 'Acknowledged' (was 'Under Review'
+        // directly, pre-V3.1.0). andSend:true -- Acknowledge now sends a
+        // real notification to both parties (sendDisputeAcknowledgementNotice,
+        // backend V3.1.0), reversing the deliberately-silent V3.0.37 design
+        // to align with ComplaintsManager's proven pattern.
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Acknowledged', userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
                     btnDone(fbId, btnEl, true, '');
@@ -1669,12 +1823,12 @@ TECHNICAL:
         const fbId = 'fb-' + ref;
         const btnEl = getSendBtn(fbId);
         btnSending(fbId, btnEl);
-        // No status param -- dispute is already Under Review (Acknowledge
-        // happens separately, earlier). andSend triggers the notification
-        // to both parties via the V3.0.28 backend fix (dispute.status
-        // check, not newStatus -- correct now for a call with no status
-        // change of its own).
-        jsonp({ action: 'updateDispute', ref: ref, processStatement: ps, userName: userName, andSend: 'true' },
+        // V3.1.0: now includes status:'Under Review' -- this is the
+        // moment that real transition happens (current status is
+        // 'Acknowledged'). The backend enforces Under Review can never be
+        // reached without processStatement in the same call, which this
+        // satisfies. andSend triggers the notification to both parties.
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Under Review', processStatement: ps, userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
                     btnDone(fbId, btnEl, true, '');
@@ -1939,6 +2093,30 @@ TECHNICAL:
         document.head.appendChild(s);
     }
 
+    // V3.1.0 -- populates the Category dropdown in the Log Dispute modal.
+    // Mirrors loadResidentList's pattern; own JSONP call to this
+    // module's own backend (not ManagementCentral), action
+    // getDisputeCategories, which has sensible fallback defaults server-
+    // side if the Dropdowns tab has no 'Dispute Category' rows yet.
+    function loadDisputeCategories() {
+        jsonp({ action: 'getDisputeCategories' }, function(data) {
+            if (!data.success || !data.categories) {
+                console.warn('loadDisputeCategories: failed or empty -- ' + (data.error || 'unknown'));
+                return;
+            }
+            var sel = document.getElementById('logCategory');
+            if (!sel) return;
+            data.categories.forEach(function(cat) {
+                var opt = document.createElement('option');
+                opt.value = cat;
+                opt.textContent = cat;
+                sel.appendChild(opt);
+            });
+        }, function(err) {
+            console.warn('loadDisputeCategories error: ' + err);
+        });
+    }
+
     function searchParty(party) {
         var searchId  = party === 'A' ? 'partyASearch'  : 'partyBSearch';
         var resultsId = party === 'A' ? 'partyAResults' : 'partyBResults';
@@ -2044,10 +2222,21 @@ TECHNICAL:
         var partyAEmail = params.get('partyAEmail') || '';
         var partyAMobile = params.get('partyAMobile') || '';
         var originatingRef = params.get('originatingRef') || '';
+        var originatingComplaintDescription = params.get('originatingComplaintDescription') || '';
 
         // Set hidden originatingRef field
         var origEl = document.getElementById('logOriginatingRef');
         if (origEl) origEl.value = originatingRef;
+
+        // Set hidden originatingComplaintDescription field, show reference block
+        var origDescEl = document.getElementById('logOriginatingComplaintDescription');
+        if (origDescEl) origDescEl.value = originatingComplaintDescription;
+        if (originatingComplaintDescription) {
+            var descBlock = document.getElementById('originatingDescriptionBlock');
+            var descText  = document.getElementById('originatingDescriptionText');
+            if (descBlock) descBlock.style.display = 'block';
+            if (descText)  descText.textContent = originatingComplaintDescription;
+        }
 
         // Show originating ref banner
         if (originatingRef) {
@@ -2102,13 +2291,19 @@ TECHNICAL:
         // Reset other fields
         var loggedBy = document.getElementById('logLoggedBy');
         if (loggedBy) loggedBy.value = '';
-        var nature = document.getElementById('logNature');
-        if (nature) nature.value = '';
-        var partyDesc = document.getElementById('logPartyDescription');
-        if (partyDesc) partyDesc.value = '';
+        var issueDetail = document.getElementById('logIssueDetail');
+        if (issueDetail) issueDetail.value = '';
+        var categoryEl = document.getElementById('logCategory');
+        if (categoryEl) categoryEl.value = '';
+        var incidentEl = document.getElementById('logIncidentDateTime');
+        if (incidentEl) incidentEl.value = '';
         // Reset originatingRef
         var origEl = document.getElementById('logOriginatingRef');
         if (origEl) origEl.value = '';
+        var origDescEl = document.getElementById('logOriginatingComplaintDescription');
+        if (origDescEl) origDescEl.value = '';
+        var descBlock = document.getElementById('originatingDescriptionBlock');
+        if (descBlock) descBlock.style.display = 'none';
         var banner = document.getElementById('originatingRefBanner');
         if (banner) banner.style.display = 'none';
         setFeedback('logFeedback', '', '');
@@ -2120,33 +2315,33 @@ TECHNICAL:
         const loggedBy          = val('logLoggedBy');
         const partyAName        = val('logPartyAName');
         const partyAUnit        = val('logPartyAUnit');
-        const nature            = val('logNature');
-        const partyDescription  = val('logPartyDescription');
+        const issueDetail       = val('logIssueDetail');
 
         if (!loggedBy)         { setFeedback('logFeedback', 'Board member name is required.', false); return; }
         if (!partyAName)       { setFeedback('logFeedback', 'Party A — please search and select a resident.', false); return; }
         if (!partyAUnit)       { setFeedback('logFeedback', 'Party A unit is required.', false); return; }
-        if (!nature)           { setFeedback('logFeedback', 'Nature of dispute is required.', false); return; }
-        if (!partyDescription) { setFeedback('logFeedback', 'Description for parties is required — this text will appear in the notification email sent to both parties.', false); return; }
+        if (!issueDetail)      { setFeedback('logFeedback', 'Issue Detail is required — this text will appear in the notification email sent to both parties.', false); return; }
 
         var submitBtn = document.getElementById('logSubmitBtn');
         submitBtn.disabled = true;
         setFeedback('logFeedback', 'Logging dispute...', null);
 
         jsonp({
-            action:           'submitDispute',
-            loggedBy:         loggedBy,
-            partyAName:       val('logPartyAName'),
-            partyAUnit:       val('logPartyAUnit'),
-            partyAEmail:      val('logPartyAEmail'),
-            partyAMobile:     val('logPartyAMobile'),
-            partyBName:       val('logPartyBName'),
-            partyBUnit:       val('logPartyBUnit'),
-            partyBEmail:      val('logPartyBEmail'),
-            partyBMobile:     val('logPartyBMobile'),
-            natureOfDispute:  nature,
-            partyDescription: partyDescription,
-            originatingRef:   val('logOriginatingRef')
+            action:                          'submitDispute',
+            loggedBy:                        loggedBy,
+            partyAName:                      val('logPartyAName'),
+            partyAUnit:                      val('logPartyAUnit'),
+            partyAEmail:                     val('logPartyAEmail'),
+            partyAMobile:                    val('logPartyAMobile'),
+            partyBName:                      val('logPartyBName'),
+            partyBUnit:                      val('logPartyBUnit'),
+            partyBEmail:                     val('logPartyBEmail'),
+            partyBMobile:                    val('logPartyBMobile'),
+            issueDetail:                     issueDetail,
+            category:                        val('logCategory'),
+            incidentDateTime:                val('logIncidentDateTime'),
+            originatingRef:                  val('logOriginatingRef'),
+            originatingComplaintDescription: val('logOriginatingComplaintDescription')
         }, function(data) {
             submitBtn.disabled = false;
             if (data.success) {
@@ -2186,6 +2381,26 @@ TECHNICAL:
             // Fallback: just update activity log in DOM if server unreachable
             if (activityLog) updateActivityLog(ref, activityLog);
         });
+    }
+
+    // Local-only re-render, no server round-trip -- used by the Status
+    // Review decision buttons where nothing has changed server-side, only
+    // which panel is shown.
+    function renderCard(ref) {
+        var d = allDisputes.find(function(x) { return x.referenceNumber === ref; });
+        if (!d) return;
+        var card = document.getElementById('card-' + ref);
+        var wasExpanded = card && card.classList.contains('expanded');
+        var wrapper = document.createElement('div');
+        wrapper.innerHTML = buildCard(d);
+        var newCard = wrapper.firstChild;
+        if (wasExpanded) newCard.classList.add('expanded');
+        if (card && card.parentNode) card.parentNode.replaceChild(newCard, card);
+    }
+
+    function doStatusReview(ref, path) {
+        disputePathChoice[ref] = path;
+        renderCard(ref);
     }
 
     function renderLogEntries(entries) {
@@ -2252,6 +2467,7 @@ TECHNICAL:
     function statusCardClass(status) {
         return {
             'Open':                   'status-open',
+            'Acknowledged':           'status-acknowledged',
             'Under Review':           'status-under-review',
             'Resolved':               'status-resolved',
             'Referred to External Body':  'status-referred',
@@ -2264,6 +2480,7 @@ TECHNICAL:
     function statusPillClass(status) {
         return {
             'Open':                   'pill-open',
+            'Acknowledged':           'pill-acknowledged',
             'Under Review':           'pill-under-review',
             'Resolved':               'pill-resolved',
             'Referred to External Body':  'pill-referred',
@@ -2378,6 +2595,7 @@ TECHNICAL:
                              font-size: 9pt; font-weight: 700; text-transform: uppercase;
                              letter-spacing: 0.5px; margin-left: 10px; }
             .badge-open         { background: #ccfbf1; color: #0f766e; }
+            .badge-acknowledged { background: #e0f2fe; color: #075985; }
             .badge-under-review { background: #fef3c7; color: #b45309; }
             .badge-resolved     { background: #f1f5f9; color: #374151; }
             .badge-referred     { background: #ffedd5; color: #c2410c; }
@@ -2494,6 +2712,7 @@ TECHNICAL:
 
         var statusBadgeClass = {
             'Open':                  'badge-open',
+            'Acknowledged':          'badge-acknowledged',
             'Under Review':          'badge-under-review',
             'Resolved':              'badge-resolved',
             'Referred to External Body': 'badge-referred',
@@ -2547,17 +2766,23 @@ TECHNICAL:
             + disputeFieldRow('Closed',            d.closedAt     ? fmtD(d.closedAt)     : '—', false)
             + '</div>';
 
-        // Nature of dispute -- full record only (internal)
-        var natureBlock = isFull && d.natureOfDispute
-            ? '<div class="section-title">Nature of Dispute (Internal)</div>'
-              + '<div class="content-block"><div class="field-value">' + escHtml(d.natureOfDispute) + '</div></div>'
+        // Issue Detail -- V3.1.0: merged field, sent to both parties AND
+        // kept as the record, so shown in both Full and Resident-copy
+        // prints (was two separate fields/blocks pre-V3.1.0).
+        var issueDetailBlock = d.issueDetail
+            ? '<div class="section-title">Issue Detail</div>'
+              + '<div class="content-block" style="border-left-color:#6366f1;">'
+              + '<div class="field-value">' + escHtml(d.issueDetail) + '</div></div>'
             : '';
 
-        // Description sent to parties -- all versions
-        var partyDescBlock = d.partyDescription
-            ? '<div class="section-title">Description Sent to Parties</div>'
-              + '<div class="content-block" style="border-left-color:#6366f1;">'
-              + '<div class="field-value">' + escHtml(d.partyDescription) + '</div></div>'
+        // Legacy fallback -- pre-V3.1.0 disputes may still carry content
+        // in the deprecated PartyDescription column (col Y) distinct from
+        // whatever's in col L. Shown only if present, full record only,
+        // so nothing from the old two-field design is silently lost for
+        // historical records.
+        var legacyPartyDescBlock = (isFull && d.partyDescription)
+            ? '<div class="section-title">Description Sent to Parties (legacy record)</div>'
+              + '<div class="content-block"><div class="field-value">' + escHtml(d.partyDescription) + '</div></div>'
             : '';
 
         // Process statement -- all versions
@@ -2675,8 +2900,8 @@ TECHNICAL:
             + partyABlock
             + partyBBlock
             + timelineBlock
-            + natureBlock
-            + partyDescBlock
+            + issueDetailBlock
+            + legacyPartyDescBlock
             + psBlock
             + resBlock
             + refBlock
