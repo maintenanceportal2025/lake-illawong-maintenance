@@ -6,13 +6,26 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.1
+  Frontend Version: V3.1.2
   Backend:          DisputesManager V3.1.4
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    July 2026
 
 VERSION HISTORY:
+  V3.1.2 (Jul 2026): Display-only fix, raised in real testing --
+    "Referred to External Body" and "Closed - Referred" felt too generic
+    once actually seeing them on real records. New getDisplayStatusLabel(d)
+    helper builds a more specific label using data already captured
+    (referralOrganisation/closureReasonCode, V3.1.4 backend) --
+    e.g. "Referred to External Body (VicAssist)" and "Closed - Referred
+    (Terminated — refused to participate)". Deliberately display-layer
+    only: the underlying status column (M) is completely untouched, still
+    just the same two values as always -- filters, pill/badge CSS classes,
+    reporting, and escalation logic are all unaffected. Wired into the
+    three places status text is shown: card pill, print badge, and the
+    disputes register table.
+
   V3.1.1 (Jul 2026): Referral/closure dropdown parity with ComplaintsManager
     (backend V3.1.4). Referring Organisation dropdown added to the Refer
     to External Body panel -- VicAssist Retirement Villages (primary) or
@@ -1477,7 +1490,7 @@ TECHNICAL:
                 '<div class="card-ref">' + escHtml(ref) + '</div>' +
                 '<div class="card-parties">' + partyLabel + '</div>' +
                 (overdue ? '<span class="overdue-badge">&#9888; Overdue</span>' : '') +
-                '<span class="status-pill ' + pillCls + '">' + escHtml(d.status) + '</span>' +
+                '<span class="status-pill ' + pillCls + '">' + escHtml(getDisplayStatusLabel(d)) + '</span>' +
                 '<div class="card-dates">Logged ' + loggedStr + ' &bull; Due ' + dueStr + '</div>' +
                 '<div class="card-chevron">&#9660;</div>' +
             '</div>' +
@@ -2554,6 +2567,30 @@ TECHNICAL:
         }[status] || 'pill-open';
     }
 
+    // V3.1.2 -- display-layer only. The underlying status column (M) never
+    // changes: still just 'Referred to External Body' / 'Closed - Referred'
+    // as always, so filters/pills classes/reporting/escalation logic are
+    // all untouched. This only makes the *shown text* more specific, using
+    // referralOrganisation/closureReasonCode data already captured (V3.1.4
+    // backend). Falls back to the raw status for every other case.
+    function getDisplayStatusLabel(d) {
+        const closureLabels = {
+            resolved:   'Resolved via VicAssist',
+            otherForum: 'Proceeded to VCAT/other forum',
+            refused:    'Terminated — refused to participate',
+            unsuitable: 'Terminated — unsuitable for conciliation'
+        };
+        if (d.status === 'Referred to External Body' && d.referralOrganisation) {
+            const org = d.referralOrganisation === 'VicAssist' ? 'VicAssist' : d.referralOrganisation;
+            return 'Referred to External Body (' + org + ')';
+        }
+        if (d.status === 'Closed - Referred' && d.closureReasonCode) {
+            const label = closureLabels[d.closureReasonCode] || d.closureReasonCode;
+            return 'Closed - Referred (' + label + ')';
+        }
+        return d.status;
+    }
+
     function detailField(label, value, fullWidth) {
         return '<div class="detail-field' + (fullWidth ? ' full-width' : '') + '">' +
             '<div class="detail-label">' + escHtml(label) + '</div>' +
@@ -2957,7 +2994,7 @@ TECHNICAL:
             + '<title>' + printTitle + ' — ' + escHtml(ref) + '</title>'
             + '<style>' + printDisputeStyles() + '</style></head><body>'
             + printDisputeHeader(
-                printTitle + ' <span class="status-badge ' + statusBadgeClass + '">' + escHtml(d.status) + '</span>',
+                printTitle + ' <span class="status-badge ' + statusBadgeClass + '">' + escHtml(getDisplayStatusLabel(d)) + '</span>',
                 escHtml(ref)
               )
             + partyCopyBanner
@@ -3010,7 +3047,7 @@ TECHNICAL:
                 + '<td>' + escHtml(d.referenceNumber) + '</td>'
                 + '<td>' + escHtml(d.partyAName) + (d.partyAUnit ? ' (' + escHtml(d.partyAUnit) + ')' : '') + '</td>'
                 + '<td>' + escHtml(d.partyBName || '—') + (d.partyBUnit ? ' (' + escHtml(d.partyBUnit) + ')' : '') + '</td>'
-                + '<td>' + escHtml(d.status) + overdueMark + '</td>'
+                + '<td>' + escHtml(getDisplayStatusLabel(d)) + overdueMark + '</td>'
                 + '<td>' + fmtD(d.loggedAt) + '</td>'
                 + '<td>' + fmtD(d.reviewDue) + '</td>'
                 + '</tr>';
