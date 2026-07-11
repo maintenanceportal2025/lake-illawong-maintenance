@@ -6,13 +6,31 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.0
-  Backend:          DisputesManager V3.1.1
+  Frontend Version: V3.1.1
+  Backend:          DisputesManager V3.1.4
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    July 2026
 
 VERSION HISTORY:
+  V3.1.1 (Jul 2026): Referral/closure dropdown parity with ComplaintsManager
+    (backend V3.1.4). Referring Organisation dropdown added to the Refer
+    to External Body panel -- VicAssist Retirement Villages (primary) or
+    Other with a free-text fallback, revealed via onReferOrgChange. Field
+    relabelled from "External Body & Referral Statement" to "Reasons for
+    Referral" now that the organisation itself is a separate structured
+    field. Closure panel (Referred to External Body status) rebuilt:
+    the previously required free-text "External Referral Outcome" field
+    is now a required Closure Reason dropdown (four options, worded for
+    the two-party dispute context, matching backend's
+    getDisputeClosureReasonLabel) plus an optional Additional Notes
+    field. doRefer/doClose updated accordingly -- doClose sends
+    closureReasonCode as a new required param, vicAssistOutcome now
+    carries only the optional notes. Both accordion pane and Full Print
+    Record updated to display the referring organisation and closure
+    outcome. Single Closed - Referred status retained throughout (no new
+    status values) per the same decision as the backend.
+
   V3.1.0 (Jul 2026): Major alignment with ComplaintsManager's proven
     architecture -- the original Disputes design (built well before
     the Complaints architecture was established) diverged from it in
@@ -1564,8 +1582,9 @@ TECHNICAL:
             html += accordionPane('pane-ref-' + ref,
                 'External Referral',
                 d.referredAt ? fmtDate(new Date(d.referredAt)) : '',
-                '<div class="pane-text">' + escHtml(d.referralNarrative) + '</div>' +
-                (d.externalReferralOutcome ? '<div class="detail-section-title">External Referral Outcome</div><div class="pane-text">' + escHtml(d.externalReferralOutcome) + '</div>' : ''),
+                (d.referralOrganisation ? '<div class="detail-section-title">Referring Organisation</div><div class="pane-text">' + escHtml(d.referralOrganisation === 'VicAssist' ? 'VicAssist Retirement Villages' : d.referralOrganisation) + '</div>' : '') +
+                '<div class="detail-section-title">Reasons for Referral</div><div class="pane-text">' + escHtml(d.referralNarrative) + '</div>' +
+                (d.externalReferralOutcome ? '<div class="detail-section-title">Closure Outcome</div><div class="pane-text">' + escHtml(d.externalReferralOutcome) + '</div>' : ''),
                 true);
         }
 
@@ -1627,16 +1646,36 @@ TECHNICAL:
     // "Refer to External Body instead" link on the Status Review screen.
     function buildReferSection(d) {
         const ref = d.referenceNumber;
+        const org = d.referralOrganisation || '';
+        const isOther = org && org !== 'VicAssist';
         return '<div class="action-title" style="color:#fed7aa;">&#9888; Refer to External Body</div>' +
             '<div class="action-note" style="margin-bottom:8px;">Use this path if the dispute has not been resolved within 28 days, or if the Board determines referral is warranted sooner. Both parties will be notified separately.</div>' +
             '<div class="action-row"><div class="action-field">' +
-                '<label>External Body &amp; Referral Statement <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="ref-' + ref + '" placeholder="Identify the external body (e.g. VicAssist, VCAT, Consumer Affairs Victoria) and describe the reasons for referral. This will be included in notifications sent to both parties.">' + escHtml(d.referralNarrative || '') + '</textarea>' +
+                '<label>Referring Organisation <span style="color:#fca5a5">*</span></label>' +
+                '<select id="reforg-' + ref + '" onchange="onReferOrgChange(\'' + ref + '\')">' +
+                    '<option value="">— Select —</option>' +
+                    '<option value="VicAssist"' + (org === 'VicAssist' ? ' selected' : '') + '>VicAssist Retirement Villages</option>' +
+                    '<option value="Other"' + (isOther ? ' selected' : '') + '>Other</option>' +
+                '</select>' +
+            '</div></div>' +
+            '<div class="action-row" id="reforg-other-row-' + ref + '" style="display:' + (isOther ? 'block' : 'none') + ';"><div class="action-field">' +
+                '<label>Specify Organisation <span style="color:#fca5a5">*</span></label>' +
+                '<input type="text" id="reforg-other-' + ref + '" value="' + escHtml(isOther ? org : '') + '" placeholder="e.g. Consumer Affairs Victoria, VCAT, private mediator">' +
+            '</div></div>' +
+            '<div class="action-row"><div class="action-field">' +
+                '<label>Reasons for Referral <span style="color:#fca5a5">*</span></label>' +
+                '<textarea id="ref-' + ref + '" placeholder="Describe the reasons for referral. This will be included in notifications sent to both parties.">' + escHtml(d.referralNarrative || '') + '</textarea>' +
             '</div></div>' +
             '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Refer to External Body &amp; Notify Both Parties</strong> to finalise.</i></div>' +
             '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'referral\')">Save Draft</button>' +
             '<button class="btn-danger-action" style="margin-left:8px;" onclick="doRefer(\'' + ref + '\')">Refer to External Body &amp; Notify Both Parties</button>' +
             '<span id="fb-ref-' + ref + '" class="save-feedback"></span>';
+    }
+
+    function onReferOrgChange(ref) {
+        const sel = document.getElementById('reforg-' + ref);
+        const row = document.getElementById('reforg-other-row-' + ref);
+        if (row) row.style.display = (sel && sel.value === 'Other') ? 'block' : 'none';
     }
 
     function buildActionPanel(d) {
@@ -1740,11 +1779,21 @@ TECHNICAL:
         }
 
         else if (status === 'Referred to External Body') {
-            // Record external referral outcome + Close as Closed - Referred
-            html += '<div class="action-note" style="margin-bottom:10px;">Record the outcome once the external body has concluded the process.</div>' +
+            // Record closure reason (structured, V3.1.4) + Close as Closed - Referred
+            html += '<div class="action-note" style="margin-bottom:10px;">Select the closure reason once the external body has concluded the process.</div>' +
             '<div class="action-row"><div class="action-field">' +
-                '<label>External Referral Outcome <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="va-' + ref + '" placeholder="Identify the external body and summarise the outcome of the conciliation or other process."></textarea>' +
+                '<label>Closure Reason <span style="color:#fca5a5">*</span></label>' +
+                '<select id="closereason-' + ref + '">' +
+                    '<option value="">— Select —</option>' +
+                    '<option value="resolved">Both parties reached agreement via VicAssist Conciliation</option>' +
+                    '<option value="otherForum">Matter proceeded to VCAT (or other forum)</option>' +
+                    '<option value="refused">Terminated by VicAssist — one party refused to participate</option>' +
+                    '<option value="unsuitable">Terminated by VicAssist — matter unsuitable for conciliation</option>' +
+                '</select>' +
+            '</div></div>' +
+            '<div class="action-row"><div class="action-field">' +
+                '<label>Additional Notes <span style="color:rgba(255,255,255,0.4);font-weight:400;">(optional)</span></label>' +
+                '<textarea id="va-' + ref + '" placeholder="Any further detail on the outcome, beyond the closure reason above. Included in the closure notice sent to both parties."></textarea>' +
             '</div></div>' +
             '<button class="btn-action" onclick="doClose(\'' + ref + '\')">Record Outcome &amp; Close Dispute</button>' +
             '<span id="fb-va-' + ref + '" class="save-feedback"></span>';
@@ -1868,7 +1917,7 @@ TECHNICAL:
         } else {
             fieldVal = val('ref-' + ref);
             fbId     = 'fb-ref-' + ref;
-            if (!fieldVal) { feedback(fbId, 'Please enter a referral statement before saving.', false); return; }
+            if (!fieldVal) { feedback(fbId, 'Please enter the reasons for referral before saving.', false); return; }
             payload  = { action: 'updateDispute', ref: ref, referralNarrative: fieldVal, userName: currentUserName(), skipLog: 'true' };
         }
         var btnEl = document.querySelector('#fb-' + (type === 'resolution' ? 'res' : 'ref') + '-' + ref + ' ~ button, button[onclick*="saveDisputeDraft"]');
@@ -1886,14 +1935,22 @@ TECHNICAL:
     }
 
     function doRefer(ref) {
+        const orgSel = val('reforg-' + ref);
+        if (!orgSel) { feedback('fb-ref-' + ref, 'Referring Organisation is required.', false); return; }
+        var referralOrganisation = orgSel;
+        if (orgSel === 'Other') {
+            const otherOrg = val('reforg-other-' + ref);
+            if (!otherOrg) { feedback('fb-ref-' + ref, 'Please specify the organisation.', false); return; }
+            referralOrganisation = otherOrg;
+        }
         const narrative = val('ref-' + ref);
-        if (!narrative) { feedback('fb-ref-' + ref, 'Referral statement is required.', false); return; }
-        if (!confirm('Refer this dispute to an external body and notify both parties? This action cannot be undone.')) return;
+        if (!narrative) { feedback('fb-ref-' + ref, 'Reasons for referral are required.', false); return; }
+        if (!confirm('Refer this dispute to ' + referralOrganisation + ' and notify both parties? This action cannot be undone.')) return;
         const userName = currentUserName();
         const fbIdRef = 'fb-ref-' + ref;
         const btnElRef = getSendBtn(fbIdRef);
         btnSending(fbIdRef, btnElRef);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Referred to External Body', referralNarrative: narrative, userName: userName, andSend: 'true' },
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Referred to External Body', referralNarrative: narrative, referralOrganisation: referralOrganisation, userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
                     btnDone(fbIdRef, btnElRef, true, '');
@@ -1905,14 +1962,21 @@ TECHNICAL:
     }
 
     function doClose(ref) {
-        const outcome = val('va-' + ref);
-        if (!outcome) { feedback('fb-va-' + ref, 'External referral outcome is required.', false); return; }
-        if (!confirm('Record external referral outcome and close this dispute? Both parties will be notified.')) return;
+        const reasonCode = val('closereason-' + ref);
+        if (!reasonCode) { feedback('fb-va-' + ref, 'Closure Reason is required.', false); return; }
+        const notes = val('va-' + ref);  // optional
+        const reasonLabels = {
+            resolved:   'Both parties reached agreement via VicAssist Conciliation',
+            otherForum: 'Matter proceeded to VCAT (or other forum)',
+            refused:    'Terminated by VicAssist — one party refused to participate',
+            unsuitable: 'Terminated by VicAssist — matter unsuitable for conciliation'
+        };
+        if (!confirm('Close this dispute?\n\nReason: ' + (reasonLabels[reasonCode] || reasonCode) + '\n\nBoth parties will be notified. This cannot be undone.')) return;
         const userName = currentUserName();
         const fbIdVa = 'fb-va-' + ref;
         const btnElVa = getSendBtn(fbIdVa);
         btnSending(fbIdVa, btnElVa);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Closed - Referred', vicAssistOutcome: outcome, userName: userName, andSend: 'true' },
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Closed - Referred', closureReasonCode: reasonCode, vicAssistOutcome: notes, userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
                     btnDone(fbIdVa, btnElVa, true, '');
@@ -2800,14 +2864,14 @@ TECHNICAL:
 
         // Referral narrative -- all versions
         var refBlock = d.referralNarrative
-            ? '<div class="section-title">External Referral — Board Statement</div>'
+            ? '<div class="section-title">External Referral' + (d.referralOrganisation ? ' — ' + escHtml(d.referralOrganisation === 'VicAssist' ? 'VicAssist Retirement Villages' : d.referralOrganisation) : '') + '</div>'
               + '<div class="content-block" style="border-left-color:#f97316;">'
               + '<div class="field-value">' + escHtml(d.referralNarrative) + '</div></div>'
             : '';
 
         // External outcome -- all versions
         var vaBlock = d.externalReferralOutcome
-            ? '<div class="section-title">External Referral Outcome</div>'
+            ? '<div class="section-title">Closure Outcome</div>'
               + '<div class="content-block" style="border-left-color:#6b7280;">'
               + '<div class="field-value">' + escHtml(d.externalReferralOutcome) + '</div></div>'
             : '';
