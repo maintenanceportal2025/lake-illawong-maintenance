@@ -6,13 +6,71 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepComplaints.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.5
-  Backend:          ComplaintsManager V2.2.0
+  Frontend Version: V1.0.6
+  Backend:          ComplaintsManager V3.0.40
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    May 2026
+  Last Modified:    Jul 2026
 
 VERSION HISTORY:
+  V1.0.6 (Jul 2026): Brought current to ComplaintsManager V3.0.40 -- this
+    module had not been touched since May 2026 and was still built around
+    the old 28-day "response" deadline model, despite the Timeline
+    Compliance block already having been partially fixed at V1.0.3/V1.0.5.
+    Found reviewing the Complaints and Disputes Policy documentation pass:
+      - isRespOverdue() rewritten -- was checking c.responseDue (the 28-day
+        internal safety-net field, now essentially meaningless for Board-
+        facing overdue purposes) against a status exclusion list of only 4
+        statuses (Responded/Closed - Resolved/Closed - Unresolved/
+        Escalated). Any of the ~10 newer terminal statuses (Closure -
+        Pending, Closed - Partially Resolved, Closed - No Further Action,
+        both escalated-closure variants, Closed - Unresolved (External
+        Resolution Failed), Closed - Converted to Dispute) fell through
+        this exclusion list, so a closed/escalated complaint with a past
+        responseDue timestamp -- true of nearly all of them -- was
+        incorrectly flagged "Response overdue". Now checks the real
+        Board-facing deadline: 72 hours since submittedAt, only while
+        status is Acknowledged or Status Review with no Initial
+        Determination yet recorded -- mirrors ComplaintsManager's own
+        CN-D2 check exactly. Badge label changed "Response overdue" ->
+        "Initial Determination overdue" to match.
+      - statusPillClass() extended from 6 statuses to the full current 14
+        -- Status Review, Closure - Pending, Closed - Partially Resolved,
+        Closed - No Further Action, Closed - Resolved (Escalated), Closed
+        - Unresolved (Escalated), Closed - Unresolved (External
+        Resolution Failed), Closed - Converted to Dispute all previously
+        fell back to the generic grey "status-closed" pill. Colour values
+        copied directly from ComplaintsManager.html V3.0.43 for exact
+        consistency (Design System V2.4) -- not reinvented.
+      - buildCard() border-colour logic and buildDetail()'s isClosed
+        check extended to the same full status list -- the latter was
+        the more serious of the two: with only 4 statuses recognised as
+        "closed", the Timeline Compliance row could show a live "OVERDUE
+        -- due [date]" flag against complaints already closed for weeks
+        under one of the ~10 unrecognised terminal statuses.
+      - "Response Due" detail field (raw c.responseDue, the 28-day
+        field) replaced with "Initial Determination Due", calculated the
+        same way the Timeline block already correctly did (submittedAt +
+        72h) -- gives Zone Reps one meaningful due-date instead of a
+        stale one.
+      - Timeline label "Board Response (72 hours)" -> "Initial
+        Determination (72 hours)"; detail panel label "Board Response"
+        -> "Initial Determination" -- terminology now matches
+        ComplaintsManager and the Complaints and Disputes -- Board and
+        Operator Guide throughout.
+      - Filter dropdown extended from 5 status options to all 14.
+      - Info notice text corrected -- no longer describes a "(28 days)"
+        response deadline that Zone Reps have no visibility of anything
+        meaningful about; now describes the real 72-hour Initial
+        Determination deadline.
+      - CONFIG.RESP_DAYS removed -- dead code, was defined but never
+        actually referenced by isRespOverdue() or anywhere else; the
+        72-hour deadline was already computed independently in
+        buildDetail() and is now also used directly in isRespOverdue().
+    Backend reference corrected V2.2.0 -> V3.0.40 (informational only --
+    no backend API contract changes required for any of the above; all
+    fields consumed already exist on the getComplaintsByZone response).
+
   V1.0.5 (May 2026): Fix -- Board Response timeline row now derives
     72-hour deadline from submittedAt + 72h rather than using
     responseDue (which is the 28-day resolution deadline -- a
@@ -204,6 +262,12 @@ TECHNICAL:
         .complaint-card.status-escalated     { border-left: 4px solid #f97316; background: rgba(249,115,22,0.15);  backdrop-filter: none; }
         .complaint-card.status-closed-resolved   { border-left: 4px solid #cbd5e1; background: rgba(203,213,225,0.4);  backdrop-filter: none; }
         .complaint-card.status-closed-unresolved { border-left: 4px solid #9ca3af; background: rgba(156,163,175,0.3); backdrop-filter: none; }
+        .complaint-card.status-closure-pending             { border-left: 4px solid #d97706; background: rgba(217,119,6,0.12);   backdrop-filter: none; }
+        .complaint-card.status-closed-resolved-escalated   { border-left: 4px solid #a78bfa; background: rgba(167,139,250,0.15); backdrop-filter: none; }
+        .complaint-card.status-closed-unresolved-escalated { border-left: 4px solid #7c3aed; background: rgba(124,58,237,0.15);  backdrop-filter: none; }
+        .complaint-card.status-closed-ext-failed           { border-left: 4px solid #64748b; background: rgba(100,116,139,0.2);  backdrop-filter: none; }
+        .complaint-card.status-closed-nfa                  { border-left: 4px solid #b49050; background: rgba(180,150,80,0.12);  backdrop-filter: none; }
+        .complaint-card.status-converted-to-dispute        { border-left: 4px solid #0d9488; background: rgba(13,148,136,0.12);  backdrop-filter: none; }
 
         /* Legacy support */
         .complaint-card.status-closed       { border-left: 4px solid #cbd5e1; background: rgba(203,213,225,0.4);  backdrop-filter: none; }
@@ -239,6 +303,12 @@ TECHNICAL:
         .status-closed           { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
         .status-closed-resolved  { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
         .status-closed-unresolved{ background: rgba(107,114,128,0.3);  color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
+        .status-closure-pending             { background: rgba(217,119,6,0.25);   color: #fbbf24; border: 1px solid rgba(217,119,6,0.55); }
+        .status-closed-resolved-escalated   { background: rgba(167,139,250,0.2); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.5); }
+        .status-closed-unresolved-escalated { background: rgba(124,58,237,0.2);  color: #a78bfa; border: 1px solid rgba(124,58,237,0.5); }
+        .status-closed-ext-failed           { background: rgba(100,116,139,0.35); color: #e2e8f0; border: 1px solid rgba(100,116,139,0.6); }
+        .status-closed-nfa                  { background: rgba(180,150,80,0.3);   color: #fde68a; border: 1px solid rgba(180,150,80,0.55); }
+        .status-converted-to-dispute        { background: rgba(13,148,136,0.25); color: #5eead4; border: 1px solid rgba(13,148,136,0.5); }
         .status-escalated        { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
 
         .card-chevron { color: rgba(255,255,255,0.4); font-size: 0.85rem; transition: transform 0.2s; flex-shrink: 0; }
@@ -335,9 +405,9 @@ TECHNICAL:
     <!-- Info notice -->
     <div class="info-notice" id="infoNotice" style="display:none">
         This view shows complaints from your zone only. Timeline flags indicate whether
-        the Board has met the mandatory acknowledgement (2 business days) and response
-        (28 days) deadlines. If a complaint is overdue, raise it with the Residents
-        Committee Chair.
+        the Board has met the mandatory acknowledgement (2 business days) and Initial
+        Determination (72 hours) deadlines. If a complaint is overdue, raise it with the
+        Residents Committee Chair.
     </div>
 
     <!-- Filter bar -->
@@ -347,9 +417,18 @@ TECHNICAL:
             <option value="">All</option>
             <option value="Open">Open</option>
             <option value="Acknowledged">Acknowledged</option>
+            <option value="Status Review">Status Review</option>
             <option value="Responded">Responded</option>
+            <option value="Closure - Pending">Closure - Pending</option>
+            <option value="Escalated">Escalated</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
-            <option value="Closed - Unresolved">Closed - Unresolved</option>
+            <option value="Closed - Partially Resolved">Closed - Partially Resolved</option>
+            <option value="Closed - No Further Action">Closed - No Further Action</option>
+            <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated)</option>
+            <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated)</option>
+            <option value="Closed - Unresolved (External Resolution Failed)">Closed - Unresolved (External Resolution Failed)</option>
+            <option value="Closed - Converted to Dispute">Closed - Converted to Dispute</option>
+            <option value="Closed - Unresolved">Closed - Unresolved (legacy)</option>
         </select>
         <label for="filterOverdue">Show:</label>
         <select id="filterOverdue" onchange="applyFilters()">
@@ -374,7 +453,7 @@ TECHNICAL:
         SESSION_KEY:       'portalZoneRepVerified',
         PORTAL_URL:        'ZoneRepPortal.html',
         ACK_BUSINESS_DAYS: 2,
-        RESP_DAYS:         28
+        INITIAL_DETERMINATION_HOURS: 72
     };
 
     let allComplaints = [];
@@ -469,10 +548,19 @@ TECHNICAL:
     }
 
     function isRespOverdue(c) {
-        const s = normaliseStatus(c.status);
-        if (s === 'Responded' || s === 'Closed - Resolved' || s === 'Closed - Unresolved' || s === 'Escalated') return false;
-        if (!c.responseDue) return false;
-        return new Date(c.responseDue) < new Date();
+        // V1.0.6: rewritten to check the real Board-facing deadline --
+        // 72 hours since submittedAt with no Initial Determination
+        // recorded -- mirroring ComplaintsManager's own CN-D2 check.
+        // Only meaningful while status is Acknowledged or Status Review;
+        // every other status (Open -- covered by isAckOverdue instead;
+        // Responded onward -- Initial Determination already sent, or the
+        // complaint is closed/escalated and this check no longer applies).
+        if (c.status !== 'Acknowledged' && c.status !== 'Status Review') return false;
+        if (c.boardResponse) return false;
+        if (!c.submittedAt) return false;
+        const dueDate = new Date(new Date(c.submittedAt).getTime()
+            + CONFIG.INITIAL_DETERMINATION_HOURS * 60 * 60 * 1000);
+        return new Date() > dueDate;
     }
 
     function isOverdue(c) { return isAckOverdue(c) || isRespOverdue(c); }
@@ -508,17 +596,25 @@ TECHNICAL:
         if      (ackOverdue)                           borderClass = 'overdue-ack';
         else if (respOverdue)                          borderClass = 'overdue-resp';
         else if (normSt === 'Responded')               borderClass = 'status-responded';
-        else if (normSt === 'Closed - Resolved')       borderClass = 'status-closed-resolved';
-        else if (normSt === 'Closed - Unresolved')     borderClass = 'status-closed-unresolved';
+        else if (normSt === 'Closure - Pending')        borderClass = 'status-closure-pending';
+        else if (normSt === 'Closed - Resolved')        borderClass = 'status-closed-resolved';
+        else if (normSt === 'Closed - Partially Resolved') borderClass = 'status-closed-unresolved';
+        else if (normSt === 'Closed - Unresolved')      borderClass = 'status-closed-unresolved';
+        else if (normSt === 'Closed - No Further Action') borderClass = 'status-closed-nfa';
+        else if (normSt === 'Closed - Resolved (Escalated)') borderClass = 'status-closed-resolved-escalated';
+        else if (normSt === 'Closed - Unresolved (Escalated)') borderClass = 'status-closed-unresolved-escalated';
+        else if (normSt === 'Closed - Unresolved (External Resolution Failed)') borderClass = 'status-closed-ext-failed';
+        else if (normSt === 'Closed - Converted to Dispute') borderClass = 'status-converted-to-dispute';
         else if (normSt === 'Escalated')               borderClass = 'status-escalated';
         else if (normSt === 'Acknowledged')            borderClass = 'status-acknowledged';
+        else if (normSt === 'Status Review')            borderClass = 'status-acknowledged';
 
         const statusClass = statusPillClass(normSt);
         const safeRef     = escHtml(c.referenceNumber);
 
         const badges = [];
         if (ackOverdue)  badges.push('<span class="overdue-badge badge-ack-overdue">Ack overdue</span>');
-        if (respOverdue) badges.push('<span class="overdue-badge badge-resp-overdue">Response overdue</span>');
+        if (respOverdue) badges.push('<span class="overdue-badge badge-resp-overdue">Initial Determination overdue</span>');
 
         const submitted = formatDate(c.submittedAt);
 
@@ -553,7 +649,7 @@ TECHNICAL:
             { label: 'Category',           value: c.category,         full: false },
             { label: 'Submitted',          value: formatDate(c.submittedAt), full: false },
             { label: 'Acknowledged',       value: c.acknowledgedAt ? formatDate(c.acknowledgedAt) : 'Not yet acknowledged', full: false },
-            { label: 'Response Due',       value: c.responseDue ? formatDate(c.responseDue) : '—', full: false },
+            { label: 'Initial Determination Due', value: c.submittedAt ? formatDate(new Date(new Date(c.submittedAt).getTime() + CONFIG.INITIAL_DETERMINATION_HOURS * 60 * 60 * 1000).toISOString()) : '—', full: false },
             { label: 'Responded',          value: c.respondedAt ? formatDate(c.respondedAt) : '—', full: false },
             { label: 'Description',        value: c.description,      full: true  },
             { label: 'Desired Outcome',    value: c.desiredOutcome,   full: true  },
@@ -571,7 +667,7 @@ TECHNICAL:
         // Board response -- uses formatBoardResponse for Sent badge rendering
         const boardHtml = c.boardResponse
             ? `<div class="board-response-block">
-                   <div class="detail-label">Board Response</div>
+                   <div class="detail-label">Initial Determination</div>
                    <div class="detail-value">${formatBoardResponse(c.boardResponse)}</div>
                </div>` : '';
 
@@ -579,9 +675,20 @@ TECHNICAL:
         const ackStatus = c.acknowledgedAt ? 'timeline-ok' : (ackOverdue ? 'timeline-overdue' : 'timeline-pending');
         const ackLabel  = c.acknowledgedAt ? 'Acknowledged ' + formatDate(c.acknowledgedAt) : (ackOverdue ? 'OVERDUE' : 'Pending');
 
-        // 72-hour board response deadline -- derived from submittedAt, not responseDue
-        const isClosed        = (normSt === 'Responded' || normSt === 'Closed - Resolved' || normSt === 'Closed - Unresolved' || normSt === 'Closed');
-        const boardRespDue    = c.submittedAt ? new Date(new Date(c.submittedAt).getTime() + 72 * 60 * 60 * 1000) : null;
+        // Initial Determination (72-hour) deadline -- derived from submittedAt.
+        // V1.0.6: isClosed extended from 4 recognised statuses to the full
+        // current set -- previously any of the ~10 newer statuses fell
+        // through and could show a live "OVERDUE" flag against a complaint
+        // closed or escalated for weeks.
+        const PAST_INITIAL_DETERMINATION_STAGE = [
+            'Responded', 'Closure - Pending', 'Escalated',
+            'Closed - Resolved', 'Closed - Partially Resolved', 'Closed - Unresolved',
+            'Closed - No Further Action', 'Closed - Resolved (Escalated)',
+            'Closed - Unresolved (Escalated)', 'Closed - Unresolved (External Resolution Failed)',
+            'Closed - Converted to Dispute', 'Closed'
+        ];
+        const isClosed        = PAST_INITIAL_DETERMINATION_STAGE.indexOf(normSt) !== -1;
+        const boardRespDue    = c.submittedAt ? new Date(new Date(c.submittedAt).getTime() + CONFIG.INITIAL_DETERMINATION_HOURS * 60 * 60 * 1000) : null;
         const boardRespOverdue = boardRespDue && !isClosed && new Date() > boardRespDue;
 
         const respStatus = isClosed ? 'timeline-responded'
@@ -600,7 +707,7 @@ TECHNICAL:
                     <span class="timeline-status ${ackStatus}">${ackLabel}</span>
                 </div>
                 <div class="timeline-row">
-                    <span class="timeline-label">Board Response (72 hours)</span>
+                    <span class="timeline-label">Initial Determination (72 hours)</span>
                     <span class="timeline-status ${respStatus}">${respLabel}</span>
                 </div>
             </div>`;
@@ -622,12 +729,20 @@ TECHNICAL:
 
     function statusPillClass(status) {
         return {
-            'Open':               'status-open',
-            'Acknowledged':       'status-acknowledged',
-            'Responded':          'status-responded',
-            'Closed - Resolved':  'status-closed-resolved',
-            'Closed - Unresolved':'status-closed-unresolved',
-            'Escalated':          'status-escalated'
+            'Open':                                               'status-open',
+            'Acknowledged':                                       'status-acknowledged',
+            'Status Review':                                      'status-acknowledged',
+            'Responded':                                          'status-responded',
+            'Closure - Pending':                                  'status-closure-pending',
+            'Escalated':                                          'status-escalated',
+            'Closed - Resolved':                                  'status-closed-resolved',
+            'Closed - Partially Resolved':                        'status-closed-unresolved',
+            'Closed - No Further Action':                         'status-closed-nfa',
+            'Closed - Resolved (Escalated)':                      'status-closed-resolved-escalated',
+            'Closed - Unresolved (Escalated)':                    'status-closed-unresolved-escalated',
+            'Closed - Unresolved (External Resolution Failed)':   'status-closed-ext-failed',
+            'Closed - Converted to Dispute':                      'status-converted-to-dispute',
+            'Closed - Unresolved':                                'status-closed-unresolved'
         }[status] || 'status-closed';
     }
 
