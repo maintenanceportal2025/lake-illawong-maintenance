@@ -6,17 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        DocumentLibrary.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.0.0
+  Frontend Version: V2.0.1
   Backend:          DocumentLibrary V2.1
   Status:           PRODUCTION
   Created:          March 2026
-  Last Modified:    April 2026
+  Last Modified:    July 2026
 
 VERSION HISTORY:
   V1.0.0 (Mar 2026): Initial release — flat list view with sidebar filters
   V2.0.0 (Apr 2026): Full redesign — category-first card grid, Frequently
                      Opened card (sheet-driven via Featured flag), drill-down
                      document list, cross-category search, first-name greeting
+  V2.0.1 (Jul 2026): "New" badging — category cards show a dot if any
+                     document in that category was added within NEW_BADGE_DAYS
+                     (14 days); document rows show an inline "New" pill next
+                     to the title. Frontend-only, no backend change required.
+                     "Residential Club" corrected to "Residential Village".
+                     Design System reference updated to V2.4.
 
 AUTHENTICATION:
   Session Key:  lakeIllawongVerified (shared with ResidentDetailsUpdate.html)
@@ -44,7 +50,7 @@ PRIMARY FEATURES:
 TECHNICAL:
   Technology:    HTML5 + CSS3 + Vanilla JavaScript
   API Protocol:  JSONP (GET only — Netlify/GitHub Pages compatible)
-  Design System: Lake Illawong Unified Design System v1.4
+  Design System: Lake Illawong Unified Design System V2.4
   Hosting:       Netlify
   Auth Script:   VerificationModal_V1_0.js (external, same directory)
 =====================================================================
@@ -369,6 +375,50 @@ TECHNICAL:
         }
 
         /* ============================================================
+           "NEW" BADGE
+        ============================================================ */
+
+        /* Category card — position:relative already implied by flex;
+           the dot sits top-right inside the card */
+        .category-card {
+            position: relative;
+        }
+
+        .new-dot {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #10b981;
+            color: white;
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 20px;
+            line-height: 1.4;
+            pointer-events: none;
+        }
+
+        /* Inline pill used on document rows */
+        .new-pill {
+            display: inline-block;
+            background: rgba(16,185,129,0.25);
+            border: 1px solid rgba(16,185,129,0.5);
+            color: #6ee7b7;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            padding: 1px 6px;
+            border-radius: 20px;
+            margin-left: 8px;
+            vertical-align: middle;
+            line-height: 1.5;
+            pointer-events: none;
+        }
+
+        /* ============================================================
            DRILL-DOWN (document list inside a category / search results)
         ============================================================ */
         .drill-header {
@@ -636,7 +686,7 @@ TECHNICAL:
             <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
             <div class="header-text">
                 <div class="header-title">📚 Document Library</div>
-                <div class="header-subtitle">Lake Illawong Residential Club</div>
+                <div class="header-subtitle">Lake Illawong Residential Village</div>
             </div>
         </div>
         <div class="header-divider"></div>
@@ -649,7 +699,7 @@ TECHNICAL:
             <div class="user-info-text">
                 Welcome, <strong id="userName">–</strong> &nbsp;|&nbsp; <strong id="userUnit">–</strong>
             </div>
-            
+            <button class="logout-btn" onclick="logout()">Log Out</button>
         </div>
     </div>
 
@@ -735,6 +785,21 @@ const CONFIG = {
     SESSION_KEY: 'lakeIllawongVerified',
     PORTAL_URL:  'ResidentPortal.html'
 };
+
+// ============================================================
+// "NEW" BADGE THRESHOLD
+// Documents added within this many days receive a "New" badge.
+// Adjust here — no other code changes needed.
+// ============================================================
+const NEW_BADGE_DAYS = 14;
+
+function isNew(dateAdded) {
+    if (!dateAdded) return false;
+    const added     = new Date(dateAdded);
+    const now       = new Date();
+    const diffDays  = (now - added) / (1000 * 60 * 60 * 24);
+    return diffDays <= NEW_BADGE_DAYS;
+}
 
 // ============================================================
 // FREQUENTLY OPENED
@@ -884,9 +949,11 @@ function renderCategoryView() {
 
     // One card per category
     sortedCats.forEach(cat => {
-        const icon = CATEGORY_ICONS[cat] || '📁';
+        const icon    = CATEGORY_ICONS[cat] || '📁';
+        const hasNew  = catMap[cat].some(d => isNew(d.dateAdded));
         html += `
             <div class="category-card" onclick="drillIntoCategory('${escHtml(cat)}')">
+                ${hasNew ? '<span class="new-dot">New</span>' : ''}
                 <div class="category-icon">${icon}</div>
                 <div class="category-name">${escHtml(cat)}</div>
             </div>
@@ -986,7 +1053,10 @@ function renderDrillView(docs, title, isSearch) {
     const listHTML = docs.map(doc => `
         <div class="doc-row" onclick="openDocument('${escHtml(doc.documentId)}', '${escHtml(doc.sourceType)}', '${escHtml(doc.sourceLocation || '')}', '${escHtml(doc.title)}')">
             <div>
-                <div class="doc-row-title">${escHtml(doc.title)}</div>
+                <div class="doc-row-title">
+                    ${escHtml(doc.title)}
+                    ${isNew(doc.dateAdded) ? '<span class="new-pill">New</span>' : ''}
+                </div>
                 ${doc.description ? `<div class="doc-row-desc">${escHtml(doc.description)}</div>` : ''}
             </div>
             <div class="doc-row-category">${escHtml(doc.category || 'Uncategorized')}</div>
@@ -998,7 +1068,10 @@ function renderDrillView(docs, title, isSearch) {
     // Mobile items
     const mobileHTML = docs.map(doc => `
         <div class="mobile-doc-item" onclick="openDocument('${escHtml(doc.documentId)}', '${escHtml(doc.sourceType)}', '${escHtml(doc.sourceLocation || '')}', '${escHtml(doc.title)}')">
-            <div class="mobile-doc-item-title">${escHtml(doc.title)}</div>
+            <div class="mobile-doc-item-title">
+                ${escHtml(doc.title)}
+                ${isNew(doc.dateAdded) ? '<span class="new-pill">New</span>' : ''}
+            </div>
             ${doc.description ? `<div class="mobile-doc-item-desc">${escHtml(doc.description)}</div>` : ''}
             <div class="mobile-doc-item-meta">
                 <span>${escHtml(doc.category || 'Uncategorized')}</span>
@@ -1085,7 +1158,12 @@ function goBackToPortal() {
     }
 }
 
-
+function logout() {
+    if (confirm('Are you sure you want to log out?')) {
+        VerificationModal.clearVerification();
+        location.reload();
+    }
+}
 
 // ============================================================
 // VIEW SWITCHER
