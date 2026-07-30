@@ -5,7 +5,7 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.4 - Show uploaded filename in File Source section
+VERSION: V2.5 - fileName stored in sheet (col N), shown in list and edit modal
 LAST UPDATED: July 2026
 BACKEND API: DocumentLibrary.js V2.1
 DESIGN SYSTEM: Lake Illawong Unified V2.4
@@ -279,6 +279,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         .doc-title-cell { max-width: 190px; }
         .doc-title-main { font-weight: 600; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
         .doc-title-desc { font-size: 0.77rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; margin-top: 2px; }
+        .doc-title-file { font-size: 0.72rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; margin-top: 2px; font-style: italic; }
 
         .role-pills { display: flex; flex-wrap: wrap; gap: 3px; }
         .role-pill { padding: 2px 7px; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
@@ -992,6 +993,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                             <div id="uploadedFileNameDisplay" style="display:none;margin-top:6px;padding:6px 10px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.15);border-radius:2px;font-size:0.78rem;color:rgba(255,255,255,0.75);">
                                 📄 <span id="uploadedFileNameText"></span>
                             </div>
+                            <!-- Hidden field — persists fileName through to saveDocument payload -->
+                            <input type="hidden" id="fFileName">
                         </div>
                     </div>
                 </div>
@@ -1421,6 +1424,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 <td class="doc-title-cell">
                     <span class="doc-title-main" title="${esc(doc.title||'')}">${esc(doc.title||'—')}</span>
                     <span class="doc-title-desc" title="${esc(doc.description||'')}">${esc(doc.description||'')}</span>
+                    ${doc.fileName ? `<span class="doc-title-file" title="${esc(doc.fileName)}">📄 ${esc(doc.fileName)}</span>` : ''}
                 </td>
                 <td style="white-space:nowrap;">${esc(doc.category||'—')}</td>
                 <td><div class="role-pills">${pills||'—'}</div></td>
@@ -1601,6 +1605,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
         // Show the filename so admin can confirm which file was uploaded
         if (fileName) {
+            document.getElementById('fFileName').value              = fileName;
             document.getElementById('uploadedFileNameText').textContent = fileName;
             document.getElementById('uploadedFileNameDisplay').style.display = 'block';
         }
@@ -1644,6 +1649,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('fSourceLocation').value    = doc.sourceLocation || '';
         document.getElementById('fFileType').value          = doc.fileType     || 'PDF';
         document.getElementById('fTags').value              = doc.tags         || '';
+        document.getElementById('fFileName').value          = doc.fileName     || '';
+        if (doc.fileName) {
+            document.getElementById('uploadedFileNameText').textContent     = doc.fileName;
+            document.getElementById('uploadedFileNameDisplay').style.display = 'block';
+        }
         document.getElementById('btnSave').textContent      = '💾 Save Changes';
         document.getElementById('modalStatus').textContent  = '';
 
@@ -1673,6 +1683,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('fSourceLocation').placeholder     = '';
         document.getElementById('uploadedFileNameDisplay').style.display = 'none';
         document.getElementById('uploadedFileNameText').textContent = '';
+        document.getElementById('fFileName').value = '';
         setRoleCheckboxes('');
         clearFieldErrors();
     }
@@ -1729,7 +1740,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             fileType:       document.getElementById('fFileType').value,
             accessRoles:    checkedRoles.join(','),
             tags:           document.getElementById('fTags').value.trim(),
-            addedBy:        currentUser ? currentUser.name : 'Admin'
+            addedBy:        currentUser ? currentUser.name : 'Admin',
+            fileName:       document.getElementById('fFileName').value.trim()
         };
 
         const btn = document.getElementById('btnSave');
