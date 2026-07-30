@@ -5,7 +5,7 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.5 - fileName stored in sheet (col N), shown in list and edit modal
+VERSION: V2.6 - Route getLastUpload through callDocLib (fixes nosniff error)
 LAST UPDATED: July 2026
 BACKEND API: DocumentLibrary.js V2.1
 DESIGN SYSTEM: Lake Illawong Unified V2.4
@@ -1214,34 +1214,6 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     }
 
     // ================================================================
-    // JSONP UTILITY — Uploader (Code.gs)
-    // Used to retrieve the last uploaded file ID after popup closes
-    // ================================================================
-    function callUploader(action, callback) {
-        const cbName = 'jupl_' + Date.now() + '_' + Math.floor(Math.random() * 99999);
-        let script;
-
-        window[cbName] = function(response) {
-            try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            delete window[cbName];
-            callback(response);
-        };
-
-        const url = new URL(CONFIG.UPLOADER_URL);
-        url.searchParams.append('action',   action);
-        url.searchParams.append('callback', cbName);
-
-        script = document.createElement('script');
-        script.src = url.toString();
-        script.onerror = function() {
-            try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            delete window[cbName];
-            callback({ success: false, error: 'Connection failed' });
-        };
-        document.head.appendChild(script);
-    }
-
-    // ================================================================
     // LOAD DOC SETTINGS — roles + categories (called on login)
     // Both are fully dynamic, nothing hardcoded
     // ================================================================
@@ -1579,7 +1551,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 // Give storeLastUpload() a moment to complete server-side,
                 // then retrieve the file ID via JSONP
                 setTimeout(function() {
-                    callUploader('getLastUpload', function(response) {
+                    callDocLib('getLastUpload', {}, function(response) {
                         if (response && response.fileId) {
                             handleUploadComplete(response.fileId, response.fileName);
                         } else {
