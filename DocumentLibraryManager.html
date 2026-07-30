@@ -5,7 +5,7 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.2 - Fixed postMessage origin check (googleusercontent.com)
+VERSION: V2.3 - ScriptProperties polling for reliable file ID handoff
 LAST UPDATED: July 2026
 BACKEND API: DocumentLibrary.js V2.1
 DESIGN SYSTEM: Lake Illawong Unified V2.4
@@ -1054,7 +1054,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         MGMT_URL: 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
 
         // DocumentLibraryUploader.js - separate Apps Script deployment
-       UPLOADER_URL: 'https://script.google.com/macros/s/AKfycbyHEcWfTNGv_4gYiyC1dIvKwbP2CeO4XMd7QMbocn2TXn226bR9_5rBHieFr0V3WFDV/exec',
+       UPLOADER_URL: 'https://script.google.com/macros/s/AKfycbz9tv4g8rr-N5EwQPhVTI4nAMH4iTyi5tZvL999hdfQkZeULvCcsFZwsor8syni6AI_/exec',
 
         ALLOWED_ROLES: ['Doc Manager'],
         SESSION_KEY:   'portalAdminVerified'
@@ -1195,6 +1195,34 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         if (params && Object.keys(params).length > 0) {
             url.searchParams.append('data', JSON.stringify(params));
         }
+
+        script = document.createElement('script');
+        script.src = url.toString();
+        script.onerror = function() {
+            try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
+            delete window[cbName];
+            callback({ success: false, error: 'Connection failed' });
+        };
+        document.head.appendChild(script);
+    }
+
+    // ================================================================
+    // JSONP UTILITY — Uploader (Code.gs)
+    // Used to retrieve the last uploaded file ID after popup closes
+    // ================================================================
+    function callUploader(action, callback) {
+        const cbName = 'jupl_' + Date.now() + '_' + Math.floor(Math.random() * 99999);
+        let script;
+
+        window[cbName] = function(response) {
+            try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
+            delete window[cbName];
+            callback(response);
+        };
+
+        const url = new URL(CONFIG.UPLOADER_URL);
+        url.searchParams.append('action',   action);
+        url.searchParams.append('callback', cbName);
 
         script = document.createElement('script');
         script.src = url.toString();
@@ -1540,11 +1568,22 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             if (uploadPopup && uploadPopup.closed) {
                 clearInterval(uploadPollTimer);
                 uploadPollTimer = null;
-                const b = document.getElementById('btnUploadDrive');
-                if (b && b.disabled) {
-                    b.textContent = '☁️ Upload to Drive';
-                    b.disabled = false;
-                }
+                // Give storeLastUpload() a moment to complete server-side,
+                // then retrieve the file ID via JSONP
+                setTimeout(function() {
+                    callUploader('getLastUpload', function(response) {
+                        if (response && response.fileId) {
+                            handleUploadComplete(response.fileId, response.fileName);
+                        } else {
+                            // Popup closed without a completed upload — just reset button
+                            const b = document.getElementById('btnUploadDrive');
+                            if (b && b.disabled) {
+                                b.textContent = '☁️ Upload to Drive';
+                                b.disabled = false;
+                            }
+                        }
+                    });
+                }, 800);
             }
         }, 800);
     }
