@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.0.0
+  Frontend Version: V2.1.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,16 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.1.0 (Aug 2026): Uses VerificationModal V1.1's new email/phone
+    fields (see VerificationModal.js and ManagementCentral backend
+    V1.5 changelogs) -- booking form and My Bookings now pre-fill
+    email and phone from the verified session, not just name/unit.
+    My Bookings skips the "enter your email" prompt entirely for a
+    verified resident and loads their bookings directly. Book and My
+    Bookings tabs restyled from solid white .form-section cards to
+    glass-panel containers with .glass-input/.glass-select fields,
+    matching the Calendar tab's existing look instead of sitting
+    inconsistently as a bolted-on white form.
   V1.0 (date unknown): Original combined resident+admin single file.
     Plain-text email entry for residents (no verification), admin tab
     gated by a password sourced from the (since-retired) PasswordManager
@@ -316,6 +326,44 @@ TECHNICAL:
     }
     .error-message { color: var(--error-red); font-size: 12px; margin-top: 4px; display: none; }
 
+    /* ===== GLASS FORM VARIANT (Book / My Bookings — V2.1.0) =====
+       Glass chrome to match Calendar's look; inputs use the DS glass-input/
+       glass-select pattern. Dense data (the booking-card list itself)
+       stays white per the Design System's "dense inputs stay white" rule
+       -- this is glass chrome around a white data list, not glass text
+       fields for dense data. */
+    .glass-form-section {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        color: var(--glass-text);
+        box-shadow: none;
+    }
+    .glass-form-section .form-title { color: white; }
+    .glass-form-section .form-label { color: var(--glass-text); }
+    .glass-form-section .form-label.required::after { color: #fca5a5; }
+    .glass-form-section .error-message { color: #fca5a5; }
+
+    .glass-input, .glass-select {
+        width: 100%;
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        color: var(--glass-text);
+        padding: 12px 16px;
+        font-size: 1rem;
+        backdrop-filter: var(--glass-blur);
+        min-height: 44px;
+        transition: all 0.2s;
+    }
+    .glass-input::placeholder { color: var(--glass-text-subtle); }
+    .glass-input:focus, .glass-select:focus {
+        outline: none; background: var(--glass-bg-strong); border-color: var(--glass-border-hover);
+    }
+    .glass-select { background: rgba(30,64,175,0.7); cursor: pointer; }
+    .glass-select option { background: #1e3a8a; color: white; }
+
     /* ===== BUTTONS ===== */
     .btn {
         padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem;
@@ -334,16 +382,16 @@ TECHNICAL:
     .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
     .btn:hover { opacity: 0.92; }
 
-    /* ===== FACILITY SELECTOR (booking form) ===== */
+    /* ===== FACILITY SELECTOR (booking form, glass context V2.1.0) ===== */
     .facility-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 4px; }
     .facility-option {
-        border: 2px solid var(--border-primary); border-radius: 8px; padding: 16px 8px;
-        text-align: center; cursor: pointer; transition: all 0.2s;
+        background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 2px;
+        padding: 16px 8px; text-align: center; cursor: pointer; transition: all 0.2s; color: var(--glass-text);
     }
-    .facility-option:hover { border-color: var(--border-secondary); background: var(--bg-secondary); }
-    .facility-option.selected.clubhouse { border-color: var(--facility-clubhouse); background: #eef1fd; }
-    .facility-option.selected.gazebo { border-color: var(--facility-gazebo); background: #fdecf3; }
-    .facility-option.selected.recroom { border-color: var(--facility-recroom); background: #fdf8e8; }
+    .facility-option:hover { background: var(--glass-bg-hover); border-color: var(--glass-border-hover); }
+    .facility-option.selected.clubhouse { border-color: var(--facility-clubhouse); background: rgba(102,126,234,0.25); }
+    .facility-option.selected.gazebo { border-color: var(--facility-gazebo); background: rgba(209,35,96,0.25); }
+    .facility-option.selected.recroom { border-color: var(--facility-recroom); background: rgba(246,191,42,0.25); }
 
     /* ===== FILTERS ===== */
     .facility-filters, .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -491,7 +539,7 @@ TECHNICAL:
 
     <!-- Booking Form -->
     <div id="booking-tab" class="tab-content">
-        <div class="form-section">
+        <div class="form-section glass-form-section">
             <div class="form-title">Book a Facility</div>
             <form id="bookingForm">
                 <div class="form-group">
@@ -516,13 +564,13 @@ TECHNICAL:
 
                 <div class="form-group">
                     <label class="form-label required">Event Name</label>
-                    <input type="text" class="form-input" id="eventName" placeholder="e.g., Birthday Party" required>
+                    <input type="text" class="glass-input" id="eventName" placeholder="e.g., Birthday Party" required>
                     <div class="error-message" id="eventNameError">Please enter an event name</div>
                 </div>
 
                 <div class="form-group">
                     <label class="form-label required">Date</label>
-                    <input type="date" class="form-input" id="bookingDate" required>
+                    <input type="date" class="glass-input" id="bookingDate" required>
                     <div class="error-message" id="dateError">Please select a date</div>
                 </div>
 
@@ -531,12 +579,12 @@ TECHNICAL:
                     <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: end;">
                         <div>
                             <label class="form-label">Start Time</label>
-                            <input type="time" class="form-input" id="startTime" value="14:00" required>
+                            <input type="time" class="glass-input" id="startTime" value="14:00" required>
                         </div>
                         <div style="align-self: center; padding-bottom: 12px;">to</div>
                         <div>
                             <label class="form-label">End Time</label>
-                            <input type="time" class="form-input" id="endTime" value="16:00" required>
+                            <input type="time" class="glass-input" id="endTime" value="16:00" required>
                         </div>
                     </div>
                     <div class="error-message" id="timeError">Please select valid times</div>
@@ -549,24 +597,24 @@ TECHNICAL:
 
                 <div class="form-group">
                     <label class="form-label required">Your Name</label>
-                    <input type="text" class="form-input" id="userName" required>
+                    <input type="text" class="glass-input" id="userName" required>
                     <div class="error-message" id="nameError">Please enter your name</div>
                 </div>
 
                 <div class="form-group">
                     <label class="form-label required">Email</label>
-                    <input type="email" class="form-input" id="userEmail" required>
+                    <input type="email" class="glass-input" id="userEmail" required>
                     <div class="error-message" id="emailError">Please enter a valid email</div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Phone Number (Optional)</label>
-                    <input type="tel" class="form-input" id="userPhone" placeholder="e.g., 0412 345 678">
+                    <label class="form-label">Phone Number</label>
+                    <input type="tel" class="glass-input" id="userPhone" placeholder="e.g., 0412 345 678">
                 </div>
 
                 <div class="form-group">
                     <label class="form-label required">Unit Number</label>
-                    <input type="text" class="form-input" id="unitNumber" required>
+                    <input type="text" class="glass-input" id="unitNumber" required>
                     <div class="error-message" id="unitError">Please enter your unit number</div>
                 </div>
 
@@ -580,20 +628,20 @@ TECHNICAL:
 
     <!-- My Bookings -->
     <div id="mybookings-tab" class="tab-content">
-        <div class="form-section">
+        <div class="form-section glass-form-section">
             <div id="authSection">
                 <div class="form-title">View Your Bookings</div>
-                <p style="margin-bottom: 16px; color: #5f6368;">Confirm your email to view your bookings:</p>
+                <p style="margin-bottom: 16px; color: var(--glass-text-muted);">Confirm your email to view your bookings:</p>
                 <div class="form-group">
                     <label class="form-label">Your Email</label>
-                    <input type="email" class="form-input" id="userEmailAuth" placeholder="you@example.com">
+                    <input type="email" class="glass-input" id="userEmailAuth" placeholder="you@example.com">
                 </div>
                 <button class="btn btn-primary btn-full" onclick="loadMyBookings()">View My Bookings</button>
             </div>
 
             <div id="myBookingsContent" class="hidden">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
-                    <h3 style="margin: 0; color: var(--primary-blue);">Your Bookings</h3>
+                    <h3 style="margin: 0; color: white;">Your Bookings</h3>
                     <button class="btn btn-secondary btn-small" onclick="showAuthSection()">Change Email</button>
                 </div>
 
@@ -835,10 +883,11 @@ function handleVerificationSuccess(userData) {
     // Pre-fill resident details from verified session data. Fields remain
     // editable -- this replaces the old plain-text "type your email"
     // pattern with a verified starting point, not a locked-down one.
+    // email/phone available as of VerificationModal V1.1 + ManagementCentral V1.5.
     if (userData.name) document.getElementById('userName').value = userData.name;
     if (userData.email) document.getElementById('userEmail').value = userData.email;
+    if (userData.phone) document.getElementById('userPhone').value = userData.phone;
     if (userData.unit) document.getElementById('unitNumber').value = userData.unit;
-    if (userData.email) document.getElementById('userEmailAuth').value = userData.email;
 
     // Set default booking date
     const tomorrow = new Date();
@@ -855,10 +904,14 @@ function handleVerificationSuccess(userData) {
     renderCalendar();
     loadBookings(true);
 
-    // Auto-load "My Bookings" for the verified resident
+    // Auto-load "My Bookings" for the verified resident -- no email prompt
+    // needed, we already know who they are.
     if (userData.email) {
         currentUserEmail = userData.email.toLowerCase();
-        loadMyBookingsForVerifiedUser();
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('myBookingsContent').classList.remove('hidden');
+        // renderMyBookings() runs once bookings finish loading, via
+        // updateUIFromCache()/loadBookings(true) called just below.
     }
 
     // Auto-refresh when tab becomes visible
@@ -871,13 +924,6 @@ function handleVerificationSuccess(userData) {
 
     setupCacheRefresh();
     window.addEventListener('resize', () => currentTab === 'calendar' && updateCalendarEvents());
-}
-
-function loadMyBookingsForVerifiedUser() {
-    document.getElementById('authSection').classList.add('hidden');
-    document.getElementById('myBookingsContent').classList.remove('hidden');
-    // renderMyBookings() runs once bookings have loaded via loadBookings(true)
-    // above; updateUIFromCache() below covers the render once data is in.
 }
 
 // ===== UI: TABS =====
