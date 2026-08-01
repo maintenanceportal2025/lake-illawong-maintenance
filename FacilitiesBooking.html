@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.1.0
+  Frontend Version: V2.2.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,7 +15,31 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
-  V2.1.0 (Aug 2026): Uses VerificationModal V1.1's new email/phone
+  V2.2.0 (Aug 2026): Post-install fixes from live testing.
+    - Removed "Change Email" button in My Bookings -- redundant now
+      that identity comes from a verified OTP session, not manual
+      entry; switching "email" doesn't apply the way it did pre-V2.0.0.
+    - Book and My Bookings buttons/filters now use glass styling to
+      match their glass-form-section containers, rather than sitting
+      as light-gray buttons on a dark glass panel. Primary call-to-
+      action buttons (Submit Booking, View My Bookings) intentionally
+      kept as solid colour -- standard glass-UI convention keeps the
+      primary action visually prominent against secondary/utility
+      buttons going glass.
+    - Availability check now lists the actual conflicting booking
+      time(s), not just a count ("Conflicts with 1 existing booking").
+    - Fixed resetBookingForm(): phone number was dropped on Clear
+      (email/name/unit were correctly re-applied from the verified
+      session, phone was missed).
+    - Fixed unit number showing as "Unit Unit #12" in My Bookings.
+      userData.unit (from the UnitList sheet via VerificationModal)
+      comes through already containing a "Unit #" style prefix in some
+      records -- this was invisible pre-V2.0.0 because residents typed
+      their own bare unit number manually. Added cleanUnitNumber() to
+      strip any such prefix both at prefill time (so new bookings won't
+      carry it) and at display time (so already-written test data with
+      the bad prefix still displays correctly).
+  V2.1.0 (Aug 2026): Uses VerificationModal's new email/phone
     fields (see VerificationModal.js and ManagementCentral backend
     V1.5 changelogs) -- booking form and My Bookings now pre-fill
     email and phone from the verified session, not just name/unit.
@@ -364,6 +388,28 @@ TECHNICAL:
     .glass-select { background: rgba(30,64,175,0.7); cursor: pointer; }
     .glass-select option { background: #1e3a8a; color: white; }
 
+    /* Glass buttons within Book / My Bookings (V2.2.0) */
+    .glass-form-section .btn-secondary {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        color: white;
+    }
+    .glass-form-section .btn-secondary:hover { background: var(--glass-bg-hover); border-color: var(--glass-border-hover); opacity: 1; }
+    .glass-form-section .facility-filter, .glass-form-section .filter {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        color: var(--glass-text-muted);
+    }
+    .glass-form-section .facility-filter:hover, .glass-form-section .filter:hover { background: var(--glass-bg-hover); color: white; }
+    .glass-form-section .facility-filter.active, .glass-form-section .filter.active {
+        background: var(--glass-bg-strong); border-color: var(--glass-border-hover); color: white;
+    }
+    .glass-form-section .facility-filter.clubhouse.active { background: rgba(102,126,234,0.35); }
+    .glass-form-section .facility-filter.gazebo.active { background: rgba(209,35,96,0.35); }
+    .glass-form-section .facility-filter.recroom.active { background: rgba(246,191,42,0.35); }
+
     /* ===== BUTTONS ===== */
     .btn {
         padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem;
@@ -642,7 +688,6 @@ TECHNICAL:
             <div id="myBookingsContent" class="hidden">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
                     <h3 style="margin: 0; color: white;">Your Bookings</h3>
-                    <button class="btn btn-secondary btn-small" onclick="showAuthSection()">Change Email</button>
                 </div>
 
                 <div class="facility-filters">
@@ -883,11 +928,11 @@ function handleVerificationSuccess(userData) {
     // Pre-fill resident details from verified session data. Fields remain
     // editable -- this replaces the old plain-text "type your email"
     // pattern with a verified starting point, not a locked-down one.
-    // email/phone available as of VerificationModal V1.1 + ManagementCentral V1.5.
+    // email/phone available as of VerificationModal's Aug 2026 change log entry + ManagementCentral V1.5.
     if (userData.name) document.getElementById('userName').value = userData.name;
     if (userData.email) document.getElementById('userEmail').value = userData.email;
     if (userData.phone) document.getElementById('userPhone').value = userData.phone;
-    if (userData.unit) document.getElementById('unitNumber').value = userData.unit;
+    if (userData.unit) document.getElementById('unitNumber').value = cleanUnitNumber(userData.unit);
 
     // Set default booking date
     const tomorrow = new Date();
@@ -1300,7 +1345,8 @@ function resetBookingForm() {
     if (currentUserData) {
         if (currentUserData.name) document.getElementById('userName').value = currentUserData.name;
         if (currentUserData.email) document.getElementById('userEmail').value = currentUserData.email;
-        if (currentUserData.unit) document.getElementById('unitNumber').value = currentUserData.unit;
+        if (currentUserData.phone) document.getElementById('userPhone').value = currentUserData.phone;
+        if (currentUserData.unit) document.getElementById('unitNumber').value = cleanUnitNumber(currentUserData.unit);
     }
 }
 
@@ -1339,9 +1385,18 @@ function checkAvailability() {
         });
 
         if (conflicts.length > 0) {
+            conflicts.sort((a, b) => new Date(a.start) - new Date(b.start));
+            const conflictLines = conflicts.map(c => {
+                const cStart = new Date(c.start);
+                const cEnd = c.end ? new Date(c.end) : new Date(cStart.getTime() + 3600000);
+                const timeStr = `${cStart.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${cEnd.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+                return `<div style="margin-top: 4px;">&bull; ${timeStr}${c.title || c.eventName ? ' (' + (c.title || c.eventName) + ')' : ''}</div>`;
+            }).join('');
+
             checkDiv.innerHTML = `<div style="background: var(--error-bg); color: #721c24; padding: 12px; border-radius: 8px; margin-top: 12px;">
                 <div style="font-weight: 500;">\u26D4 Not Available for ${facility}</div>
-                <div style="font-size: 13px;">Conflicts with ${conflicts.length} existing booking${conflicts.length > 1 ? 's' : ''}</div>
+                <div style="font-size: 13px; margin-top: 4px;">Conflicts with ${conflicts.length} existing booking${conflicts.length > 1 ? 's' : ''}:</div>
+                <div style="font-size: 13px;">${conflictLines}</div>
             </div>`;
         } else {
             checkDiv.innerHTML = `<div style="background: var(--success-bg); color: #155724; padding: 12px; border-radius: 8px; margin-top: 12px;">
@@ -1505,11 +1560,6 @@ function loadMyBookings() {
     renderMyBookings();
 }
 
-function showAuthSection() {
-    document.getElementById('authSection').classList.remove('hidden');
-    document.getElementById('myBookingsContent').classList.add('hidden');
-}
-
 function setMyBookingsFacilityFilter(facility) {
     myBookingsFacilityFilter = facility;
     document.querySelectorAll('#mybookings-tab .facility-filter').forEach(btn => btn.classList.remove('active'));
@@ -1577,7 +1627,7 @@ function renderMyBookings() {
                 <div class="booking-title">${booking.title || booking.eventName || 'Event'}</div>
                 <div class="booking-status ${statusClass}">${status}</div>
             </div>
-            <div class="booking-details">${dateStr} &bull; ${timeStr}<br>Unit ${booking.unitNumber || 'N/A'}</div>
+            <div class="booking-details">${dateStr} &bull; ${timeStr}<br>Unit ${cleanUnitNumber(booking.unitNumber) || 'N/A'}</div>
         </div>`;
     });
 
@@ -1607,7 +1657,7 @@ function showUserBookingModal(bookingId) {
             <div style="margin-top: 8px;">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;"><span>\u{1F4E7}</span><span>${booking.residentEmail || 'No email provided'}</span></div>
                 <div style="display: flex; align-items: center; gap: 8px;"><span>\u{1F4DE}</span><span>${booking.residentPhone || 'No phone provided'}</span></div>
-                <div style="margin-top: 8px; font-size: 14px; color: #666;">Unit: ${booking.unitNumber || 'Not specified'}</div>
+                <div style="margin-top: 8px; font-size: 14px; color: #666;">Unit: ${cleanUnitNumber(booking.unitNumber) || 'Not specified'}</div>
             </div>
         </div>
         <div><strong style="color: #666;">Status:</strong><br>
@@ -1828,6 +1878,17 @@ function performBookingUpdate(facility, date, startTime, endTime, purpose) {
 }
 
 // ===== HELPERS =====
+// V2.2.0: userData.unit (sourced from the UnitList sheet via VerificationModal)
+// comes through with a "Unit #" style prefix already in some records -- when
+// residents typed their own unit number manually (pre-V2.0.0) they'd only
+// ever type the bare number, so this never showed. Strip any such prefix
+// before it goes into the form or gets submitted, so "Unit Unit #12" in the
+// My Bookings list can't happen going forward.
+function cleanUnitNumber(unit) {
+    if (!unit) return '';
+    return unit.toString().replace(/^unit\s*#?\s*/i, '').trim();
+}
+
 function formatDate(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
