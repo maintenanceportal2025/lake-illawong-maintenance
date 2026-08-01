@@ -18,16 +18,12 @@
  *   purely additive change, both fields are simply carried through from the
  *   existing backend response into userData and session storage. Existing
  *   modules that only read name/unit/roleTags are unaffected; modules can
- *   opt in to using userData.email / userData.phone where useful (e.g.
- *   pre-filling a verified resident's contact details instead of asking
- *   them to re-type what OTP already confirmed). Requires ManagementCentral
- *   V1.5 or later on the backend for these fields to actually be populated.
- * - Feb 2026: Initial release. userData returned name, unit, roleTags only.
+ *   opt in to using userData.email / userData.phone where useful. Requires
+ *   ManagementCentral V1.5 or later on the backend for these fields to
+ *   actually be populated.
  *
  * USAGE:
  * 1. Include in HTML: <script src="VerificationModal_V1_0.js"></script>
- *    (Netlify filename and internal VERSION both stay fixed at V1.0 --
- *    see Change Log above for what's actually deployed.)
  * 2. Initialize: VerificationModal.init({ ... })
  * 3. Show if needed: if (!alreadyVerified) VerificationModal.show();
  * 
@@ -55,6 +51,7 @@ const VerificationModal = (function() {
         moduleIcon: '🔐',
         sessionKey: 'verified',
         useSessionStorage: true,
+        smsOnly: false,
         onSuccess: null
     };
     
@@ -65,6 +62,8 @@ const VerificationModal = (function() {
     };
     
     let modalInjected = false;
+    let expiryTimerInterval = null;
+    let resendTimerInterval = null;
     
     // Initialize
     function init(options) {
@@ -88,11 +87,26 @@ const VerificationModal = (function() {
             injectModal();
             modalInjected = true;
         }
+        if (config.smsOnly) {
+            const emailOption = document.getElementById('vmEmailOption');
+            if (emailOption) emailOption.style.display = 'none';
+            _selectMethod('sms');
+        }
         document.getElementById('vmModal').classList.add('active');
     }
     
     // Hide modal
     function hide() {
+        // Clear all timers
+        if (expiryTimerInterval) {
+            clearInterval(expiryTimerInterval);
+            expiryTimerInterval = null;
+        }
+        if (resendTimerInterval) {
+            clearInterval(resendTimerInterval);
+            resendTimerInterval = null;
+        }
+        
         const modal = document.getElementById('vmModal');
         if (modal) {
             modal.classList.remove('active');
@@ -134,6 +148,7 @@ const VerificationModal = (function() {
         sessionStorage.setItem(config.sessionKey + '_name', userData.name);
         sessionStorage.setItem(config.sessionKey + '_unit', userData.unit);
         sessionStorage.setItem(config.sessionKey + '_roles', JSON.stringify(userData.roleTags));
+        sessionStorage.setItem(config.sessionKey + '_identifier', verificationData.identifier);
         sessionStorage.setItem(config.sessionKey + '_email', userData.email || '');
         sessionStorage.setItem(config.sessionKey + '_phone', userData.phone || '');
     }
@@ -145,6 +160,7 @@ const VerificationModal = (function() {
             sessionStorage.removeItem(config.sessionKey + '_name');
             sessionStorage.removeItem(config.sessionKey + '_unit');
             sessionStorage.removeItem(config.sessionKey + '_roles');
+            sessionStorage.removeItem(config.sessionKey + '_identifier');
             sessionStorage.removeItem(config.sessionKey + '_email');
             sessionStorage.removeItem(config.sessionKey + '_phone');
         }
@@ -155,7 +171,7 @@ const VerificationModal = (function() {
     function injectModal() {
         const modalHTML = `
 <style>
-/* Verification Modal Styles */
+/* Verification Modal Styles - Matching Field Operations Portal Glass Effect */
 #vmModal {
     display: none;
     position: fixed;
@@ -163,7 +179,7 @@ const VerificationModal = (function() {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.5);
+    background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
     z-index: 10000;
     align-items: center;
     justify-content: center;
@@ -175,9 +191,12 @@ const VerificationModal = (function() {
 }
 
 .vm-content {
-    background: white;
-    border-radius: 15px;
-    padding: 30px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    padding: 40px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
     max-width: 500px;
     width: 100%;
     max-height: 90vh;
@@ -186,26 +205,29 @@ const VerificationModal = (function() {
 
 .vm-header {
     text-align: center;
-    margin-bottom: 25px;
-    padding-bottom: 15px;
-    border-bottom: 2px solid #f0f0f0;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .vm-header-icon {
-    font-size: 48px;
-    margin-bottom: 10px;
+    font-size: 3rem;
+    margin-bottom: 15px;
 }
 
 .vm-title {
-    font-size: 22px;
+    font-size: 2rem;
+    color: white;
     font-weight: 600;
-    color: #333;
+    margin: 0 0 8px 0;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
 }
 
 .vm-subtitle {
-    font-size: 14px;
-    color: #666;
-    margin-top: 5px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin: 0;
 }
 
 .vm-step {
@@ -217,35 +239,40 @@ const VerificationModal = (function() {
 }
 
 .vm-method-choice {
-    margin-bottom: 20px;
+    margin-bottom: 25px;
 }
 
 .vm-method-option {
     display: flex;
     align-items: center;
     gap: 15px;
-    padding: 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 10px;
+    padding: 18px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
     margin-bottom: 12px;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: all 0.2s ease;
 }
 
 .vm-method-option:hover {
-    border-color: #667eea;
-    background: #f8f9ff;
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 .vm-method-option.selected {
-    border-color: #667eea;
-    background: #f0f2ff;
+    background: rgba(255, 255, 255, 0.25);
+    border-color: white;
+    border-width: 2px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.3);
 }
 
 .vm-method-option input[type="radio"] {
     width: 20px;
     height: 20px;
     cursor: pointer;
+    accent-color: white;
 }
 
 .vm-method-label {
@@ -254,32 +281,42 @@ const VerificationModal = (function() {
 
 .vm-method-title {
     font-weight: 600;
-    color: #333;
-    margin-bottom: 5px;
+    color: white;
+    margin-bottom: 8px;
+    font-size: 1rem;
 }
 
 .vm-method-input {
     width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    font-size: 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 2px;
+    font-size: 0.95rem;
+    transition: border-color 0.2s ease;
+    color: #1e293b;
+    background: rgba(255, 255, 255, 0.9);
     box-sizing: border-box;
+    caret-color: #1e293b;
+}
+
+.vm-method-input::placeholder {
+    color: #94a3b8;
 }
 
 .vm-method-input:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .vm-error {
-    background: #ffebee;
-    border-left: 4px solid #f44336;
-    padding: 12px 15px;
-    border-radius: 6px;
-    margin-bottom: 15px;
-    color: #c62828;
-    font-size: 14px;
+    background: rgba(239, 68, 68, 0.15);
+    border-left: 3px solid rgba(239, 68, 68, 0.6);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    border-radius: 2px;
 }
 
 .vm-error.hidden {
@@ -287,103 +324,159 @@ const VerificationModal = (function() {
 }
 
 .vm-info {
-    background: #e7f0ff;
-    border-left: 4px solid #1e40af;
-    padding: 12px 15px;
-    border-radius: 6px;
+    background: rgba(14, 165, 233, 0.15);
+    border-left: 3px solid rgba(14, 165, 233, 0.6);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 12px 16px;
     margin-bottom: 20px;
-    color: #1e40af;
-    font-size: 14px;
+    font-size: 0.9rem;
+    border-radius: 2px;
     line-height: 1.5;
 }
 
 .vm-btn {
     width: 100%;
-    padding: 12px 24px;
-    border: none;
-    border-radius: 8px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    font-size: 14px;
-    transition: all 0.3s;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+    backdrop-filter: blur(10px);
 }
 
 .vm-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
 .vm-btn:disabled {
-    background: #ccc;
+    background: rgba(255, 255, 255, 0.1);
     cursor: not-allowed;
-    transform: none;
 }
 
 .vm-code-group {
-    margin-bottom: 20px;
+    margin-bottom: 25px;
 }
 
 .vm-code-group label {
     display: block;
-    font-weight: 600;
-    color: #333;
-    margin-bottom: 8px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 6px;
+    font-size: 0.9rem;
 }
 
 .vm-code-input {
     width: 100%;
-    padding: 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 24px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    font-size: 1.5rem;
     text-align: center;
-    letter-spacing: 10px;
+    letter-spacing: 12px;
     font-weight: 600;
+    transition: border-color 0.2s ease;
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
     box-sizing: border-box;
+}
+
+.vm-code-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
 }
 
 .vm-code-input:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .vm-timer {
     text-align: center;
-    margin-bottom: 15px;
-    font-size: 14px;
-    color: #666;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.8);
 }
 
 .vm-countdown {
     font-weight: 600;
-    color: #667eea;
+    color: white;
 }
 
 .vm-resend {
     text-align: center;
-    margin-top: 15px;
-    font-size: 14px;
+    margin-top: 20px;
+}
+
+.vm-resend p {
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 8px;
+    font-size: 0.9rem;
 }
 
 .vm-resend-btn {
     background: none;
     border: none;
-    color: #667eea;
+    color: rgba(255, 255, 255, 0.9);
     text-decoration: underline;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.vm-resend-btn:hover:not(:disabled) {
+    color: white;
 }
 
 .vm-resend-btn:disabled {
-    color: #ccc;
+    color: rgba(255, 255, 255, 0.5);
     cursor: not-allowed;
 }
 
 .vm-text-muted {
-    color: #666;
+    color: rgba(255, 255, 255, 0.8);
     margin-bottom: 20px;
+    font-size: 0.9rem;
+}
+
+/* Scrollbar styling */
+.vm-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.vm-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.vm-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+}
+
+.vm-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+    .vm-content {
+        padding: 30px 20px;
+    }
+    
+    .vm-title {
+        font-size: 1.5rem;
+    }
+    
+    .vm-code-input {
+        font-size: 1.2rem;
+        letter-spacing: 8px;
+    }
 }
 </style>
 
@@ -398,7 +491,7 @@ const VerificationModal = (function() {
             </div>
             
             <div class="vm-info">
-                🔒 For your security, please verify your identity using your email address or mobile number.
+                🔒 For your security, please verify your identity using your ${config.smsOnly ? 'mobile number' : 'email address or mobile number'}.
             </div>
             
             <div id="vmError1" class="vm-error hidden"></div>
@@ -406,8 +499,8 @@ const VerificationModal = (function() {
             <p class="vm-text-muted">Choose how you'd like to receive your verification code:</p>
             
             <div class="vm-method-choice">
-                <div class="vm-method-option" onclick="VerificationModal._selectMethod('email')">
-                    <input type="radio" name="vmMethod" value="email" id="vmEmailRadio">
+               <div class="vm-method-option" id="vmEmailOption" onclick="VerificationModal._selectMethod('email')">
+                    <input type="radio" name="vmMethod" value="email" id="vmEmailRadio" onclick="event.stopPropagation(); VerificationModal._selectMethod('email')">
                     <div class="vm-method-label">
                         <div class="vm-method-title">📧 Email</div>
                         <input type="email" 
@@ -420,7 +513,7 @@ const VerificationModal = (function() {
                 </div>
                 
                 <div class="vm-method-option" onclick="VerificationModal._selectMethod('sms')">
-                    <input type="radio" name="vmMethod" value="sms" id="vmSmsRadio">
+                    <input type="radio" name="vmMethod" value="sms" id="vmSmsRadio" onclick="event.stopPropagation(); VerificationModal._selectMethod('sms')">
                     <div class="vm-method-label">
                         <div class="vm-method-title">📱 SMS</div>
                         <input type="tel" 
@@ -493,10 +586,13 @@ const VerificationModal = (function() {
         options[0].classList.toggle('selected', method === 'email');
         options[1].classList.toggle('selected', method === 'sms');
         
-        if (method === 'email') {
-            document.getElementById('vmEmailInput').focus();
-        } else {
-            document.getElementById('vmPhoneInput').focus();
+        // Only auto-focus on desktop - on mobile this triggers keyboard and distorts layout
+        if (window.innerWidth > 480) {
+            if (method === 'email') {
+                document.getElementById('vmEmailInput').focus();
+            } else {
+                document.getElementById('vmPhoneInput').focus();
+            }
         }
         
         _validateStep1();
@@ -648,35 +744,61 @@ const VerificationModal = (function() {
     
     // Start expiry countdown
     function _startExpiryTimer() {
+        // Clear any existing timer
+        if (expiryTimerInterval) {
+            clearInterval(expiryTimerInterval);
+        }
+        
         let seconds = 600; // 10 minutes
         const el = document.getElementById('vmExpiry');
         
-        const interval = setInterval(() => {
+        if (!el) return; // Element doesn't exist
+        
+        expiryTimerInterval = setInterval(() => {
             seconds--;
             const mins = Math.floor(seconds / 60);
             const secs = seconds % 60;
-            el.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
             
-            if (seconds <= 0) clearInterval(interval);
+            if (el) { // Check element still exists
+                el.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+            
+            if (seconds <= 0) {
+                clearInterval(expiryTimerInterval);
+                expiryTimerInterval = null;
+            }
         }, 1000);
     }
     
     // Start resend countdown
     function _startResendTimer() {
+        // Clear any existing timer
+        if (resendTimerInterval) {
+            clearInterval(resendTimerInterval);
+        }
+        
         let seconds = 60;
         const btn = document.getElementById('vmResendBtn');
         const timer = document.getElementById('vmResendTimer');
         
+        if (!btn || !timer) return; // Elements don't exist
+        
         btn.disabled = true;
         
-        const interval = setInterval(() => {
+        resendTimerInterval = setInterval(() => {
             seconds--;
-            timer.textContent = seconds;
+            
+            if (timer) { // Check element still exists
+                timer.textContent = seconds;
+            }
             
             if (seconds <= 0) {
-                clearInterval(interval);
-                btn.disabled = false;
-                btn.innerHTML = 'Resend code';
+                clearInterval(resendTimerInterval);
+                resendTimerInterval = null;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = 'Resend code';
+                }
             }
         }, 1000);
     }
