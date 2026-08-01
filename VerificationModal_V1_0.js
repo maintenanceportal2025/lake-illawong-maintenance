@@ -3,15 +3,30 @@
  * VERIFICATION MODAL COMPONENT V1.0
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 1.0
+ * FILE:    VerificationModal_V1_0.js (filename fixed — see note below)
+ * DESIGN:  Lake Illawong Unified Design System V2.4
  * CREATED: February 16, 2026
- * DESIGN: Glass effect modal from Unified Design System v1.4
- * 
+ *
+ * FILENAME CONVENTION NOTE:
+ * This file is intentionally named V1_0 permanently. Internal version
+ * changes are tracked in the VERSION HISTORY below, not in the filename.
+ * This keeps all module <script src="VerificationModal_V1_0.js"> references
+ * stable across the system — no module file changes required when this
+ * component is updated.
+ *
+ * VERSION HISTORY:
+ *   V1.0 (Feb 2026): Initial release. OTP verification modal — phone/email
+ *                    identifier entry, OTP dispatch via ManagementCentral,
+ *                    session persistence via sessionStorage. Glass-morphism
+ *                    design. Shared session key (lakeIllawongVerified) used
+ *                    by ResidentDirectory, ResidentDetailsUpdate,
+ *                    ComplaintForm, ComplaintStatus, DocumentLibrary.
+ *
  * USAGE:
  * 1. Include in HTML: <script src="VerificationModal_V1_0.js"></script>
  * 2. Initialize: VerificationModal.init({ ... })
  * 3. Show if needed: if (!alreadyVerified) VerificationModal.show();
- * 
+ *
  * EXAMPLE:
  * const verified = VerificationModal.init({
  *     moduleName: 'Document Library',
@@ -35,7 +50,6 @@ const VerificationModal = (function() {
         moduleIcon: '🔐',
         sessionKey: 'verified',
         useSessionStorage: true,
-        smsOnly: false,
         onSuccess: null
     };
     
@@ -46,8 +60,6 @@ const VerificationModal = (function() {
     };
     
     let modalInjected = false;
-    let expiryTimerInterval = null;
-    let resendTimerInterval = null;
     
     // Initialize
     function init(options) {
@@ -71,26 +83,11 @@ const VerificationModal = (function() {
             injectModal();
             modalInjected = true;
         }
-        if (config.smsOnly) {
-            const emailOption = document.getElementById('vmEmailOption');
-            if (emailOption) emailOption.style.display = 'none';
-            _selectMethod('sms');
-        }
         document.getElementById('vmModal').classList.add('active');
     }
     
     // Hide modal
     function hide() {
-        // Clear all timers
-        if (expiryTimerInterval) {
-            clearInterval(expiryTimerInterval);
-            expiryTimerInterval = null;
-        }
-        if (resendTimerInterval) {
-            clearInterval(resendTimerInterval);
-            resendTimerInterval = null;
-        }
-        
         const modal = document.getElementById('vmModal');
         if (modal) {
             modal.classList.remove('active');
@@ -128,7 +125,6 @@ const VerificationModal = (function() {
         sessionStorage.setItem(config.sessionKey + '_name', userData.name);
         sessionStorage.setItem(config.sessionKey + '_unit', userData.unit);
         sessionStorage.setItem(config.sessionKey + '_roles', JSON.stringify(userData.roleTags));
-        sessionStorage.setItem(config.sessionKey + '_identifier', verificationData.identifier);
     }
     
     // Clear verification
@@ -138,7 +134,6 @@ const VerificationModal = (function() {
             sessionStorage.removeItem(config.sessionKey + '_name');
             sessionStorage.removeItem(config.sessionKey + '_unit');
             sessionStorage.removeItem(config.sessionKey + '_roles');
-            sessionStorage.removeItem(config.sessionKey + '_identifier');
         }
         verificationData = { method: null, identifier: null, verificationId: null };
     }
@@ -147,7 +142,7 @@ const VerificationModal = (function() {
     function injectModal() {
         const modalHTML = `
 <style>
-/* Verification Modal Styles - Matching Field Operations Portal Glass Effect */
+/* Verification Modal Styles */
 #vmModal {
     display: none;
     position: fixed;
@@ -155,7 +150,7 @@ const VerificationModal = (function() {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
+    background: rgba(0,0,0,0.5);
     z-index: 10000;
     align-items: center;
     justify-content: center;
@@ -167,12 +162,9 @@ const VerificationModal = (function() {
 }
 
 .vm-content {
-    background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(15px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 2px;
-    padding: 40px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    background: white;
+    border-radius: 15px;
+    padding: 30px;
     max-width: 500px;
     width: 100%;
     max-height: 90vh;
@@ -181,29 +173,26 @@ const VerificationModal = (function() {
 
 .vm-header {
     text-align: center;
-    margin-bottom: 30px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #f0f0f0;
 }
 
 .vm-header-icon {
-    font-size: 3rem;
-    margin-bottom: 15px;
+    font-size: 48px;
+    margin-bottom: 10px;
 }
 
 .vm-title {
-    font-size: 2rem;
-    color: white;
+    font-size: 22px;
     font-weight: 600;
-    margin: 0 0 8px 0;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    color: #333;
 }
 
 .vm-subtitle {
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 0.95rem;
-    font-weight: 500;
-    margin: 0;
+    font-size: 14px;
+    color: #666;
+    margin-top: 5px;
 }
 
 .vm-step {
@@ -215,40 +204,35 @@ const VerificationModal = (function() {
 }
 
 .vm-method-choice {
-    margin-bottom: 25px;
+    margin-bottom: 20px;
 }
 
 .vm-method-option {
     display: flex;
     align-items: center;
     gap: 15px;
-    padding: 18px;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
+    padding: 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
     margin-bottom: 12px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.3s;
 }
 
 .vm-method-option:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
+    border-color: #667eea;
+    background: #f8f9ff;
 }
 
 .vm-method-option.selected {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: white;
-    border-width: 2px;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.3);
+    border-color: #667eea;
+    background: #f0f2ff;
 }
 
 .vm-method-option input[type="radio"] {
     width: 20px;
     height: 20px;
     cursor: pointer;
-    accent-color: white;
 }
 
 .vm-method-label {
@@ -257,42 +241,32 @@ const VerificationModal = (function() {
 
 .vm-method-title {
     font-weight: 600;
-    color: white;
-    margin-bottom: 8px;
-    font-size: 1rem;
+    color: #333;
+    margin-bottom: 5px;
 }
 
 .vm-method-input {
     width: 100%;
-    padding: 12px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    border-radius: 2px;
-    font-size: 0.95rem;
-    transition: border-color 0.2s ease;
-    color: #1e293b;
-    background: rgba(255, 255, 255, 0.9);
+    padding: 10px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 14px;
     box-sizing: border-box;
-    caret-color: #1e293b;
-}
-
-.vm-method-input::placeholder {
-    color: #94a3b8;
 }
 
 .vm-method-input:focus {
     outline: none;
-    border-color: rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.15);
+    border-color: #667eea;
 }
 
 .vm-error {
-    background: rgba(239, 68, 68, 0.15);
-    border-left: 3px solid rgba(239, 68, 68, 0.6);
-    color: rgba(255, 255, 255, 0.9);
-    padding: 12px 16px;
-    margin-bottom: 20px;
-    font-size: 0.9rem;
-    border-radius: 2px;
+    background: #ffebee;
+    border-left: 4px solid #f44336;
+    padding: 12px 15px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    color: #c62828;
+    font-size: 14px;
 }
 
 .vm-error.hidden {
@@ -300,159 +274,103 @@ const VerificationModal = (function() {
 }
 
 .vm-info {
-    background: rgba(14, 165, 233, 0.15);
-    border-left: 3px solid rgba(14, 165, 233, 0.6);
-    color: rgba(255, 255, 255, 0.9);
-    padding: 12px 16px;
+    background: #e7f0ff;
+    border-left: 4px solid #1e40af;
+    padding: 12px 15px;
+    border-radius: 6px;
     margin-bottom: 20px;
-    font-size: 0.9rem;
-    border-radius: 2px;
+    color: #1e40af;
+    font-size: 14px;
     line-height: 1.5;
 }
 
 .vm-btn {
     width: 100%;
-    padding: 12px;
-    background: rgba(255, 255, 255, 0.15);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 2px;
-    font-size: 0.95rem;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
-    margin-top: 10px;
-    backdrop-filter: blur(10px);
+    font-size: 14px;
+    transition: all 0.3s;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
 }
 
 .vm-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .vm-btn:disabled {
-    background: rgba(255, 255, 255, 0.1);
+    background: #ccc;
     cursor: not-allowed;
+    transform: none;
 }
 
 .vm-code-group {
-    margin-bottom: 25px;
+    margin-bottom: 20px;
 }
 
 .vm-code-group label {
     display: block;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.9);
-    margin-bottom: 6px;
-    font-size: 0.9rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
 }
 
 .vm-code-input {
     width: 100%;
-    padding: 12px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
-    font-size: 1.5rem;
+    padding: 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 24px;
     text-align: center;
-    letter-spacing: 12px;
+    letter-spacing: 10px;
     font-weight: 600;
-    transition: border-color 0.2s ease;
-    color: white;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
     box-sizing: border-box;
-}
-
-.vm-code-input::placeholder {
-    color: rgba(255, 255, 255, 0.6);
 }
 
 .vm-code-input:focus {
     outline: none;
-    border-color: rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.15);
+    border-color: #667eea;
 }
 
 .vm-timer {
     text-align: center;
-    margin-bottom: 20px;
-    font-size: 0.9rem;
-    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 15px;
+    font-size: 14px;
+    color: #666;
 }
 
 .vm-countdown {
     font-weight: 600;
-    color: white;
+    color: #667eea;
 }
 
 .vm-resend {
     text-align: center;
-    margin-top: 20px;
-}
-
-.vm-resend p {
-    color: rgba(255, 255, 255, 0.8);
-    margin-bottom: 8px;
-    font-size: 0.9rem;
+    margin-top: 15px;
+    font-size: 14px;
 }
 
 .vm-resend-btn {
     background: none;
     border: none;
-    color: rgba(255, 255, 255, 0.9);
+    color: #667eea;
     text-decoration: underline;
     cursor: pointer;
-    font-size: 0.9rem;
-    font-weight: 500;
-}
-
-.vm-resend-btn:hover:not(:disabled) {
-    color: white;
+    font-size: 14px;
 }
 
 .vm-resend-btn:disabled {
-    color: rgba(255, 255, 255, 0.5);
+    color: #ccc;
     cursor: not-allowed;
 }
 
 .vm-text-muted {
-    color: rgba(255, 255, 255, 0.8);
+    color: #666;
     margin-bottom: 20px;
-    font-size: 0.9rem;
-}
-
-/* Scrollbar styling */
-.vm-content::-webkit-scrollbar {
-    width: 6px;
-}
-
-.vm-content::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.05);
-}
-
-.vm-content::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
-}
-
-.vm-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
-}
-
-/* Mobile responsive */
-@media (max-width: 480px) {
-    .vm-content {
-        padding: 30px 20px;
-    }
-    
-    .vm-title {
-        font-size: 1.5rem;
-    }
-    
-    .vm-code-input {
-        font-size: 1.2rem;
-        letter-spacing: 8px;
-    }
 }
 </style>
 
@@ -467,7 +385,7 @@ const VerificationModal = (function() {
             </div>
             
             <div class="vm-info">
-                🔒 For your security, please verify your identity using your ${config.smsOnly ? 'mobile number' : 'email address or mobile number'}.
+                🔒 For your security, please verify your identity using your email address or mobile number.
             </div>
             
             <div id="vmError1" class="vm-error hidden"></div>
@@ -475,8 +393,8 @@ const VerificationModal = (function() {
             <p class="vm-text-muted">Choose how you'd like to receive your verification code:</p>
             
             <div class="vm-method-choice">
-               <div class="vm-method-option" id="vmEmailOption" onclick="VerificationModal._selectMethod('email')">
-                    <input type="radio" name="vmMethod" value="email" id="vmEmailRadio" onclick="event.stopPropagation(); VerificationModal._selectMethod('email')">
+                <div class="vm-method-option" onclick="VerificationModal._selectMethod('email')">
+                    <input type="radio" name="vmMethod" value="email" id="vmEmailRadio">
                     <div class="vm-method-label">
                         <div class="vm-method-title">📧 Email</div>
                         <input type="email" 
@@ -489,7 +407,7 @@ const VerificationModal = (function() {
                 </div>
                 
                 <div class="vm-method-option" onclick="VerificationModal._selectMethod('sms')">
-                    <input type="radio" name="vmMethod" value="sms" id="vmSmsRadio" onclick="event.stopPropagation(); VerificationModal._selectMethod('sms')">
+                    <input type="radio" name="vmMethod" value="sms" id="vmSmsRadio">
                     <div class="vm-method-label">
                         <div class="vm-method-title">📱 SMS</div>
                         <input type="tel" 
@@ -562,13 +480,10 @@ const VerificationModal = (function() {
         options[0].classList.toggle('selected', method === 'email');
         options[1].classList.toggle('selected', method === 'sms');
         
-        // Only auto-focus on desktop - on mobile this triggers keyboard and distorts layout
-        if (window.innerWidth > 480) {
-            if (method === 'email') {
-                document.getElementById('vmEmailInput').focus();
-            } else {
-                document.getElementById('vmPhoneInput').focus();
-            }
+        if (method === 'email') {
+            document.getElementById('vmEmailInput').focus();
+        } else {
+            document.getElementById('vmPhoneInput').focus();
         }
         
         _validateStep1();
@@ -718,61 +633,35 @@ const VerificationModal = (function() {
     
     // Start expiry countdown
     function _startExpiryTimer() {
-        // Clear any existing timer
-        if (expiryTimerInterval) {
-            clearInterval(expiryTimerInterval);
-        }
-        
         let seconds = 600; // 10 minutes
         const el = document.getElementById('vmExpiry');
         
-        if (!el) return; // Element doesn't exist
-        
-        expiryTimerInterval = setInterval(() => {
+        const interval = setInterval(() => {
             seconds--;
             const mins = Math.floor(seconds / 60);
             const secs = seconds % 60;
+            el.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
             
-            if (el) { // Check element still exists
-                el.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-            }
-            
-            if (seconds <= 0) {
-                clearInterval(expiryTimerInterval);
-                expiryTimerInterval = null;
-            }
+            if (seconds <= 0) clearInterval(interval);
         }, 1000);
     }
     
     // Start resend countdown
     function _startResendTimer() {
-        // Clear any existing timer
-        if (resendTimerInterval) {
-            clearInterval(resendTimerInterval);
-        }
-        
         let seconds = 60;
         const btn = document.getElementById('vmResendBtn');
         const timer = document.getElementById('vmResendTimer');
         
-        if (!btn || !timer) return; // Elements don't exist
-        
         btn.disabled = true;
         
-        resendTimerInterval = setInterval(() => {
+        const interval = setInterval(() => {
             seconds--;
-            
-            if (timer) { // Check element still exists
-                timer.textContent = seconds;
-            }
+            timer.textContent = seconds;
             
             if (seconds <= 0) {
-                clearInterval(resendTimerInterval);
-                resendTimerInterval = null;
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = 'Resend code';
-                }
+                clearInterval(interval);
+                btn.disabled = false;
+                btn.innerHTML = 'Resend code';
             }
         }, 1000);
     }
