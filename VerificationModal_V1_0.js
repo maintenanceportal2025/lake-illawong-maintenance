@@ -1,32 +1,34 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V1.0
+ * VERIFICATION MODAL COMPONENT V1.1
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * FILE:    VerificationModal_V1_0.js (filename fixed — see note below)
- * DESIGN:  Lake Illawong Unified Design System V2.4
+ * VERSION: 1.1
  * CREATED: February 16, 2026
- *
- * FILENAME CONVENTION NOTE:
- * This file is intentionally named V1_0 permanently. Internal version
- * changes are tracked in the VERSION HISTORY below, not in the filename.
- * This keeps all module <script src="VerificationModal_V1_0.js"> references
- * stable across the system — no module file changes required when this
- * component is updated.
+ * LAST UPDATED: August 2026
+ * DESIGN: Glass effect modal from Unified Design System v1.4
  *
  * VERSION HISTORY:
- *   V1.0 (Feb 2026): Initial release. OTP verification modal — phone/email
- *                    identifier entry, OTP dispatch via ManagementCentral,
- *                    session persistence via sessionStorage. Glass-morphism
- *                    design. Shared session key (lakeIllawongVerified) used
- *                    by ResidentDirectory, ResidentDetailsUpdate,
- *                    ComplaintForm, ComplaintStatus, DocumentLibrary.
+ * V1.0 (Feb 2026): Initial release. userData returned name, unit,
+ *   roleTags only.
+ * V1.1 (Aug 2026): userData now also includes email and phone.
+ *   ManagementCentral's verifyCode() already looked these up from the
+ *   UnitList sheet during OTP verification (via lookupResidentByIdentifier)
+ *   but never returned them -- purely additive change, both fields are
+ *   simply carried through from the existing backend response into
+ *   userData and session storage. Existing modules that only read
+ *   name/unit/roleTags are unaffected; modules can opt in to using
+ *   userData.email / userData.phone where useful (e.g. pre-filling a
+ *   verified resident's contact details instead of asking them to
+ *   re-type what OTP already confirmed).
  *
  * USAGE:
  * 1. Include in HTML: <script src="VerificationModal_V1_0.js"></script>
+ *    (Netlify filename stays fixed regardless of internal VERSION -- only
+ *    the VERSION number above and this changelog track what's deployed.)
  * 2. Initialize: VerificationModal.init({ ... })
  * 3. Show if needed: if (!alreadyVerified) VerificationModal.show();
- *
+ * 
  * EXAMPLE:
  * const verified = VerificationModal.init({
  *     moduleName: 'Document Library',
@@ -35,6 +37,7 @@
  *     onSuccess: (userData) => {
  *         console.log('User verified:', userData);
  *         loadContent(userData.roleTags);
+ *         // userData.email / userData.phone also available (V1.1+)
  *     }
  * });
  * if (!verified) VerificationModal.show();
@@ -107,13 +110,17 @@ const VerificationModal = (function() {
         const name = sessionStorage.getItem(config.sessionKey + '_name');
         const unit = sessionStorage.getItem(config.sessionKey + '_unit');
         const roles = sessionStorage.getItem(config.sessionKey + '_roles');
+        const email = sessionStorage.getItem(config.sessionKey + '_email');
+        const phone = sessionStorage.getItem(config.sessionKey + '_phone');
         
         if (!roles) return null;
         
         return {
             name: name,
             unit: unit,
-            roleTags: JSON.parse(roles)
+            roleTags: JSON.parse(roles),
+            email: email || '',
+            phone: phone || ''
         };
     }
     
@@ -125,6 +132,8 @@ const VerificationModal = (function() {
         sessionStorage.setItem(config.sessionKey + '_name', userData.name);
         sessionStorage.setItem(config.sessionKey + '_unit', userData.unit);
         sessionStorage.setItem(config.sessionKey + '_roles', JSON.stringify(userData.roleTags));
+        sessionStorage.setItem(config.sessionKey + '_email', userData.email || '');
+        sessionStorage.setItem(config.sessionKey + '_phone', userData.phone || '');
     }
     
     // Clear verification
@@ -134,6 +143,8 @@ const VerificationModal = (function() {
             sessionStorage.removeItem(config.sessionKey + '_name');
             sessionStorage.removeItem(config.sessionKey + '_unit');
             sessionStorage.removeItem(config.sessionKey + '_roles');
+            sessionStorage.removeItem(config.sessionKey + '_email');
+            sessionStorage.removeItem(config.sessionKey + '_phone');
         }
         verificationData = { method: null, identifier: null, verificationId: null };
     }
@@ -586,7 +597,9 @@ const VerificationModal = (function() {
                 const userData = {
                     name: response.name,
                     unit: response.unit,
-                    roleTags: response.roleTags || ['Resident']
+                    roleTags: response.roleTags || ['Resident'],
+                    email: response.email || '',
+                    phone: response.phone || ''
                 };
                 
                 storeUserData(userData);
