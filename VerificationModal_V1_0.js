@@ -1,31 +1,33 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V1.1
+ * VERIFICATION MODAL COMPONENT V1.0
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 1.1
+ * VERSION: 1.0
  * CREATED: February 16, 2026
  * LAST UPDATED: August 2026
  * DESIGN: Glass effect modal from Unified Design System v1.4
  *
- * VERSION HISTORY:
- * V1.0 (Feb 2026): Initial release. userData returned name, unit,
- *   roleTags only.
- * V1.1 (Aug 2026): userData now also includes email and phone.
- *   ManagementCentral's verifyCode() already looked these up from the
- *   UnitList sheet during OTP verification (via lookupResidentByIdentifier)
- *   but never returned them -- purely additive change, both fields are
- *   simply carried through from the existing backend response into
- *   userData and session storage. Existing modules that only read
- *   name/unit/roleTags are unaffected; modules can opt in to using
- *   userData.email / userData.phone where useful (e.g. pre-filling a
- *   verified resident's contact details instead of asking them to
- *   re-type what OTP already confirmed).
+ * CHANGE LOG (version number intentionally stays fixed at 1.0 -- this
+ * file is shared across ~15+ modules by filename, so version-in-filename
+ * doesn't apply here the way it does elsewhere. Track what changed by
+ * date instead.):
+ * - Aug 2026: userData now also includes email and phone. ManagementCentral's
+ *   verifyCode() already looked these up from the UnitList sheet during OTP
+ *   verification (via lookupResidentByIdentifier) but never returned them --
+ *   purely additive change, both fields are simply carried through from the
+ *   existing backend response into userData and session storage. Existing
+ *   modules that only read name/unit/roleTags are unaffected; modules can
+ *   opt in to using userData.email / userData.phone where useful (e.g.
+ *   pre-filling a verified resident's contact details instead of asking
+ *   them to re-type what OTP already confirmed). Requires ManagementCentral
+ *   V1.5 or later on the backend for these fields to actually be populated.
+ * - Feb 2026: Initial release. userData returned name, unit, roleTags only.
  *
  * USAGE:
  * 1. Include in HTML: <script src="VerificationModal_V1_0.js"></script>
- *    (Netlify filename stays fixed regardless of internal VERSION -- only
- *    the VERSION number above and this changelog track what's deployed.)
+ *    (Netlify filename and internal VERSION both stay fixed at V1.0 --
+ *    see Change Log above for what's actually deployed.)
  * 2. Initialize: VerificationModal.init({ ... })
  * 3. Show if needed: if (!alreadyVerified) VerificationModal.show();
  * 
@@ -37,7 +39,7 @@
  *     onSuccess: (userData) => {
  *         console.log('User verified:', userData);
  *         loadContent(userData.roleTags);
- *         // userData.email / userData.phone also available (V1.1+)
+ *         // userData.email / userData.phone also available (see Change Log)
  *     }
  * });
  * if (!verified) VerificationModal.show();
