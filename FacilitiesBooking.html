@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.2.0
+  Frontend Version: V2.3.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,21 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.3.0 (Aug 2026): Post-install fixes from live testing, round 2.
+    - Buttons and filter pills squared up (border-radius 2px) to match
+      the rest of the system, instead of 8px/20px rounded.
+    - Booking-form availability check now shows who has the conflicting
+      slot booked, using data already in the local booking cache.
+    - Fixed "undefined - undefined (undefined)" in the edit-booking
+      conflict alert -- it was written expecting fields (start/end/
+      resident) the backend's checkAvailability response never actually
+      returns (it returns title/time). Now uses the real fields.
+    - Fixed the underlying cause of that conflict alert appearing at all
+      for same-day edits: checkAvailability's excludeBookingId parameter
+      was sent by the frontend but never honoured by the backend, so
+      editing a booking's own time always conflicted with its own
+      pre-edit calendar entry whenever the new time still overlapped the
+      old one. Fixed in FacilitiesBooking backend V1.5.
   V2.2.0 (Aug 2026): Post-install fixes from live testing.
     - Removed "Change Email" button in My Bookings -- redundant now
       that identity comes from a verified OTP session, not manual
@@ -412,7 +427,7 @@ TECHNICAL:
 
     /* ===== BUTTONS ===== */
     .btn {
-        padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem;
+        padding: 12px 24px; border-radius: 2px; font-weight: 600; font-size: 0.95rem;
         cursor: pointer; border: none; transition: all 0.2s ease; text-align: center;
     }
     .btn-primary, .btn:not([class*="btn-"]) {
@@ -443,7 +458,7 @@ TECHNICAL:
     .facility-filters, .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
     .facility-filter, .filter {
         background: var(--bg-secondary); border: 2px solid var(--border-primary); color: var(--text-secondary);
-        padding: 8px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+        padding: 8px 14px; border-radius: 2px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
         display: flex; align-items: center; gap: 6px; transition: all 0.2s;
     }
     .facility-filter.active, .filter.active {
@@ -1390,7 +1405,8 @@ function checkAvailability() {
                 const cStart = new Date(c.start);
                 const cEnd = c.end ? new Date(c.end) : new Date(cStart.getTime() + 3600000);
                 const timeStr = `${cStart.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${cEnd.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
-                return `<div style="margin-top: 4px;">&bull; ${timeStr}${c.title || c.eventName ? ' (' + (c.title || c.eventName) + ')' : ''}</div>`;
+                const who = c.residentName ? ` &mdash; booked by ${c.residentName}` : '';
+                return `<div style="margin-top: 4px;">&bull; ${timeStr}${c.title || c.eventName ? ' (' + (c.title || c.eventName) + ')' : ''}${who}</div>`;
             }).join('');
 
             checkDiv.innerHTML = `<div style="background: var(--error-bg); color: #721c24; padding: 12px; border-radius: 8px; margin-top: 12px;">
@@ -1833,7 +1849,7 @@ function submitEditBooking(event) {
 
             if (conflicts.length > 0) {
                 let conflictMsg = `\u26A0\uFE0F ${response.facility} is not available at that time.\n\nExisting bookings:\n`;
-                conflicts.forEach(c => { conflictMsg += `\u2022 ${c.start} - ${c.end} (${c.resident})\n`; });
+                conflicts.forEach(c => { conflictMsg += `\u2022 ${c.time || 'unknown time'} (${c.title || 'existing booking'})\n`; });
                 if (response.availableSlots && response.availableSlots.length > 0) {
                     conflictMsg += `\nAvailable time slots:\n`;
                     response.availableSlots.forEach(slot => { conflictMsg += `\u2022 ${slot.start} - ${slot.end} (${slot.duration})\n`; });
