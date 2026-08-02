@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.3.0
+  Frontend Version: V2.4.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,20 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.4.0 (Aug 2026): Fixed JSONP callback lifecycle bug causing
+    "callback_X is not defined" console errors and apparent "network
+    fail" / "unable to verify availability" symptoms. On timeout, the
+    old callAPI() deleted the pending callback function to "give up" --
+    but that didn't cancel the underlying <script> request. If the
+    backend eventually did respond (Apps Script cold-starts can take
+    10-30+ seconds), the browser tried to call a callback that no
+    longer existed, throwing a ReferenceError -- even though the
+    request may well have succeeded server-side. Fixed: the callback is
+    now replaced with a harmless no-op instead of being deleted, so a
+    late response is silently ignored rather than erroring. Also now
+    removes each <script> tag from the DOM once its call completes
+    (was leaking one per API call), and guards against a callback
+    firing more than once.
   V2.3.0 (Aug 2026): Post-install fixes from live testing, round 2.
     - Buttons and filter pills squared up (border-radius 2px) to match
       the rest of the system, instead of 8px/20px rounded.
@@ -1977,6 +1991,19 @@ function showMessage(text, type, duration = 5000) {
 }
 
 // ===== API CALL (JSONP) =====
+// V2.4.0: rewritten to fix "callback_X is not defined" console errors and
+// the "network fail" symptom Tony hit. Root cause: on timeout, the old code
+// deleted window[callbackName] to "give up" -- but that doesn't cancel the
+// underlying <script> request. If the backend eventually did respond (Apps
+// Script cold-starts can take 10-30+ seconds), the browser tried to call a
+// callback function that no longer existed, throwing a ReferenceError. The
+// request may well have succeeded server-side; the frontend just errored on
+// its own already-abandoned callback. Fix: never delete the callback -- on
+// timeout/error/success, replace it with a harmless no-op instead, so any
+// late response is silently ignored rather than throwing. Also now removes
+// the <script> tag from the DOM once done (was leaking one per call), and
+// guards against the callback firing more than once (e.g. a genuine late
+// success arriving just after a timeout already reported failure).
 function callAPI(action, data, callback) {
     const callKey = action + JSON.stringify(data);
     if (window.activeAPICalls && window.activeAPICalls[callKey]) return;
@@ -1994,30 +2021,36 @@ function callAPI(action, data, callback) {
 
     url += '&_t=' + Date.now();
     const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2);
+    let settled = false;
+    let script;
+
+    function finish(response) {
+        if (settled) return; // already handled (e.g. timeout already fired)
+        settled = true;
+        if (window.activeAPICalls) delete window.activeAPICalls[callKey];
+        if (script && script.parentNode) script.parentNode.removeChild(script);
+        if (callback) callback(response);
+        // Replace with a no-op rather than deleting -- if the backend
+        // responds late after we've already given up, this swallows the
+        // call silently instead of throwing "callback_X is not defined".
+        window[callbackName] = function () {};
+    }
 
     window[callbackName] = function (response) {
-        if (window.activeAPICalls) delete window.activeAPICalls[callKey];
-        if (callback) callback(response);
-        delete window[callbackName];
+        finish(response);
     };
 
     url += '&callback=' + callbackName;
-    const script = document.createElement('script');
+    script = document.createElement('script');
     script.src = url;
 
     script.onerror = function () {
-        if (window.activeAPICalls) delete window.activeAPICalls[callKey];
-        if (callback) callback({success: false, error: 'Network error'});
-        if (window[callbackName]) delete window[callbackName];
+        finish({success: false, error: 'Network error'});
     };
 
     const timeoutDuration = action === 'getBookings' ? 30000 : 15000;
     setTimeout(() => {
-        if (window[callbackName]) {
-            if (window.activeAPICalls) delete window.activeAPICalls[callKey];
-            if (callback) callback({success: false, error: 'Timeout'});
-            delete window[callbackName];
-        }
+        finish({success: false, error: 'Timeout'});
     }, timeoutDuration);
 
     document.head.appendChild(script);
