@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.2.0
+  Frontend Version: V1.3.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,17 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.3.0 (Aug 2026): Two small consistency fixes.
+    - Book tab's facility selector changed from a plain dropdown to the
+      same clickable icon cards FacilitiesBooking.html uses (Clubhouse/
+      Gazebo/Rec Room), instead of looking like a different, older
+      widget style. Defaults to Clubhouse selected, matching the old
+      dropdown's default. New selectAdminFacility() function; the
+      hidden #adminFacility field it writes to keeps every existing
+      function (createAdminBooking, checkAdminAvailability, etc.)
+      working unchanged.
+    - "Create Booking" button renamed to "Submit Booking", matching
+      FacilitiesBooking.html's button label for the same action.
   V1.2.0 (Aug 2026): Removed the "smart caching" layer, matching
     FacilitiesBooking V2.8.0 -- background polling (setupCacheRefresh/
     loadBookingsSilently), the TTL/staleness comparison inside
@@ -313,6 +324,17 @@ TECHNICAL:
     .btn:hover { opacity: 0.92; }
 
     /* ===== FILTERS ===== */
+    /* ===== FACILITY SELECTOR (Book tab — matches FacilitiesBooking.html V1.2.0) ===== */
+    .facility-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 4px; }
+    .facility-option {
+        background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 2px;
+        padding: 16px 8px; text-align: center; cursor: pointer; transition: all 0.2s; color: var(--glass-text);
+    }
+    .facility-option:hover { background: var(--glass-bg-hover); border-color: var(--glass-border-hover); }
+    .facility-option.selected.clubhouse { border-color: var(--facility-clubhouse); background: rgba(45,212,191,0.25); }
+    .facility-option.selected.gazebo { border-color: var(--facility-gazebo); background: rgba(209,35,96,0.25); }
+    .facility-option.selected.recroom { border-color: var(--facility-recroom); background: rgba(246,191,42,0.25); }
+
     .facility-filters, .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
     .facility-filter, .filter {
         background: var(--bg-secondary); border: 2px solid var(--border-primary); color: var(--text-secondary);
@@ -462,6 +484,7 @@ TECHNICAL:
 
     @media (max-width: 768px) {
         .form-section { padding: 16px; }
+        .facility-options { grid-template-columns: 1fr; }
     }
 </style>
 </head>
@@ -534,15 +557,25 @@ TECHNICAL:
     <div id="book-tab" class="tab-content">
         <div class="form-section glass-form-section">
             <div class="form-title">Quick Create Booking</div>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
-                <div class="form-group">
-                    <label class="form-label">Facility</label>
-                    <select class="glass-select" id="adminFacility">
-                        <option value="Clubhouse">Clubhouse</option>
-                        <option value="Gazebo">Gazebo</option>
-                        <option value="Rec Room">Rec Room</option>
-                    </select>
+            <div class="form-group">
+                <label class="form-label">Facility</label>
+                <div class="facility-options">
+                    <div class="facility-option clubhouse selected" onclick="selectAdminFacility(this, 'Clubhouse')">
+                        <div style="font-size: 22px; margin-bottom: 4px;">&#127968;</div>
+                        <div style="font-weight: 500;">Clubhouse</div>
+                    </div>
+                    <div class="facility-option gazebo" onclick="selectAdminFacility(this, 'Gazebo')">
+                        <div style="font-size: 22px; margin-bottom: 4px;">&#127795;</div>
+                        <div style="font-weight: 500;">Gazebo</div>
+                    </div>
+                    <div class="facility-option recroom" onclick="selectAdminFacility(this, 'Rec Room')">
+                        <div style="font-size: 22px; margin-bottom: 4px;">&#127918;</div>
+                        <div style="font-weight: 500;">Rec Room</div>
+                    </div>
                 </div>
+                <input type="hidden" id="adminFacility" value="Clubhouse">
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
                 <div class="form-group">
                     <label class="form-label">Event Name</label>
                     <input type="text" class="glass-input" id="adminEventName" placeholder="e.g., Maintenance">
@@ -564,7 +597,7 @@ TECHNICAL:
             </div>
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="clearAdminForm()">Clear</button>
-                <button class="btn btn-success" onclick="createAdminBooking()">Create Booking</button>
+                <button class="btn btn-success" onclick="createAdminBooking()">Submit Booking</button>
                 <button class="btn btn-secondary" onclick="checkAdminAvailability()">Check Availability</button>
                 <button class="btn btn-warning" onclick="showBlockTimeModal()">&#9940; Block Time</button>
                 <button class="btn btn-secondary" onclick="refreshAdminData()">&#128260; Refresh All</button>
@@ -1024,6 +1057,12 @@ function formatFacilityDisplayName(facility) {
 }
 
 // ===== QUICK CREATE / AVAILABILITY =====
+function selectAdminFacility(element, facility) {
+    document.querySelectorAll('#book-tab .facility-option').forEach(opt => opt.classList.remove('selected'));
+    element.classList.add('selected');
+    document.getElementById('adminFacility').value = facility;
+}
+
 function clearAdminForm() {
     document.getElementById('adminEventName').value = '';
     const tomorrow = new Date();
@@ -1032,6 +1071,9 @@ function clearAdminForm() {
     document.getElementById('adminStartTime').value = '14:00';
     document.getElementById('adminEndTime').value = '16:00';
     document.getElementById('adminCheckResult').innerHTML = '';
+    document.querySelectorAll('#book-tab .facility-option').forEach(opt => opt.classList.remove('selected'));
+    document.querySelector('#book-tab .facility-option.clubhouse').classList.add('selected');
+    document.getElementById('adminFacility').value = 'Clubhouse';
 }
 
 function showBlockTimeModal() {
