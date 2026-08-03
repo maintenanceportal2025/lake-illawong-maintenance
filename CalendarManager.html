@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.1.0
+  Frontend Version: V1.2.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,17 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.2.0 (Aug 2026): Removed the "smart caching" layer, matching
+    FacilitiesBooking V2.8.0 -- background polling (setupCacheRefresh/
+    loadBookingsSilently), the TTL/staleness comparison inside
+    loadBookings(), and the "Cache: X ago" UI display. Built ahead of an
+    anticipated performance problem tied to a separate BookingDataService
+    that was apparently explored at some point but never went into use --
+    its Apps Script project has since been renamed "Deprecated". Every
+    real call site already always passed forceRefresh=true, so the
+    staleness-check branch had never once been exercised. loadBookings()
+    now simply fetches, every time it's called. No behavioural change
+    from an admin's perspective.
   V1.1.0 (Aug 2026): Restructured into tabs (Calendar / Book / Manage
     Bookings / Guidelines), matching FacilitiesBooking.html's nav
     pattern. Two omissions from the split fixed:
@@ -219,9 +230,6 @@ TECHNICAL:
     .message-info    { background: var(--info-bg); border-left-color: var(--info-purple); color: #7c3aed; }
     .message-close-btn { position: absolute; top: 10px; right: 12px; background: none; border: none; font-size: 20px; cursor: pointer; color: inherit; opacity: 0.6; }
     .message-close-btn:hover { opacity: 1; }
-
-    .cache-status { display: none; text-align: right; font-size: 0.75rem; color: var(--glass-text-subtle); margin-bottom: 12px; cursor: pointer; }
-    .cache-status:hover { color: var(--glass-text-muted); }
 
     /* ===== FORM CARD ===== */
     .form-section { background: var(--bg-primary); border-radius: 2px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; }
@@ -500,7 +508,6 @@ TECHNICAL:
     </div>
 
     <div id="message" class="message"></div>
-    <div id="cacheStatus" class="cache-status" onclick="loadBookings(true)">Cache: <span id="cacheTime">Never updated</span></div>
 
     <!-- Calendar Tab -->
     <div id="calendar-tab" class="tab-content active">
@@ -690,11 +697,17 @@ const CONFIG = {
 const BACKEND_URL = CONFIG.BACKEND_URL;
 const ADMIN_EMAIL = CONFIG.ADMIN_EMAIL;
 
-// ===== CACHE CONFIGURATION =====
+// ===== CACHE STATE =====
+// V1.2.0: simplified, matching FacilitiesBooking V2.8.0. The background
+// polling and TTL/staleness-check machinery below was solving for a
+// performance problem tied to a separate BookingDataService that was
+// apparently explored at some point but never went into use -- its Apps
+// Script project has since been renamed "Deprecated". Every real call
+// site already always passed forceRefresh=true, so the staleness check
+// had never once been exercised. Kept: cacheLastUpdated (harmless to
+// retain) and isCacheLoading (a simple in-flight-request guard).
 let cacheLastUpdated = 0;
-const CACHE_TTL = 30000;
 let isCacheLoading = false;
-let cacheRefreshInterval = null;
 
 // ===== GLOBAL STATE =====
 let allBookings = [];
@@ -736,7 +749,6 @@ function handleVerificationSuccess(userData) {
 
     renderCalendar();
     loadBookings(true);
-    setupCacheRefresh();
 }
 
 // ===== TABS =====
@@ -782,47 +794,13 @@ function reVerify() {
     VerificationModal.show();
 }
 
-// ===== CACHE MANAGEMENT =====
-function setupCacheRefresh() {
-    if (cacheRefreshInterval) clearInterval(cacheRefreshInterval);
-    cacheRefreshInterval = setInterval(() => {
-        if (!document.hidden) {
-            const cacheAge = Date.now() - cacheLastUpdated;
-            if (cacheAge > CACHE_TTL && !isCacheLoading) loadBookingsSilently();
-        }
-    }, 15000);
-}
-
-function loadBookingsSilently() {
-    if (isCacheLoading) return;
-    isCacheLoading = true;
-
-    callAPI('getBookings', { _t: Date.now() }, function (response) {
-        isCacheLoading = false;
-        if (response && response.success && response.bookings) {
-            allBookings = response.bookings;
-            cacheLastUpdated = Date.now();
-            rebuildDateIndex();
-            updateCacheStatus();
-            if (currentTab === 'calendar') updateCalendarEvents();
-            if (currentTab === 'managebookings') renderAdminBookings();
-        }
-    });
-}
-
 function loadBookings(forceRefresh = false) {
-    const cacheAge = Date.now() - cacheLastUpdated;
-    if (isCacheLoading && !forceRefresh) return;
-    if (!forceRefresh && cacheAge <= CACHE_TTL && allBookings.length > 0) {
-        if (currentTab === 'calendar') updateCalendarEvents();
-        if (currentTab === 'managebookings') renderAdminBookings();
-        return;
-    }
+    if (isCacheLoading) return;
 
     isCacheLoading = true;
     showLoading(true, forceRefresh ? 'Refreshing bookings...' : 'Loading bookings...');
 
-    callAPI('getBookings', forceRefresh ? { _t: Date.now() } : {}, function (response) {
+    callAPI('getBookings', { _t: Date.now() }, function (response) {
         isCacheLoading = false;
         showLoading(false);
 
@@ -830,7 +808,6 @@ function loadBookings(forceRefresh = false) {
             allBookings = response.bookings;
             cacheLastUpdated = Date.now();
             rebuildDateIndex();
-            updateCacheStatus();
             if (currentTab === 'calendar') updateCalendarEvents();
             if (currentTab === 'managebookings') renderAdminBookings();
         } else {
@@ -853,22 +830,6 @@ function rebuildDateIndex() {
             } catch (e) {}
         }
     });
-}
-
-function updateCacheStatus() {
-    try {
-        const statusEl = document.getElementById('cacheStatus');
-        const timeEl = document.getElementById('cacheTime');
-        if (!statusEl || !timeEl) return;
-
-        if (cacheLastUpdated === 0) { timeEl.textContent = 'Never updated'; statusEl.style.display = 'block'; return; }
-
-        const age = Date.now() - cacheLastUpdated;
-        const seconds = Math.floor(age / 1000);
-        const minutes = Math.floor(seconds / 60);
-        timeEl.textContent = minutes < 2 ? `${seconds} seconds ago` : `${minutes} minutes ago`;
-        statusEl.style.display = 'block';
-    } catch (error) {}
 }
 
 // ===== CALENDAR FUNCTIONS (V1.1.0 — ported from FacilitiesBooking.html) =====
