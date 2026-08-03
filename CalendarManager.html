@@ -1,0 +1,1171 @@
+<!--
+=====================================================================
+CalendarManager.html - FACILITY BOOKING ADMIN MODULE
+=====================================================================
+DOCUMENT INFORMATION:
+  File Name:        CalendarManager.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Staff Module
+  Frontend Version: V1.0.0
+  Status:           COLD STORAGE (facility not yet open for online
+                     booking - module brought up to system standards
+                     as part of the wider audit pass regardless of
+                     launch timing)
+  Created:          August 2026
+
+VERSION HISTORY:
+  V1.0.0 (Aug 2026): New file — split out of the original combined
+    FacilitiesBooking.html (V1.0), which mixed resident booking and
+    admin calendar management in one file gated by a shared password.
+    Resident-facing booking now lives in FacilitiesBooking.html V2.0.0
+    (OTP-gated, no admin functions). This file carries the admin side:
+    - VerificationModal (OTP) + role check: Calendar-Manager or
+      Developer roleTag required. Matches the ComplaintsManager /
+      DisputesManager pattern exactly.
+    - Quick-create booking, block-time convenience prefill, facility/
+      status filtered booking list grouped by facility, cancel any
+      booking, admin edit of any booking.
+    - Admin edit rebuilt to use the real updateBooking backend action.
+      The old admin edit function (in the original combined file)
+      faked an edit by cancelling the original booking and creating a
+      brand new one — residents' own self-edit already used the real
+      updateBooking action correctly; this brings admin edit in line
+      with that, rather than carrying the hack forward.
+    - Dropped: the "Delete" button for cancelled/past bookings, which
+      called a deleteBooking backend action that has never existed
+      (always returned "Invalid action"). No backend change was
+      warranted just to add permanent deletion; cancelled bookings
+      stay visible for audit purposes, same as everywhere else in
+      this system.
+    - Dropped: "Recurring Event" button, which was a literal
+      alert('to be implemented') stub with no real functionality.
+    - Migrated styling to Design System v2.4.
+
+AUTHENTICATION:
+  VerificationModal (OTP), sessionKey: calendarManagerVerified.
+  ALLOWED_ROLES: Calendar-Manager, Developer. Denied view shown for
+  verified users without either role tag.
+
+SYSTEM CONNECTIONS:
+  Backend API: FacilitiesBooking backend (JSONP, currently V1.4) —
+    getBookings, createBooking, cancelBooking, updateBooking,
+    checkAvailability, testConnection
+  URL Parameters: none
+
+PRIMARY FEATURES:
+  Quick-create booking (incl. block-time prefill), facility/status
+  filtered booking list, view booking detail, edit any booking,
+  cancel any booking.
+
+TECHNICAL:
+  Technology: HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol: JSONP
+  Design System: Lake Illawong Unified Design System v2.4
+  Hosting: Netlify
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendar Manager - Lake Illawong</title>
+<script src="VerificationModal_V1_0.js"></script>
+<style>
+    :root {
+        --primary-blue: #667eea;
+        --primary-blue-dark: #764ba2;
+        --primary-gradient: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8fafc;
+        --bg-tertiary: #f1f5f9;
+        --text-primary: #1e293b;
+        --text-secondary: #64748b;
+        --border-primary: #e2e8f0;
+        --border-secondary: #cbd5e1;
+
+        --success-green: #10b981;
+        --success-bg: #d1fae5;
+        --warning-amber: #f59e0b;
+        --warning-bg: #fef3c7;
+        --error-red: #ef4444;
+        --error-bg: #fee2e2;
+        --info-purple: #8b5cf6;
+        --info-bg: #ede9fe;
+
+        --glass-bg: rgba(255, 255, 255, 0.08);
+        --glass-bg-hover: rgba(255, 255, 255, 0.12);
+        --glass-bg-strong: rgba(255, 255, 255, 0.15);
+        --glass-border: rgba(255, 255, 255, 0.15);
+        --glass-border-hover: rgba(255, 255, 255, 0.30);
+        --glass-blur: blur(15px);
+        --glass-text: #ffffff;
+        --glass-text-muted: rgba(255, 255, 255, 0.70);
+        --glass-text-subtle: rgba(255, 255, 255, 0.50);
+
+        --facility-clubhouse: #2dd4bf;
+        --facility-gazebo: #d12360;
+        --facility-recroom: #f6bf26;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--primary-gradient);
+        min-height: 100vh;
+        color: var(--text-primary);
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .hidden { display: none !important; }
+
+    /* ===== DENIED VIEW (system standard) ===== */
+    .denied-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+    .denied-card {
+        background: rgba(255,255,255,0.08); backdrop-filter: blur(15px);
+        border: 1px solid rgba(239,68,68,0.4); border-radius: 2px;
+        padding: 50px 40px; width: 100%; max-width: 480px; text-align: center;
+    }
+    .denied-icon { font-size: 3.5rem; margin-bottom: 20px; }
+    .denied-title { font-size: 1.8rem; color: white; font-weight: 700; margin-bottom: 16px; }
+    .denied-detail {
+        background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4);
+        color: rgba(255,255,255,0.9); padding: 14px 16px; border-radius: 2px;
+        font-size: 0.875rem; margin-bottom: 20px; line-height: 1.6; text-align: left;
+    }
+    .denied-detail strong { color: white; }
+    .denied-msg { color: rgba(255,255,255,0.75); font-size: 0.875rem; margin-bottom: 28px; line-height: 1.6; }
+    .btn-reverify {
+        width: 100%; padding: 13px; background: rgba(255,255,255,0.15); color: white;
+        border: 1px solid rgba(255,255,255,0.3); border-radius: 2px; font-size: 0.95rem;
+        font-weight: 600; cursor: pointer; margin-bottom: 12px;
+    }
+    .btn-reverify:hover { background: rgba(255,255,255,0.25); }
+    .btn-back-portal {
+        width: 100%; padding: 11px; background: transparent; color: rgba(255,255,255,0.65);
+        border: 1px solid rgba(255,255,255,0.2); border-radius: 2px; font-size: 0.875rem;
+        font-weight: 500; cursor: pointer;
+    }
+    .btn-back-portal:hover { color: white; border-color: rgba(255,255,255,0.4); }
+
+    /* ===== HEADER ===== */
+    .header { background: transparent; text-align: center; margin-bottom: 20px; color: white; }
+    .header-content { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+    .logo-image { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; padding: 5px; }
+    .header-text h1 { font-size: 1.8rem; font-weight: 700; }
+    .header-text p { font-size: 0.95rem; color: var(--glass-text-muted); margin-top: 4px; }
+    .header-divider {
+        height: 2px;
+        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%,
+            rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+        border-radius: 2px; margin-bottom: 20px;
+    }
+    .header-top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+
+    .btn-back-glass {
+        background: rgba(255,255,255,0.08); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.15);
+        color: white; padding: 10px 22px; border-radius: 2px; font-weight: 600; cursor: pointer;
+        font-size: 0.9rem; text-decoration: none; display: inline-block; transition: all 0.2s; min-height: 44px;
+    }
+    .btn-back-glass:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.30); }
+
+    /* ===== STATUS MESSAGES ===== */
+    .message {
+        display: none; position: relative; padding: 16px 40px 16px 16px; border-radius: 8px;
+        margin-bottom: 20px; border-left: 4px solid; font-size: 0.9rem;
+    }
+    .message-success { background: var(--success-bg); border-left-color: var(--success-green); color: #166534; }
+    .message-error   { background: var(--error-bg); border-left-color: var(--error-red); color: #dc2626; }
+    .message-warning { background: var(--warning-bg); border-left-color: var(--warning-amber); color: #92400e; }
+    .message-info    { background: var(--info-bg); border-left-color: var(--info-purple); color: #7c3aed; }
+    .message-close-btn { position: absolute; top: 10px; right: 12px; background: none; border: none; font-size: 20px; cursor: pointer; color: inherit; opacity: 0.6; }
+    .message-close-btn:hover { opacity: 1; }
+
+    .cache-status { display: none; text-align: right; font-size: 0.75rem; color: var(--glass-text-subtle); margin-bottom: 12px; cursor: pointer; }
+    .cache-status:hover { color: var(--glass-text-muted); }
+
+    /* ===== FORM CARD ===== */
+    .form-section { background: var(--bg-primary); border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; }
+    .form-title { font-size: 1.2rem; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-weight: 600; color: #374151; margin-bottom: 8px; font-size: 0.9rem; }
+    .form-label.required::after { content: ' *'; color: var(--error-red); }
+    .form-input, .form-select, .form-textarea {
+        width: 100%; padding: 12px 16px; border: 2px solid var(--border-primary); border-radius: 8px;
+        font-size: 1rem; transition: border-color 0.3s ease;
+    }
+    .form-input:focus, .form-select:focus { outline: none; border-color: var(--primary-blue); box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
+
+    /* ===== BUTTONS ===== */
+    .btn { padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; transition: all 0.2s ease; }
+    .btn-primary { background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark)); color: white; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(102,126,234,0.3); }
+    .btn-secondary { background: var(--bg-secondary); color: var(--text-secondary); border: 2px solid var(--border-primary); }
+    .btn-success { background: var(--success-green); color: white; }
+    .btn-danger { background: var(--error-red); color: white; }
+    .btn-warning { background: var(--warning-amber); color: white; }
+    .btn-full { width: 100%; }
+    .btn-small { padding: 8px 14px; font-size: 0.85rem; }
+    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+    .btn:hover { opacity: 0.92; }
+
+    /* ===== FILTERS ===== */
+    .facility-filters, .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .facility-filter, .filter {
+        background: var(--bg-secondary); border: 2px solid var(--border-primary); color: var(--text-secondary);
+        padding: 8px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+        display: flex; align-items: center; gap: 6px; transition: all 0.2s;
+    }
+    .facility-filter.active, .filter.active { background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark)); color: white; border-color: transparent; }
+    .facility-filter.clubhouse.active { background: var(--facility-clubhouse); }
+    .facility-filter.gazebo.active { background: var(--facility-gazebo); }
+    .facility-filter.recroom.active { background: var(--facility-recroom); }
+
+    /* ===== BOOKING CARDS ===== */
+    .booking-card {
+        background: white; border: 1px solid var(--border-primary); border-left: 4px solid var(--facility-clubhouse);
+        border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s;
+    }
+    .booking-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); transform: translateY(-1px); }
+    .booking-card.gazebo { border-left-color: var(--facility-gazebo); }
+    .booking-card.recroom { border-left-color: var(--facility-recroom); }
+    .booking-card.cancelled { opacity: 0.6; }
+    .booking-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; }
+    .booking-title { font-weight: 600; font-size: 0.95rem; }
+    .booking-status { font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; white-space: nowrap; }
+    .status-confirmed { background: var(--success-bg); color: #166534; }
+    .status-cancelled { background: var(--error-bg); color: #dc2626; }
+    .status-past { background: var(--bg-tertiary); color: var(--text-secondary); }
+    .booking-details { font-size: 0.85rem; color: var(--text-secondary); }
+
+    /* ===== ADMIN CHECK RESULT ===== */
+    .admin-check-result { margin-top: 10px; }
+    .admin-check-error, .admin-check-conflict { background: var(--error-bg); color: #721c24; padding: 12px; border-radius: 8px; }
+    .admin-check-available { background: var(--success-bg); color: #155724; padding: 12px; border-radius: 8px; }
+
+    /* ===== MODALS ===== */
+    .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+    .modal.active { display: flex; }
+    .modal-content { background: white; border-radius: 12px; width: 100%; max-width: 700px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+    .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-primary); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; z-index: 10; }
+    .modal-title { font-size: 1.2rem; font-weight: 700; color: var(--primary-blue); }
+    .modal-close { background: none; border: none; font-size: 1.6rem; cursor: pointer; color: var(--text-secondary); line-height: 1; }
+    .modal-body { padding: 24px; }
+
+    .success-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 2100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .success-modal-content { background: white; border-radius: 16px; padding: 36px 32px; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+
+    /* ===== LOADING ===== */
+    .loading-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.95); z-index: 3000; align-items: center; justify-content: center; flex-direction: column; }
+    .loading-overlay.active { display: flex; }
+    .loading-spinner { width: 48px; height: 48px; border: 4px solid #e5e7eb; border-top: 4px solid var(--primary-blue); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .loading-text { font-size: 1rem; font-weight: 500; color: var(--text-primary); }
+
+    @media (max-width: 768px) {
+        .form-section { padding: 16px; }
+    }
+</style>
+</head>
+<body>
+
+<!-- ACCESS DENIED SCREEN -->
+<div id="deniedView" class="denied-container hidden">
+    <div class="denied-card">
+        <div class="denied-icon">&#128683;</div>
+        <div class="denied-title">Access Denied</div>
+        <div class="denied-detail">
+            Your account does not have the <strong>Calendar-Manager</strong> roleTag required for this module.<br><br>
+            Verified as: <strong id="deniedName">&mdash;</strong><br>
+            Assigned roles: <strong id="deniedRoles">None</strong>
+        </div>
+        <div class="denied-msg">Contact the system administrator to discuss access requirements</div>
+        <button class="btn-reverify" onclick="reVerify()">&#128260; Try a Different Account</button>
+        <button class="btn-back-portal" onclick="window.location.href='AdminPortal.html'">&#8592; Back to Portal</button>
+    </div>
+</div>
+
+<div class="container" id="mainContent" style="display:none;">
+
+    <div class="header-top-row">
+        <a href="AdminPortal.html" class="btn-back-glass">&#8592; Back to Admin Portal</a>
+    </div>
+
+    <div class="header">
+        <div class="header-content">
+            <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+            <div class="header-text">
+                <h1>Calendar Manager</h1>
+                <p>Manage Clubhouse, Gazebo, and Rec Room bookings</p>
+            </div>
+        </div>
+    </div>
+    <div class="header-divider"></div>
+
+    <div id="message" class="message"></div>
+    <div id="cacheStatus" class="cache-status" onclick="loadBookings(true)">Cache: <span id="cacheTime">Never updated</span></div>
+
+    <!-- Quick Create Booking -->
+    <div class="form-section">
+        <div class="form-title">Quick Create Booking</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+            <div class="form-group">
+                <label class="form-label">Facility</label>
+                <select class="form-select" id="adminFacility">
+                    <option value="Clubhouse">Clubhouse</option>
+                    <option value="Gazebo">Gazebo</option>
+                    <option value="Rec Room">Rec Room</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Event Name</label>
+                <input type="text" class="form-input" id="adminEventName" placeholder="e.g., Maintenance">
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 4px;">
+            <div class="form-group">
+                <label class="form-label">Date</label>
+                <input type="date" class="form-input" id="adminDate">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Start Time</label>
+                <input type="time" class="form-input" id="adminStartTime" value="14:00">
+            </div>
+            <div class="form-group">
+                <label class="form-label">End Time</label>
+                <input type="time" class="form-input" id="adminEndTime" value="16:00">
+            </div>
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-secondary" onclick="clearAdminForm()">Clear</button>
+            <button class="btn btn-success" onclick="createAdminBooking()">Create Booking</button>
+            <button class="btn btn-secondary" onclick="checkAdminAvailability()">Check Availability</button>
+            <button class="btn btn-warning" onclick="showBlockTimeModal()">&#9940; Block Time</button>
+            <button class="btn btn-secondary" onclick="refreshAdminData()">&#128260; Refresh All</button>
+        </div>
+        <div id="adminCheckResult" class="admin-check-result"></div>
+    </div>
+
+    <!-- Bookings List -->
+    <div class="form-section">
+        <div class="facility-filters">
+            <button class="facility-filter clubhouse active" onclick="setAdminFacilityFilter('Clubhouse')"><span>&#127968;</span> Clubhouse</button>
+            <button class="facility-filter gazebo" onclick="setAdminFacilityFilter('Gazebo')"><span>&#127795;</span> Gazebo</button>
+            <button class="facility-filter recroom" onclick="setAdminFacilityFilter('Rec Room')"><span>&#127918;</span> Rec Room</button>
+            <button class="facility-filter active" onclick="setAdminFacilityFilter('all')"><span>&#128203;</span> All</button>
+        </div>
+        <div class="filters">
+            <button class="filter active" onclick="setAdminFilter('upcoming')">Upcoming</button>
+            <button class="filter" onclick="setAdminFilter('past')">Past</button>
+            <button class="filter" onclick="setAdminFilter('cancelled')">Cancelled</button>
+            <button class="filter" onclick="setAdminFilter('all')">All</button>
+        </div>
+        <div id="adminBookingsByFacility"></div>
+    </div>
+
+</div><!-- /mainContent -->
+
+<!-- Booking Details Modal -->
+<div class="modal" id="bookingModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-title">Booking Details</div>
+            <button class="modal-close" onclick="closeBookingModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="bookingModalContent"></div>
+    </div>
+</div>
+
+<!-- Loading -->
+<div id="loading" class="loading-overlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-text" id="loadingText">Loading...</div>
+</div>
+
+<script>
+// ===== CONFIGURATION =====
+const CONFIG = {
+    BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwHwXWJdSpRP6j3CJVDWSZ_n6vEBjEhpA9wZv1AunaGsCfKPBaIGnzrexJe_8asf6PF/exec',
+    SESSION_KEY: 'calendarManagerVerified',
+    ALLOWED_ROLES: ['Calendar-Manager', 'Developer'],
+    ADMIN_EMAIL: 'irc.mtceteam@gmail.com'
+};
+const BACKEND_URL = CONFIG.BACKEND_URL;
+const ADMIN_EMAIL = CONFIG.ADMIN_EMAIL;
+
+// ===== CACHE CONFIGURATION =====
+let cacheLastUpdated = 0;
+const CACHE_TTL = 30000;
+let isCacheLoading = false;
+let cacheRefreshInterval = null;
+
+// ===== GLOBAL STATE =====
+let allBookings = [];
+let eventsByDate = {};
+let adminFilter = 'upcoming';
+let adminFacilityFilter = 'all';
+
+// ===== VERIFICATION =====
+document.addEventListener('DOMContentLoaded', function () {
+    const alreadyVerified = VerificationModal.init({
+        moduleName: 'Calendar Manager',
+        moduleIcon: '\u{1F4C5}',
+        sessionKey: CONFIG.SESSION_KEY,
+        onSuccess: handleVerificationSuccess
+    });
+    if (!alreadyVerified) VerificationModal.show();
+});
+
+function handleVerificationSuccess(userData) {
+    const roles = userData.roleTags || [];
+    const hasAccess = CONFIG.ALLOWED_ROLES.some(r => roles.includes(r));
+
+    if (!hasAccess) {
+        document.getElementById('deniedName').textContent = userData.name || 'Unknown';
+        document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
+        document.getElementById('deniedView').classList.remove('hidden');
+        return;
+    }
+
+    document.getElementById('mainContent').style.display = '';
+
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('adminDate').valueAsDate = tomorrow;
+
+    loadBookings(true);
+    setupCacheRefresh();
+}
+
+function reVerify() {
+    document.getElementById('deniedView').classList.add('hidden');
+    VerificationModal.clearVerification();
+    VerificationModal.show();
+}
+
+// ===== CACHE MANAGEMENT =====
+function setupCacheRefresh() {
+    if (cacheRefreshInterval) clearInterval(cacheRefreshInterval);
+    cacheRefreshInterval = setInterval(() => {
+        if (!document.hidden) {
+            const cacheAge = Date.now() - cacheLastUpdated;
+            if (cacheAge > CACHE_TTL && !isCacheLoading) loadBookingsSilently();
+        }
+    }, 15000);
+}
+
+function loadBookingsSilently() {
+    if (isCacheLoading) return;
+    isCacheLoading = true;
+
+    callAPI('getBookings', { _t: Date.now() }, function (response) {
+        isCacheLoading = false;
+        if (response && response.success && response.bookings) {
+            allBookings = response.bookings;
+            cacheLastUpdated = Date.now();
+            rebuildDateIndex();
+            updateCacheStatus();
+            renderAdminBookings();
+        }
+    });
+}
+
+function loadBookings(forceRefresh = false) {
+    const cacheAge = Date.now() - cacheLastUpdated;
+    if (isCacheLoading && !forceRefresh) return;
+    if (!forceRefresh && cacheAge <= CACHE_TTL && allBookings.length > 0) {
+        renderAdminBookings();
+        return;
+    }
+
+    isCacheLoading = true;
+    showLoading(true, forceRefresh ? 'Refreshing bookings...' : 'Loading bookings...');
+
+    callAPI('getBookings', forceRefresh ? { _t: Date.now() } : {}, function (response) {
+        isCacheLoading = false;
+        showLoading(false);
+
+        if (response && response.success && response.bookings) {
+            allBookings = response.bookings;
+            cacheLastUpdated = Date.now();
+            rebuildDateIndex();
+            updateCacheStatus();
+            renderAdminBookings();
+        } else {
+            showMessage('Failed to load bookings. Please try refreshing.', 'error', 8000);
+        }
+    });
+}
+
+function rebuildDateIndex() {
+    eventsByDate = {};
+    allBookings.forEach(booking => {
+        if (booking && booking.start) {
+            try {
+                const date = new Date(booking.start);
+                if (!isNaN(date.getTime())) {
+                    const dateStr = formatDate(date);
+                    if (!eventsByDate[dateStr]) eventsByDate[dateStr] = [];
+                    eventsByDate[dateStr].push(booking);
+                }
+            } catch (e) {}
+        }
+    });
+}
+
+function updateCacheStatus() {
+    try {
+        const statusEl = document.getElementById('cacheStatus');
+        const timeEl = document.getElementById('cacheTime');
+        if (!statusEl || !timeEl) return;
+
+        if (cacheLastUpdated === 0) { timeEl.textContent = 'Never updated'; statusEl.style.display = 'block'; return; }
+
+        const age = Date.now() - cacheLastUpdated;
+        const seconds = Math.floor(age / 1000);
+        const minutes = Math.floor(seconds / 60);
+        timeEl.textContent = minutes < 2 ? `${seconds} seconds ago` : `${minutes} minutes ago`;
+        statusEl.style.display = 'block';
+    } catch (error) {}
+}
+
+// ===== FACILITY HELPERS =====
+function getFacilityClass(facility) {
+    if (!facility) return 'clubhouse';
+    const normalized = facility.toString().toLowerCase().trim();
+    if (normalized.includes('clubhouse') || normalized.includes('club house')) return 'clubhouse';
+    if (normalized.includes('gazebo')) return 'gazebo';
+    if (normalized.includes('rec') || normalized.includes('room') || normalized.includes('recroom')) return 'recroom';
+    return 'clubhouse';
+}
+
+function getFacilityColor(facility) {
+    const norm = getFacilityClass(facility);
+    if (norm === 'clubhouse') return 'var(--facility-clubhouse)';
+    if (norm === 'gazebo') return 'var(--facility-gazebo)';
+    if (norm === 'recroom') return 'var(--facility-recroom)';
+    return 'var(--facility-clubhouse)';
+}
+
+function formatFacilityDisplayName(facility) {
+    const norm = getFacilityClass(facility);
+    if (norm === 'clubhouse') return 'Clubhouse';
+    if (norm === 'gazebo') return 'Gazebo';
+    if (norm === 'recroom') return 'Rec Room';
+    return 'Clubhouse';
+}
+
+// ===== QUICK CREATE / AVAILABILITY =====
+function clearAdminForm() {
+    document.getElementById('adminEventName').value = '';
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('adminDate').valueAsDate = tomorrow;
+    document.getElementById('adminStartTime').value = '14:00';
+    document.getElementById('adminEndTime').value = '16:00';
+    document.getElementById('adminCheckResult').innerHTML = '';
+}
+
+function showBlockTimeModal() {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    document.getElementById('adminEventName').value = '\u{1F6AB} BLOCKED: Maintenance/Cleaning';
+    document.getElementById('adminDate').valueAsDate = tomorrow;
+    document.getElementById('adminStartTime').value = '08:00';
+    document.getElementById('adminEndTime').value = '22:00';
+
+    showMessage('Block time form filled. Review and click "Create Booking".', 'info', 8000);
+}
+
+function refreshAdminData() {
+    loadBookings(true);
+    showMessage('Admin data refreshed', 'info', 8000);
+}
+
+function checkAdminAvailability() {
+    const facility = document.getElementById('adminFacility').value;
+    const date = document.getElementById('adminDate').value;
+    const startTime = document.getElementById('adminStartTime').value;
+    const endTime = document.getElementById('adminEndTime').value;
+
+    const resultDiv = document.getElementById('adminCheckResult');
+    resultDiv.innerHTML = '<div style="text-align: center; padding: 10px; color: #666;">Checking availability...</div>';
+
+    if (!date) { resultDiv.innerHTML = '<div class="admin-check-error">&#9888;&#65039; Please select a date</div>'; return; }
+
+    const startDateTime = new Date(date + 'T' + startTime);
+    const endDateTime = new Date(date + 'T' + endTime);
+
+    if (endDateTime <= startDateTime) { resultDiv.innerHTML = '<div class="admin-check-error">\u274C End time must be after start time</div>'; return; }
+
+    const dateStr = formatDate(startDateTime);
+    const dayEvents = eventsByDate[dateStr] || [];
+    const conflicts = dayEvents.filter(booking => {
+        if (isBookingCancelled(booking)) return false;
+        if (getFacilityClass(booking.facility || 'Clubhouse') !== getFacilityClass(facility)) return false;
+        const bookingStart = new Date(booking.start);
+        const bookingEnd = booking.end ? new Date(booking.end) : new Date(bookingStart.getTime() + 3600000);
+        return (startDateTime < bookingEnd && endDateTime > bookingStart);
+    });
+
+    if (conflicts.length > 0) {
+        resultDiv.innerHTML = `<div class="admin-check-conflict"><strong>\u26D4 NOT AVAILABLE</strong><br><small>${conflicts.length} conflicting booking${conflicts.length > 1 ? 's' : ''} found.</small></div>`;
+    } else {
+        showLoading(true, 'Verifying with server...');
+        callAPI('getBookings', { date: date }, function (response) {
+            showLoading(false);
+            if (response && response.success && response.bookings) {
+                const backendConflicts = response.bookings.filter(booking => {
+                    if (isBookingCancelled(booking)) return false;
+                    if (getFacilityClass(booking.facility || 'Clubhouse') !== getFacilityClass(facility)) return false;
+                    const bookingStart = new Date(booking.start);
+                    const bookingEnd = booking.end ? new Date(booking.end) : new Date(bookingStart.getTime() + 3600000);
+                    return (startDateTime < bookingEnd && endDateTime > bookingStart);
+                });
+                resultDiv.innerHTML = backendConflicts.length > 0
+                    ? `<div class="admin-check-conflict"><strong>\u26D4 SERVER CONFLICT</strong><br><small>${backendConflicts.length} conflict${backendConflicts.length > 1 ? 's' : ''} found on server.</small></div>`
+                    : `<div class="admin-check-available"><strong>\u2705 AVAILABLE</strong><br><small>${facility} is confirmed available.</small></div>`;
+            } else {
+                resultDiv.innerHTML = `<div class="admin-check-available"><strong>\u2705 AVAILABLE (CACHE)</strong><br><small>No conflicts found in local cache.</small></div>`;
+            }
+        });
+    }
+}
+
+function createAdminBooking() {
+    const facility = document.getElementById('adminFacility').value;
+    const eventName = document.getElementById('adminEventName').value.trim();
+    const date = document.getElementById('adminDate').value;
+    const startTime = document.getElementById('adminStartTime').value;
+    const endTime = document.getElementById('adminEndTime').value;
+
+    if (!eventName) { showMessage('Please enter event name', 'error', 8000); return; }
+    if (!date) { showMessage('Please select date', 'error', 8000); return; }
+
+    const startDateTime = new Date(date + 'T' + startTime);
+    const endDateTime = new Date(date + 'T' + endTime);
+
+    if (endDateTime <= startDateTime) { showMessage('End time must be after start time', 'error', 8000); return; }
+
+    if (window.isSubmittingAdminBooking) return;
+    window.isSubmittingAdminBooking = true;
+
+    showLoading(true, 'Creating admin booking...');
+
+    const normalizedFacility = getFacilityClass(facility);
+    const displayFacility = formatFacilityDisplayName(facility);
+
+    const apiData = {
+        title: eventName, purpose: eventName, facility: normalizedFacility, facilityName: displayFacility,
+        resident: 'Admin Booking', residentName: 'Admin Booking', residentEmail: ADMIN_EMAIL, residentPhone: '',
+        unitNumber: 'Admin', date: date, startTime: startTime, endTime: endTime,
+        start: startDateTime.toISOString().replace('.000Z', ''), end: endDateTime.toISOString().replace('.000Z', ''),
+        timestamp: new Date().toISOString(), status: 'Confirmed', admin: true
+    };
+
+    callAPI('createBooking', apiData, function (response) {
+        showLoading(false);
+        window.isSubmittingAdminBooking = false;
+
+        if (response && response.success) {
+            showAdminBookingSuccess({
+                bookingId: response.bookingId, facility: displayFacility, date: date,
+                startTime: startTime, endTime: endTime, eventName: eventName
+            });
+            clearAdminForm();
+            loadBookings(true);
+        } else {
+            const msg = response && response.message;
+            if (msg && (msg.includes('some features failed') || msg.includes('saved but'))) {
+                showMessage('\u26A0\uFE0F Booking saved but with minor issues', 'info', 8000);
+            } else {
+                showMessage('\u274C Failed to create booking: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
+            }
+        }
+    });
+}
+
+function showAdminBookingSuccess(bookingDetails) {
+    const existing = document.getElementById('adminBookingSuccessModal');
+    if (existing) document.body.removeChild(existing);
+
+    const modalOverlay = document.createElement('div');
+    modalOverlay.id = 'adminBookingSuccessModal';
+    modalOverlay.className = 'success-modal-overlay';
+    modalOverlay.innerHTML = `
+        <div class="success-modal-content">
+            <div style="font-size: 56px; color: var(--success-green); margin-bottom: 16px;">\u2705</div>
+            <div style="font-size: 22px; font-weight: 700; color: #166534; margin-bottom: 15px;">Booking ${bookingDetails.action === 'updated' ? 'Updated' : 'Created'}!</div>
+            <div style="background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: left;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div><strong>Booking ID:</strong></div><div><code>${bookingDetails.bookingId || 'N/A'}</code></div>
+                    <div><strong>Facility:</strong></div><div>${bookingDetails.facility || 'N/A'}</div>
+                    <div><strong>Date:</strong></div><div>${bookingDetails.date || 'N/A'}</div>
+                    <div><strong>Time:</strong></div><div>${bookingDetails.startTime || 'N/A'} to ${bookingDetails.endTime || 'N/A'}</div>
+                    <div><strong>Event:</strong></div><div>${bookingDetails.eventName || 'N/A'}</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <button class="btn btn-success" onclick="closeAdminSuccessModal()">OK, Close</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modalOverlay);
+}
+
+function closeAdminSuccessModal() {
+    const modal = document.getElementById('adminBookingSuccessModal');
+    if (modal) document.body.removeChild(modal);
+}
+
+// ===== BOOKINGS LIST =====
+function setAdminFacilityFilter(facility) {
+    adminFacilityFilter = facility;
+    document.querySelectorAll('.facility-filter').forEach(btn => btn.classList.remove('active'));
+    if (facility === 'all') {
+        document.querySelector('.facility-filter:last-child').classList.add('active');
+    } else {
+        const btn = document.querySelector(`.facility-filter.${getFacilityClass(facility)}`);
+        if (btn) btn.classList.add('active');
+    }
+    renderAdminBookings();
+}
+
+function setAdminFilter(filter) {
+    adminFilter = filter;
+    document.querySelectorAll('.filter').forEach(btn => btn.classList.remove('active'));
+    if (window.event && window.event.target) window.event.target.classList.add('active');
+    renderAdminBookings();
+}
+
+function renderAdminBookings() {
+    let filteredBookings = allBookings;
+
+    if (adminFacilityFilter !== 'all') {
+        filteredBookings = filteredBookings.filter(booking => booking && getFacilityClass(booking.facility) === getFacilityClass(adminFacilityFilter));
+    }
+
+    const now = new Date();
+    switch (adminFilter) {
+        case 'upcoming': filteredBookings = filteredBookings.filter(b => b && !isBookingCancelled(b) && new Date(b.end) > now); break;
+        case 'past': filteredBookings = filteredBookings.filter(b => b && !isBookingCancelled(b) && new Date(b.end) < now); break;
+        case 'cancelled': filteredBookings = filteredBookings.filter(isBookingCancelled); break;
+        case 'all': break;
+    }
+
+    filteredBookings.sort((a, b) => adminFilter === 'upcoming' ? new Date(a.start) - new Date(b.start) : new Date(b.start) - new Date(a.start));
+
+    const bookingsByFacility = {};
+    filteredBookings.forEach(booking => {
+        if (!booking) return;
+        const facilityClass = getFacilityClass(booking.facility || 'Clubhouse');
+        if (!bookingsByFacility[facilityClass]) bookingsByFacility[facilityClass] = [];
+        bookingsByFacility[facilityClass].push(booking);
+    });
+
+    const container = document.getElementById('adminBookingsByFacility');
+    if (filteredBookings.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #666; font-style: italic; padding: 40px;">No bookings found</p>';
+        return;
+    }
+
+    let html = '';
+    Object.keys(bookingsByFacility).forEach(facilityClass => {
+        const facilityBookings = bookingsByFacility[facilityClass];
+        const displayName = formatFacilityDisplayName(facilityClass);
+        const color = getFacilityColor(facilityClass);
+        const icon = facilityClass === 'clubhouse' ? '\u{1F3E0}' : facilityClass === 'gazebo' ? '\u{1F333}' : '\u{1F3AE}';
+
+        html += `<div style="margin-bottom: 24px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid ${color};">
+                <span style="font-size: 20px;">${icon}</span>
+                <span style="font-weight: 600; color: ${color};">${displayName} (${facilityBookings.length})</span>
+            </div>`;
+
+        facilityBookings.forEach(booking => {
+            const isCancelled = isBookingCancelled(booking);
+            const isPast = new Date(booking.end) < new Date();
+            const startTime = new Date(booking.start);
+            const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
+            const dateStr = startTime.toLocaleDateString('en-AU', {weekday: 'short', month: 'short', day: 'numeric'});
+            const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+
+            let status = 'Upcoming', statusClass = 'status-confirmed';
+            if (isCancelled) { status = 'Cancelled'; statusClass = 'status-cancelled'; }
+            else if (isPast) { status = 'Past'; statusClass = 'status-past'; }
+
+            html += `<div class="booking-card ${facilityClass} ${isCancelled ? 'cancelled' : ''}" onclick="showAdminBookingModal('${booking.id || booking.bookingId || ''}')">
+                <div class="booking-header">
+                    <div class="booking-title">${booking.title || booking.eventName || 'Event'}</div>
+                    <div class="booking-status ${statusClass}">${status}</div>
+                </div>
+                <div class="booking-details">
+                    ${dateStr} &bull; ${timeStr}<br>
+                    ${booking.residentName || 'N/A'} &bull; Unit ${booking.unitNumber || 'N/A'}
+                    ${booking.residentPhone ? ' &bull; \u{1F4DE}' : ''}
+                </div>
+            </div>`;
+        });
+
+        html += '</div>';
+    });
+
+    container.innerHTML = html;
+}
+
+function showAdminBookingModal(bookingId) {
+    const booking = allBookings.find(b => b.id === bookingId || b.bookingId === bookingId);
+    if (!booking) return;
+
+    const isCancelled = isBookingCancelled(booking);
+    const isPast = new Date(booking.end) < new Date();
+    const facility = booking.facility || 'Clubhouse';
+    const color = getFacilityColor(facility);
+
+    const startTime = new Date(booking.start);
+    const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
+    const dateStr = startTime.toLocaleDateString('en-AU', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
+    const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+
+    let html = `<div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid ${color};">
+        <div style="margin-bottom: 12px;"><strong style="color: #666;">Event:</strong><br><div style="font-weight: 500; font-size: 16px;">${booking.title || booking.eventName || 'Event'}</div></div>
+        <div style="margin-bottom: 12px;"><strong style="color: #666;">Facility:</strong><br><div style="font-weight: 500;">${facility}</div></div>
+        <div style="margin-bottom: 12px;"><strong style="color: #666;">Date &amp; Time:</strong><br><div>${dateStr}</div><div>${timeStr}</div></div>
+        <div style="margin-bottom: 12px;">
+            <strong style="color: #666;">Booked By:</strong><br>
+            <div style="font-weight: 500;">${booking.residentName || 'Unknown'}</div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;"><span>\u{1F4E7}</span><span style="font-size: 14px; color: #666;">${booking.residentEmail || 'No email'}</span></div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;"><span>\u{1F4DE}</span><span style="font-size: 14px; color: #666;">${booking.residentPhone || 'No phone provided'}</span></div>
+        </div>
+        <div style="margin-bottom: 12px;"><strong style="color: #666;">Unit:</strong><br><div>${booking.unitNumber || 'Unknown'}</div></div>
+        <div><strong style="color: #666;">Status:</strong><br>
+            <div style="color: ${isCancelled ? 'var(--error-red)' : (isPast ? '#6c757d' : 'var(--success-green)')}; font-weight: 500;">
+                ${isCancelled ? 'Cancelled' : (isPast ? 'Past' : 'Upcoming')}
+            </div>
+        </div>
+    </div>
+    <div style="background: var(--info-bg); padding: 12px; border-radius: 6px; font-size: 13px; color: #555; margin-bottom: 16px;">
+        <strong>Booking ID:</strong> ${booking.bookingId || booking.id || 'N/A'}
+    </div>`;
+
+    if (!isCancelled && !isPast) {
+        html += `<div class="btn-group">
+            <button class="btn btn-primary" onclick="adminEditBooking('${booking.id || booking.bookingId || ''}')">\u270F\uFE0F Edit</button>
+            <button class="btn btn-danger" onclick="adminCancelBooking('${booking.id || booking.bookingId || ''}'); closeBookingModal();">\u274C Cancel</button>
+            <button class="btn btn-secondary" onclick="closeBookingModal();">Close</button>
+        </div>`;
+    } else {
+        html += `<div class="btn-group"><button class="btn btn-secondary" onclick="closeBookingModal();">Close</button></div>`;
+    }
+
+    document.getElementById('bookingModalContent').innerHTML = html;
+    document.getElementById('bookingModal').classList.add('active');
+}
+
+function closeBookingModal() {
+    document.getElementById('bookingModal').classList.remove('active');
+}
+
+function adminCancelBooking(bookingId) {
+    if (!confirm('Cancel this booking?')) return;
+
+    showLoading(true, 'Cancelling booking...');
+    callAPI('cancelBooking', { bookingId: bookingId, reason: 'Admin cancelled', admin: true }, function (response) {
+        showLoading(false);
+        if (response && response.success) {
+            showMessage('\u2705 Booking cancelled by admin', 'success', 8000);
+            loadBookings(true);
+        } else {
+            showMessage('\u274C Failed to cancel booking', 'error', 8000);
+        }
+    });
+}
+
+// ===== ADMIN EDIT (V1.0.0: real updateBooking action, not cancel+recreate) =====
+let editingAdminBookingId = null;
+let originalAdminBookingData = null;
+
+function adminEditBooking(bookingId) {
+    const booking = allBookings.find(b => b.id === bookingId || b.bookingId === bookingId);
+    if (!booking) { showMessage('Booking not found', 'error', 5000); return; }
+
+    editingAdminBookingId = bookingId;
+    originalAdminBookingData = {...booking};
+
+    const facility = getFacilityClass(booking.facility);
+
+    let startTime, endTime;
+    if (booking.start) {
+        startTime = new Date(booking.start);
+    } else if (booking.date && booking.startTime) {
+        startTime = new Date(`${booking.date}T${booking.startTime}`);
+    } else {
+        showMessage('Error loading booking times', 'error', 5000);
+        return;
+    }
+    endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
+
+    const dateStr = booking.date || startTime.toISOString().split('T')[0];
+    const startTimeStr = booking.startTime || startTime.toTimeString().slice(0, 5);
+    const endTimeStr = booking.endTime || endTime.toTimeString().slice(0, 5);
+
+    const html = `
+        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #666;">
+            <strong>Booking ID:</strong> ${booking.bookingId || booking.id || 'N/A'}
+        </div>
+        <form id="adminEditForm" onsubmit="submitAdminEditBooking(event)">
+            <div class="form-group">
+                <label class="form-label required">Purpose (Event Name)</label>
+                <input type="text" id="adminEditPurpose" class="form-input" value="${escapeHtml(booking.purpose || booking.title || '')}" required>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label required">Facility</label>
+                    <select id="adminEditFacility" class="form-select">
+                        <option value="clubhouse" ${facility === 'clubhouse' ? 'selected' : ''}>Clubhouse</option>
+                        <option value="gazebo" ${facility === 'gazebo' ? 'selected' : ''}>Gazebo</option>
+                        <option value="recroom" ${facility === 'recroom' ? 'selected' : ''}>Rec Room</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">Date</label>
+                    <input type="date" id="adminEditDate" class="form-input" value="${dateStr}" required>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label required">Start Time</label>
+                    <input type="time" id="adminEditStartTime" class="form-input" value="${startTimeStr}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">End Time</label>
+                    <input type="time" id="adminEditEndTime" class="form-input" value="${endTimeStr}" required>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label required">Resident Name</label>
+                    <input type="text" id="adminEditResidentName" class="form-input" value="${escapeHtml(booking.residentName || '')}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">Unit Number</label>
+                    <input type="text" id="adminEditUnitNumber" class="form-input" value="${escapeHtml(booking.unitNumber || '')}" required>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label required">Resident Email</label>
+                    <input type="email" id="adminEditResidentEmail" class="form-input" value="${booking.residentEmail || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Resident Phone</label>
+                    <input type="tel" id="adminEditResidentPhone" class="form-input" value="${escapeHtml(booking.residentPhone || '')}">
+                </div>
+            </div>
+            <div style="background: var(--warning-bg); padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; border-left: 4px solid var(--warning-amber);">
+                <strong>Note:</strong> We'll check availability before saving, if the date/time/facility changed.
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn btn-success">\u2705 Save Changes</button>
+                <button type="button" class="btn btn-secondary" onclick="closeBookingModal()">Cancel</button>
+            </div>
+        </form>
+    `;
+
+    document.getElementById('bookingModalContent').innerHTML = html;
+}
+
+function submitAdminEditBooking(event) {
+    event.preventDefault();
+
+    if (!editingAdminBookingId) { showMessage('No booking selected for editing', 'error', 5000); return; }
+
+    const facility = document.getElementById('adminEditFacility').value;
+    const date = document.getElementById('adminEditDate').value;
+    const startTime = document.getElementById('adminEditStartTime').value;
+    const endTime = document.getElementById('adminEditEndTime').value;
+    const purpose = document.getElementById('adminEditPurpose').value.trim();
+    const residentName = document.getElementById('adminEditResidentName').value.trim();
+    const residentEmail = document.getElementById('adminEditResidentEmail').value.trim();
+    const residentPhone = document.getElementById('adminEditResidentPhone').value.trim();
+    const unitNumber = document.getElementById('adminEditUnitNumber').value.trim();
+
+    if (!date || !startTime || !endTime || !purpose || !residentName || !residentEmail || !unitNumber) {
+        showMessage('Please fill in all required fields', 'error', 5000);
+        return;
+    }
+
+    const startDateTime = new Date(`${date}T${startTime}`);
+    const endDateTime = new Date(`${date}T${endTime}`);
+    if (endDateTime <= startDateTime) { showMessage('End time must be after start time', 'error', 5000); return; }
+
+    const original = originalAdminBookingData;
+    const originalDate = new Date(original.start).toISOString().split('T')[0];
+    const originalStartTime = new Date(original.start).toTimeString().slice(0, 5);
+    const originalEndTime = new Date(original.end).toTimeString().slice(0, 5);
+    const dateChanged = date !== originalDate;
+    const timeChanged = startTime !== originalStartTime || endTime !== originalEndTime;
+    const facilityChanged = facility !== getFacilityClass(original.facility);
+
+    const performUpdate = () => {
+        showLoading(true, 'Updating booking...');
+        callAPI('updateBooking', {
+            bookingId: editingAdminBookingId, facility: facility, date: date, startTime: startTime, endTime: endTime,
+            purpose: purpose || 'General use', residentName: residentName, residentEmail: residentEmail,
+            residentPhone: residentPhone || '', unitNumber: unitNumber
+        }, function (response) {
+            showLoading(false);
+            if (response && response.success) {
+                showAdminBookingSuccess({
+                    bookingId: editingAdminBookingId, facility: formatFacilityDisplayName(facility), date: date,
+                    startTime: startTime, endTime: endTime, eventName: purpose, action: 'updated'
+                });
+                closeBookingModal();
+                editingAdminBookingId = null;
+                originalAdminBookingData = null;
+                loadBookings(true);
+            } else {
+                showMessage('\u274C Failed to update: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
+            }
+        });
+    };
+
+    if (dateChanged || timeChanged || facilityChanged) {
+        showLoading(true, 'Checking availability...');
+        callAPI('checkAvailability', {
+            facility: facility, date: date, startTime: startTime, endTime: endTime, excludeBookingId: editingAdminBookingId
+        }, function (response) {
+            showLoading(false);
+            if (!response || !response.success) { showMessage('Failed to check availability', 'error', 5000); return; }
+
+            const conflicts = (response.conflicts || []).filter(c =>
+                c.bookingId !== editingAdminBookingId && c.id !== editingAdminBookingId && c.booking_id !== editingAdminBookingId
+            );
+
+            if (conflicts.length > 0) {
+                let msg = `\u26A0\uFE0F ${response.facility} is not available at that time.\n\nExisting bookings:\n`;
+                conflicts.forEach(c => { msg += `\u2022 ${c.start} - ${c.end} (${c.resident})\n`; });
+                if (response.availableSlots && response.availableSlots.length > 0) {
+                    msg += `\nAvailable time slots:\n`;
+                    response.availableSlots.forEach(slot => { msg += `\u2022 ${slot.start} - ${slot.end} (${slot.duration})\n`; });
+                }
+                alert(msg);
+                return;
+            }
+            performUpdate();
+        });
+    } else {
+        performUpdate();
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ===== HELPERS =====
+function formatDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function isBookingCancelled(booking) {
+    if (!booking) return false;
+    return booking.status === 'Cancelled' ||
+           booking.status === 'cancelled' ||
+           (booking.cancelled && booking.cancelled === true) ||
+           (typeof booking.cancelled === 'string' && booking.cancelled.toLowerCase() === 'true');
+}
+
+function showLoading(show, message = 'Loading...') {
+    const loadingEl = document.getElementById('loading');
+    const loadingText = document.getElementById('loadingText');
+    if (show) { loadingText.textContent = message; loadingEl.classList.add('active'); }
+    else { loadingEl.classList.remove('active'); }
+}
+
+function showMessage(text, type, duration = 5000) {
+    const messageEl = document.getElementById('message');
+    messageEl.innerHTML = text;
+    messageEl.className = `message message-${type}`;
+    messageEl.style.display = 'block';
+
+    if (type === 'success') {
+        const existingBtn = messageEl.querySelector('.message-close-btn');
+        if (existingBtn) existingBtn.remove();
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'message-close-btn';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.onclick = function () {
+            messageEl.style.display = 'none';
+            if (messageEl.timeoutId) { clearTimeout(messageEl.timeoutId); messageEl.timeoutId = null; }
+        };
+        messageEl.appendChild(closeBtn);
+    }
+
+    if (messageEl.timeoutId) clearTimeout(messageEl.timeoutId);
+
+    if (type !== 'success') {
+        messageEl.timeoutId = setTimeout(() => {
+            if (messageEl) { messageEl.style.display = 'none'; messageEl.timeoutId = null; }
+        }, duration);
+    }
+    return messageEl;
+}
+
+// ===== API CALL (JSONP) =====
+function callAPI(action, data, callback) {
+    const callKey = action + JSON.stringify(data);
+    if (window.activeAPICalls && window.activeAPICalls[callKey]) return;
+
+    if (!window.activeAPICalls) window.activeAPICalls = {};
+    window.activeAPICalls[callKey] = true;
+
+    let url = BACKEND_URL + '?action=' + encodeURIComponent(action);
+
+    Object.keys(data).forEach(key => {
+        if (data[key] !== undefined && data[key] !== null) {
+            url += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(data[key]);
+        }
+    });
+
+    url += '&_t=' + Date.now();
+    const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2);
+
+    window[callbackName] = function (response) {
+        if (window.activeAPICalls) delete window.activeAPICalls[callKey];
+        if (callback) callback(response);
+        delete window[callbackName];
+    };
+
+    url += '&callback=' + callbackName;
+    const script = document.createElement('script');
+    script.src = url;
+
+    script.onerror = function () {
+        if (window.activeAPICalls) delete window.activeAPICalls[callKey];
+        if (callback) callback({success: false, error: 'Network error'});
+        if (window[callbackName]) delete window[callbackName];
+    };
+
+    const timeoutDuration = action === 'getBookings' ? 30000 : 15000;
+    setTimeout(() => {
+        if (window[callbackName]) {
+            if (window.activeAPICalls) delete window.activeAPICalls[callKey];
+            if (callback) callback({success: false, error: 'Timeout'});
+            delete window[callbackName];
+        }
+    }, timeoutDuration);
+
+    document.head.appendChild(script);
+}
+</script>
+</body>
+</html>
