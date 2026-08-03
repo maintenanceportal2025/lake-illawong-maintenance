@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.9.0
+  Frontend Version: V2.10.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,14 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.10.0 (Aug 2026): V2.9.0's fix only covered a booking with no
+    resident specified (unitNumber 'Admin'). A booking made on behalf
+    of a real resident (with a real unit number) still looked exactly
+    like that resident's own self-service booking -- nothing recorded
+    who actually created it. Now uses the real createdBy field from
+    backend V1.7: "Unit 9" becomes "Unit 9 (booked by Admin)" when
+    applicable, and the no-resident case still shows "Booked on your
+    behalf by Admin". Requires FacilitiesBooking backend V1.7+.
   V2.9.0 (Aug 2026): My Bookings showed the literal text "Unit: Admin"
     for a booking created via Calendar Manager without a specified
     resident (e.g. Block Time) -- reads like a data error, not what it
@@ -1654,7 +1662,7 @@ function renderMyBookings() {
                 <div class="booking-title">${booking.title || booking.eventName || 'Event'}</div>
                 <div class="booking-status ${statusClass}">${status}</div>
             </div>
-            <div class="booking-details">${dateStr} &bull; ${timeStr}<br>${isAdminOnlyBooking(booking) ? 'Booked on your behalf by Admin' : 'Unit ' + (cleanUnitNumber(booking.unitNumber) || 'N/A')}</div>
+            <div class="booking-details">${dateStr} &bull; ${timeStr}<br>${unitOrAdminNote(booking)}</div>
         </div>`;
     });
 
@@ -1684,7 +1692,7 @@ function showUserBookingModal(bookingId) {
             <div style="margin-top: 8px;">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;"><span>\u{1F4E7}</span><span>${booking.residentEmail || 'No email provided'}</span></div>
                 <div style="display: flex; align-items: center; gap: 8px;"><span>\u{1F4DE}</span><span>${booking.residentPhone || 'No phone provided'}</span></div>
-                <div style="margin-top: 8px; font-size: 14px; color: #666;">${isAdminOnlyBooking(booking) ? 'Booked on your behalf by Admin' : 'Unit: ' + (cleanUnitNumber(booking.unitNumber) || 'Not specified')}</div>
+                <div style="margin-top: 8px; font-size: 14px; color: #666;">${unitOrAdminNote(booking).replace(/^Unit /, 'Unit: ')}</div>
             </div>
         </div>
         <div><strong style="color: #666;">Status:</strong><br>
@@ -1918,14 +1926,22 @@ function performBookingUpdate(facility, date, startTime, endTime, purpose) {
 // ever type the bare number, so this never showed. Strip any such prefix
 // before it goes into the form or gets submitted, so "Unit Unit #12" in the
 // My Bookings list can't happen going forward.
-// V2.9.0: bookings created via Calendar Manager without a specified
-// resident (e.g. Block Time) carry the sentinel unitNumber 'Admin' --
-// shown here as a clear note rather than literal "Unit: Admin", which
-// reads like a data error rather than what it actually is.
-function isAdminOnlyBooking(booking) {
-    return !!(booking && booking.unitNumber === 'Admin');
+// V2.10.0: replaced isAdminOnlyBooking() with the real createdBy field
+// from backend V1.7. The old unitNumber sentinel check only ever caught
+// the no-resident-specified case; a booking made on behalf of a real
+// resident (with a real unit number) was indistinguishable from that
+// resident's own self-service booking. createdBy is a genuine flag set
+// at creation, covering both -- folded into unitOrAdminNote() below
+// rather than kept as a separate now-unused function.
+function unitOrAdminNote(booking) {
+    if (!booking || booking.createdBy !== 'Admin') {
+        return 'Unit ' + (cleanUnitNumber(booking && booking.unitNumber) || 'N/A');
+    }
+    if (booking.unitNumber === 'Admin') {
+        return 'Booked on your behalf by Admin';
+    }
+    return 'Unit ' + cleanUnitNumber(booking.unitNumber) + ' (booked by Admin)';
 }
-
 function cleanUnitNumber(unit) {
     if (!unit) return '';
     return unit.toString().replace(/^unit\s*#?\s*/i, '').trim();
