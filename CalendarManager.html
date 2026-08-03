@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.3.0
+  Frontend Version: V1.5.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,40 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.5.0 (Aug 2026): Two fixes raised before installing V1.4.0.
+    - ADMIN_EMAIL was a hardcoded constant (irc.mtceteam@gmail.com) used
+      as the resident-email fallback for genuine admin-only bookings
+      (e.g. Block Time). This assumed whoever operates Calendar Manager
+      has access to that inbox -- not true once a Stage 2 resident takes
+      over manual calendar management. Replaced with currentAdminEmail,
+      captured from the verified session's own email at login. No
+      lookup table needed -- it's simply whoever is actually logged in.
+    - Quick Create's Resident Name field now does a live search against
+      the resident directory (ManagementCentral's getUnitListData --
+      the same data source ComplaintProxyForm already uses for its
+      resident lookup) as the admin types, with a dropdown to select a
+      match and auto-fill Email/Phone/Unit Number. Matches "quick
+      booking" intent -- the admin only needs to know the resident's
+      name, not look up their contact details separately.
+    - While in this area: found and fixed the same "callback_X is not
+      defined" JSONP lifecycle bug fixed in FacilitiesBooking V2.4.0,
+      which had never been ported to this file. Refactored into a
+      shared _jsonpCall() helper used by both the FacilitiesBooking
+      backend calls (callAPI) and the new ManagementCentral calls
+      (callAPI2), so both get the fix and any future one in one place.
+  V1.4.0 (Aug 2026): Fixed a real gap -- every Quick Create booking was
+    hardcoded as residentName: 'Admin Booking', with no way to record
+    who a booking was actually for when the admin submits on a
+    resident's behalf. Added Resident Name / Email / Phone / Unit Number
+    fields to the Book tab. If Resident Name is filled in, that becomes
+    the booking's real resident record (email required alongside it);
+    left blank, the booking falls back to the old Admin Booking
+    placeholder, for genuine admin-only bookings like Block Time (which
+    now explicitly clears these fields, so a resident's details can't
+    accidentally carry over into an unrelated block). Success
+    confirmation now shows who the booking was for when applicable.
+    Also fixed a stray "click Create Booking" message left over from the
+    V1.3.0 button rename to "Submit Booking".
   V1.3.0 (Aug 2026): Two small consistency fixes.
     - Book tab's facility selector changed from a plain dropdown to the
       same clickable icon cards FacilitiesBooking.html uses (Clubhouse/
@@ -365,6 +399,22 @@ TECHNICAL:
 
     /* ===== ADMIN CHECK RESULT ===== */
     .admin-check-result { margin-top: 10px; }
+
+    /* ===== RESIDENT LOOKUP (Book tab — V1.5.0) ===== */
+    .resident-lookup-wrap { position: relative; }
+    .resident-lookup-results {
+        display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+        background: #1e3a8a; border: 1px solid var(--glass-border-hover); border-radius: 2px;
+        max-height: 220px; overflow-y: auto; margin-top: 4px; box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+    }
+    .resident-lookup-results.active { display: block; }
+    .resident-lookup-item {
+        padding: 10px 14px; cursor: pointer; color: white; font-size: 0.9rem;
+        display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    }
+    .resident-lookup-item:hover { background: rgba(255,255,255,0.12); }
+    .resident-lookup-item .unit-tag { font-size: 0.75rem; color: var(--glass-text-subtle); white-space: nowrap; }
+    .resident-lookup-empty { padding: 10px 14px; color: var(--glass-text-subtle); font-size: 0.85rem; font-style: italic; }
     .admin-check-error, .admin-check-conflict { background: var(--error-bg); color: #721c24; padding: 12px; border-radius: 2px; }
     .admin-check-available { background: var(--success-bg); color: #155724; padding: 12px; border-radius: 2px; }
 
@@ -595,6 +645,33 @@ TECHNICAL:
                     <input type="time" class="glass-input" id="adminEndTime" value="16:00">
                 </div>
             </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 4px;">
+                <div class="form-group resident-lookup-wrap">
+                    <label class="form-label">Resident Name</label>
+                    <input type="text" class="glass-input" id="adminResidentName" placeholder="Start typing to search, or leave blank for an admin-only block" autocomplete="off">
+                    <div id="residentLookupResults" class="resident-lookup-results"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Unit Number</label>
+                    <input type="text" class="glass-input" id="adminUnitNumber" placeholder="e.g., 12">
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Resident Email</label>
+                    <input type="email" class="glass-input" id="adminResidentEmail" placeholder="resident@example.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Resident Phone</label>
+                    <input type="tel" class="glass-input" id="adminResidentPhone" placeholder="Optional">
+                </div>
+            </div>
+            <p style="color: var(--glass-text-muted); font-size: 0.8rem; margin: -8px 0 12px;">
+                Booking on behalf of a resident? Start typing their name and select
+                them to fill in their details automatically. Leave Resident Name
+                blank for a genuine admin-only booking (e.g. Block Time for
+                maintenance/cleaning).
+            </p>
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="clearAdminForm()">Clear</button>
                 <button class="btn btn-success" onclick="createAdminBooking()">Submit Booking</button>
@@ -723,12 +800,29 @@ TECHNICAL:
 // ===== CONFIGURATION =====
 const CONFIG = {
     BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwHwXWJdSpRP6j3CJVDWSZ_n6vEBjEhpA9wZv1AunaGsCfKPBaIGnzrexJe_8asf6PF/exec',
+    MGMT_CENTRAL_URL: 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
     SESSION_KEY: 'calendarManagerVerified',
-    ALLOWED_ROLES: ['Calendar-Manager', 'Developer'],
-    ADMIN_EMAIL: 'irc.mtceteam@gmail.com'
+    ALLOWED_ROLES: ['Calendar-Manager', 'Developer']
 };
 const BACKEND_URL = CONFIG.BACKEND_URL;
-const ADMIN_EMAIL = CONFIG.ADMIN_EMAIL;
+// V1.5.0: ADMIN_EMAIL is no longer a hardcoded constant -- it's whoever is
+// actually verified and using this module right now, captured in
+// handleVerificationSuccess(). The old hardcoded irc.mtceteam@gmail.com
+// assumed whoever operates Calendar Manager has access to that inbox,
+// which won't be true once a Stage 2 resident takes over manual calendar
+// management -- she has no access to that address.
+let currentAdminEmail = '';
+
+// ===== RESIDENT DIRECTORY (V1.5.0) =====
+let allResidents = [];
+
+function loadResidentList() {
+    callAPI2(CONFIG.MGMT_CENTRAL_URL, 'getUnitListData', {}, function (response) {
+        if (response && response.success && response.residents) {
+            allResidents = response.residents;
+        }
+    });
+}
 
 // ===== CACHE STATE =====
 // V1.2.0: simplified, matching FacilitiesBooking V2.8.0. The background
@@ -776,12 +870,20 @@ function handleVerificationSuccess(userData) {
 
     document.getElementById('mainContent').style.display = '';
 
+    // V1.5.0: use the verified admin's own email as the fallback for
+    // genuine admin-only bookings (e.g. Block Time), instead of a
+    // hardcoded address that whoever is actually operating this module
+    // might not have access to.
+    currentAdminEmail = userData.email || '';
+
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     document.getElementById('adminDate').valueAsDate = tomorrow;
 
     renderCalendar();
     loadBookings(true);
+    loadResidentList();
+    setupResidentLookup();
 }
 
 // ===== TABS =====
@@ -1063,6 +1165,58 @@ function selectAdminFacility(element, facility) {
     document.getElementById('adminFacility').value = facility;
 }
 
+// ===== RESIDENT LOOKUP (V1.5.0) =====
+function setupResidentLookup() {
+    const input = document.getElementById('adminResidentName');
+    const resultsEl = document.getElementById('residentLookupResults');
+    if (!input || !resultsEl || input.dataset.lookupWired) return;
+    input.dataset.lookupWired = 'true';
+
+    input.addEventListener('input', function () {
+        const query = input.value.trim().toLowerCase();
+
+        if (!query) { resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; return; }
+
+        if (allResidents.length === 0) {
+            resultsEl.innerHTML = '<div class="resident-lookup-empty">Resident list still loading — try again in a moment.</div>';
+            resultsEl.classList.add('active');
+            return;
+        }
+
+        const matches = allResidents.filter(r => r.residentName && r.residentName.toLowerCase().indexOf(query) !== -1).slice(0, 8);
+
+        if (matches.length === 0) {
+            resultsEl.innerHTML = `<div class="resident-lookup-empty">No residents found matching "${query}".</div>`;
+            resultsEl.classList.add('active');
+            return;
+        }
+
+        resultsEl.innerHTML = '';
+        matches.forEach(r => {
+            const item = document.createElement('div');
+            item.className = 'resident-lookup-item';
+            item.innerHTML = `<span>${r.residentName}</span><span class="unit-tag">Unit ${r.unitNumber}</span>`;
+            item.addEventListener('click', () => selectAdminResident(r));
+            resultsEl.appendChild(item);
+        });
+        resultsEl.classList.add('active');
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.resident-lookup-wrap')) {
+            resultsEl.classList.remove('active');
+        }
+    });
+}
+
+function selectAdminResident(resident) {
+    document.getElementById('adminResidentName').value = resident.residentName || '';
+    document.getElementById('adminResidentEmail').value = resident.email || '';
+    document.getElementById('adminResidentPhone').value = resident.phone || '';
+    document.getElementById('adminUnitNumber').value = resident.unitNumber || '';
+    document.getElementById('residentLookupResults').classList.remove('active');
+}
+
 function clearAdminForm() {
     document.getElementById('adminEventName').value = '';
     const tomorrow = new Date();
@@ -1070,6 +1224,11 @@ function clearAdminForm() {
     document.getElementById('adminDate').valueAsDate = tomorrow;
     document.getElementById('adminStartTime').value = '14:00';
     document.getElementById('adminEndTime').value = '16:00';
+    document.getElementById('adminResidentName').value = '';
+    document.getElementById('adminResidentEmail').value = '';
+    document.getElementById('adminResidentPhone').value = '';
+    document.getElementById('adminUnitNumber').value = '';
+    document.getElementById('residentLookupResults').classList.remove('active');
     document.getElementById('adminCheckResult').innerHTML = '';
     document.querySelectorAll('#book-tab .facility-option').forEach(opt => opt.classList.remove('selected'));
     document.querySelector('#book-tab .facility-option.clubhouse').classList.add('selected');
@@ -1084,8 +1243,14 @@ function showBlockTimeModal() {
     document.getElementById('adminDate').valueAsDate = tomorrow;
     document.getElementById('adminStartTime').value = '08:00';
     document.getElementById('adminEndTime').value = '22:00';
+    // A block is deliberately not attributed to any resident.
+    document.getElementById('adminResidentName').value = '';
+    document.getElementById('adminResidentEmail').value = '';
+    document.getElementById('adminResidentPhone').value = '';
+    document.getElementById('adminUnitNumber').value = '';
+    document.getElementById('residentLookupResults').classList.remove('active');
 
-    showMessage('Block time form filled. Review and click "Create Booking".', 'info', 8000);
+    showMessage('Block time form filled. Review and click "Submit Booking".', 'info', 8000);
 }
 
 function refreshAdminData() {
@@ -1149,9 +1314,18 @@ function createAdminBooking() {
     const date = document.getElementById('adminDate').value;
     const startTime = document.getElementById('adminStartTime').value;
     const endTime = document.getElementById('adminEndTime').value;
+    const residentNameInput = document.getElementById('adminResidentName').value.trim();
+    const residentEmailInput = document.getElementById('adminResidentEmail').value.trim();
+    const residentPhoneInput = document.getElementById('adminResidentPhone').value.trim();
+    const unitNumberInput = document.getElementById('adminUnitNumber').value.trim();
 
     if (!eventName) { showMessage('Please enter event name', 'error', 8000); return; }
     if (!date) { showMessage('Please select date', 'error', 8000); return; }
+
+    if (residentNameInput && !residentEmailInput) {
+        showMessage('Please enter the resident\'s email as well as their name', 'error', 8000);
+        return;
+    }
 
     const startDateTime = new Date(date + 'T' + startTime);
     const endDateTime = new Date(date + 'T' + endTime);
@@ -1166,10 +1340,20 @@ function createAdminBooking() {
     const normalizedFacility = getFacilityClass(facility);
     const displayFacility = formatFacilityDisplayName(facility);
 
+    // V1.4.0: use the resident's actual details when the admin is booking
+    // on their behalf; fall back to the old "Admin Booking" placeholder
+    // only for a genuine admin-only booking (e.g. Block Time), where
+    // there's deliberately no resident to attribute it to.
+    const isOnBehalfOfResident = !!residentNameInput;
+    const bookingResidentName = isOnBehalfOfResident ? residentNameInput : 'Admin Booking';
+    const bookingResidentEmail = isOnBehalfOfResident ? residentEmailInput : currentAdminEmail;
+    const bookingResidentPhone = isOnBehalfOfResident ? residentPhoneInput : '';
+    const bookingUnitNumber = isOnBehalfOfResident ? (unitNumberInput || 'N/A') : 'Admin';
+
     const apiData = {
         title: eventName, purpose: eventName, facility: normalizedFacility, facilityName: displayFacility,
-        resident: 'Admin Booking', residentName: 'Admin Booking', residentEmail: ADMIN_EMAIL, residentPhone: '',
-        unitNumber: 'Admin', date: date, startTime: startTime, endTime: endTime,
+        resident: bookingResidentName, residentName: bookingResidentName, residentEmail: bookingResidentEmail,
+        residentPhone: bookingResidentPhone, unitNumber: bookingUnitNumber, date: date, startTime: startTime, endTime: endTime,
         start: startDateTime.toISOString().replace('.000Z', ''), end: endDateTime.toISOString().replace('.000Z', ''),
         timestamp: new Date().toISOString(), status: 'Confirmed', admin: true
     };
@@ -1181,7 +1365,8 @@ function createAdminBooking() {
         if (response && response.success) {
             showAdminBookingSuccess({
                 bookingId: response.bookingId, facility: displayFacility, date: date,
-                startTime: startTime, endTime: endTime, eventName: eventName
+                startTime: startTime, endTime: endTime, eventName: eventName,
+                residentName: isOnBehalfOfResident ? bookingResidentName : null
             });
             clearAdminForm();
             loadBookings(true);
@@ -1214,6 +1399,7 @@ function showAdminBookingSuccess(bookingDetails) {
                     <div><strong>Date:</strong></div><div>${bookingDetails.date || 'N/A'}</div>
                     <div><strong>Time:</strong></div><div>${bookingDetails.startTime || 'N/A'} to ${bookingDetails.endTime || 'N/A'}</div>
                     <div><strong>Event:</strong></div><div>${bookingDetails.eventName || 'N/A'}</div>
+                    ${bookingDetails.residentName ? `<div><strong>For:</strong></div><div>${bookingDetails.residentName}</div>` : ''}
                 </div>
             </div>
             <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
@@ -1628,14 +1814,19 @@ function showMessage(text, type, duration = 5000) {
 }
 
 // ===== API CALL (JSONP) =====
-function callAPI(action, data, callback) {
-    const callKey = action + JSON.stringify(data);
+// V1.5.0: shared JSONP core, fixing the same "callback_X is not defined"
+// bug fixed in FacilitiesBooking V2.4.0 -- on timeout, the callback is now
+// replaced with a no-op instead of deleted, so a late response from a slow
+// backend is silently ignored instead of throwing. Also removes each
+// <script> tag from the DOM once done (was leaking one per call).
+function _jsonpCall(targetUrl, action, data, callback) {
+    const callKey = targetUrl + action + JSON.stringify(data);
     if (window.activeAPICalls && window.activeAPICalls[callKey]) return;
 
     if (!window.activeAPICalls) window.activeAPICalls = {};
     window.activeAPICalls[callKey] = true;
 
-    let url = BACKEND_URL + '?action=' + encodeURIComponent(action);
+    let url = targetUrl + '?action=' + encodeURIComponent(action);
 
     Object.keys(data).forEach(key => {
         if (data[key] !== undefined && data[key] !== null) {
@@ -1645,33 +1836,38 @@ function callAPI(action, data, callback) {
 
     url += '&_t=' + Date.now();
     const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2);
+    let settled = false;
+    let script;
 
-    window[callbackName] = function (response) {
+    function finish(response) {
+        if (settled) return;
+        settled = true;
         if (window.activeAPICalls) delete window.activeAPICalls[callKey];
+        if (script && script.parentNode) script.parentNode.removeChild(script);
         if (callback) callback(response);
-        delete window[callbackName];
-    };
+        window[callbackName] = function () {};
+    }
+
+    window[callbackName] = function (response) { finish(response); };
 
     url += '&callback=' + callbackName;
-    const script = document.createElement('script');
+    script = document.createElement('script');
     script.src = url;
 
-    script.onerror = function () {
-        if (window.activeAPICalls) delete window.activeAPICalls[callKey];
-        if (callback) callback({success: false, error: 'Network error'});
-        if (window[callbackName]) delete window[callbackName];
-    };
+    script.onerror = function () { finish({success: false, error: 'Network error'}); };
 
     const timeoutDuration = action === 'getBookings' ? 30000 : 15000;
-    setTimeout(() => {
-        if (window[callbackName]) {
-            if (window.activeAPICalls) delete window.activeAPICalls[callKey];
-            if (callback) callback({success: false, error: 'Timeout'});
-            delete window[callbackName];
-        }
-    }, timeoutDuration);
+    setTimeout(() => { finish({success: false, error: 'Timeout'}); }, timeoutDuration);
 
     document.head.appendChild(script);
+}
+
+function callAPI(action, data, callback) {
+    _jsonpCall(BACKEND_URL, action, data, callback);
+}
+
+function callAPI2(targetUrl, action, data, callback) {
+    _jsonpCall(targetUrl, action, data, callback);
 }
 </script>
 </body>
