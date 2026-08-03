@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.5.0
+  Frontend Version: V2.6.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,19 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.6.0 (Aug 2026): Post-install fixes, round 3.
+    - Fixed a just-created booking not appearing in My Bookings until
+      visiting Calendar first. showTab() now force-refreshes on
+      switching to My Bookings, same as it already did for Calendar --
+      previously only Calendar force-refreshed, so My Bookings could
+      render from a stale in-memory cache.
+    - Changed Clubhouse's accent color from blue (#667eea) to teal
+      (#2dd4bf). The old blue was too close to the page's own blue
+      gradient background, making Clubhouse's calendar dot and selected-
+      state hard to distinguish at small sizes -- Gazebo (pink) and Rec
+      Room (amber) didn't have this problem since neither is blue.
+      Same change applied to CalendarManager.html (not yet installed)
+      so it doesn't ship with the identical issue.
   V2.5.0 (Aug 2026): Matches backend V1.6's critical fix -- checkAvailability
     was purely advisory (a resident could ignore its warning and submit
     anyway, silently double-booking the facility). The backend now hard-
@@ -191,7 +204,7 @@ TECHNICAL:
         --glass-text-subtle: rgba(255, 255, 255, 0.50);
 
         /* Module-specific facility accents */
-        --facility-clubhouse: #667eea;
+        --facility-clubhouse: #2dd4bf;
         --facility-gazebo: #d12360;
         --facility-recroom: #f6bf26;
     }
@@ -471,7 +484,7 @@ TECHNICAL:
         padding: 16px 8px; text-align: center; cursor: pointer; transition: all 0.2s; color: var(--glass-text);
     }
     .facility-option:hover { background: var(--glass-bg-hover); border-color: var(--glass-border-hover); }
-    .facility-option.selected.clubhouse { border-color: var(--facility-clubhouse); background: rgba(102,126,234,0.25); }
+    .facility-option.selected.clubhouse { border-color: var(--facility-clubhouse); background: rgba(45,212,191,0.25); }
     .facility-option.selected.gazebo { border-color: var(--facility-gazebo); background: rgba(209,35,96,0.25); }
     .facility-option.selected.recroom { border-color: var(--facility-recroom); background: rgba(246,191,42,0.25); }
 
@@ -1020,7 +1033,12 @@ function showTab(tabName) {
     const correctButton = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
     if (correctButton) correctButton.classList.add('active');
 
-    if (tabName === 'calendar') {
+    // V2.6.0: also force-refresh on My Bookings, not just Calendar -- a
+    // booking created via the success modal's "View My Bookings" button
+    // was showing a stale cache (updateUIFromCache() only re-renders from
+    // whatever's already in memory), so a just-created booking wouldn't
+    // appear until the resident happened to visit Calendar first.
+    if (tabName === 'calendar' || tabName === 'mybookings') {
         loadBookings(true);
     }
 }
