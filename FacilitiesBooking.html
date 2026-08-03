@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.4.0
+  Frontend Version: V2.5.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,13 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.5.0 (Aug 2026): Matches backend V1.6's critical fix -- checkAvailability
+    was purely advisory (a resident could ignore its warning and submit
+    anyway, silently double-booking the facility). The backend now hard-
+    rejects overlapping createBooking/updateBooking requests regardless
+    of whether Check Availability was ever called. This version adds
+    clear conflict-detail messaging when that rejection happens, on both
+    the booking form and the self-edit flow, instead of a generic error.
   V2.4.0 (Aug 2026): Fixed JSONP callback lifecycle bug causing
     "callback_X is not defined" console errors and apparent "network
     fail" / "unable to verify availability" symptoms. On timeout, the
@@ -1518,7 +1525,15 @@ function submitBooking() {
             currentUserEmail = userEmail.toLowerCase();
         } else {
             const errorMsg = response ? (response.message || response.error || 'Unknown error') : 'No response from server';
-            if (errorMsg.includes('some features failed') || errorMsg.includes('saved but')) {
+
+            if (response && response.conflicts && response.conflicts.length > 0) {
+                // V2.5.0: backend V1.6 now rejects overlapping bookings server-side
+                // rather than just relying on the advisory Check Availability step.
+                const conflictLines = response.conflicts.map(c =>
+                    `&bull; ${c.time || 'unknown time'}${c.title ? ' (' + c.title + ')' : ''}`
+                ).join('<br>');
+                showMessage(`\u26D4 Not available &mdash; this time conflicts with an existing booking:<br>${conflictLines}`, 'error', 10000);
+            } else if (errorMsg.includes('some features failed') || errorMsg.includes('saved but')) {
                 showMessage('\u26A0\uFE0F Booking saved but with issues: ' + errorMsg, 'info', 8000);
                 setTimeout(() => loadBookings(true), 1000);
             } else {
@@ -1901,6 +1916,13 @@ function performBookingUpdate(facility, date, startTime, endTime, purpose) {
             closeEditBookingModal();
             loadBookings(true);
             setTimeout(() => renderMyBookings(), 500);
+        } else if (response && response.conflicts && response.conflicts.length > 0) {
+            // V2.5.0: backend V1.6 now rejects overlapping edits server-side too,
+            // as a backstop behind the earlier client-side checkAvailability call.
+            const conflictLines = response.conflicts.map(c =>
+                `&bull; ${c.time || 'unknown time'}${c.title ? ' (' + c.title + ')' : ''}`
+            ).join('<br>');
+            showMessage(`\u26D4 Not available &mdash; this time conflicts with an existing booking:<br>${conflictLines}`, 'error', 10000);
         } else {
             showMessage('\u274C Failed to update: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
         }
