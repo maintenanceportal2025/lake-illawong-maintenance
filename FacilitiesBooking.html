@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.8.0
+  Frontend Version: V2.9.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,12 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.9.0 (Aug 2026): My Bookings showed the literal text "Unit: Admin"
+    for a booking created via Calendar Manager without a specified
+    resident (e.g. Block Time) -- reads like a data error, not what it
+    actually is. Added isAdminOnlyBooking() to detect the unitNumber
+    'Admin' sentinel and show "Booked on your behalf by Admin" instead,
+    on both the My Bookings list card and the booking detail modal.
   V2.8.0 (Aug 2026): Removed the "smart caching" layer -- background
     polling (setupCacheRefresh/loadBookingsSilently, every 30s), the TTL/
     staleness comparison inside loadBookings(), and the "Cache: X ago" UI
@@ -1648,7 +1654,7 @@ function renderMyBookings() {
                 <div class="booking-title">${booking.title || booking.eventName || 'Event'}</div>
                 <div class="booking-status ${statusClass}">${status}</div>
             </div>
-            <div class="booking-details">${dateStr} &bull; ${timeStr}<br>Unit ${cleanUnitNumber(booking.unitNumber) || 'N/A'}</div>
+            <div class="booking-details">${dateStr} &bull; ${timeStr}<br>${isAdminOnlyBooking(booking) ? 'Booked on your behalf by Admin' : 'Unit ' + (cleanUnitNumber(booking.unitNumber) || 'N/A')}</div>
         </div>`;
     });
 
@@ -1678,7 +1684,7 @@ function showUserBookingModal(bookingId) {
             <div style="margin-top: 8px;">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;"><span>\u{1F4E7}</span><span>${booking.residentEmail || 'No email provided'}</span></div>
                 <div style="display: flex; align-items: center; gap: 8px;"><span>\u{1F4DE}</span><span>${booking.residentPhone || 'No phone provided'}</span></div>
-                <div style="margin-top: 8px; font-size: 14px; color: #666;">Unit: ${cleanUnitNumber(booking.unitNumber) || 'Not specified'}</div>
+                <div style="margin-top: 8px; font-size: 14px; color: #666;">${isAdminOnlyBooking(booking) ? 'Booked on your behalf by Admin' : 'Unit: ' + (cleanUnitNumber(booking.unitNumber) || 'Not specified')}</div>
             </div>
         </div>
         <div><strong style="color: #666;">Status:</strong><br>
@@ -1912,6 +1918,14 @@ function performBookingUpdate(facility, date, startTime, endTime, purpose) {
 // ever type the bare number, so this never showed. Strip any such prefix
 // before it goes into the form or gets submitted, so "Unit Unit #12" in the
 // My Bookings list can't happen going forward.
+// V2.9.0: bookings created via Calendar Manager without a specified
+// resident (e.g. Block Time) carry the sentinel unitNumber 'Admin' --
+// shown here as a clear note rather than literal "Unit: Admin", which
+// reads like a data error rather than what it actually is.
+function isAdminOnlyBooking(booking) {
+    return !!(booking && booking.unitNumber === 'Admin');
+}
+
 function cleanUnitNumber(unit) {
     if (!unit) return '';
     return unit.toString().replace(/^unit\s*#?\s*/i, '').trim();
