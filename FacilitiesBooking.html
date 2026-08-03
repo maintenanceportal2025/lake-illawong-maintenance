@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.7.0
+  Frontend Version: V2.8.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,22 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.8.0 (Aug 2026): Removed the "smart caching" layer -- background
+    polling (setupCacheRefresh/loadBookingsSilently, every 30s), the TTL/
+    staleness comparison inside loadBookings(), and the "Cache: X ago" UI
+    display. This was built ahead of an anticipated performance problem
+    (many bookings, slow responses) tied to a separate BookingDataService
+    that was apparently explored at some point but never went into use --
+    its Apps Script project has since been renamed "Deprecated". With
+    that confirmed abandoned, and every real call site already always
+    passing forceRefresh=true (the staleness-check branch had never once
+    been exercised), the mechanism was pure unused complexity at the
+    system's actual scale. loadBookings() now simply fetches, every time
+    it's called. Kept: cacheLastUpdated (still used by the
+    visibilitychange refresh-if-stale-on-return-to-tab check) and
+    isCacheLoading (a simple in-flight-request guard, unrelated to
+    caching strategy). No behavioural change from a user's perspective --
+    every call site already forced a fresh fetch regardless.
   V2.7.0 (Aug 2026): Squared every remaining rounded panel/card corner
     (16px/12px/8px/6px -> 2px) -- form-section, modal-content, success-
     modal-content, booking-card, guideline-section, facility-info,
@@ -332,17 +348,6 @@ TECHNICAL:
     }
     .message-close-btn:hover { opacity: 1; }
 
-    /* ===== CACHE STATUS ===== */
-    .cache-status {
-        display: none;
-        text-align: right;
-        font-size: 0.75rem;
-        color: var(--glass-text-subtle);
-        margin-bottom: 12px;
-        cursor: pointer;
-    }
-    .cache-status:hover { color: var(--glass-text-muted); }
-
     /* ===== TAB CONTENT ===== */
     .tab-content { display: none; }
     .tab-content.active { display: block; }
@@ -625,7 +630,6 @@ TECHNICAL:
     </div>
 
     <div id="message" class="message"></div>
-    <div id="cacheStatus" class="cache-status" onclick="loadBookings(true)">Cache: <span id="cacheTime">Never updated</span></div>
 
     <!-- Calendar Tab -->
     <div id="calendar-tab" class="tab-content active">
@@ -951,12 +955,17 @@ const CONFIG = {
 };
 const BACKEND_URL = CONFIG.BACKEND_URL; // kept for readability in existing calls below
 
-// ===== CACHE CONFIGURATION =====
+// ===== CACHE STATE =====
+// V2.8.0: simplified. The "smart" TTL/staleness-check machinery below was
+// never actually exercised -- every real call site always passes
+// forceRefresh=true, so the staleness comparison was dead code, and the
+// background polling (setupCacheRefresh/loadBookingsSilently) was solving
+// for a performance problem that never materialized at this scale. Kept:
+// cacheLastUpdated (used by the visibilitychange refresh-if-stale check)
+// and isCacheLoading (a simple in-flight-request guard, unrelated to
+// caching strategy).
 let cacheLastUpdated = 0;
-const CACHE_TTL = 30000;
-const USER_CACHE_TTL = 120000;
 let isCacheLoading = false;
-let cacheRefreshInterval = null;
 
 // ===== GLOBAL STATE =====
 let currentDate = new Date();
@@ -1032,7 +1041,6 @@ function handleVerificationSuccess(userData) {
         }
     });
 
-    setupCacheRefresh();
     window.addEventListener('resize', () => currentTab === 'calendar' && updateCalendarEvents());
 }
 
@@ -1078,50 +1086,8 @@ function goToToday() {
     renderCalendar();
 }
 
-// ===== CACHE MANAGEMENT =====
-function setupCacheRefresh() {
-    if (cacheRefreshInterval) clearInterval(cacheRefreshInterval);
-    cacheRefreshInterval = setInterval(() => {
-        if (!document.hidden) {
-            const cacheAge = Date.now() - cacheLastUpdated;
-            if (cacheAge > USER_CACHE_TTL && !isCacheLoading) {
-                loadBookingsSilently();
-            }
-        }
-    }, 30000);
-}
-
-function loadBookingsSilently() {
-    if (isCacheLoading) return;
-    isCacheLoading = true;
-
-    callAPI('getBookings', { _t: Date.now() }, function (response) {
-        isCacheLoading = false;
-        if (response && response.success && response.bookings) {
-            allBookings = response.bookings;
-            cacheLastUpdated = Date.now();
-            rebuildDateIndex();
-            updateCacheStatus();
-            if (currentTab === 'calendar') updateCalendarEvents();
-            if (currentUserEmail && document.getElementById('myBookingsContent') &&
-                document.getElementById('myBookingsContent').classList.contains('hidden') === false) {
-                renderMyBookings();
-            }
-        }
-    });
-}
-
 function loadBookings(forceRefresh = false) {
-    const now = Date.now();
-    const cacheAge = now - cacheLastUpdated;
-    const cacheExpired = cacheAge > USER_CACHE_TTL;
-
-    if (isCacheLoading && !forceRefresh) return;
-
-    if (!forceRefresh && !cacheExpired && allBookings.length > 0) {
-        updateUIFromCache();
-        return;
-    }
+    if (isCacheLoading) return;
 
     isCacheLoading = true;
 
@@ -1133,9 +1099,7 @@ function loadBookings(forceRefresh = false) {
 
     showLoading(true, forceRefresh ? 'Refreshing bookings...' : 'Loading bookings...');
 
-    const params = forceRefresh ? { _t: Date.now() } : {};
-
-    callAPI('getBookings', params, function (response) {
+    callAPI('getBookings', { _t: Date.now() }, function (response) {
         isCacheLoading = false;
         showLoading(false);
 
@@ -1178,28 +1142,6 @@ function updateUIFromCache() {
             document.getElementById('myBookingsContent').classList.contains('hidden') === false) {
             renderMyBookings();
         }
-        updateCacheStatus();
-    } catch (error) {}
-}
-
-function updateCacheStatus() {
-    try {
-        const statusEl = document.getElementById('cacheStatus');
-        const timeEl = document.getElementById('cacheTime');
-        if (!statusEl || !timeEl) return;
-
-        if (cacheLastUpdated === 0) {
-            timeEl.textContent = 'Never updated';
-            statusEl.style.display = 'block';
-            return;
-        }
-
-        const age = Date.now() - cacheLastUpdated;
-        const seconds = Math.floor(age / 1000);
-        const minutes = Math.floor(seconds / 60);
-
-        timeEl.textContent = minutes < 2 ? `${seconds} seconds ago` : `${minutes} minutes ago`;
-        statusEl.style.display = 'block';
     } catch (error) {}
 }
 
