@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.5.0
+  Frontend Version: V1.6.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,16 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.6.0 (Aug 2026): Fixed "Failed to create booking: Unknown error"
+    when a Quick Create submission genuinely conflicts with an existing
+    booking (confirmed happening without running Check Availability
+    first). Root cause: backend V1.6's conflict rejection returns
+    {success:false, message, conflicts} -- there's no .error field at
+    all -- but the failure handler only ever checked response.error,
+    so a real conflict always fell through to "Unknown error" instead
+    of showing the actual clash. Now shows the conflicting time(s),
+    matching FacilitiesBooking's own conflict messaging. Found and
+    fixed the identical bug in the admin edit save step too.
   V1.5.0 (Aug 2026): Two fixes raised before installing V1.4.0.
     - ADMIN_EMAIL was a hardcoded constant (irc.mtceteam@gmail.com) used
       as the resident-email fallback for genuine admin-only bookings
@@ -1372,10 +1382,21 @@ function createAdminBooking() {
             loadBookings(true);
         } else {
             const msg = response && response.message;
-            if (msg && (msg.includes('some features failed') || msg.includes('saved but'))) {
+
+            if (response && response.conflicts && response.conflicts.length > 0) {
+                // V1.6.0: backend V1.6 rejects overlapping bookings via
+                // {success:false, message, conflicts}, with no .error field
+                // at all -- the old fallback only checked .error, so a real
+                // conflict always displayed as "Unknown error" instead of
+                // the actual clash.
+                const conflictLines = response.conflicts.map(c =>
+                    `&bull; ${c.time || 'unknown time'}${c.title ? ' (' + c.title + ')' : ''}`
+                ).join('<br>');
+                showMessage(`\u26D4 Not available &mdash; this time conflicts with an existing booking:<br>${conflictLines}`, 'error', 10000);
+            } else if (msg && (msg.includes('some features failed') || msg.includes('saved but'))) {
                 showMessage('\u26A0\uFE0F Booking saved but with minor issues', 'info', 8000);
             } else {
-                showMessage('\u274C Failed to create booking: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
+                showMessage('\u274C Failed to create booking: ' + (msg || (response && response.error) || 'Unknown error'), 'error', 8000);
             }
         }
     });
@@ -1720,8 +1741,13 @@ function submitAdminEditBooking(event) {
                 editingAdminBookingId = null;
                 originalAdminBookingData = null;
                 loadBookings(true);
+            } else if (response && response.conflicts && response.conflicts.length > 0) {
+                const conflictLines = response.conflicts.map(c =>
+                    `&bull; ${c.time || 'unknown time'}${c.title ? ' (' + c.title + ')' : ''}`
+                ).join('<br>');
+                showMessage(`\u26D4 Not available &mdash; this time conflicts with an existing booking:<br>${conflictLines}`, 'error', 10000);
             } else {
-                showMessage('\u274C Failed to update: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
+                showMessage('\u274C Failed to update: ' + ((response && response.message) || (response && response.error) || 'Unknown error'), 'error', 8000);
             }
         });
     };
