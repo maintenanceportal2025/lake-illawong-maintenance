@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.8.0
+  Frontend Version: V1.8.1
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,19 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.8.1 (Aug 2026): "Unit Admin" display fix. Genuine admin-only
+    bookings (e.g. Block Time) carry the 'Admin' sentinel in
+    unitNumber, since there's deliberately no resident/unit to
+    attribute them to. All three places that render a "Unit ..."
+    segment or field (day-details popup, Manage Bookings list card,
+    booking detail modal) showed this verbatim as "Unit Admin", which
+    read oddly next to the "Booked by Admin" badge already shown in
+    the same views. Suppressed the "Unit ..." segment/field wherever
+    the cleaned unit number is exactly 'Admin' -- the existing "Booked
+    by Admin" badge already conveys the same information, so nothing
+    is lost. Purely a display fix: no backend or sheet change, and it
+    correctly covers bookings already written to the sheet before this
+    fix, not just new ones.
   V1.8.0 (Aug 2026): Two fixes.
     - "Booked by: X • Unit Unit 9" -- the resident directory's
       unitNumber (from getUnitListData) comes through with a "Unit "
@@ -1144,10 +1157,17 @@ function showDayDetails(date) {
                 const startStr = startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
                 const endStr = endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
 
+                // V1.8.1: genuine admin-only bookings (Block Time etc.) carry the
+                // 'Admin' sentinel in unitNumber -- suppress the "Unit ..." segment
+                // for that case rather than showing "Unit Admin". The "Booked by
+                // Admin" badge already conveys this, so nothing is lost.
+                const unitLabel = cleanUnitNumber(event.unitNumber);
+                const unitSegment = (unitLabel === 'Admin') ? '' : ` &bull; Unit ${unitLabel || 'N/A'}`;
+
                 html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 2px; margin-bottom: 8px; border-left: 4px solid ${color};">
                     <div style="font-weight: 500; margin-bottom: 4px;">${startStr} - ${endStr}</div>
                     <div style="font-size: 14px; margin-bottom: 4px;">${event.title || event.eventName || 'Event'}</div>
-                    <div style="font-size: 12px; color: #666;">Booked by: ${event.residentName || 'Unknown'} &bull; Unit ${cleanUnitNumber(event.unitNumber) || 'N/A'}${event.createdBy === 'Admin' ? ' &bull; <strong>Booked by Admin</strong>' : ''}</div>
+                    <div style="font-size: 12px; color: #666;">Booked by: ${event.residentName || 'Unknown'}${unitSegment}${event.createdBy === 'Admin' ? ' &bull; <strong>Booked by Admin</strong>' : ''}</div>
                 </div>`;
             });
             html += '</div>';
@@ -1531,6 +1551,11 @@ function renderAdminBookings() {
             if (isCancelled) { status = 'Cancelled'; statusClass = 'status-cancelled'; }
             else if (isPast) { status = 'Past'; statusClass = 'status-past'; }
 
+            // V1.8.1: suppress "Unit Admin" for genuine admin-only bookings --
+            // see the day-modal fix above for the reasoning.
+            const cardUnitLabel = cleanUnitNumber(booking.unitNumber);
+            const cardUnitSegment = (cardUnitLabel === 'Admin') ? '' : ` &bull; Unit ${cardUnitLabel || 'N/A'}`;
+
             html += `<div class="booking-card ${facilityClass} ${isCancelled ? 'cancelled' : ''}" onclick="showAdminBookingModal('${booking.id || booking.bookingId || ''}')">
                 <div class="booking-header">
                     <div class="booking-title">${booking.title || booking.eventName || 'Event'}</div>
@@ -1538,7 +1563,7 @@ function renderAdminBookings() {
                 </div>
                 <div class="booking-details">
                     ${dateStr} &bull; ${timeStr}<br>
-                    ${booking.residentName || 'N/A'} &bull; Unit ${cleanUnitNumber(booking.unitNumber) || 'N/A'}
+                    ${booking.residentName || 'N/A'}${cardUnitSegment}
                     ${booking.residentPhone ? ' &bull; \u{1F4DE}' : ''}
                     ${booking.createdBy === 'Admin' ? '<br><strong style="color: var(--primary-blue);">Booked by Admin</strong>' : ''}
                 </div>
@@ -1565,6 +1590,13 @@ function showAdminBookingModal(bookingId) {
     const dateStr = startTime.toLocaleDateString('en-AU', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
     const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
 
+    // V1.8.1: suppress the whole Unit field for genuine admin-only bookings
+    // (unitNumber === 'Admin' sentinel) rather than showing "Unit: Admin" --
+    // the "Booked by Admin" info box below already covers this case.
+    const modalUnitLabel = cleanUnitNumber(booking.unitNumber);
+    const unitFieldHtml = (modalUnitLabel === 'Admin') ? '' :
+        `<div style="margin-bottom: 12px;"><strong style="color: #666;">Unit:</strong><br><div>${modalUnitLabel || 'Unknown'}</div></div>`;
+
     let html = `<div style="background: #f8f9fa; padding: 16px; border-radius: 2px; margin-bottom: 16px; border-left: 4px solid ${color};">
         <div style="margin-bottom: 12px;"><strong style="color: #666;">Event:</strong><br><div style="font-weight: 500; font-size: 16px;">${booking.title || booking.eventName || 'Event'}</div></div>
         <div style="margin-bottom: 12px;"><strong style="color: #666;">Facility:</strong><br><div style="font-weight: 500;">${facility}</div></div>
@@ -1575,7 +1607,7 @@ function showAdminBookingModal(bookingId) {
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;"><span>\u{1F4E7}</span><span style="font-size: 14px; color: #666;">${booking.residentEmail || 'No email'}</span></div>
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;"><span>\u{1F4DE}</span><span style="font-size: 14px; color: #666;">${booking.residentPhone || 'No phone provided'}</span></div>
         </div>
-        <div style="margin-bottom: 12px;"><strong style="color: #666;">Unit:</strong><br><div>${cleanUnitNumber(booking.unitNumber) || 'Unknown'}</div></div>
+        ${unitFieldHtml}
         ${booking.createdBy === 'Admin' ? '<div style="margin-bottom: 12px; background: var(--info-bg); padding: 10px 12px; border-radius: 2px; font-size: 13px; color: #6d28d9;"><strong>&#128100; Booked by Admin</strong> on this resident\'s behalf via Calendar Manager.</div>' : ''}
         <div><strong style="color: #666;">Status:</strong><br>
             <div style="color: ${isCancelled ? 'var(--error-red)' : (isPast ? '#6c757d' : 'var(--success-green)')}; font-weight: 500;">
