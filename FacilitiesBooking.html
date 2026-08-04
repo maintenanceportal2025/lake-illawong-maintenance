@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.10.0
+  Frontend Version: V2.9.1
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,14 +15,29 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
-  V2.10.0 (Aug 2026): V2.9.0's fix only covered a booking with no
-    resident specified (unitNumber 'Admin'). A booking made on behalf
-    of a real resident (with a real unit number) still looked exactly
-    like that resident's own self-service booking -- nothing recorded
-    who actually created it. Now uses the real createdBy field from
-    backend V1.7: "Unit 9" becomes "Unit 9 (booked by Admin)" when
-    applicable, and the no-resident case still shows "Booked on your
-    behalf by Admin". Requires FacilitiesBooking backend V1.7+.
+  V2.9.1 (Aug 2026): "Booked by" wording overhaul, plus a time-format
+    consistency fix, across this file and CalendarManager.html together.
+    - V2.9.0's isAdminOnlyBooking() fix had the wording backwards: it
+      showed "Booked on your behalf by Admin" specifically for the
+      no-resident case (Block Time, or an admin using a facility for
+      their own purposes) -- exactly the case where nothing was done on
+      anyone's behalf. Replaced with a proper three-case model via the
+      new formatBookedByAdmin(): a resident's own booking is unchanged;
+      an admin booking made for a named resident now reads "Booked by
+      Admin on behalf of {name} • Unit {unit}"; a genuine no-resident
+      admin booking now reads just "Booked by Admin", with no behalf/
+      unit claim attached. Applied to My Bookings' list card and detail
+      modal (replacing the V2.9.0 wording) and to the calendar
+      day-details popup, which previously had no admin-booking handling
+      at all -- it showed the raw resident/unit fields regardless of
+      who actually booked it.
+    - Every toLocaleTimeString() call in this file now explicitly passes
+      hour12: true. Previously most calls left the 12/24-hour choice to
+      the browser/OS's regional format setting, which is why the same
+      booking could appear as "2:00 pm" in one context/device and
+      "14:00" in another despite identical code -- CalendarManager.html
+      had the exact same implicit-locale issue. Both files now force
+      12-hour consistently.
   V2.9.0 (Aug 2026): My Bookings showed the literal text "Unit: Admin"
     for a booking created via Calendar Manager without a specified
     resident (e.g. Block Time) -- reads like a data error, not what it
@@ -1303,13 +1318,18 @@ function showDayDetails(date) {
             facilityEvents.forEach(event => {
                 const startTime = new Date(event.start);
                 const endTime = event.end ? new Date(event.end) : new Date(startTime.getTime() + 3600000);
-                const startStr = startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
-                const endStr = endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+                const startStr = startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true});
+                const endStr = endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true});
+
+                // V2.9.1: three-case "Booked by" wording -- see formatBookedByAdmin().
+                // This popup previously had no admin-booking handling at all.
+                const adminLine = formatBookedByAdmin(event);
+                const bookedByLine = adminLine || `Booked by: ${event.residentName || 'Unknown'} &bull; Unit ${cleanUnitNumber(event.unitNumber) || 'N/A'}`;
 
                 html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 2px; margin-bottom: 8px; border-left: 4px solid ${color};">
                     <div style="font-weight: 500; margin-bottom: 4px;">${startStr} - ${endStr}</div>
                     <div style="font-size: 14px; margin-bottom: 4px;">${event.title || event.eventName || 'Event'}</div>
-                    <div style="font-size: 12px; color: #666;">Booked by: ${event.residentName || 'Unknown'} &bull; Unit ${event.unitNumber || 'N/A'}</div>
+                    <div style="font-size: 12px; color: #666;">${bookedByLine}</div>
                 </div>`;
             });
             html += '</div>';
@@ -1415,7 +1435,7 @@ function checkAvailability() {
             const conflictLines = conflicts.map(c => {
                 const cStart = new Date(c.start);
                 const cEnd = c.end ? new Date(c.end) : new Date(cStart.getTime() + 3600000);
-                const timeStr = `${cStart.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${cEnd.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+                const timeStr = `${cStart.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})} - ${cEnd.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})}`;
                 const who = c.residentName ? ` &mdash; booked by ${c.residentName}` : '';
                 return `<div style="margin-top: 4px;">&bull; ${timeStr}${c.title || c.eventName ? ' (' + (c.title || c.eventName) + ')' : ''}${who}</div>`;
             }).join('');
@@ -1651,7 +1671,7 @@ function renderMyBookings() {
         const startTime = new Date(booking.start);
         const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
         const dateStr = startTime.toLocaleDateString('en-AU', {weekday: 'short', month: 'short', day: 'numeric'});
-        const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+        const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})}`;
 
         let status = 'Upcoming', statusClass = 'status-confirmed';
         if (isCancelled) { status = 'Cancelled'; statusClass = 'status-cancelled'; }
@@ -1662,7 +1682,7 @@ function renderMyBookings() {
                 <div class="booking-title">${booking.title || booking.eventName || 'Event'}</div>
                 <div class="booking-status ${statusClass}">${status}</div>
             </div>
-            <div class="booking-details">${dateStr} &bull; ${timeStr}<br>${unitOrAdminNote(booking)}</div>
+            <div class="booking-details">${dateStr} &bull; ${timeStr}<br>${formatBookedByAdmin(booking) || 'Unit ' + (cleanUnitNumber(booking.unitNumber) || 'N/A')}</div>
         </div>`;
     });
 
@@ -1681,7 +1701,7 @@ function showUserBookingModal(bookingId) {
     const startTime = new Date(booking.start);
     const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
     const dateStr = startTime.toLocaleDateString('en-AU', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
-    const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+    const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})}`;
 
     let html = `<div style="background: #f8f9fa; padding: 16px; border-radius: 2px; margin-bottom: 16px; border-left: 4px solid ${color};">
         <div style="margin-bottom: 12px;"><strong style="color: #666;">Event:</strong><br><div style="font-weight: 500; font-size: 16px;">${booking.title || booking.eventName || 'Event'}</div></div>
@@ -1692,7 +1712,7 @@ function showUserBookingModal(bookingId) {
             <div style="margin-top: 8px;">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;"><span>\u{1F4E7}</span><span>${booking.residentEmail || 'No email provided'}</span></div>
                 <div style="display: flex; align-items: center; gap: 8px;"><span>\u{1F4DE}</span><span>${booking.residentPhone || 'No phone provided'}</span></div>
-                <div style="margin-top: 8px; font-size: 14px; color: #666;">${unitOrAdminNote(booking).replace(/^Unit /, 'Unit: ')}</div>
+                <div style="margin-top: 8px; font-size: 14px; color: #666;">${formatBookedByAdmin(booking) || 'Unit: ' + (cleanUnitNumber(booking.unitNumber) || 'Not specified')}</div>
             </div>
         </div>
         <div><strong style="color: #666;">Status:</strong><br>
@@ -1926,22 +1946,34 @@ function performBookingUpdate(facility, date, startTime, endTime, purpose) {
 // ever type the bare number, so this never showed. Strip any such prefix
 // before it goes into the form or gets submitted, so "Unit Unit #12" in the
 // My Bookings list can't happen going forward.
-// V2.10.0: replaced isAdminOnlyBooking() with the real createdBy field
-// from backend V1.7. The old unitNumber sentinel check only ever caught
-// the no-resident-specified case; a booking made on behalf of a real
-// resident (with a real unit number) was indistinguishable from that
-// resident's own self-service booking. createdBy is a genuine flag set
-// at creation, covering both -- folded into unitOrAdminNote() below
-// rather than kept as a separate now-unused function.
-function unitOrAdminNote(booking) {
-    if (!booking || booking.createdBy !== 'Admin') {
-        return 'Unit ' + (cleanUnitNumber(booking && booking.unitNumber) || 'N/A');
-    }
-    if (booking.unitNumber === 'Admin') {
-        return 'Booked on your behalf by Admin';
-    }
-    return 'Unit ' + cleanUnitNumber(booking.unitNumber) + ' (booked by Admin)';
+// V2.9.0: bookings created via Calendar Manager without a specified
+// resident (e.g. Block Time) carry the sentinel unitNumber 'Admin' --
+// shown here as a clear note rather than literal "Unit: Admin", which
+// reads like a data error rather than what it actually is.
+function isAdminOnlyBooking(booking) {
+    return !!(booking && booking.unitNumber === 'Admin');
 }
+
+// V2.9.1: shared three-case "Booked by" wording, used by the calendar
+// day-popup, My Bookings list card, and My Bookings detail modal alike --
+// same underlying fields (createdBy, residentName, unitNumber) drive all
+// three views, so the wording logic lives in one place rather than being
+// duplicated. Returns null for a resident's own self-service booking
+// (createdBy !== 'Admin'), so the caller falls back to its normal
+// display; returns a ready HTML string for the two admin-created cases.
+// Deliberately does NOT claim a booking was made "on behalf of" anyone
+// when there's no resident attached (Block Time, or an admin's own use
+// of a facility) -- that claim would be false in those cases, which was
+// the actual bug in V2.9.0's isAdminOnlyBooking() wording.
+function formatBookedByAdmin(booking) {
+    if (!booking || booking.createdBy !== 'Admin') return null;
+    if (isAdminOnlyBooking(booking)) {
+        return 'Booked by Admin';
+    }
+    const unit = cleanUnitNumber(booking.unitNumber);
+    return `Booked by Admin on behalf of ${booking.residentName || 'Unknown'}${unit ? ' &bull; Unit ' + unit : ''}`;
+}
+
 function cleanUnitNumber(unit) {
     if (!unit) return '';
     return unit.toString().replace(/^unit\s*#?\s*/i, '').trim();
