@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.7.0
+  Frontend Version: V1.8.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,20 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.8.0 (Aug 2026): Two fixes.
+    - "Booked by: X • Unit Unit 9" -- the resident directory's
+      unitNumber (from getUnitListData) comes through with a "Unit "
+      style prefix already in some records, same root cause fixed in
+      FacilitiesBooking.html, just never ported to this file. Added
+      cleanUnitNumber(), applied both where selectAdminResident()
+      autofills the field (so new bookings won't carry the prefix) and
+      at every read-only unit-number display (so already-written data
+      with the prefix still shows correctly).
+    - This file never actually showed that a booking was Admin-created
+      anywhere in its own views (day-details popup, Manage Bookings
+      list, booking detail modal) -- only FacilitiesBooking.html's My
+      Bookings got that treatment. Added a "Booked by Admin" indicator
+      to all three, using the createdBy field from backend V1.7.
   V1.7.0 (Aug 2026): Quick Create now sends createdBy: 'Admin' with
     every booking, so the backend (V1.7+) can actually record who
     created it -- previously nothing distinguished a Calendar Manager
@@ -1133,7 +1147,7 @@ function showDayDetails(date) {
                 html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 2px; margin-bottom: 8px; border-left: 4px solid ${color};">
                     <div style="font-weight: 500; margin-bottom: 4px;">${startStr} - ${endStr}</div>
                     <div style="font-size: 14px; margin-bottom: 4px;">${event.title || event.eventName || 'Event'}</div>
-                    <div style="font-size: 12px; color: #666;">Booked by: ${event.residentName || 'Unknown'} &bull; Unit ${event.unitNumber || 'N/A'}</div>
+                    <div style="font-size: 12px; color: #666;">Booked by: ${event.residentName || 'Unknown'} &bull; Unit ${cleanUnitNumber(event.unitNumber) || 'N/A'}${event.createdBy === 'Admin' ? ' &bull; <strong>Booked by Admin</strong>' : ''}</div>
                 </div>`;
             });
             html += '</div>';
@@ -1229,7 +1243,7 @@ function selectAdminResident(resident) {
     document.getElementById('adminResidentName').value = resident.residentName || '';
     document.getElementById('adminResidentEmail').value = resident.email || '';
     document.getElementById('adminResidentPhone').value = resident.phone || '';
-    document.getElementById('adminUnitNumber').value = resident.unitNumber || '';
+    document.getElementById('adminUnitNumber').value = cleanUnitNumber(resident.unitNumber);
     document.getElementById('residentLookupResults').classList.remove('active');
 }
 
@@ -1524,8 +1538,9 @@ function renderAdminBookings() {
                 </div>
                 <div class="booking-details">
                     ${dateStr} &bull; ${timeStr}<br>
-                    ${booking.residentName || 'N/A'} &bull; Unit ${booking.unitNumber || 'N/A'}
+                    ${booking.residentName || 'N/A'} &bull; Unit ${cleanUnitNumber(booking.unitNumber) || 'N/A'}
                     ${booking.residentPhone ? ' &bull; \u{1F4DE}' : ''}
+                    ${booking.createdBy === 'Admin' ? '<br><strong style="color: var(--primary-blue);">Booked by Admin</strong>' : ''}
                 </div>
             </div>`;
         });
@@ -1560,7 +1575,8 @@ function showAdminBookingModal(bookingId) {
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;"><span>\u{1F4E7}</span><span style="font-size: 14px; color: #666;">${booking.residentEmail || 'No email'}</span></div>
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;"><span>\u{1F4DE}</span><span style="font-size: 14px; color: #666;">${booking.residentPhone || 'No phone provided'}</span></div>
         </div>
-        <div style="margin-bottom: 12px;"><strong style="color: #666;">Unit:</strong><br><div>${booking.unitNumber || 'Unknown'}</div></div>
+        <div style="margin-bottom: 12px;"><strong style="color: #666;">Unit:</strong><br><div>${cleanUnitNumber(booking.unitNumber) || 'Unknown'}</div></div>
+        ${booking.createdBy === 'Admin' ? '<div style="margin-bottom: 12px; background: var(--info-bg); padding: 10px 12px; border-radius: 2px; font-size: 13px; color: #6d28d9;"><strong>&#128100; Booked by Admin</strong> on this resident\'s behalf via Calendar Manager.</div>' : ''}
         <div><strong style="color: #666;">Status:</strong><br>
             <div style="color: ${isCancelled ? 'var(--error-red)' : (isPast ? '#6c757d' : 'var(--success-green)')}; font-weight: 500;">
                 ${isCancelled ? 'Cancelled' : (isPast ? 'Past' : 'Upcoming')}
@@ -1794,6 +1810,17 @@ function escapeHtml(text) {
 }
 
 // ===== HELPERS =====
+// V1.8.0: resident.unitNumber from the resident directory (getUnitListData)
+// comes through with a "Unit " style prefix already in some records --
+// same root cause fixed in FacilitiesBooking.html, just never ported here.
+// Strip it both where it's autofilled (selectAdminResident) and at every
+// read-only display of a unit number, so "Unit Unit 9" can't happen going
+// forward and already-written data with the prefix still displays right.
+function cleanUnitNumber(unit) {
+    if (!unit) return '';
+    return unit.toString().replace(/^unit\s*#?\s*/i, '').trim();
+}
+
 function formatDate(date) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
