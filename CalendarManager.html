@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.8.1
+  Frontend Version: V1.8.2
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,31 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.8.2 (Aug 2026): "Booked by" wording overhaul, plus a time-format
+    consistency fix, across this file and FacilitiesBooking.html together
+    (see that file's V2.9.1 changelog for the full picture).
+    - V1.8.1's fix (suppress "Unit Admin", keep the separate "Booked by
+      Admin" badge) turned out to still read badly for a real on-behalf-
+      of-resident booking: "Booked by: Tony Barnett • Unit 9 • Booked by
+      Admin" reads like two competing claims about who booked it. Added
+      formatBookedByAdmin() (ported from FacilitiesBooking.html V2.9.1)
+      to replace both the badge and the suppression logic with one
+      consistent line, in three cases: a resident's own booking is
+      unchanged; an admin booking made for a named resident now reads
+      "Booked by Admin on behalf of {name} • Unit {unit}"; a genuine
+      no-resident admin booking (Block Time, or an admin's own use) now
+      reads just "Booked by Admin" -- no behalf/unit claim attached,
+      since nothing was done on anyone's behalf in that case. Applied to
+      the day-details popup and the Manage Bookings list card. The
+      booking detail modal keeps its existing "Booked By:" name/email/
+      phone block (unchanged) but its separate admin info box now uses
+      matching wording for the two admin cases instead of always saying
+      "on this resident's behalf".
+    - Every toLocaleTimeString() call in this file now explicitly passes
+      hour12: true, matching FacilitiesBooking.html V2.9.1 -- previously
+      left to the browser/OS's regional format setting, which is why the
+      same booking could show as "2:00 pm" here and "14:00" there despite
+      identical code in both files.
   V1.8.1 (Aug 2026): "Unit Admin" display fix. Genuine admin-only
     bookings (e.g. Block Time) carry the 'Admin' sentinel in
     unitNumber, since there's deliberately no resident/unit to
@@ -1154,20 +1179,19 @@ function showDayDetails(date) {
             facilityEvents.forEach(event => {
                 const startTime = new Date(event.start);
                 const endTime = event.end ? new Date(event.end) : new Date(startTime.getTime() + 3600000);
-                const startStr = startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
-                const endStr = endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+                const startStr = startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true});
+                const endStr = endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true});
 
-                // V1.8.1: genuine admin-only bookings (Block Time etc.) carry the
-                // 'Admin' sentinel in unitNumber -- suppress the "Unit ..." segment
-                // for that case rather than showing "Unit Admin". The "Booked by
-                // Admin" badge already conveys this, so nothing is lost.
-                const unitLabel = cleanUnitNumber(event.unitNumber);
-                const unitSegment = (unitLabel === 'Admin') ? '' : ` &bull; Unit ${unitLabel || 'N/A'}`;
+                // V1.8.2: three-case "Booked by" wording -- see formatBookedByAdmin().
+                // Replaces the V1.8.1 approach (suppress "Unit Admin" + separate
+                // "Booked by Admin" badge) with one consistent line.
+                const adminLine = formatBookedByAdmin(event);
+                const bookedByLine = adminLine || `Booked by: ${event.residentName || 'Unknown'} &bull; Unit ${cleanUnitNumber(event.unitNumber) || 'N/A'}`;
 
                 html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 2px; margin-bottom: 8px; border-left: 4px solid ${color};">
                     <div style="font-weight: 500; margin-bottom: 4px;">${startStr} - ${endStr}</div>
                     <div style="font-size: 14px; margin-bottom: 4px;">${event.title || event.eventName || 'Event'}</div>
-                    <div style="font-size: 12px; color: #666;">Booked by: ${event.residentName || 'Unknown'}${unitSegment}${event.createdBy === 'Admin' ? ' &bull; <strong>Booked by Admin</strong>' : ''}</div>
+                    <div style="font-size: 12px; color: #666;">${bookedByLine}</div>
                 </div>`;
             });
             html += '</div>';
@@ -1545,16 +1569,17 @@ function renderAdminBookings() {
             const startTime = new Date(booking.start);
             const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
             const dateStr = startTime.toLocaleDateString('en-AU', {weekday: 'short', month: 'short', day: 'numeric'});
-            const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+            const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})}`;
 
             let status = 'Upcoming', statusClass = 'status-confirmed';
             if (isCancelled) { status = 'Cancelled'; statusClass = 'status-cancelled'; }
             else if (isPast) { status = 'Past'; statusClass = 'status-past'; }
 
-            // V1.8.1: suppress "Unit Admin" for genuine admin-only bookings --
-            // see the day-modal fix above for the reasoning.
-            const cardUnitLabel = cleanUnitNumber(booking.unitNumber);
-            const cardUnitSegment = (cardUnitLabel === 'Admin') ? '' : ` &bull; Unit ${cardUnitLabel || 'N/A'}`;
+            // V1.8.2: three-case "Booked by" wording -- see formatBookedByAdmin().
+            // Replaces the V1.8.1 approach (suppress "Unit Admin" + separate
+            // "Booked by Admin" badge on its own line) with one consistent line.
+            const adminLine = formatBookedByAdmin(booking);
+            const bookedBySegment = adminLine || `${booking.residentName || 'N/A'} &bull; Unit ${cleanUnitNumber(booking.unitNumber) || 'N/A'}`;
 
             html += `<div class="booking-card ${facilityClass} ${isCancelled ? 'cancelled' : ''}" onclick="showAdminBookingModal('${booking.id || booking.bookingId || ''}')">
                 <div class="booking-header">
@@ -1563,9 +1588,8 @@ function renderAdminBookings() {
                 </div>
                 <div class="booking-details">
                     ${dateStr} &bull; ${timeStr}<br>
-                    ${booking.residentName || 'N/A'}${cardUnitSegment}
+                    ${bookedBySegment}
                     ${booking.residentPhone ? ' &bull; \u{1F4DE}' : ''}
-                    ${booking.createdBy === 'Admin' ? '<br><strong style="color: var(--primary-blue);">Booked by Admin</strong>' : ''}
                 </div>
             </div>`;
         });
@@ -1588,14 +1612,25 @@ function showAdminBookingModal(bookingId) {
     const startTime = new Date(booking.start);
     const endTime = booking.end ? new Date(booking.end) : new Date(startTime.getTime() + 3600000);
     const dateStr = startTime.toLocaleDateString('en-AU', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
-    const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+    const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})}`;
 
-    // V1.8.1: suppress the whole Unit field for genuine admin-only bookings
-    // (unitNumber === 'Admin' sentinel) rather than showing "Unit: Admin" --
-    // the "Booked by Admin" info box below already covers this case.
+    // V1.8.2: suppress the whole Unit field for genuine admin-only bookings
+    // (unitNumber === 'Admin' sentinel) -- the info box below covers this
+    // case with its own wording instead of a "Unit: Admin" field.
     const modalUnitLabel = cleanUnitNumber(booking.unitNumber);
-    const unitFieldHtml = (modalUnitLabel === 'Admin') ? '' :
+    const isAdminOnly = isAdminOnlyBooking(booking);
+    const unitFieldHtml = isAdminOnly ? '' :
         `<div style="margin-bottom: 12px;"><strong style="color: #666;">Unit:</strong><br><div>${modalUnitLabel || 'Unknown'}</div></div>`;
+
+    // V1.8.2: the admin-booking info box now distinguishes two cases -- on
+    // behalf of a named resident vs. no resident attached at all (Block
+    // Time, or an admin's own use of a facility). The previous wording
+    // ("on this resident's behalf") was wrong for the second case, since
+    // nothing was done on anyone's behalf there.
+    const adminInfoBoxHtml = (booking.createdBy !== 'Admin') ? '' :
+        isAdminOnly
+            ? '<div style="margin-bottom: 12px; background: var(--info-bg); padding: 10px 12px; border-radius: 2px; font-size: 13px; color: #6d28d9;"><strong>&#128100; Booked by Admin</strong> via Calendar Manager.</div>'
+            : '<div style="margin-bottom: 12px; background: var(--info-bg); padding: 10px 12px; border-radius: 2px; font-size: 13px; color: #6d28d9;"><strong>&#128100; Booked by Admin</strong> on this resident\'s behalf via Calendar Manager.</div>';
 
     let html = `<div style="background: #f8f9fa; padding: 16px; border-radius: 2px; margin-bottom: 16px; border-left: 4px solid ${color};">
         <div style="margin-bottom: 12px;"><strong style="color: #666;">Event:</strong><br><div style="font-weight: 500; font-size: 16px;">${booking.title || booking.eventName || 'Event'}</div></div>
@@ -1608,7 +1643,7 @@ function showAdminBookingModal(bookingId) {
             <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;"><span>\u{1F4DE}</span><span style="font-size: 14px; color: #666;">${booking.residentPhone || 'No phone provided'}</span></div>
         </div>
         ${unitFieldHtml}
-        ${booking.createdBy === 'Admin' ? '<div style="margin-bottom: 12px; background: var(--info-bg); padding: 10px 12px; border-radius: 2px; font-size: 13px; color: #6d28d9;"><strong>&#128100; Booked by Admin</strong> on this resident\'s behalf via Calendar Manager.</div>' : ''}
+        ${adminInfoBoxHtml}
         <div><strong style="color: #666;">Status:</strong><br>
             <div style="color: ${isCancelled ? 'var(--error-red)' : (isPast ? '#6c757d' : 'var(--success-green)')}; font-weight: 500;">
                 ${isCancelled ? 'Cancelled' : (isPast ? 'Past' : 'Upcoming')}
@@ -1851,6 +1886,29 @@ function escapeHtml(text) {
 function cleanUnitNumber(unit) {
     if (!unit) return '';
     return unit.toString().replace(/^unit\s*#?\s*/i, '').trim();
+}
+
+// V1.8.2: shared three-case "Booked by" wording, ported from
+// FacilitiesBooking.html V2.9.1 so both files present the same booking
+// the same way. Returns null for a resident's own self-service booking
+// (createdBy !== 'Admin'), so the caller falls back to its normal
+// display; returns a ready HTML string for the two admin-created cases.
+// Deliberately does NOT claim a booking was made "on behalf of" anyone
+// when there's no resident attached (Block Time, or an admin's own use
+// of a facility) -- an admin booking isn't always for a resident, and
+// the previous "Booked by Admin" badge plus separate "Unit Admin" text
+// read like two competing claims about who booked it.
+function isAdminOnlyBooking(booking) {
+    return !!(booking && booking.unitNumber === 'Admin');
+}
+
+function formatBookedByAdmin(booking) {
+    if (!booking || booking.createdBy !== 'Admin') return null;
+    if (isAdminOnlyBooking(booking)) {
+        return 'Booked by Admin';
+    }
+    const unit = cleanUnitNumber(booking.unitNumber);
+    return `Booked by Admin on behalf of ${booking.residentName || 'Unknown'}${unit ? ' &bull; Unit ' + unit : ''}`;
 }
 
 function formatDate(date) {
