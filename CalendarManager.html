@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.8.4
+  Frontend Version: V1.8.5
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,17 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.8.5 (Aug 2026): Two fixes from the same round of testing feedback.
+    - .btn-back-glass was missing `margin-bottom: 20px` -- the identical
+      rule in FacilitiesBooking.html already had it, this one never did,
+      which is why the back link sat flush against .nav-tabs below it
+      with no gap. Added, matching FacilitiesBooking.html exactly.
+    - Manage Bookings now shows "Cancelled by Admin" instead of just
+      "Cancelled" when an admin performed the cancellation, using the new
+      cancelledBy field getBookings() now returns (backend V2.4.0, which
+      also added the underlying "Cancelled By" sheet column). Applied to
+      both the list card and the detail modal -- the day-popup doesn't
+      need this, since it already filters out cancelled bookings.
   V1.8.4 (Aug 2026): Two unrelated fixes landed together.
     - "Back to Admin Portal" was wrapped in a .header-top-row flex div
       that put it above the header/divider entirely, inconsistent with
@@ -375,6 +386,9 @@ TECHNICAL:
         background: rgba(255,255,255,0.08); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.15);
         color: white; padding: 10px 22px; border-radius: 2px; font-weight: 600; cursor: pointer;
         font-size: 0.9rem; text-decoration: none; display: inline-block; transition: all 0.2s; min-height: 44px;
+        margin-bottom: 20px; /* V1.8.5: was missing here -- FacilitiesBooking.html's
+        identical .btn-back-glass rule already had this, this one didn't, which is
+        why the link sat flush against .nav-tabs below it. */
     }
     .btn-back-glass:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.30); }
 
@@ -1632,7 +1646,8 @@ function renderAdminBookings() {
             const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})}`;
 
             let status = 'Upcoming', statusClass = 'status-confirmed';
-            if (isCancelled) { status = 'Cancelled'; statusClass = 'status-cancelled'; }
+            // V1.8.5: show who cancelled it, when it was an admin.
+            if (isCancelled) { status = booking.cancelledBy === 'Admin' ? 'Cancelled by Admin' : 'Cancelled'; statusClass = 'status-cancelled'; }
             else if (isPast) { status = 'Past'; statusClass = 'status-past'; }
 
             // V1.8.2: three-case "Booked by" wording -- see formatBookedByAdmin().
@@ -1706,7 +1721,7 @@ function showAdminBookingModal(bookingId) {
         ${adminInfoBoxHtml}
         <div><strong style="color: #666;">Status:</strong><br>
             <div style="color: ${isCancelled ? 'var(--error-red)' : (isPast ? '#6c757d' : 'var(--success-green)')}; font-weight: 500;">
-                ${isCancelled ? 'Cancelled' : (isPast ? 'Past' : 'Upcoming')}
+                ${isCancelled ? (booking.cancelledBy === 'Admin' ? 'Cancelled by Admin' : 'Cancelled') : (isPast ? 'Past' : 'Upcoming')}
             </div>
         </div>
     </div>
