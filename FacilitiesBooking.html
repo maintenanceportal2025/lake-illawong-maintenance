@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.9.3
+  Frontend Version: V2.9.4
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,14 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.9.4 (Aug 2026): My Bookings now shows "Cancelled by Admin" instead
+    of just "Cancelled" when an admin (not the resident themselves)
+    performed the cancellation via CalendarManager. Uses the new
+    cancelledBy field getBookings() now returns (backend V2.4.0, which
+    also added the underlying "Cancelled By" sheet column and the
+    matching notification wording). Applied to both the My Bookings list
+    card and its detail modal -- the calendar day-popup doesn't need this,
+    since it already filters out cancelled bookings entirely.
   V2.9.3 (Aug 2026): Email is no longer individually required on the
     booking form -- the last of four places found to hard-require email
     specifically rather than accepting email OR phone (the other three:
@@ -1775,7 +1783,10 @@ function renderMyBookings() {
         const timeStr = `${startTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})} - ${endTime.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', hour12: true})}`;
 
         let status = 'Upcoming', statusClass = 'status-confirmed';
-        if (isCancelled) { status = 'Cancelled'; statusClass = 'status-cancelled'; }
+        // V2.9.4: show who cancelled it, when it was an admin -- distinct
+        // from formatBookedByAdmin() above, which is about who made the
+        // *original* booking, not who cancelled it.
+        if (isCancelled) { status = booking.cancelledBy === 'Admin' ? 'Cancelled by Admin' : 'Cancelled'; statusClass = 'status-cancelled'; }
         else if (isPast) { status = 'Past'; statusClass = 'status-past'; }
 
         html += `<div class="booking-card ${facilityClass} ${isCancelled ? 'cancelled' : ''}" onclick="showUserBookingModal('${booking.id || booking.bookingId || ''}')">
@@ -1818,7 +1829,7 @@ function showUserBookingModal(bookingId) {
         </div>
         <div><strong style="color: #666;">Status:</strong><br>
             <div style="color: ${isCancelled ? 'var(--error-red)' : (isPast ? '#6c757d' : 'var(--success-green)')}; font-weight: 500;">
-                ${isCancelled ? 'Cancelled' : (isPast ? 'Past' : 'Upcoming')}
+                ${isCancelled ? (booking.cancelledBy === 'Admin' ? 'Cancelled by Admin' : 'Cancelled') : (isPast ? 'Past' : 'Upcoming')}
             </div>
         </div>
     </div>`;
