@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.8.5
+  Frontend Version: V1.9.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,39 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.9.0 (Aug 2026): Recurring bookings -- admin-only, this file being
+    the only place they can be created or managed (matches backend
+    FacilitiesBooking V2.6.0's createRecurringBooking/cancelSeries
+    actions, scoped and designed in a dedicated session after confirming
+    the original V1.0 file's "Recurring Event" button was always a stub).
+    - Book tab: new "Make this a recurring booking" checkbox reveals a
+      Pattern (Weekly/Fortnightly/Monthly) dropdown and an End Date field.
+      Submit Booking routes to the new createRecurringSeriesBooking() when
+      checked, leaving the existing single-booking createAdminBooking()
+      path completely untouched for the unchecked (default) case -- no
+      shared code was refactored, to avoid any risk of regressing the
+      already-working single-booking flow.
+    - Success is shown via a new showRecurringBookingSuccess() summary
+      modal -- "N occurrences confirmed" plus, when applicable, which
+      dates were skipped due to a conflict. This is a genuinely different
+      shape of result from a single booking (partial success is normal
+      and expected here, not an error state), so it gets its own summary
+      rather than being forced through showAdminBookingSuccess().
+    - Manage Bookings: a booking card belonging to a series now shows a
+      small "Part of series" tag next to its date/time line. The booking
+      detail modal gains a "Cancel Remaining Series" action (alongside the
+      existing Edit/Cancel) for any not-yet-cancelled, not-past booking
+      that has a seriesId -- calls the new cancelSeries backend action,
+      which only touches present-or-future occurrences of that series and
+      leaves past ones as history, same principle as a regular cancel.
+    - Guidelines tab's "Recurring Bookings" section rewritten from "not
+      yet available" to reflect the real behaviour (pattern options,
+      partial-success-on-conflict handling, series cancellation).
+    - Recurring bookings remain deliberately unavailable to residents --
+      FacilitiesBooking.html is untouched by this version. Reasoning
+      (conflict-policy complexity scales badly per-resident, thin real
+      use case at 44 units) was confirmed in the design discussion before
+      any of V1.9.0's code was written.
   V1.8.5 (Aug 2026): Two fixes from the same round of testing feedback.
     - .btn-back-glass was missing `margin-bottom: 20px` -- the identical
       rule in FacilitiesBooking.html already had it, this one never did,
@@ -263,13 +296,14 @@ AUTHENTICATION:
 SYSTEM CONNECTIONS:
   Backend API: FacilitiesBooking backend (JSONP, currently V1.4) —
     getBookings, createBooking, cancelBooking, updateBooking,
-    checkAvailability, testConnection
+    checkAvailability, createRecurringBooking, cancelSeries,
+    testConnection
   URL Parameters: none
 
 PRIMARY FEATURES:
-  Quick-create booking (incl. block-time prefill), facility/status
-  filtered booking list, view booking detail, edit any booking,
-  cancel any booking.
+  Quick-create booking (incl. block-time prefill, recurring series),
+  facility/status filtered booking list, view booking detail, edit any
+  booking, cancel any booking, cancel remaining series.
 
 TECHNICAL:
   Technology: HTML5 + CSS3 + Vanilla JavaScript
@@ -524,6 +558,12 @@ TECHNICAL:
     .status-cancelled { background: var(--error-bg); color: #dc2626; }
     .status-past { background: var(--bg-tertiary); color: var(--text-secondary); }
     .booking-details { font-size: 0.85rem; color: var(--text-secondary); }
+    /* V1.9.0 */
+    .series-tag {
+        display: inline-block; background: var(--info-bg); color: #6d28d9;
+        font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 2px;
+        margin-left: 4px; vertical-align: middle;
+    }
 
     /* ===== ADMIN CHECK RESULT ===== */
     .admin-check-result { margin-top: 10px; }
@@ -799,6 +839,35 @@ TECHNICAL:
                 blank for a genuine admin-only booking (e.g. Block Time for
                 maintenance/cleaning).
             </p>
+            <!-- V1.9.0: recurring booking. Date/Start Time/End Time above are
+                 reused as the first occurrence's date and time-of-day for every
+                 occurrence in the series -- only Pattern and End Date are new. -->
+            <div class="form-group" style="margin-bottom: 4px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--glass-text); font-size: 0.9rem;">
+                    <input type="checkbox" id="adminRecurringToggle" onchange="toggleRecurringOptions()">
+                    Make this a recurring booking
+                </label>
+            </div>
+            <div id="adminRecurringOptions" class="hidden" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Repeats</label>
+                    <select class="glass-select" id="adminRecurringPattern">
+                        <option value="weekly">Weekly</option>
+                        <option value="fortnightly">Fortnightly</option>
+                        <option value="monthly">Monthly (same weekday of month)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Until (inclusive)</label>
+                    <input type="date" class="glass-input" id="adminRecurringEndDate">
+                </div>
+            </div>
+            <p id="adminRecurringHint" class="hidden" style="color: var(--glass-text-muted); font-size: 0.8rem; margin: -8px 0 12px;">
+                Uses the Date/Start Time/End Time above for the first occurrence and
+                every one after it. Any occurrence that conflicts with an existing
+                booking is skipped, not rejected -- you'll get a summary of what was
+                created and what was skipped. Up to 52 occurrences per series.
+            </p>
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="clearAdminForm()">Clear</button>
                 <button class="btn btn-success" onclick="createAdminBooking()">Submit Booking</button>
@@ -884,9 +953,28 @@ TECHNICAL:
             <div class="guideline-section">
                 <h3 class="guideline-heading">&#128197; Recurring Bookings</h3>
                 <div class="guideline-content">
-                    <p>Not yet available. Each booking (including Block Time) is a single, one-off
-                    event — a recurring booking feature is a tracked future enhancement, deliberately
-                    scoped as its own piece of work rather than added ad-hoc.</p>
+                    <p>Available from the Book tab — tick "Make this a recurring booking" to reveal
+                    Pattern (Weekly / Fortnightly / Monthly) and an end date. The Date/Start Time/End
+                    Time fields above are used for every occurrence. Admin-only: residents can't
+                    create a recurring booking themselves.</p>
+                    <div class="policy-item">
+                        <strong>Conflicts skip, they don't block the series</strong>
+                        <p>If an occurrence clashes with an existing booking, that date is skipped and
+                        the rest of the series is still created — you'll see a summary of what was
+                        confirmed and what was skipped, right after submitting.</p>
+                    </div>
+                    <div class="policy-item">
+                        <strong>Cancelling a series</strong>
+                        <p>Open any occurrence's detail (Manage Bookings) and use "Cancel Remaining
+                        Series" — this cancels every not-yet-cancelled occurrence from today onward.
+                        Occurrences that have already happened are kept for record, same as any
+                        regular cancel.</p>
+                    </div>
+                    <div class="policy-item">
+                        <strong>Series length</strong>
+                        <p>Capped at 52 occurrences per series as a sanity check against a mis-set end
+                        date. A genuine need beyond that can be entered as two series.</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1366,6 +1454,21 @@ function clearAdminForm() {
     document.querySelectorAll('#book-tab .facility-option').forEach(opt => opt.classList.remove('selected'));
     document.querySelector('#book-tab .facility-option.clubhouse').classList.add('selected');
     document.getElementById('adminFacility').value = 'Clubhouse';
+    // V1.9.0
+    document.getElementById('adminRecurringToggle').checked = false;
+    document.getElementById('adminRecurringPattern').value = 'weekly';
+    document.getElementById('adminRecurringEndDate').value = '';
+    toggleRecurringOptions();
+}
+
+// V1.9.0: shows/hides the Pattern + End Date fields. Block Time
+// deliberately doesn't touch this toggle -- a block is a one-off by
+// definition, and showBlockTimeModal() already clears the resident
+// fields for the same reason.
+function toggleRecurringOptions() {
+    const checked = document.getElementById('adminRecurringToggle').checked;
+    document.getElementById('adminRecurringOptions').classList.toggle('hidden', !checked);
+    document.getElementById('adminRecurringHint').classList.toggle('hidden', !checked);
 }
 
 function showBlockTimeModal() {
@@ -1442,6 +1545,14 @@ function checkAdminAvailability() {
 }
 
 function createAdminBooking() {
+    // V1.9.0: recurring booking routes to its own function entirely --
+    // deliberately not woven into the logic below, to avoid any risk of
+    // regressing the already-working single-booking flow.
+    if (document.getElementById('adminRecurringToggle').checked) {
+        createRecurringSeriesBooking();
+        return;
+    }
+
     const facility = document.getElementById('adminFacility').value;
     const eventName = document.getElementById('adminEventName').value.trim();
     const date = document.getElementById('adminDate').value;
@@ -1573,6 +1684,128 @@ function closeAdminSuccessModal() {
     if (modal) document.body.removeChild(modal);
 }
 
+// ===== RECURRING BOOKING (V1.9.0) =====
+// Deliberately its own function rather than folded into createAdminBooking()
+// -- same field-gathering shape, but a genuinely different validation set
+// (pattern + end date required) and a genuinely different result shape
+// (partial success is normal here, not an error state), so keeping it
+// separate avoids any risk of regressing the already-working single-
+// booking path above.
+function createRecurringSeriesBooking() {
+    const facility = document.getElementById('adminFacility').value;
+    const eventName = document.getElementById('adminEventName').value.trim();
+    const date = document.getElementById('adminDate').value;
+    const startTime = document.getElementById('adminStartTime').value;
+    const endTime = document.getElementById('adminEndTime').value;
+    const residentNameInput = document.getElementById('adminResidentName').value.trim();
+    const residentEmailInput = document.getElementById('adminResidentEmail').value.trim();
+    const residentPhoneInput = document.getElementById('adminResidentPhone').value.trim();
+    const unitNumberInput = document.getElementById('adminUnitNumber').value.trim();
+    const pattern = document.getElementById('adminRecurringPattern').value;
+    const endDate = document.getElementById('adminRecurringEndDate').value;
+
+    if (!eventName) { showMessage('Please enter event name', 'error', 8000); return; }
+    if (!date) { showMessage('Please select a start date', 'error', 8000); return; }
+    if (!endDate) { showMessage('Please select an end date for the series', 'error', 8000); return; }
+    if (endDate < date) { showMessage('End date must be on or after the start date', 'error', 8000); return; }
+    if (residentNameInput && !residentEmailInput && !residentPhoneInput) {
+        showMessage('Please enter the resident\'s email or phone number as well as their name', 'error', 8000);
+        return;
+    }
+
+    const startDateTime = new Date(date + 'T' + startTime);
+    const endDateTime = new Date(date + 'T' + endTime);
+    if (endDateTime <= startDateTime) { showMessage('End time must be after start time', 'error', 8000); return; }
+
+    if (window.isSubmittingAdminBooking) return;
+    window.isSubmittingAdminBooking = true;
+
+    showLoading(true, 'Creating recurring booking...');
+
+    const normalizedFacility = getFacilityClass(facility);
+    const displayFacility = formatFacilityDisplayName(facility);
+
+    // Same on-behalf-of-resident vs. genuine admin-only logic as
+    // createAdminBooking() -- see that function's V1.4.0/V1.8.4 comments
+    // for the full rationale.
+    const isOnBehalfOfResident = !!residentNameInput;
+    const bookingResidentName = isOnBehalfOfResident ? residentNameInput : 'Admin Booking';
+    const bookingResidentEmail = isOnBehalfOfResident ? residentEmailInput : '';
+    const bookingResidentPhone = isOnBehalfOfResident ? residentPhoneInput : '';
+    const bookingUnitNumber = isOnBehalfOfResident ? (unitNumberInput || 'N/A') : 'Admin';
+
+    const apiData = {
+        purpose: eventName, facility: normalizedFacility,
+        residentName: bookingResidentName, residentEmail: bookingResidentEmail,
+        residentPhone: bookingResidentPhone, unitNumber: bookingUnitNumber,
+        date: date, startTime: startTime, endTime: endTime,
+        pattern: pattern, endDate: endDate
+    };
+
+    callAPI('createRecurringBooking', apiData, function (response) {
+        showLoading(false);
+        window.isSubmittingAdminBooking = false;
+
+        if (response && response.success) {
+            showRecurringBookingSuccess({
+                seriesId: response.seriesId, facility: displayFacility,
+                created: response.created || [], skipped: response.skipped || [],
+                startTime: startTime, endTime: endTime, eventName: eventName,
+                residentName: isOnBehalfOfResident ? bookingResidentName : null
+            });
+            clearAdminForm();
+            loadBookings(true);
+        } else {
+            const msg = response && (response.message || response.error);
+            showMessage('\u274C Failed to create recurring booking: ' + (msg || 'Unknown error'), 'error', 10000);
+        }
+    });
+}
+
+function showRecurringBookingSuccess(details) {
+    const existing = document.getElementById('adminBookingSuccessModal');
+    if (existing) document.body.removeChild(existing);
+
+    const createdCount = details.created.length;
+    const skippedCount = details.skipped.length;
+
+    const createdListHtml = details.created.map(c =>
+        `<div>${new Date(c.date + 'T00:00:00').toLocaleDateString('en-AU', {weekday: 'short', day: 'numeric', month: 'short'})}</div>`
+    ).join('');
+
+    const skippedSectionHtml = skippedCount > 0 ? `
+        <div style="background: var(--warning-bg); border-left: 3px solid var(--warning-amber); padding: 10px 14px; border-radius: 2px; margin-top: 12px; font-size: 13px; color: #92400e; text-align: left;">
+            <strong>${skippedCount} occurrence${skippedCount === 1 ? '' : 's'} skipped</strong> due to a scheduling conflict:<br>
+            ${details.skipped.map(s => `&bull; ${new Date(s.date + 'T00:00:00').toLocaleDateString('en-AU', {weekday: 'short', day: 'numeric', month: 'short'})}${s.reason ? ' (' + s.reason + ')' : ''}`).join('<br>')}
+        </div>` : '';
+
+    const modalOverlay = document.createElement('div');
+    modalOverlay.id = 'adminBookingSuccessModal';
+    modalOverlay.className = 'success-modal-overlay';
+    modalOverlay.innerHTML = `
+        <div class="success-modal-content">
+            <div style="font-size: 56px; color: var(--success-green); margin-bottom: 16px;">\u2705</div>
+            <div style="font-size: 22px; font-weight: 700; color: #166534; margin-bottom: 15px;">Recurring Booking Created!</div>
+            <div style="background: var(--bg-secondary); padding: 20px; border-radius: 2px; margin-bottom: 8px; text-align: left;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                    <div><strong>Facility:</strong></div><div>${details.facility || 'N/A'}</div>
+                    <div><strong>Time:</strong></div><div>${details.startTime || 'N/A'} to ${details.endTime || 'N/A'}</div>
+                    <div><strong>Event:</strong></div><div>${details.eventName || 'N/A'}</div>
+                    ${details.residentName ? `<div><strong>For:</strong></div><div>${details.residentName}</div>` : ''}
+                    <div><strong>Confirmed:</strong></div><div>${createdCount} occurrence${createdCount === 1 ? '' : 's'}</div>
+                </div>
+                <div style="font-size: 13px; color: #666; display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 4px;">
+                    ${createdListHtml}
+                </div>
+            </div>
+            ${skippedSectionHtml}
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 16px;">
+                <button class="btn btn-success" onclick="closeAdminSuccessModal()">OK, Close</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modalOverlay);
+}
+
 // ===== BOOKINGS LIST =====
 function setAdminFacilityFilter(facility) {
     adminFacilityFilter = facility;
@@ -1655,6 +1888,8 @@ function renderAdminBookings() {
             // "Booked by Admin" badge on its own line) with one consistent line.
             const adminLine = formatBookedByAdmin(booking);
             const bookedBySegment = adminLine || `${booking.residentName || 'N/A'} &bull; Unit ${cleanUnitNumber(booking.unitNumber) || 'N/A'}`;
+            // V1.9.0
+            const seriesTagHtml = booking.seriesId ? ' <span class="series-tag">\u{1F501} Part of series</span>' : '';
 
             html += `<div class="booking-card ${facilityClass} ${isCancelled ? 'cancelled' : ''}" onclick="showAdminBookingModal('${booking.id || booking.bookingId || ''}')">
                 <div class="booking-header">
@@ -1662,7 +1897,7 @@ function renderAdminBookings() {
                     <div class="booking-status ${statusClass}">${status}</div>
                 </div>
                 <div class="booking-details">
-                    ${dateStr} &bull; ${timeStr}<br>
+                    ${dateStr} &bull; ${timeStr}${seriesTagHtml}<br>
                     ${bookedBySegment}
                     ${booking.residentPhone ? ' &bull; \u{1F4DE}' : ''}
                 </div>
@@ -1730,9 +1965,17 @@ function showAdminBookingModal(bookingId) {
     </div>`;
 
     if (!isCancelled && !isPast) {
+        // V1.9.0: cancel the rest of the series, in addition to the normal
+        // single-booking edit/cancel actions above. Only shown for a
+        // booking that actually has a seriesId -- a one-off booking never
+        // gets this button.
+        const cancelSeriesBtnHtml = booking.seriesId
+            ? `<button class="btn btn-warning" onclick="adminCancelSeries('${booking.seriesId}')">\u{1F501} Cancel Remaining Series</button>`
+            : '';
         html += `<div class="btn-group">
             <button class="btn btn-primary" onclick="adminEditBooking('${booking.id || booking.bookingId || ''}')">\u270F\uFE0F Edit</button>
             <button class="btn btn-danger" onclick="adminCancelBooking('${booking.id || booking.bookingId || ''}'); closeBookingModal();">\u274C Cancel</button>
+            ${cancelSeriesBtnHtml}
             <button class="btn btn-secondary" onclick="closeBookingModal();">Close</button>
         </div>`;
     } else {
@@ -1758,6 +2001,27 @@ function adminCancelBooking(bookingId) {
             loadBookings(true);
         } else {
             showMessage('\u274C Failed to cancel booking', 'error', 8000);
+        }
+    });
+}
+
+// V1.9.0: cancels every not-yet-cancelled, present-or-future occurrence
+// sharing this seriesId (backend cancelSeries action). Past occurrences
+// are left alone, same principle as a normal cancel -- see backend
+// V2.6.0's cancelSeries() comment for the full rationale.
+function adminCancelSeries(seriesId) {
+    if (!confirm('Cancel ALL remaining occurrences of this recurring booking? Occurrences that have already happened will be kept for record.')) return;
+
+    showLoading(true, 'Cancelling series...');
+    callAPI('cancelSeries', { seriesId: seriesId }, function (response) {
+        showLoading(false);
+        if (response && response.success) {
+            const n = response.cancelledCount || 0;
+            showMessage(`\u2705 Cancelled ${n} remaining occurrence${n === 1 ? '' : 's'} in this series`, 'success', 8000);
+            closeBookingModal();
+            loadBookings(true);
+        } else {
+            showMessage('\u274C Failed to cancel series', 'error', 8000);
         }
     });
 }
