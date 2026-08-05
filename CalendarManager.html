@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.8.2
+  Frontend Version: V1.8.3
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,29 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.8.3 (Aug 2026): Email is no longer individually required in either
+    the create-booking form or the edit-booking modal -- two of four
+    places found to hard-require email specifically rather than accepting
+    email OR phone (the other two: FacilitiesBooking's resident form and
+    the backend itself, fixed alongside this).
+    - createAdminBooking(): was `if (residentNameInput && !residentEmailInput)`
+      -- blocked an on-behalf-of-resident booking whenever a name was
+      entered without an email, even if a phone number was provided.
+      Now only blocks if *both* are missing. Updated the Resident Phone
+      placeholder (was "Optional", now a real example number) and the
+      explanatory hint text to reflect "at least one, not necessarily
+      both" rather than implying phone never matters.
+    - The edit-booking modal had this twice over: an HTML `required` on
+      the Resident Email input, and a second JS check bundling
+      `!residentEmail` into the same condition as genuinely-required
+      fields like date/time/purpose. Removed the HTML `required`, and
+      split the JS check in two -- the real required fields stay
+      required, email/phone gets its own "at least one" check.
+    Matches the backend's V2.2.0 change to handleBookingSubmission() and
+    FacilitiesBooking.html's V2.9.3 change to its own booking form. This
+    was a deliberate email-vs-SMS cost decision (email is free, SMS has a
+    per-message cost) that never accounted for a resident having no email
+    at all -- Stage 2 currently only collects a mobile number.
   V1.8.2 (Aug 2026): "Booked by" wording overhaul, plus a time-format
     consistency fix, across this file and FacilitiesBooking.html together
     (see that file's V2.9.1 changelog for the full picture).
@@ -731,12 +754,13 @@ TECHNICAL:
                 </div>
                 <div class="form-group">
                     <label class="form-label">Resident Phone</label>
-                    <input type="tel" class="glass-input" id="adminResidentPhone" placeholder="Optional">
+                    <input type="tel" class="glass-input" id="adminResidentPhone" placeholder="e.g., 0412 345 678">
                 </div>
             </div>
             <p style="color: var(--glass-text-muted); font-size: 0.8rem; margin: -8px 0 12px;">
                 Booking on behalf of a resident? Start typing their name and select
-                them to fill in their details automatically. Leave Resident Name
+                them to fill in their details automatically. Provide at least one of
+                email or phone for them (not necessarily both). Leave Resident Name
                 blank for a genuine admin-only booking (e.g. Block Time for
                 maintenance/cleaning).
             </p>
@@ -1396,8 +1420,15 @@ function createAdminBooking() {
     if (!eventName) { showMessage('Please enter event name', 'error', 8000); return; }
     if (!date) { showMessage('Please select date', 'error', 8000); return; }
 
-    if (residentNameInput && !residentEmailInput) {
-        showMessage('Please enter the resident\'s email as well as their name', 'error', 8000);
+    // V1.8.3: was `if (residentNameInput && !residentEmailInput)` -- hard
+    // required email specifically whenever a resident name was entered.
+    // Changed to require at least one of email or phone, matching the
+    // backend's V2.2.0 validation and the same fix in FacilitiesBooking's
+    // resident form. A genuine admin-only booking (no resident name at
+    // all) was never affected by this -- bookingResidentEmail falls back
+    // to currentAdminEmail below regardless.
+    if (residentNameInput && !residentEmailInput && !residentPhoneInput) {
+        showMessage('Please enter the resident\'s email or phone number as well as their name', 'error', 8000);
         return;
     }
 
@@ -1760,8 +1791,8 @@ function adminEditBooking(bookingId) {
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                 <div class="form-group">
-                    <label class="form-label required">Resident Email</label>
-                    <input type="email" id="adminEditResidentEmail" class="form-input" value="${booking.residentEmail || ''}" required>
+                    <label class="form-label">Resident Email</label>
+                    <input type="email" id="adminEditResidentEmail" class="form-input" value="${booking.residentEmail || ''}">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Resident Phone</label>
@@ -1796,8 +1827,16 @@ function submitAdminEditBooking(event) {
     const residentPhone = document.getElementById('adminEditResidentPhone').value.trim();
     const unitNumber = document.getElementById('adminEditUnitNumber').value.trim();
 
-    if (!date || !startTime || !endTime || !purpose || !residentName || !residentEmail || !unitNumber) {
+    // V1.8.3: was `... || !residentEmail || ...`, hard-requiring email
+    // specifically as part of one combined check. Split out so email is
+    // no longer individually required -- at least one of email or phone
+    // must be present instead, matching the backend's V2.2.0 validation.
+    if (!date || !startTime || !endTime || !purpose || !residentName || !unitNumber) {
         showMessage('Please fill in all required fields', 'error', 5000);
+        return;
+    }
+    if (!residentEmail && !residentPhone) {
+        showMessage('Please provide an email or phone number for this resident', 'error', 5000);
         return;
     }
 
