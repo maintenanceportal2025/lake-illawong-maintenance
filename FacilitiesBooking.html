@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.9.1
+  Frontend Version: V2.9.2
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,37 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.9.2 (Aug 2026): My Bookings now works regardless of verification
+    method. Real-world testing (phone-only verification, no email on
+    file) surfaced that the whole My Bookings feature was built assuming
+    email as the resident's identity, in three separate places:
+    - handleVerificationSuccess() only auto-revealed My Bookings
+      `if (userData.email)`, despite its own comment saying "no email
+      prompt needed, we already know who they are" -- a phone-verified
+      resident fell through to the old pre-verification "confirm your
+      email" prompt (authSection) instead, which looked like a broken or
+      outdated screen. Now triggers unconditionally, since
+      handleVerificationSuccess() only ever runs after a successful
+      verification by either method (confirmed via VerificationModal's
+      init(), which invokes this callback for both a fresh verification
+      and a restored session).
+    - That authSection prompt itself only accepted an email address (with
+      email-format validation), so there was no way to reach My Bookings
+      via phone even by working around the above. Since mainContent
+      (which contains this tab) is never shown until VerificationModal
+      succeeds, authSection was provably unreachable dead code once the
+      above fix landed -- removed entirely, along with its loadMyBookings()
+      handler, rather than patched to also accept a phone number.
+    - renderMyBookings()'s actual "which bookings are mine" filter only
+      matched booking.residentEmail against currentUserEmail -- no
+      phone-based path existed at all. Added currentUserPhone (populated
+      from the verified session, same as currentUserEmail already was)
+      and a normalizePhoneForMatch() helper, and the filter now matches
+      on either identity.
+    Net effect: a phone-verified resident now sees their own bookings
+    immediately on the My Bookings tab, the same as an email-verified
+    resident always has -- no extra step, matching the whole point of
+    using verification in the first place.
   V2.9.1 (Aug 2026): "Booked by" wording overhaul, plus a time-format
     consistency fix, across this file and CalendarManager.html together.
     - V2.9.0's isAdminOnlyBooking() fix had the wording backwards: it
@@ -773,16 +804,15 @@ TECHNICAL:
     <!-- My Bookings -->
     <div id="mybookings-tab" class="tab-content">
         <div class="form-section glass-form-section">
-            <div id="authSection">
-                <div class="form-title">View Your Bookings</div>
-                <p style="margin-bottom: 16px; color: var(--glass-text-muted);">Confirm your email to view your bookings:</p>
-                <div class="form-group">
-                    <label class="form-label">Your Email</label>
-                    <input type="email" class="glass-input" id="userEmailAuth" placeholder="you@example.com">
-                </div>
-                <button class="btn btn-primary btn-full" onclick="loadMyBookings()">View My Bookings</button>
-            </div>
-
+            <!-- V2.9.2: removed the old "Confirm your email to view your
+                 bookings" prompt (authSection) and its loadMyBookings()
+                 handler. This tab lives inside mainContent, which
+                 VerificationModal only reveals after a successful
+                 verification (email OR phone) -- handleVerificationSuccess()
+                 now unconditionally populates currentUserEmail/
+                 currentUserPhone and shows myBookingsContent as soon as
+                 that happens, so this fallback prompt was provably
+                 unreachable dead code, not a real fallback path. -->
             <div id="myBookingsContent" class="hidden">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
                     <h3 style="margin: 0; color: white;">Your Bookings</h3>
@@ -1003,10 +1033,21 @@ let currentYear = currentDate.getFullYear();
 let allBookings = [];
 let eventsByDate = {};
 let currentUserEmail = '';
+let currentUserPhone = ''; // V2.9.2: added for phone-verified residents -- see handleVerificationSuccess()
 let currentUserData = null;
 let myBookingsFilter = 'upcoming';
 let myBookingsFacilityFilter = 'all';
 let currentTab = 'calendar';
+
+// V2.9.2: light phone normalization for My Bookings matching -- strips
+// everything but digits, so "0412 345 678", "0412-345-678", and
+// "0412345678" all compare equal. Not a full E.164 normalizer (that's
+// NotificationServer's job for actually sending SMS); this only needs to
+// answer "is this the same number the resident verified with".
+function normalizePhoneForMatch(phone) {
+    if (!phone) return '';
+    return phone.toString().replace(/\D/g, '');
+}
 
 // ===== VERIFICATION (V2.0.0) =====
 // Whole-page gate: any verified resident is granted access. No specific
@@ -1052,15 +1093,20 @@ function handleVerificationSuccess(userData) {
     renderCalendar();
     loadBookings(true);
 
-    // Auto-load "My Bookings" for the verified resident -- no email prompt
-    // needed, we already know who they are.
-    if (userData.email) {
-        currentUserEmail = userData.email.toLowerCase();
-        document.getElementById('authSection').classList.add('hidden');
-        document.getElementById('myBookingsContent').classList.remove('hidden');
-        // renderMyBookings() runs once bookings finish loading, via
-        // updateUIFromCache()/loadBookings(true) called just below.
-    }
+    // V2.9.2: this used to only trigger `if (userData.email)`, defeating
+    // its own purpose for a phone-verified resident -- they'd fall through
+    // to the old pre-verification "confirm your email" prompt below
+    // instead, even though handleVerificationSuccess() only ever runs
+    // *after* successful verification (by email or phone -- see
+    // VerificationModal's init(), which invokes this callback for both a
+    // fresh verification and a restored session). Verification succeeding
+    // at all is the only condition that should matter here, regardless of
+    // which method was used, so this no longer checks userData.email.
+    currentUserEmail = userData.email ? userData.email.toLowerCase() : '';
+    currentUserPhone = normalizePhoneForMatch(userData.phone);
+    document.getElementById('myBookingsContent').classList.remove('hidden');
+    // renderMyBookings() runs once bookings finish loading, via
+    // updateUIFromCache()/loadBookings(true) called just below.
 
     // Auto-refresh when tab becomes visible
     document.addEventListener('visibilitychange', function () {
@@ -1167,7 +1213,9 @@ function rebuildDateIndex() {
 function updateUIFromCache() {
     try {
         if (currentTab === 'calendar') updateCalendarEvents();
-        if (currentUserEmail && document.getElementById('myBookingsContent') &&
+        // V2.9.2: was `currentUserEmail && ...`, which skipped this refresh
+        // for phone-verified residents. Either identity now counts.
+        if ((currentUserEmail || currentUserPhone) && document.getElementById('myBookingsContent') &&
             document.getElementById('myBookingsContent').classList.contains('hidden') === false) {
             renderMyBookings();
         }
@@ -1532,7 +1580,18 @@ function submitBooking() {
             showUserBookingSuccess(bookingDetails);
             resetBookingForm();
 
+            // V2.9.2: also update currentUserPhone here, for the same
+            // reason currentUserEmail was already updated -- so a
+            // just-submitted booking matches immediately in My Bookings
+            // even if the form's phone differs slightly in formatting
+            // from what the session originally verified with. Guarded
+            // (unlike the email line above) because the Phone field is
+            // optional on this form -- an unconditional overwrite could
+            // wipe out a perfectly good session phone number if someone
+            // left the field blank, which email can't do since it's
+            // required.
             currentUserEmail = userEmail.toLowerCase();
+            if (userPhone) currentUserPhone = normalizePhoneForMatch(userPhone);
         } else {
             const errorMsg = response ? (response.message || response.error || 'Unknown error') : 'No response from server';
 
@@ -1595,25 +1654,18 @@ function closeSuccessModal() {
 function closeSuccessModalAndShowBookings() {
     closeSuccessModal();
     showTab('mybookings');
-    if (currentUserEmail) {
-        document.getElementById('userEmailAuth').value = currentUserEmail;
-        document.getElementById('authSection').classList.add('hidden');
-        document.getElementById('myBookingsContent').classList.remove('hidden');
-        renderMyBookings();
-    }
+    // V2.9.2: was gated on `if (currentUserEmail)`, and set a value into
+    // the now-removed userEmailAuth field. myBookingsContent is already
+    // shown by handleVerificationSuccess() regardless of verification
+    // method, so this just needs to refresh the render.
+    renderMyBookings();
 }
 
 // ===== MY BOOKINGS =====
-function loadMyBookings() {
-    const email = document.getElementById('userEmailAuth').value.trim().toLowerCase();
-    if (!email) { showMessage('Please enter your email', 'error', 8000); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showMessage('Please enter a valid email', 'error', 8000); return; }
-
-    currentUserEmail = email;
-    document.getElementById('authSection').classList.add('hidden');
-    document.getElementById('myBookingsContent').classList.remove('hidden');
-    renderMyBookings();
-}
+// V2.9.2: loadMyBookings() removed -- it belonged to the old "confirm your
+// email" prompt (authSection), which has been removed as unreachable dead
+// code. See handleVerificationSuccess() for how My Bookings is populated
+// now, from the already-verified session identity.
 
 function setMyBookingsFacilityFilter(facility) {
     myBookingsFacilityFilter = facility;
@@ -1635,11 +1687,26 @@ function setMyBookingsFilter(filter) {
 }
 
 function renderMyBookings() {
-    if (!currentUserEmail) return;
+    // V2.9.2: was `if (!currentUserEmail) return`, which silently blocked
+    // this whole view for phone-verified residents even after the
+    // auth-gate fix above -- there was no phone-based identity to fall
+    // back to at all. Now returns only if there's neither identity, which
+    // shouldn't happen post-verification but is kept as a safe guard.
+    if (!currentUserEmail && !currentUserPhone) return;
 
-    let userBookings = allBookings.filter(booking =>
-        booking && booking.residentEmail && booking.residentEmail.toLowerCase() === currentUserEmail.toLowerCase()
-    );
+    // V2.9.2: match on whichever identity the resident verified with.
+    // A resident with both email and phone on file may have either field
+    // populated on a given booking record depending on what the form had
+    // at submission time, so this checks both rather than assuming email
+    // is always present.
+    let userBookings = allBookings.filter(booking => {
+        if (!booking) return false;
+        const emailMatch = currentUserEmail && booking.residentEmail &&
+            booking.residentEmail.toLowerCase() === currentUserEmail.toLowerCase();
+        const phoneMatch = currentUserPhone && booking.residentPhone &&
+            normalizePhoneForMatch(booking.residentPhone) === currentUserPhone;
+        return emailMatch || phoneMatch;
+    });
 
     if (myBookingsFacilityFilter !== 'all') {
         userBookings = userBookings.filter(booking => getFacilityClass(booking.facility) === getFacilityClass(myBookingsFacilityFilter));
