@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V1.8.3
+  Frontend Version: V1.8.4
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,25 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V1.8.4 (Aug 2026): Two unrelated fixes landed together.
+    - "Back to Admin Portal" was wrapped in a .header-top-row flex div
+      that put it above the header/divider entirely, inconsistent with
+      every other module (FacilitiesBooking.html etc.), which places a
+      plain .btn-back-glass link after .header-divider. Fixed the markup
+      to match and removed the now-unused .header-top-row CSS rule.
+    - Admin-booking notification policy: createAdminBooking() no longer
+      defaults a genuine admin-only booking's email to currentAdminEmail
+      (the admin's own login email). That default was the only reason
+      admin ever got a "Dear Admin Booking" confirmation for their own
+      admin-only bookings (e.g. Block Time) -- per Tony's decision, that
+      notification isn't wanted or needed. Left blank instead; the
+      backend (FacilitiesBooking V2.3.0) now skips queuing a notification
+      entirely when there's no resident contact at all, so this results
+      in no notification going anywhere for a genuine admin-only booking,
+      exactly as intended. The edit-booking modal's contact-method check
+      (V1.8.3, just below) is now also exempted for this same case
+      (unitNumber === 'Admin' sentinel), since it would otherwise block
+      saving any edit to a booking that deliberately has no email/phone.
   V1.8.3 (Aug 2026): Email is no longer individually required in either
     the create-booking form or the edit-booking modal -- two of four
     places found to hard-require email specifically rather than accepting
@@ -346,7 +365,11 @@ TECHNICAL:
             rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
         border-radius: 2px; margin-bottom: 20px;
     }
-    .header-top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    /* V1.8.4: .header-top-row removed -- it wrapped the back-link
+    in a flex row that put it above the header/divider instead of below,
+    inconsistent with every other module (FacilitiesBooking.html etc.),
+    which places a plain .btn-back-glass link after .header-divider.
+    Fixed the markup to match and dropped this now-unused rule. */
 
     .btn-back-glass {
         background: rgba(255,255,255,0.08); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.15);
@@ -649,10 +672,6 @@ TECHNICAL:
 
 <div class="container" id="mainContent" style="display:none;">
 
-    <div class="header-top-row">
-        <a href="AdminPortal.html" class="btn-back-glass">&#8592; Back to Admin Portal</a>
-    </div>
-
     <div class="header">
         <div class="header-content">
             <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
@@ -663,6 +682,8 @@ TECHNICAL:
         </div>
     </div>
     <div class="header-divider"></div>
+
+    <a href="AdminPortal.html" class="btn-back-glass">&#8592; Back to Admin Portal</a>
 
     <div class="nav-tabs">
         <button class="nav-tab active" data-tab="calendar" onclick="showTab('calendar')">Calendar</button>
@@ -1449,9 +1470,17 @@ function createAdminBooking() {
     // on their behalf; fall back to the old "Admin Booking" placeholder
     // only for a genuine admin-only booking (e.g. Block Time), where
     // there's deliberately no resident to attribute it to.
+    // V1.8.4: bookingResidentEmail no longer defaults to currentAdminEmail
+    // for a genuine admin-only booking -- per Tony's decision, admin
+    // doesn't want or need a notification for their own admin-only
+    // bookings, and defaulting to their email was the only reason one was
+    // ever sent. Left blank instead; the backend now skips queuing a
+    // notification entirely when there's no resident contact at all
+    // (see FacilitiesBooking V2.3.0), so this correctly results in no
+    // notification going anywhere for this case, exactly as intended.
     const isOnBehalfOfResident = !!residentNameInput;
     const bookingResidentName = isOnBehalfOfResident ? residentNameInput : 'Admin Booking';
-    const bookingResidentEmail = isOnBehalfOfResident ? residentEmailInput : currentAdminEmail;
+    const bookingResidentEmail = isOnBehalfOfResident ? residentEmailInput : '';
     const bookingResidentPhone = isOnBehalfOfResident ? residentPhoneInput : '';
     const bookingUnitNumber = isOnBehalfOfResident ? (unitNumberInput || 'N/A') : 'Admin';
 
@@ -1835,7 +1864,12 @@ function submitAdminEditBooking(event) {
         showMessage('Please fill in all required fields', 'error', 5000);
         return;
     }
-    if (!residentEmail && !residentPhone) {
+    // V1.8.4: exempt genuine admin-only bookings
+    // (unitNumber === 'Admin' sentinel) from the contact-method
+    // requirement -- these deliberately have no email or phone attached
+    // now (see createAdminBooking()), so this check would otherwise block
+    // saving any edit to one at all.
+    if (unitNumber !== 'Admin' && !residentEmail && !residentPhone) {
         showMessage('Please provide an email or phone number for this resident', 'error', 5000);
         return;
     }
