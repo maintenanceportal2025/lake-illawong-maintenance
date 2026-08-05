@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V2.0.1
+  Frontend Version: V2.0.2
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,13 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V2.0.2 (Aug 2026): Fixed re-verification bug -- SESSION_KEY was
+    'calendarManagerVerified', a module-specific key that never matched
+    AdminPortal's own session key ('portalAdminVerified'), so an admin
+    who'd just verified in AdminPortal was shown the verification modal
+    again anyway on entering Calendar Manager, unlike every other admin
+    module. Now shares AdminPortal's session key, same as ComplaintsManager,
+    DocumentLibraryManager, etc. Role gating (ALLOWED_ROLES) is unaffected.
   V2.0.1 (Aug 2026): Bug fix surfaced by a critical-review pass of the
     whole module. showBlockTimeModal() quick-fills the Book tab for a
     one-off block but never reset the recurring toggle -- if it had been
@@ -323,7 +330,8 @@ VERSION HISTORY:
     - Migrated styling to Design System v2.4.
 
 AUTHENTICATION:
-  VerificationModal (OTP), sessionKey: calendarManagerVerified.
+  VerificationModal (OTP), sessionKey: portalAdminVerified (shared with
+  AdminPortal and all other admin modules -- see V2.0.2).
   ALLOWED_ROLES: Calendar-Manager, Developer. Denied view shown for
   verified users without either role tag.
 
@@ -1072,7 +1080,15 @@ TECHNICAL:
 const CONFIG = {
     BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwHwXWJdSpRP6j3CJVDWSZ_n6vEBjEhpA9wZv1AunaGsCfKPBaIGnzrexJe_8asf6PF/exec',
     MGMT_CENTRAL_URL: 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
-    SESSION_KEY: 'calendarManagerVerified',
+    // V2.0.2: was 'calendarManagerVerified' -- a module-specific key that
+    // didn't match AdminPortal's own session key ('portalAdminVerified'),
+    // so an admin who'd already verified in AdminPortal moments earlier
+    // was re-prompted here anyway, unlike every other admin module
+    // (ComplaintsManager, DocumentLibraryManager, etc.), which all share
+    // AdminPortal's key for exactly this reason. Role gating (ALLOWED_ROLES
+    // below, checked in handleVerificationSuccess()) is unaffected -- it
+    // only reads userData.roleTags, never the session key name itself.
+    SESSION_KEY: 'portalAdminVerified',
     ALLOWED_ROLES: ['Calendar-Manager', 'Developer']
 };
 const BACKEND_URL = CONFIG.BACKEND_URL;
