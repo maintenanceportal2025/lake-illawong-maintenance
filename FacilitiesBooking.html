@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.9.4
+  Frontend Version: V2.9.5
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -15,6 +15,16 @@ DOCUMENT INFORMATION:
   Last Modified:    August 2026
 
 VERSION HISTORY:
+  V2.9.5 (Aug 2026): Week/Month calendar view switcher, ported unchanged
+    from CalendarManager V2.0.0 -- same segmented pill toggle (reusing
+    this file's own filter-pill visual language rather than a dropdown),
+    same Week/Month-only scope (Day and Year both considered and dropped
+    there for the same reasons, which apply equally here), same behaviour
+    for previousMonth()/nextMonth()/goToToday() branching on the active
+    view. See that version's changelog entry for the full design
+    rationale. Booking creation, My Bookings, and Guidelines are
+    unchanged -- this only touches the Calendar tab, same scope as the
+    admin-side version.
   V2.9.4 (Aug 2026): My Bookings now shows "Cancelled by Admin" instead
     of just "Cancelled" when an admin (not the resident themselves)
     performed the cancellation via CalendarManager. Uses the new
@@ -454,7 +464,19 @@ TECHNICAL:
     }
     .calendar-nav-btn:hover { background: var(--glass-bg-strong); }
     .calendar-title { font-size: 1.2rem; font-weight: 700; min-width: 160px; text-align: center; }
-    .calendar-actions { display: flex; gap: 8px; }
+    .calendar-actions { display: flex; gap: 8px; align-items: center; }
+    /* V2.9.5: Week/Month view toggle, ported from CalendarManager V2.0.0
+       -- glass-pill styling scoped to .calendar-section since the base
+       .filter/.facility-filter rule is styled for a white card background
+       (My Bookings), not the glass calendar panel. */
+    .view-toggle { display: flex; gap: 4px; background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 2px; padding: 3px; }
+    .view-toggle-btn {
+        background: transparent; border: none; color: var(--glass-text-muted);
+        padding: 6px 14px; border-radius: 2px; font-size: 0.8rem; font-weight: 600;
+        cursor: pointer; transition: all 0.2s;
+    }
+    .view-toggle-btn:hover { color: white; }
+    .view-toggle-btn.active { background: var(--glass-bg-strong); color: white; }
 
     .week-days {
         display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
@@ -462,6 +484,10 @@ TECHNICAL:
         color: var(--glass-text-muted); text-transform: uppercase;
     }
     .days-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    /* V2.9.5: week view has 7 cells instead of up to 42, so each gets much
+       more room -- taller cells means updateCalendarEvents() can also show
+       more bookings per day before truncating to "+N more". */
+    .days-grid.week-view .day-cell { min-height: 160px; }
     .day-cell {
         background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
         border-radius: 2px; min-height: 70px; padding: 6px; cursor: pointer; transition: all 0.2s;
@@ -482,6 +508,7 @@ TECHNICAL:
     @media (max-width: 600px) {
         .day-cell { min-height: 44px; }
         .day-events-list { align-items: center; }
+        .days-grid.week-view .day-cell { min-height: 90px; }
     }
 
     /* ===== FORM CARD (white, per Design System — dense inputs stay white) ===== */
@@ -726,6 +753,10 @@ TECHNICAL:
                     <button class="calendar-nav-btn" onclick="nextMonth()">&#8250;</button>
                 </div>
                 <div class="calendar-actions">
+                    <div class="view-toggle">
+                        <button class="view-toggle-btn" id="viewToggleWeek" onclick="setCalendarView('week')">Week</button>
+                        <button class="view-toggle-btn active" id="viewToggleMonth" onclick="setCalendarView('month')">Month</button>
+                    </div>
                     <button class="btn btn-secondary btn-small" onclick="goToToday()">Today</button>
                     <button class="btn btn-secondary btn-small" onclick="loadBookings(true)"><span id="refreshIcon">&#128260;</span> Refresh</button>
                 </div>
@@ -1057,6 +1088,10 @@ let isCacheLoading = false;
 let currentDate = new Date();
 let currentMonth = currentDate.getMonth();
 let currentYear = currentDate.getFullYear();
+// V2.9.5: Week/Month calendar view switcher. currentWeekStart is always
+// normalized to that week's Sunday, midnight.
+let currentCalendarView = 'month';
+let currentWeekStart = getWeekStart(currentDate);
 let allBookings = [];
 let eventsByDate = {};
 let currentUserEmail = '';
@@ -1169,23 +1204,67 @@ function showTab(tabName) {
     }
 }
 
+// V2.9.5: these three keep their original names (the calendar header's
+// onclick attributes reference them unchanged) but now branch on
+// currentCalendarView -- shifts by week instead of by month when Week
+// view is active. No change to their month-view behaviour.
 function previousMonth() {
-    currentMonth--;
-    if (currentMonth < 0) { currentMonth = 11; currentYear--; }
-    renderCalendar();
+    if (currentCalendarView === 'week') {
+        currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+    } else {
+        currentMonth--;
+        if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+    }
+    renderCalendarView();
 }
 
 function nextMonth() {
-    currentMonth++;
-    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
-    renderCalendar();
+    if (currentCalendarView === 'week') {
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+    } else {
+        currentMonth++;
+        if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+    }
+    renderCalendarView();
 }
 
 function goToToday() {
     const today = new Date();
     currentMonth = today.getMonth();
     currentYear = today.getFullYear();
-    renderCalendar();
+    currentWeekStart = getWeekStart(today);
+    renderCalendarView();
+}
+
+// V2.9.5: Sunday, midnight, of the week containing the given date.
+function getWeekStart(date) {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    d.setDate(d.getDate() - d.getDay());
+    return d;
+}
+
+function setCalendarView(view) {
+    if (currentCalendarView === view) return;
+    currentCalendarView = view;
+    document.getElementById('viewToggleWeek').classList.toggle('active', view === 'week');
+    document.getElementById('viewToggleMonth').classList.toggle('active', view === 'month');
+
+    if (view === 'week') {
+        currentWeekStart = getWeekStart(new Date(currentYear, currentMonth, 1));
+    } else {
+        currentYear = currentWeekStart.getFullYear();
+        currentMonth = currentWeekStart.getMonth();
+    }
+    renderCalendarView();
+}
+
+// V2.9.5: dispatches to the active view's render function. Both leave the
+// grid populated the same way (a set of .day-cell elements with a
+// data-date attribute), so updateCalendarEvents() and showDayDetails()
+// work unchanged for either view.
+function renderCalendarView() {
+    if (currentCalendarView === 'week') renderWeekView();
+    else renderCalendar();
 }
 
 function loadBookings(forceRefresh = false) {
@@ -1262,6 +1341,7 @@ function renderCalendar() {
 
     const daysGrid = document.getElementById('daysGrid');
     daysGrid.innerHTML = '';
+    daysGrid.classList.remove('week-view'); // V2.9.5
 
     for (let i = 0; i < startingDay; i++) {
         const day = prevMonthDays - startingDay + i + 1;
@@ -1283,6 +1363,41 @@ function renderCalendar() {
     }
 
     updateCalendarEvents();
+}
+
+// V2.9.5: Week view, ported from CalendarManager V2.0.0. Always exactly 7
+// cells (Sun-Sat from currentWeekStart) -- none dimmed as "other month"
+// since every day shown is equally relevant in a week view regardless of
+// which month it falls in.
+function renderWeekView() {
+    const weekEnd = new Date(currentWeekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    document.getElementById('monthTitle').textContent = formatWeekRangeLabel(currentWeekStart, weekEnd);
+
+    const daysGrid = document.getElementById('daysGrid');
+    daysGrid.innerHTML = '';
+    daysGrid.classList.add('week-view');
+
+    const today = new Date();
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(currentWeekStart);
+        d.setDate(d.getDate() + i);
+        const dayCell = createDayCell(d.getDate(), d.getMonth(), d.getFullYear(), true);
+        if (d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()) {
+            dayCell.classList.add('today');
+        }
+        daysGrid.appendChild(dayCell);
+    }
+
+    updateCalendarEvents();
+}
+
+function formatWeekRangeLabel(start, end) {
+    const startOpts = { day: 'numeric', month: 'short' };
+    if (start.getFullYear() !== end.getFullYear()) startOpts.year = 'numeric';
+    const startStr = start.toLocaleDateString('en-AU', startOpts);
+    const endStr = end.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `${startStr} \u2013 ${endStr}`;
 }
 
 function createDayCell(day, month, year, isCurrentMonth) {
@@ -1310,6 +1425,10 @@ function createDayCell(day, month, year, isCurrentMonth) {
 
 function updateCalendarEvents() {
     const isMobile = window.innerWidth <= 768;
+    // V2.9.5: week cells have far more vertical room than month cells (7
+    // cells instead of up to 42), so show more bookings before truncating.
+    const isWeekView = document.getElementById('daysGrid').classList.contains('week-view');
+    const maxVisible = isWeekView ? 6 : 3;
 
     document.querySelectorAll('.day-cell').forEach(dayCell => {
         const dateStr = dayCell.dataset.date;
@@ -1326,11 +1445,11 @@ function updateCalendarEvents() {
                 eventsList.appendChild(dot);
             } else {
                 activeEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
-                activeEvents.slice(0, 3).forEach(event => eventsList.appendChild(createCalendarEventItem(event)));
-                if (activeEvents.length > 3) {
+                activeEvents.slice(0, maxVisible).forEach(event => eventsList.appendChild(createCalendarEventItem(event)));
+                if (activeEvents.length > maxVisible) {
                     const more = document.createElement('div');
                     more.className = 'day-event-item';
-                    more.innerHTML = '<span style="font-style:italic;">+' + (activeEvents.length - 3) + ' more</span>';
+                    more.innerHTML = '<span style="font-style:italic;">+' + (activeEvents.length - maxVisible) + ' more</span>';
                     eventsList.appendChild(more);
                 }
             }
