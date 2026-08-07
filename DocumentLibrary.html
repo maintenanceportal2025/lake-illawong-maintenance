@@ -6,13 +6,19 @@ DOCUMENT INFORMATION:
   File Name:        DocumentLibrary.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.0.1
+  Frontend Version: V2.0.2
   Backend:          DocumentLibrary V2.1
   Status:           PRODUCTION
   Created:          March 2026
-  Last Modified:    July 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V2.0.2 (Aug 2026): System-wide JSONP audit fix -- callAPI() deleted its
+    callback on timeout/success/onerror instead of replacing it with a
+    no-op, and had no settled-guard, so a genuinely late cold-start
+    response could throw "docLibCb_... is not defined" in console. No
+    functional change to document browsing or search.
+
   V1.0.0 (Mar 2026): Initial release — flat list view with sidebar filters
   V2.0.0 (Apr 2026): Full redesign — category-first card grid, Frequently
                      Opened card (sheet-driven via Featured flag), drill-down
@@ -1187,19 +1193,24 @@ function callAPI(action, params) {
     return new Promise(function (resolve, reject) {
         const cbName = 'docLibCb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
         let script;
+        let settled = false;
 
         const timeoutId = setTimeout(function () {
+            if (settled) return;
+            settled = true;
             cleanup();
             reject(new Error('Request timeout'));
         }, 30000);
 
         function cleanup() {
             clearTimeout(timeoutId);
-            delete window[cbName];
+            window[cbName] = function () {};
             if (script && script.parentNode) script.parentNode.removeChild(script);
         }
 
         window[cbName] = function (response) {
+            if (settled) return;
+            settled = true;
             cleanup();
             resolve(response);
         };
@@ -1212,6 +1223,8 @@ function callAPI(action, params) {
         script = document.createElement('script');
         script.src = url.toString();
         script.onerror = function () {
+            if (settled) return;
+            settled = true;
             cleanup();
             reject(new Error('Network request failed'));
         };
