@@ -6,13 +6,29 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.43
+  Frontend Version: V3.0.44
   Backend:          ComplaintsManager V3.0.38
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    July 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V3.0.44 (Aug 2026): System-wide JSONP audit fix -- the single shared
+    cleanup(name) helper deleted the window callback instead of replacing
+    it with a no-op, so a genuinely late cold-start response (arriving
+    after any of the ~10 call sites' timeouts) would throw
+    "cmCallback_...", "escalatePendingCallback_...", etc. "is not defined"
+    in console. All call sites route through this one helper, so the
+    single-line fix closes the race everywhere at once. Reassignment to
+    no-op is inherently idempotent, so no per-call-site settled flag was
+    needed -- whichever handler (success/timeout/onerror) runs first
+    safely blocks the others from acting on stale data. NOTE: none of
+    these call sites remove their <script> tag from the DOM after
+    completion (cleanup() only ever touched the window callback) -- a
+    separate, low-severity accumulation over a long admin session, not
+    fixed here, flagged on the sweep tracker. No functional change to
+    any Complaints Manager action.
+
   V3.0.43 (Jul 2026): doConvertToDispute now passes the complaint's own
     description through to DisputesManager as originatingComplaintDescription
     (URL param). DisputesManager V3.1.1 (backend) already supports
@@ -2173,7 +2189,7 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    function cleanup(name) { delete window[name]; }
+    function cleanup(name) { window[name] = function () {}; }
 
     function handleLoaded(data) {
         if (!data.success) { showPageError(data.error || 'Failed to load complaints.'); return; }
