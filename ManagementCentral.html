@@ -7,13 +7,24 @@ DOCUMENT INFORMATION:
   File Name:        ManagementCentral.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module (Admin Portal)
-  Frontend Version: V1.4.0
+  Frontend Version: V1.4.1
   Backend:          ManagementCentral V1.3.js
   Status:           PRODUCTION
   Created:          2025
-  Last Modified:    March 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.4.1 (Aug 2026): System-wide JSONP audit fix -- makeAPICall() deleted
+                     its callback on success/onerror instead of replacing
+                     it with a no-op, and its timeout guard (`if
+                     (window[callbackName])`) wasn't a true settled-guard,
+                     so a genuinely late cold-start response could throw
+                     "jsonp_callback_... is not defined" or, worse, a
+                     second removeChild() error if two paths fired.
+                     Corrected header's stale "Last Modified: March 2026"
+                     -- didn't match this file's own newest changelog
+                     entry (V1.4.0, Jun 2026). No functional change to
+                     contact/unit management or CSV export.
   V1.0.0 (2025): Initial release — resident and unit management interface
   V1.1.0 (Jun 2026): Glass-morphism pass — Design System V2.2 applied throughout
   V1.2.0 (Jun 2026): Glass button pass; removed Quick Navigation & Test buttons; filter text fix; Back to Portal repositioned; Sub-Categories glass fix; Assigned By → Assigned To
@@ -1220,35 +1231,42 @@ TECHNICAL:
 	window.currentStageFilter = '';
 
 
-        // JSONP API call function - UNCHANGED
+        // JSONP API call function -- fixed Aug 2026, see changelog
         function makeAPICall(action, params = {}) {
             return new Promise((resolve, reject) => {
                 const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
                 const script = document.createElement('script');
                 const queryParams = new URLSearchParams({ action, callback: callbackName, ...params });
-                
+                let settled = false;
+
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    try { document.head.removeChild(script); } catch (e) {}
+                }
+
                 script.src = API_URL + '?' + queryParams.toString();
                 
                 window[callbackName] = function(response) {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(response);
                 };
                 
                 script.onerror = function() {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('Network request failed'));
                 };
                 
                 document.head.appendChild(script);
                 
                 setTimeout(() => {
-                    if (window[callbackName]) {
-                        document.head.removeChild(script);
-                        delete window[callbackName];
-                        reject(new Error('Request timeout'));
-                    }
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    reject(new Error('Request timeout'));
                 }, 15000);
             });
         }
