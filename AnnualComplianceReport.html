@@ -7,8 +7,8 @@ DOCUMENT INFORMATION:
   File Name:        AnnualComplianceReport.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Portal Module
-  Frontend Version: V1.0.2
-  Status:           NEW -- pending deployment
+  Frontend Version: V1.0.3
+  Status:           PRODUCTION
   Created:          Jul 2026
 
 PURPOSE:
@@ -37,6 +37,16 @@ PURPOSE:
   modules rather than ReportsHub's chart-heavy report pattern.
 
 VERSION HISTORY:
+  V1.0.3 (Aug 2026): System-wide JSONP audit fix -- jsonp() deleted its
+    callback on timeout/onerror instead of replacing it with a no-op, so
+    a late-arriving response (slow cold start past the 20s timeout) threw
+    "acr_cb_... is not defined" in console. Also fixed: the <script> tag
+    was never removed from the DOM after completion, leaking one per
+    report generation. Status field corrected from stale "NEW -- pending
+    deployment" to PRODUCTION -- module has been live and card-linked
+    from AdminPortal since Jul 2026. No functional change to report
+    generation, data, or exports.
+
   V1.0.2 (Jul 2026): Complaints Concluded/Open stat fix. renderStats
     previously classified by outcome label -- anything other than
     'Open as at report date' was counted as concluded, which wrongly
@@ -468,20 +478,31 @@ TECHNICAL:
         }).join('&');
         const url = baseUrl + '?' + qs + '&callback=' + callbackName;
 
+        let settled = false;
+        const s = document.createElement('script');
+
+        function cleanup() {
+            window[callbackName] = function () {};
+            try { document.head.removeChild(s); } catch (e) {}
+        }
+
         const timer = setTimeout(function () {
+            if (settled) return;
+            settled = true;
             cleanup();
             if (onError) onError(new Error('Server did not respond. Please try again.'));
         }, timeoutMs || 20000);
 
         window[callbackName] = function (data) {
+            if (settled) return;
+            settled = true;
             clearTimeout(timer); cleanup();
             if (onSuccess) onSuccess(data);
         };
 
-        function cleanup() { delete window[callbackName]; }
-
-        const s = document.createElement('script');
         s.onerror = function () {
+            if (settled) return;
+            settled = true;
             clearTimeout(timer); cleanup();
             if (onError) onError(new Error('Could not reach the server.'));
         };
