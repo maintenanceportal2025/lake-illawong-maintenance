@@ -7,13 +7,26 @@
       File Name:        BulkSubmissionForm.html
       System:           Lake Illawong Management Central System
       Component Type:   Staff Module
-      Frontend Version: V2.2.1
+      Frontend Version: V2.2.2
       Backend:          BulkSubmissionForm V2.0.2
       Status:           PRODUCTION
       Created:          Nov 2025
-      Last Modified:    Mar 2026
+      Last Modified:    Aug 2026
 
     VERSION HISTORY:
+      V2.2.2 (Aug 2026): System-wide JSONP audit fix — callScript() deleted
+                         its callback on completion/onerror instead of
+                         replacing it with a no-op, risking a thrown
+                         "jsonp_callback_... is not defined" if onerror
+                         fired spuriously during Apps Script's redirect
+                         chain ahead of the real response. Also corrected
+                         a stale console.log left at "V1.0" despite the
+                         file being at V2.2.1 for some time. No functional
+                         change. NOTE: this file's changelog has no entry
+                         explaining the V2.1.0 → V2.2.1 jump (Architecture
+                         doc records V2.2.1 as the Silent Completion
+                         checkbox) — not reconstructed here, flagged for
+                         confirmation instead of guessing.
       V1.0.0 (Oct 2025): Initial release with Zone Rep support
       V1.3.0 (Nov 2025): Zone Rep logic removed — Admin/Maintenance only
       V2.0.0 (Nov 2025): Full rebuild — searchable dropdowns, unit grid,
@@ -1633,16 +1646,24 @@ formData.consolidateEmails = true;
                 params.append('callback', callbackName);
                 
                 script.src = `${WEB_APP_URL}?${params.toString()}`;
-                
+
+                let settled = false;
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    try { document.head.removeChild(script); } catch (e) {}
+                }
+
                 window[callbackName] = function(response) {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(response);
                 };
                 
                 script.onerror = function() {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('Script loading failed'));
                 };
                 
@@ -1650,7 +1671,7 @@ formData.consolidateEmails = true;
             });
         }
 
-        console.log('🚀 Bulk Submission Form V1.0 - Cleaned version loaded');
+        console.log('🚀 Bulk Submission Form V2.2.2 loaded');
 
     </script>
 </body>
