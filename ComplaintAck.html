@@ -6,13 +6,23 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintAck.html
   System:           Lake Illawong Management Central System
   Component Type:   Utility / Landing Page
-  Frontend Version: V1.0.3
+  Frontend Version: V1.0.4
   Backend:          ComplaintsManager V2.0
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    May 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.0.4 (Aug 2026): System-wide JSONP audit fix — acknowledgeComplaint()
+    deleted its callback on timeout/onerror instead of replacing it with
+    a no-op, risking a thrown "ackCallback_... is not defined" if the
+    real response arrived after the 15s timeout. Also fixed a separate
+    latent bug found in the same function: cleanup() queried for
+    script[data-ack] to remove the dynamically-created script tag, but
+    nothing ever set that attribute, so the tag was never actually
+    removed — now set on creation. No functional change to the
+    acknowledgement flow itself.
+
   V1.0.3 (May 2026): Structural redesign — content-card + left-border state panels
     to match ComplaintForm.html success panel exactly. statePanel target,
     state-panel-success/info/error classes, back-btn to Admin Portal.
@@ -319,20 +329,28 @@ TECHNICAL:
             + '&callback=' + callbackName;
 
         // Timeout guard — 15 seconds
+        let settled = false;
         const timeout = setTimeout(function () {
+            if (settled) return;
+            settled = true;
             cleanup(callbackName);
             showError('Request timed out.',
                 'The server did not respond in time. Please try again, or open the Admin Portal to update the complaint status manually.');
         }, 15000);
 
         window[callbackName] = function (data) {
+            if (settled) return;
+            settled = true;
             clearTimeout(timeout);
             cleanup(callbackName);
             handleResponse(data, ref);
         };
 
         const script = document.createElement('script');
+        script.setAttribute('data-ack', '');
         script.onerror = function () {
+            if (settled) return;
+            settled = true;
             clearTimeout(timeout);
             cleanup(callbackName);
             showError('Could not reach the server.',
@@ -343,7 +361,7 @@ TECHNICAL:
     }
 
     function cleanup(callbackName) {
-        delete window[callbackName];
+        window[callbackName] = function () {};
         const old = document.querySelector('script[data-ack]');
         if (old) old.remove();
     }
