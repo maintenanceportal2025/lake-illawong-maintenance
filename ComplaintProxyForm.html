@@ -7,13 +7,22 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintProxyForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.3
+  Frontend Version: V1.0.4
   Backend:          ComplaintsManager V3.0.0
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    June 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V1.0.4 (Aug 2026): System-wide JSONP audit fix -- jsonpCall()'s cleanup()
+    deleted its callback instead of replacing it with a no-op (identical
+    pattern to ComplaintForm.html, appears to share origin). A genuinely
+    late cold-start response arriving after the 25s timeout would still
+    try to invoke the now-deleted callback and throw "jsonp_cb_... is not
+    defined" in console. Existing `completed` guard already prevented
+    double-handling of resolve/reject; this closes the remaining
+    late-arrival race. No functional change to proxy submission.
 
   V1.0.3 (Jun 2026): Backend URL updated to ComplaintsManager V3.0.0 deployment.
     No functional changes.
@@ -924,8 +933,8 @@ function isStage1Resident(resident) {
                 };
 
                 function cleanup() {
+                    window[callbackName] = function() {};
                     setTimeout(function() {
-                        delete window[callbackName];
                         if (script.parentNode) script.parentNode.removeChild(script);
                     }, 100);
                 }
