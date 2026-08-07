@@ -1,12 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    Executive Dashboard V1.2.0
-    Updated: April 2026
-    Changes: Dynamic year label, duplicate call cleanup, debug code removed,
-             CSV field name fixes, filter summary removed, Time Period slicer
-             expanded by default, dataset switch filter reset, button row
-             unified, slicer panel amber styling removed
+    Executive Dashboard V1.2.1
+    Updated: August 2026
+    Changes: System-wide JSONP audit fix -- makeRequest() deleted its callback
+             on timeout/success instead of replacing it with a no-op, and had
+             no settled-guard, so a genuinely late cold-start response past
+             the 30s timeout could throw "callback_... is not defined" in
+             console. No functional change to dashboard data or exports.
+             (Prior: V1.2.0 Apr 2026 -- Dynamic year label, duplicate call
+             cleanup, debug code removed, CSV field name fixes, filter
+             summary removed, Time Period slicer expanded by default,
+             dataset switch filter reset, button row unified, slicer panel
+             amber styling removed)
 -->
     
     <head>
@@ -1482,23 +1488,29 @@ let initialLoad = true;
             return new Promise((resolve, reject) => {
                 const callbackName = 'callback_' + Math.random().toString(36).substr(2, 9);
                 const script = document.createElement('script');
+                let settled = false;
+
+                function cleanup() {
+                    window[callbackName] = () => {};
+                    if (script.parentNode) {
+                        script.parentNode.removeChild(script);
+                    }
+                }
+
                 const timeout = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
                     cleanup();
                     reject(new Error('Request timeout'));
                 }, 30000);
 
                 window[callbackName] = (data) => {
+                    if (settled) return;
+                    settled = true;
                     clearTimeout(timeout);
                     cleanup();
                     resolve(data);
                 };
-
-                function cleanup() {
-                    delete window[callbackName];
-                    if (script.parentNode) {
-                        script.parentNode.removeChild(script);
-                    }
-                }
 
                 script.src = API_URL + '?action=' + action + '&callback=' + callbackName;
                 document.body.appendChild(script);
