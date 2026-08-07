@@ -7,13 +7,23 @@ DOCUMENT INFORMATION:
 - File Name:        DesktopExplorer.html
 - System:           Lake Illawong Management Central System
 - Module:           Desktop Problem Data Analytics Interface
-- Version:          v1.1.1
+- Version:          v1.1.2
 - Status:           Production
 - Created:          August 2025
-- Last Modified:    08 May 2026
+- Last Modified:    August 2026
 - Author:           Tony
 
 VERSION HISTORY:
+- v1.1.2 (Aug 2026): System-wide JSONP audit fix. makeRequest() deleted its
+                     callback on timeout/success/onerror instead of replacing
+                     it with a no-op, and had no settled-guard across the
+                     three paths, so a genuinely late cold-start response
+                     (past the 30s timeout, possibly mid-retry) could throw
+                     "callback_... is not defined" in console -- or, if
+                     success fired just after the timeout path had already
+                     removed the script tag, a second removeChild() would
+                     throw trying to remove a node no longer in the DOM.
+                     Existing retry-on-timeout/onerror behaviour unchanged.
 - v1.1.1 (08 May 2026): Exclude Cancelled problems from By Category and By Sub-Category
                         charts; corrected to Australian spelling (Uncategorised)
 - v1.1.0 (11 Jan 2026): Changed default data load to Current only (instead of All Data)
@@ -2023,17 +2033,28 @@ async function makeRequest(action, params = {}, retries = 3) {
         const callbackName = 'callback_' + Math.random().toString(36).substr(2, 9);
         const script = document.createElement('script');
         const queryParams = new URLSearchParams({ action, callback: callbackName, ...params });
-        
+
+        let settled = false;
+        let timer;
+        function cleanup() {
+            window[callbackName] = function() {};
+            try { document.body.removeChild(script); } catch (e) {}
+        }
+
         window[callbackName] = function(data) {
-            document.body.removeChild(script);
-            delete window[callbackName];
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            cleanup();
             console.log(`✅ API Success: ${action}`);
             resolve(data);
         };
         
         script.onerror = async () => {
-            document.body.removeChild(script);
-            delete window[callbackName];
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            cleanup();
             
             // Retry logic for rate limiting
             if (retries > 0) {
@@ -2055,20 +2076,19 @@ async function makeRequest(action, params = {}, retries = 3) {
         document.body.appendChild(script);
         
         // Extended timeout (30 seconds)
-        setTimeout(() => {
-            if (window[callbackName]) {
-                document.body.removeChild(script);
-                delete window[callbackName];
-                
-                // Retry on timeout as well
-                if (retries > 0) {
-                    console.log(`⏰ Timeout - retrying ${action} (${retries} attempts left)`);
-                    makeRequest(action, params, retries - 1)
-                        .then(resolve)
-                        .catch(reject);
-                } else {
-                    reject(new Error(`Request timeout for ${action}`));
-                }
+        timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            
+            // Retry on timeout as well
+            if (retries > 0) {
+                console.log(`⏰ Timeout - retrying ${action} (${retries} attempts left)`);
+                makeRequest(action, params, retries - 1)
+                    .then(resolve)
+                    .catch(reject);
+            } else {
+                reject(new Error(`Request timeout for ${action}`));
             }
         }, 30000); // 30 second timeout
     });
