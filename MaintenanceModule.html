@@ -7,13 +7,24 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.3
+  Frontend Version: V1.2.4
   Backend:          MaintenancePortal V1.5.js
   Status:           PRODUCTION
   Created:          September 2025
-  Last Modified:    May 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.2.4 (Aug 2026): System-wide JSONP audit fix -- makeRequest() deleted
+                     its callback on success/timeout/onerror instead of
+                     replacing it with a no-op, with no settled-guard, so
+                     a genuinely late cold-start response could throw
+                     "jsonp_callback_... is not defined" in console --
+                     compounded by the existing retry-with-backoff logic,
+                     where a stale in-flight request's late arrival could
+                     race a subsequent retry attempt. Existing retry
+                     behaviour (up to 2 retries, progressive backoff)
+                     unchanged. No functional change to problem loading
+                     or updates.
   V1.0.0 (Sep 2025): Production release - unified system integration
   V1.1.0 (Mar 2026): Removed old password authentication - replaced by
                      OTP session guard via VerificationModal (portalFieldOpsVerified)
@@ -3044,9 +3055,13 @@ async function reopenProblem() {
         
         script.src = `${WEB_APP_URL}?${params.toString()}`;
         console.log('* Request URL:', script.src);
-        
+
+        let settled = false;
+
         // Success handler
         window[callbackName] = function(response) {
+            if (settled) return;
+            settled = true;
             console.log('✅ Received JSONP response:', response);
             cleanup();
             resolve(response);
@@ -3054,6 +3069,8 @@ async function reopenProblem() {
         
         // Error handler
         script.onerror = function(error) {
+            if (settled) return;
+            settled = true;
             console.error(`❌ Script loading error (attempt ${retryCount + 1}):`, error);
             cleanup();
             
@@ -3069,6 +3086,8 @@ async function reopenProblem() {
         
         // Timeout handler
         const timeoutId = setTimeout(() => {
+            if (settled) return;
+            settled = true;
             console.error(`⏰ Request timeout (${TIMEOUT_DURATION}ms) on attempt ${retryCount + 1}`);
             cleanup();
             
@@ -3088,7 +3107,7 @@ async function reopenProblem() {
             if (script.parentNode) {
                 document.head.removeChild(script);
             }
-            delete window[callbackName];
+            window[callbackName] = function() {};
         }
         
         document.head.appendChild(script);
