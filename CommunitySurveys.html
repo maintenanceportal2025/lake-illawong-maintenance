@@ -4,10 +4,19 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - COMMUNITY SURVEYS
 =====================================================================
 PURPOSE: Resident interface for viewing and completing community surveys
 PORTAL: Residents Portal (Public Access)
-VERSION: 2.3.1 (Section break styling update)
-LAST UPDATED: May 25, 2026
+VERSION: 2.3.2 (JSONP audit fix)
+LAST UPDATED: August 2026
 BACKEND API: SurveyModule V1.2.1 (JSONP only)
 DESIGN SYSTEM: Lake Illawong Unified v1.4 + Mockup Design
+
+CHANGES IN V2.3.2:
+- FIXED: System-wide JSONP audit — callAPI() deleted its callback on
+  completion/onerror instead of replacing it with a no-op, risking a
+  thrown "surveyCallback_... is not defined" if onerror fired spuriously
+  during Apps Script's redirect chain ahead of the real response. Also
+  fixed: the onerror path never removed the <script> tag from the DOM
+  (only the success path did), leaking a tag per failed call. No
+  functional change to survey loading, submission, or display.
 
 CHANGES IN V2.3.1:
 - CHANGED: Section break background from purple gradient to solid #1e3a8a (portal blue)
@@ -1007,16 +1016,23 @@ CHANGES IN V2.0:
             const callbackName = 'surveyCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
             
             console.log('🔍 Calling API:', action, params);
-            
+
+            let settled = false;
+            const script = document.createElement('script');
+
+            function cleanup() {
+                window[callbackName] = function() {};
+                if (script.parentNode) script.parentNode.removeChild(script);
+            }
+
             window[callbackName] = function(response) {
+                if (settled) return;
+                settled = true;
                 console.log('✅ API Response received:', response);
+                cleanup();
                 callback(response);
-                delete window[callbackName];
-                const script = document.querySelector(`script[src*="${callbackName}"]`);
-                if (script) script.remove();
             };
             
-            const script = document.createElement('script');
             let url = `${SURVEY_API_URL}?action=${action}&callback=${callbackName}`;
             
             // Add additional parameters
@@ -1028,9 +1044,11 @@ CHANGES IN V2.0:
             
             script.src = url;
             script.onerror = function(e) {
+                if (settled) return;
+                settled = true;
                 console.error('❌ Script load error:', e);
+                cleanup();
                 callback({ success: false, error: 'Network error - unable to load script' });
-                delete window[callbackName];
             };
             
             document.head.appendChild(script);
