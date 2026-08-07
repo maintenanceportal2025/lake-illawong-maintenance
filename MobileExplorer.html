@@ -21,14 +21,21 @@ This gives you instant rollback capability and change tracking!
 • File Name: MobileExplorer.html
 • System: Lake Illawong Maintenance Portal (Development)
 • Component Type: Mobile Problem Data Analytics Interface
-• **FRONTEND FILE VERSION: v1.0.0** (This HTML file version)
+• **FRONTEND FILE VERSION: v1.0.1** (This HTML file version)
 • **BACKEND SCRIPT VERSION: V1.0** (EXPLORER V1.0.js)
 • Status: 🚧 DEVELOPMENT (Not Production)
 • Created: August 2025
-• Last Modified: Seet 25th, 2025
+• Last Modified: Aug 2026
 • Backup Location: MyDrive/MaintenancePortal/Backups/holden-mobile-explorer/
 
 📊 FRONTEND VERSION HISTORY:
+• v1.0.1 (Aug 2026): System-wide JSONP audit fix -- makeRequest() deleted its
+  callback on success/onerror instead of replacing it with a no-op, and its
+  timeout guard (`if (window[callbackName])`) wasn't a true settled-guard,
+  so a genuinely late response could throw "jsonp_callback_... is not
+  defined" or a second removeChild() error. Also corrected a typo in Last
+  Modified ("Seet 25th, 2025" -> proper date). No functional change to
+  data loading or display.
 • v1.0.0 (Aug 15, 2025): Initial documentation added for this HTML file
 
 🔗 BACKEND CONNECTION:
@@ -1843,27 +1850,34 @@ async function loadAllData() {
                     callback: callbackName,
                     ...additionalData
                 });
-                
+                let settled = false;
+
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    try { document.head.removeChild(script); } catch (e) {}
+                }
+
                 script.src = `${WEB_APP_URL}?${params.toString()}`;
                 
                 window[callbackName] = function(response) {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(response);
                 };
                 
                 script.onerror = function() {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('Network request failed'));
                 };
                 
                 setTimeout(() => {
-                    if (window[callbackName]) {
-                        document.head.removeChild(script);
-                        delete window[callbackName];
-                        reject(new Error('Request timeout'));
-                    }
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    reject(new Error('Request timeout'));
                 }, 10000);
                 
                 document.head.appendChild(script);
