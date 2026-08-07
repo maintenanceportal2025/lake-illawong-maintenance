@@ -7,12 +7,19 @@ DOCUMENT INFORMATION:
   File Name:        AdminPortal.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Portal
-  Frontend Version: V2.2.5
+  Frontend Version: V2.2.6
   Status:           PRODUCTION
   Created:          Sep 2025
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V2.2.6 (Aug 2026): System-wide JSONP audit fix — logPortalAccess() callback
+                     was deleted on completion/onerror instead of replaced
+                     with a no-op, so a late-arriving response (e.g. after a
+                     spurious onerror during Apps Script's redirect chain)
+                     threw "cbName is not defined" in console even though the
+                     access log write had already succeeded. No functional
+                     change — logging behaviour and payload unchanged.
   V1.0.0 (Sep 2025): Initial release — white card design, password authentication.
  V2.0.0 (Apr 2026): Full glass-morphism redesign — Design System V2.0.
                      Module cards, launch buttons and logout button converted
@@ -969,8 +976,15 @@ Margin-botton: 15px;
 function logPortalAccess(name, unit) {
     var cbName = 'logcb_' + Date.now();
     var script = document.createElement('script');
-    window[cbName] = function() { delete window[cbName]; try { document.head.removeChild(script); } catch(e){} };
-    script.onerror = function() { delete window[cbName]; try { document.head.removeChild(script); } catch(e){} };
+    var settled = false;
+    function finish() {
+        if (settled) return;
+        settled = true;
+        window[cbName] = function() {};
+        try { document.head.removeChild(script); } catch(e){}
+    }
+    window[cbName] = function() { finish(); };
+    script.onerror = function() { finish(); };
     script.src = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
         + '?action=logAccess&callback=' + cbName
         + '&type=Portal-Login'
