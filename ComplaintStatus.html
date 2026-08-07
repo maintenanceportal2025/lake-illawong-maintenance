@@ -6,13 +6,20 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintStatus.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.3.0
+  Frontend Version: V1.3.1
   Backend:          ComplaintsManager V2.3.35 / DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    June 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.3.1 (Aug 2026): System-wide JSONP audit fix -- jsonp() deleted its
+    callback on timeout/success/onerror instead of replacing it with a
+    no-op, and had no settled-guard at all, so a late cold-start response
+    arriving after the 15s timeout would throw "cs_cb_... is not defined"
+    in console. Used by both loadComplaints and loadDisputes. No
+    functional change to status display.
+
   V1.3.0 (Jun 2026): Dispute records added alongside complaints.
     After loading complaints via getComplaintsByUnit (ComplaintsManager),
     also calls getDisputesByUnit (DisputesManager V3.0.0) and renders
@@ -396,21 +403,34 @@ TECHNICAL:
         }).join('&');
         const url = backendUrl + '?' + qs + '&callback=' + callbackName;
 
+        let settled = false;
+        const s = document.createElement('script');
+
+        function cleanup() {
+            window[callbackName] = function () {};
+            try { document.head.removeChild(s); } catch (e) {}
+        }
+
         const timer = setTimeout(function () {
-            delete window[callbackName];
+            if (settled) return;
+            settled = true;
+            cleanup();
             if (onError) onError('Server did not respond. Please try refreshing.');
         }, 15000);
 
         window[callbackName] = function (data) {
+            if (settled) return;
+            settled = true;
             clearTimeout(timer);
-            delete window[callbackName];
+            cleanup();
             if (onSuccess) onSuccess(data);
         };
 
-        const s = document.createElement('script');
         s.onerror = function () {
+            if (settled) return;
+            settled = true;
             clearTimeout(timer);
-            delete window[callbackName];
+            cleanup();
             if (onError) onError('Could not reach the server.');
         };
         s.src = url;
