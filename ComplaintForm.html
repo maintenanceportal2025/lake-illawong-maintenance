@@ -4,16 +4,39 @@ ComplaintForm.html - RESIDENT COMPLAINT SUBMISSION FORM
 =====================================================================
 
 DOCUMENT INFORMATION:
-  File Name:        ComplaintForm_V2_0_0.html
+  File Name:        ComplaintForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.0.6
+  Frontend Version: V2.0.8
   Backend:          ComplaintsManager V2.2.0
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    June 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V2.0.8 (Aug 2026): Retired lookupContactDetails() / getUnitResidents lookup.
+    VerificationModal now resolves email/phone directly during OTP
+    verification (see VerificationModal Aug 2026 change log), so the
+    separate ManagementCentral round-trip this module made on every page
+    load and again on submit-retry was redundant. handleVerificationSuccess
+    now sets contactLookupSuccess from userData.email directly; the submit
+    handler's Promise-wrapped retry logic collapsed to a direct check since
+    there's no longer a second lookup to retry. CONFIG.MGMT_URL is no
+    longer referenced (left in place, harmless, in case a future need for
+    a direct ManagementCentral call arises). No change to backend payload,
+    validation rules, or the "email required to submit" guard.
+
+  V2.0.7 (Aug 2026): System-wide JSONP audit fix -- jsonpCall()'s cleanup()
+    deleted its callback instead of replacing it with a no-op, so a
+    genuinely late cold-start response (arriving after the 25s timeout
+    had already rejected the promise) would still try to invoke the
+    now-deleted callback and throw "jsonp_cb_... is not defined" in
+    console. Existing `completed` guard already prevented double-handling
+    of resolve/reject; this closes the remaining late-arrival race. Also
+    corrected stale header File Name field (was "ComplaintForm_V2_0_0.html"
+    -- wrong filename convention and six versions out of date). No
+    functional change to submission or contact-lookup behaviour.
+
   V2.0.6 (Jun 2026): Contact detail guard fixed.
     Previous check used currentUserData.phone || currentUserData.mobile
     which passed because session mobile was always present.
@@ -614,31 +637,15 @@ PORTAL:
             document.getElementById('residentName').value = userData.name;
             document.getElementById('residentUnit').value = userData.unit;
 
-            // Look up full contact details from UnitList via ManagementCentral
-            lookupContactDetails(userData.unit, userData.name);
+            // Contact details (email/phone) come directly from VerificationModal --
+            // it already resolves them from UnitList during OTP verification, so
+            // the separate getUnitResidents lookup this module used to perform
+            // (lookupContactDetails, retired Aug 2026) is no longer needed.
+            contactLookupSuccess = !!userData.email;
+            console.log('Contact details from VerificationModal: email=' + userData.email + ' phone=' + userData.phone + ' success=' + contactLookupSuccess);
 
             // Load categories from backend (runs in parallel)
             loadCategories();
-        }
-
-        function lookupContactDetails(unitNumber, verifiedName) {
-            return jsonpCall({ action: 'getUnitResidents', unitNumber: unitNumber }, CONFIG.MGMT_URL)
-                .then(function(response) {
-                    if (response.success && response.residents && response.residents.length > 0) {
-                        const match = response.residents.find(function(r) {
-                            return r.name === verifiedName;
-                        }) || response.residents[0];
-                        currentUserData.email = match.email || '';
-                        currentUserData.phone = match.phone || '';
-                        contactLookupSuccess  = !!match.email; // Only flag success if email present
-                        console.log('lookupContactDetails: email=' + currentUserData.email + ' phone=' + currentUserData.phone + ' success=' + contactLookupSuccess);
-                    } else {
-                        console.warn('lookupContactDetails: no residents found for unit ' + unitNumber);
-                    }
-                })
-                .catch(function(err) {
-                    console.warn('lookupContactDetails failed: ' + err.message);
-                });
         }
 
         function loadCategories() {
@@ -680,63 +687,50 @@ PORTAL:
             submitBtn.disabled    = true;
             submitBtn.textContent = 'Submitting...';
 
-            // If contact lookup hasn't succeeded, retry before submitting.
-            // contactLookupSuccess is only true when UnitList returned an email.
-            // Session mobile alone is not sufficient -- email is required for
-            // complaint notifications to be sent.
-            var contactReady = contactLookupSuccess
-                ? Promise.resolve()
-                : lookupContactDetails(currentUserData.unit, currentUserData.name);
-
-            contactReady.then(function() {
-
-                // If still no email after retry, warn resident and abort
-                if (!contactLookupSuccess || !currentUserData.email) {
-                    alert('Your contact details could not be retrieved at this time. Please try again in a moment. If the problem persists, please contact System Support.');
-                    submitBtn.disabled    = false;
-                    submitBtn.textContent = 'Submit Complaint';
-                    return;
-                }
-
-                const formData = {
-                    action:           'submitComplaint',
-                    residentName:     document.getElementById('residentName').value,
-                    unitNumber:       document.getElementById('residentUnit').value,
-                    contactEmail:     currentUserData.email  || '',
-                    contactMobile:    currentUserData.phone  || currentUserData.mobile || '',
-                    category:         document.getElementById('category').value,
-                    description:      document.getElementById('description').value,
-                    desiredOutcome:   document.getElementById('resolution').value,
-                    incidentDateTime: document.getElementById('incidentDateTime').value,
-                    location:         document.getElementById('location').value,
-                    peopleInvolved:   document.getElementById('peopleInvolved').value,
-                    previousActions:  document.getElementById('previousActions').value,
-                    howSubmitted:     'Digital'
-                };
-
-                jsonpCall(formData)
-                    .then(function(response) {
-                        if (response.success) {
-                            document.getElementById('referenceNumber').textContent = response.referenceNumber;
-                            document.getElementById('formView').classList.add('hidden');
-                            document.getElementById('successView').classList.remove('hidden');
-                        } else {
-                            alert('Submission failed: ' + (response.error || 'Please try again or contact management.'));
-                            submitBtn.disabled    = false;
-                            submitBtn.textContent = 'Submit Complaint';
-                        }
-                    })
-                    .catch(function(submitErr) {
-                        alert('A network error occurred. Please check your connection and try again.');
-                        submitBtn.disabled    = false;
-                        submitBtn.textContent = 'Submit Complaint';
-                    });
-
-            }).catch(function() {
-                alert('Your contact details could not be retrieved. Please try again in a moment. If the problem persists, please contact System Support.');
+            // Contact details (email/phone) come from VerificationModal, resolved
+            // at verification time. Email is required for complaint notifications
+            // to be sent -- if it's missing, the resident needs to re-verify
+            // rather than retry a lookup that no longer exists.
+            if (!contactLookupSuccess || !currentUserData.email) {
+                alert('Your contact details could not be retrieved. Please close this page, reopen the Complaint Form, and verify again. If the problem persists, please contact System Support.');
                 submitBtn.disabled    = false;
                 submitBtn.textContent = 'Submit Complaint';
-            });
+                return;
+            }
+
+            const formData = {
+                action:           'submitComplaint',
+                residentName:     document.getElementById('residentName').value,
+                unitNumber:       document.getElementById('residentUnit').value,
+                contactEmail:     currentUserData.email  || '',
+                contactMobile:    currentUserData.phone  || currentUserData.mobile || '',
+                category:         document.getElementById('category').value,
+                description:      document.getElementById('description').value,
+                desiredOutcome:   document.getElementById('resolution').value,
+                incidentDateTime: document.getElementById('incidentDateTime').value,
+                location:         document.getElementById('location').value,
+                peopleInvolved:   document.getElementById('peopleInvolved').value,
+                previousActions:  document.getElementById('previousActions').value,
+                howSubmitted:     'Digital'
+            };
+
+            jsonpCall(formData)
+                .then(function(response) {
+                    if (response.success) {
+                        document.getElementById('referenceNumber').textContent = response.referenceNumber;
+                        document.getElementById('formView').classList.add('hidden');
+                        document.getElementById('successView').classList.remove('hidden');
+                    } else {
+                        alert('Submission failed: ' + (response.error || 'Please try again or contact management.'));
+                        submitBtn.disabled    = false;
+                        submitBtn.textContent = 'Submit Complaint';
+                    }
+                })
+                .catch(function(submitErr) {
+                    alert('A network error occurred. Please check your connection and try again.');
+                    submitBtn.disabled    = false;
+                    submitBtn.textContent = 'Submit Complaint';
+                });
         });
 
         function jsonpCall(params, baseUrl) {
@@ -767,8 +761,8 @@ PORTAL:
                 
 
                 function cleanup() {
+                    window[callbackName] = function() {};
                     setTimeout(function() {
-                        delete window[callbackName];
                         if (script.parentNode) script.parentNode.removeChild(script);
                     }, 100);
                 }
