@@ -7,10 +7,10 @@ DOCUMENT INFORMATION:
   File Name:        CorrespondenceChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.14
+  Frontend Version: V1.0.15
   Status:           PRODUCTION
   Created:          June 2026
-  Last Modified:    June 2026
+  Last Modified:    Aug 2026
 
 PURPOSE:
   Correspondence Chronicle -- unified, filtered correspondence record
@@ -28,6 +28,18 @@ PURPOSE:
   role tag. JSONP architecture -- no POST, no CORS.
 
 VERSION HISTORY:
+  V1.0.15 (Aug 2026): System-wide JSONP audit fix -- four separate JSONP
+    call sites (fetchComplaints, fetchDisputes, the shared cleanup() used
+    by loadMatter, and loadEvents) deleted their callbacks on
+    timeout/onerror instead of replacing them with a no-op, risking
+    "searchCb_..., cbName_..., eventsCallback_..." "is not defined" in
+    console on a genuinely late cold-start response. Also fixed:
+    fetchComplaints/fetchDisputes and loadEvents never removed their
+    <script> tags from the DOM on any path (the shared cleanup() already
+    did this correctly via querySelector -- only its delete call needed
+    fixing). No functional change to search, matter loading, or the
+    Events tab.
+
   V1.0.14 (Jun 2026): Hide Review Due from dispute header once matter
     is resolved, referred, or closed. Was showing a stale review date
     on completed matters. buildMetaFields and print matter-summary both
@@ -537,13 +549,25 @@ function doSearch() {
         var action = isUnit ? 'getComplaintsByUnit' : 'getComplaintsByName';
         var param  = isUnit ? 'unit=' + encodeURIComponent(unitQuery) : 'name=' + encodeURIComponent(query);
         var url = CONFIG.COMPLAINTS_BACKEND + '?action=' + action + '&' + param + '&callback=' + cbName;
-        var t = setTimeout(function() { delete window[cbName]; complaints = []; done++; if (done === 2) onBothDone(); }, 10000);
+        var s = document.createElement('script');
+        var settled = false;
+        function cleanup() {
+            window[cbName] = function() {};
+            try { document.head.removeChild(s); } catch (e) {}
+        }
+        var t = setTimeout(function() {
+            if (settled) return;
+            settled = true;
+            cleanup(); complaints = []; done++; if (done === 2) onBothDone();
+        }, 10000);
         window[cbName] = function(data) {
-            clearTimeout(t); delete window[cbName];
+            if (settled) return;
+            settled = true;
+            clearTimeout(t); cleanup();
             complaints = (data && data.success && data.complaints) ? data.complaints : [];
             done++; if (done === 2) onBothDone();
         };
-        var s = document.createElement('script'); s.src = url; document.head.appendChild(s);
+        s.src = url; document.head.appendChild(s);
     }
 
     function fetchDisputes() {
@@ -551,13 +575,25 @@ function doSearch() {
         var action = isUnit ? 'getDisputesByUnit' : 'getDisputesByName';
         var param  = isUnit ? 'unit=' + encodeURIComponent(unitQuery) : 'name=' + encodeURIComponent(query);
         var url = CONFIG.DISPUTES_BACKEND + '?action=' + action + '&' + param + '&callback=' + cbName;
-        var t = setTimeout(function() { delete window[cbName]; disputes = []; done++; if (done === 2) onBothDone(); }, 10000);
+        var s = document.createElement('script');
+        var settled = false;
+        function cleanup() {
+            window[cbName] = function() {};
+            try { document.head.removeChild(s); } catch (e) {}
+        }
+        var t = setTimeout(function() {
+            if (settled) return;
+            settled = true;
+            cleanup(); disputes = []; done++; if (done === 2) onBothDone();
+        }, 10000);
         window[cbName] = function(data) {
-            clearTimeout(t); delete window[cbName];
+            if (settled) return;
+            settled = true;
+            clearTimeout(t); cleanup();
             disputes = (data && data.success && data.disputes) ? data.disputes : [];
             done++; if (done === 2) onBothDone();
         };
-        var s = document.createElement('script'); s.src = url; document.head.appendChild(s);
+        s.src = url; document.head.appendChild(s);
     }
 
     fetchComplaints();
@@ -685,7 +721,7 @@ function loadMatter(fromSearch) {
 }
 
 function cleanup(name) {
-    delete window[name];
+    window[name] = function() {};
     var s = document.querySelector('script[src*="' + name + '"]');
     if (s && s.parentNode) s.parentNode.removeChild(s);
 }
@@ -697,9 +733,18 @@ function loadEvents(ref) {
     const isComp  = ref.startsWith('COMP-');
     const backend = isComp ? CONFIG.COMPLAINTS_BACKEND : CONFIG.DISPUTES_BACKEND;
     const cbName  = 'eventsCallback_' + Date.now();
+    const s = document.createElement('script');
+    let settled = false;
+
+    function cleanupEvents() {
+        window[cbName] = function() {};
+        try { document.head.removeChild(s); } catch (e) {}
+    }
 
     const timeout = setTimeout(function() {
-        delete window[cbName];
+        if (settled) return;
+        settled = true;
+        cleanupEvents();
         // Guard: discard if user has loaded a different matter since
         if (!currentMatter || currentMatter.referenceNumber !== ref) return;
         currentEvents = [];
@@ -707,17 +752,20 @@ function loadEvents(ref) {
     }, 12000);
 
     window[cbName] = function(data) {
+        if (settled) return;
+        settled = true;
         clearTimeout(timeout);
-        delete window[cbName];
+        cleanupEvents();
         if (!currentMatter || currentMatter.referenceNumber !== ref) return;
         currentEvents = (data && data.success && data.events) ? data.events : [];
         updateEventSections(currentEvents);
     };
 
-    const s = document.createElement('script');
     s.onerror = function() {
+        if (settled) return;
+        settled = true;
         clearTimeout(timeout);
-        delete window[cbName];
+        cleanupEvents();
         if (!currentMatter || currentMatter.referenceNumber !== ref) return;
         currentEvents = [];
         updateEventSections([]);
