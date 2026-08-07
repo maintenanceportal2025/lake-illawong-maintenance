@@ -5,14 +5,21 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.9 - Long filename display: wraps in doc list and edit modal
-LAST UPDATED: July 2026
+VERSION: V2.10 - System-wide JSONP audit fix: callMgmt/callDocLib deleted
+         their callback on success/onerror instead of replacing it with a
+         no-op, and had no settled-guard, so a spurious onerror during
+         Apps Script's redirect chain could race a real late response and
+         throw "jmgmt_.../jcb_... is not defined" in console. No functional
+         change to document management. (Prior: V2.9 -- long filename
+         display, wraps in doc list and edit modal)
+LAST UPDATED: August 2026
 BACKEND API: DocumentLibrary.js V2.1
 DESIGN SYSTEM: Lake Illawong Unified V2.4
 - Header: Transparent with logo (V1.4 standard)
 - Colors: Primary gradient page background
 - Layout: White content cards on gradient
-- API Protocol: JSONP with proper callback cleanup
+- API Protocol: JSONP with proper callback cleanup (fixed V2.10, Aug 2026 --
+  previously deleted the callback rather than replacing it with a no-op)
 AUTHENTICATION: VerificationModal V1.0 (OTP via ManagementCentral)
 - Allowed roles: Doc Manager, Admin
 - Session: sessionStorage (cleared on browser close)
@@ -1190,10 +1197,13 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     function callMgmt(action, params, callback) {
         const cbName = 'jmgmt_' + Date.now() + '_' + Math.floor(Math.random() * 99999);
         let script;
+        let settled = false;
 
         window[cbName] = function(response) {
+            if (settled) return;
+            settled = true;
             try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            delete window[cbName];
+            window[cbName] = function() {};
             callback(response);
         };
 
@@ -1207,8 +1217,10 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         script = document.createElement('script');
         script.src = url.toString();
         script.onerror = function() {
+            if (settled) return;
+            settled = true;
             try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            delete window[cbName];
+            window[cbName] = function() {};
             callback({ success: false, error: 'Connection failed' });
         };
         document.head.appendChild(script);
@@ -1257,10 +1269,13 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     function callDocLib(action, params, callback) {
         const cbName = 'jcb_' + Date.now() + '_' + Math.floor(Math.random() * 99999);
         let script;
+        let settled = false;
 
         window[cbName] = function(response) {
+            if (settled) return;
+            settled = true;
             try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            delete window[cbName];
+            window[cbName] = function() {};
             callback(response);
         };
 
@@ -1274,8 +1289,10 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         script = document.createElement('script');
         script.src = url.toString();
         script.onerror = function() {
+            if (settled) return;
+            settled = true;
             try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            delete window[cbName];
+            window[cbName] = function() {};
             callback({ success: false, error: 'Connection failed' });
         };
         document.head.appendChild(script);
