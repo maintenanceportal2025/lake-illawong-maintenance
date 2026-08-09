@@ -3,15 +3,16 @@
 LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - UPDATE MY DETAILS
 =====================================================================
 PURPOSE: Self-service contact details update for residents
-VERSION: 3.3
-LAST UPDATED: May 2026
+VERSION: 3.4
+LAST UPDATED: August 2026
 ARCHITECTURE: V5.6
 
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)
 - Surfaces: Glass panels (rgba(255,255,255,0.08) + backdrop-filter)
 - Header: Transparent with logo, white text
-- API Protocol: JSONP with proper callback cleanup
+- API Protocol: JSONP with proper callback cleanup (fixed V3.4, Aug 2026 --
+  previously deleted the callback rather than replacing it with a no-op)
 
 AUTHENTICATION: Standalone OTP via VerificationModal_V1_0.js
 - VerificationModal.init() fires on DOMContentLoaded
@@ -40,6 +41,14 @@ RELATED FILES:
   ComplaintForm.html, ComplaintStatus.html (share session)
 
 CHANGE LOG
+- V3.4 (Aug 2026): System-wide JSONP audit fix -- fetchCurrentValue() and
+                   submitUpdate() both deleted their callback on
+                   completion/onerror instead of replacing it with a
+                   no-op. Neither has a timeout (onerror-only), so this
+                   was the redirect-chain race variant: a spurious onerror
+                   during Apps Script's redirect could race a genuinely
+                   late response and throw "jsonp_..." "is not defined".
+                   No functional change to the update flow itself.
 - V3.3 (May 2026): Full rewrite. Removed multi-step screen flow and
                    second verifyIdentity API call. Now uses userData
                    from VerificationModal session directly, consistent
@@ -570,9 +579,12 @@ function selectOption(type) {
 function fetchCurrentValue(type) {
     const callbackName = 'jsonp_cur_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
     const script = document.createElement('script');
+    let settled = false;
 
     window[callbackName] = function(response) {
-        delete window[callbackName];
+        if (settled) return;
+        settled = true;
+        window[callbackName] = function() {};
         try { document.head.removeChild(script); } catch(e) {}
         if (response.success && response.residents && response.residents.length > 0) {
             const resident = response.residents.find(function(r) {
@@ -583,7 +595,9 @@ function fetchCurrentValue(type) {
     };
 
     script.onerror = function() {
-        delete window[callbackName];
+        if (settled) return;
+        settled = true;
+        window[callbackName] = function() {};
         try { document.head.removeChild(script); } catch(e) {}
         // Non-fatal — oldValue will be empty string if fetch fails
     };
@@ -636,9 +650,12 @@ function submitUpdate() {
 
     const callbackName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
     const script = document.createElement('script');
+    let settled = false;
 
     window[callbackName] = function(response) {
-        delete window[callbackName];
+        if (settled) return;
+        settled = true;
+        window[callbackName] = function() {};
         try { document.head.removeChild(script); } catch(e) {}
         btnSubmit.disabled = false;
         btnSubmit.textContent = 'Save Changes';
@@ -654,7 +671,9 @@ function submitUpdate() {
     };
 
     script.onerror = function() {
-        delete window[callbackName];
+        if (settled) return;
+        settled = true;
+        window[callbackName] = function() {};
         try { document.head.removeChild(script); } catch(e) {}
         btnSubmit.disabled = false;
         btnSubmit.textContent = 'Save Changes';
