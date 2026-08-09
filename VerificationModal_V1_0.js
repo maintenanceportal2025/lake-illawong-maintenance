@@ -6,12 +6,22 @@
  * VERSION: 1.0
  * CREATED: February 16, 2026
  * LAST UPDATED: August 2026
- * DESIGN: Glass effect modal from Unified Design System v1.4
+ * DESIGN: Glass effect modal from Unified Design System V2.4
  *
  * CHANGE LOG (version number intentionally stays fixed at 1.0 -- this
  * file is shared across ~15+ modules by filename, so version-in-filename
  * doesn't apply here the way it does elsewhere. Track what changed by
  * date instead.):
+ * - Aug 2026: System-wide JSONP audit fix -- _callAPI() had the same
+ *   compounding bug found across most of the system: weak
+ *   `if (window[cb])` timeout check (not a true settled-guard), so
+ *   success/onerror/timeout could race each other, and a genuinely
+ *   late cold-start response could throw "cb_... is not defined" or,
+ *   worse, a second removeChild() error. Highest-leverage fix in the
+ *   whole sweep given this file underpins OTP verification for ~15+
+ *   modules. Also corrected stale "Design System v1.4" header label --
+ *   actual CSS confirmed current (2px corners, backdrop-filter). No
+ *   functional change to verification flow.
  * - Aug 2026: userData now also includes email and phone. ManagementCentral's
  *   verifyCode() already looked these up from the UnitList sheet during OTP
  *   verification (via lookupResidentByIdentifier) but never returned them --
@@ -808,11 +818,18 @@ const VerificationModal = (function() {
         return new Promise((resolve, reject) => {
             const cb = 'cb_' + Date.now();
             const script = document.createElement('script');
+            let settled = false;
+
+            function cleanup() {
+                window[cb] = function() {};
+                try { document.head.removeChild(script); } catch (e) {}
+            }
             
             window[cb] = function(r) {
+                if (settled) return;
+                settled = true;
+                cleanup();
                 resolve(r);
-                document.head.removeChild(script);
-                delete window[cb];
             };
             
             const query = new URLSearchParams({ action, callback: cb, ...params });
@@ -823,19 +840,19 @@ const VerificationModal = (function() {
             console.log('🔗 URL:', script.src);
             
             script.onerror = () => {
+                if (settled) return;
+                settled = true;
+                cleanup();
                 reject(new Error('Network failed'));
-                document.head.removeChild(script);
-                delete window[cb];
             };
             
             document.head.appendChild(script);
             
             setTimeout(() => {
-                if (window[cb]) {
-                    reject(new Error('Timeout'));
-                    document.head.removeChild(script);
-                    delete window[cb];
-                }
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(new Error('Timeout'));
             }, 30000);
         });
     }
