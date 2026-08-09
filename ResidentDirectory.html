@@ -4,11 +4,11 @@ LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - RESIDENTS DIRECTORY
 =====================================================================
 PURPOSE: Searchable contact directory for all residents
 PORTAL: Residents Portal, Zone Rep Portal, Admin Portal
-VERSION: 3.3
-LAST UPDATED: May 2026
+VERSION: 3.4
+LAST UPDATED: August 2026
 ARCHITECTURE: V5.2
 
-DESIGN SYSTEM: Lake Illawong Unified v1.4
+DESIGN SYSTEM: Lake Illawong Unified V2.4
 BACKEND API: Explorer V1.2.1 (getResidents with privacy filtering)
 
 AUTHENTICATION: Standalone OTP via VerificationModal_V1_0.js
@@ -36,6 +36,16 @@ RELATED FILES:
 - ResidentDetailsUpdate.html (shares lakeIllawongVerified session)
 
 CHANGELOG:
+- V3.4 (Aug 2026): System-wide JSONP audit fix -- logDirectoryAccess()
+                   (onerror/redirect-chain race, no timeout) and
+                   makeApiCall() (compounding: weak `if (window[...])`
+                   timeout check, could race success/onerror and
+                   double-removeChild) both deleted their callback
+                   instead of replacing it with a no-op. Corrected stale
+                   "Design System: v1.4" label -- actual CSS confirmed
+                   current (2px corners, backdrop-filter), same pattern
+                   found elsewhere in this sweep. No functional change
+                   to directory search, filtering, or PDF export.
 - V3.3 (May 2026): smsOnly changed to false — email or mobile verification
                    now available, consistent with other resident modules.
 - V3.2 (Apr 2026): Directory access logging added. logDirectoryAccess()
@@ -1438,8 +1448,15 @@ function logDirectoryAccess(name, unit) {
     var detail = 'Resident Directory via ' + portal;
     var cbName = 'logcb_' + Date.now();
     var script = document.createElement('script');
-    window[cbName] = function() { delete window[cbName]; try { document.head.removeChild(script); } catch(e){} };
-    script.onerror = function() { delete window[cbName]; try { document.head.removeChild(script); } catch(e){} };
+    var settled = false;
+    function finish() {
+        if (settled) return;
+        settled = true;
+        window[cbName] = function() {};
+        try { document.head.removeChild(script); } catch(e){}
+    }
+    window[cbName] = function() { finish(); };
+    script.onerror = function() { finish(); };
     script.src = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
         + '?action=logAccess&callback=' + cbName
         + '&type=Directory-Access'
@@ -2260,29 +2277,36 @@ function downloadPDF() {
             return new Promise((resolve, reject) => {
                 const callbackName = 'callback_' + Date.now();
                 const script = document.createElement('script');
+                let settled = false;
+
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    try { document.head.removeChild(script); } catch (e) {}
+                }
                 
                 window[callbackName] = function(data) {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(data);
-                    document.head.removeChild(script);
-                    delete window[callbackName];
                 };
                 
                 script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
                 script.onerror = () => {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('Network error'));
-                    document.head.removeChild(script);
-                    delete window[callbackName];
                 };
                 
                 document.head.appendChild(script);
                 
                 // Timeout after 15 seconds
                 setTimeout(() => {
-                    if (window[callbackName]) {
-                        reject(new Error('Request timeout'));
-                        document.head.removeChild(script);
-                        delete window[callbackName];
-                    }
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    reject(new Error('Request timeout'));
                 }, 15000);
             });
         }
