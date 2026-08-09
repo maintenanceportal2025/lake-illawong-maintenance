@@ -4,7 +4,7 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.3.0 (Status feedback + bug fixes)
+VERSION: 2.3.1 (Double-confirm fixed)
 LAST UPDATED: August 2026
 BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
@@ -13,6 +13,17 @@ ENHANCEMENTS:
 - Question flow visualization
 - Branching rules editor
 - Enhanced preview with branching simulation
+
+CHANGES IN V2.3.1 (found by Tony testing V2.3.0):
+- FIXED: Archiving a Closed (or Active) survey via the bottom "Archive
+  Survey" button triggered two separate confirm() dialogs in a row --
+  confirmDeleteSurvey's own "would you like to archive it instead?"
+  followed immediately by changeSurveyStatus's own "are you sure you
+  want to archive this survey?". The Working... badge feedback was
+  getting lost in that confusion. changeSurveyStatus now accepts a
+  skipConfirm flag; confirmDeleteSurvey passes it since its own prompt
+  already served as the confirmation. Direct Activate/Close/Restore
+  buttons unaffected -- they still get their single confirm as before.
 
 CHANGES IN V2.3.0 (all found by Tony testing V2.2.0):
 - FIXED: "All Surveys" no longer excludes Archived -- reverted the
@@ -2959,10 +2970,10 @@ CHANGES IN V1.8.0 (glass-morphism base):
         }
 
         // CHANGE SURVEY STATUS
-        function changeSurveyStatus(surveyId, newStatus, buttonElement) {
+        function changeSurveyStatus(surveyId, newStatus, buttonElement, skipConfirm) {
             const statusVerbs = { Active: 'activate', Closed: 'close', Archived: 'archive' };
             const statusText = statusVerbs[newStatus] || newStatus.toLowerCase();
-            if (!confirm(`Are you sure you want to ${statusText} this survey?`)) {
+            if (!skipConfirm && !confirm(`Are you sure you want to ${statusText} this survey?`)) {
                 return;
             }
 
@@ -4011,7 +4022,7 @@ function renderResults(data) {
         function confirmDeleteSurvey(surveyId, surveyTitle, status, buttonElement) {
             if (status !== 'Draft') {
                 if (confirm(`Only Draft surveys can be deleted. "${surveyTitle}" is ${status}. Would you like to archive it instead?`)) {
-                    changeSurveyStatus(surveyId, 'Archived', buttonElement);
+                    changeSurveyStatus(surveyId, 'Archived', buttonElement, true);
                 }
                 return;
             }
