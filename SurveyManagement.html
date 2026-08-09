@@ -4,7 +4,7 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.3.1 (Double-confirm fixed)
+VERSION: 2.3.2 (Badge paint + Archived colour fixed)
 LAST UPDATED: August 2026
 BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
@@ -13,6 +13,26 @@ ENHANCEMENTS:
 - Question flow visualization
 - Branching rules editor
 - Enhanced preview with branching simulation
+
+CHANGES IN V2.3.2 (found by Tony testing V2.3.1):
+- FIXED: "⏳ Working..." badge still not appearing even after removing the
+  double-confirm. Root cause: browsers don't reliably paint a DOM change
+  made in the exact same synchronous tick as a native confirm() dialog
+  closing. Split changeSurveyStatus into a thin wrapper (handles the
+  confirm) and doChangeSurveyStatus (does the actual work), deferred via
+  setTimeout(...,0) so the DOM update happens on the next tick, after the
+  browser has properly resumed its render loop.
+- FIXED: Archived badge visually indistinguishable from Closed -- they
+  were genuinely different colours in code (#fee2e2 red-pink vs #fce7f3
+  rose-pink) but too close to tell apart. Archived changed to violet
+  (#ede9fe/#5b21b6), distinct from Draft (grey), Active (green), and
+  Closed (red).
+- NOTE: duplicateSurvey() and deleteSurveyFrontend() set their own
+  interim button feedback immediately after their own confirm() calls,
+  the same structural pattern that caused the badge issue above. Neither
+  has been reported as broken, so left untouched rather than changing
+  working (or at least unreported) code -- flagged in case the same
+  issue turns up there.
 
 CHANGES IN V2.3.1 (found by Tony testing V2.3.0):
 - FIXED: Archiving a Closed (or Active) survey via the bottom "Archive
@@ -541,9 +561,9 @@ CHANGES IN V1.8.0 (glass-morphism base):
         }
 
         .status-archived {
-            background: linear-gradient(135deg, #fce7f3, #fbcfe8);
-            color: #9f1239;
-            border-color: #f9a8d4;
+            background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+            color: #5b21b6;
+            border-color: #c4b5fd;
         }
 
         /* CREATE SURVEY FORM */
@@ -2977,6 +2997,16 @@ CHANGES IN V1.8.0 (glass-morphism base):
                 return;
             }
 
+            // Defer to the next tick before touching the DOM. Browsers don't
+            // reliably paint changes made in the exact same synchronous tick as
+            // a native confirm() dialog closing -- without this, the "Working..."
+            // badge update can be silently skipped/never painted.
+            setTimeout(() => {
+                doChangeSurveyStatus(surveyId, newStatus, buttonElement, statusText);
+            }, 0);
+        }
+
+        function doChangeSurveyStatus(surveyId, newStatus, buttonElement, statusText) {
             // Interim feedback while the request is in flight -- the dropdown menu
             // that contains the triggering button closes immediately on click, so
             // feedback goes on the survey card itself instead.
