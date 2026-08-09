@@ -4,7 +4,7 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.0.4 (Archive button fix)
+VERSION: 2.0.5 (Archive gating corrected)
 LAST UPDATED: August 2026
 BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
@@ -13,6 +13,16 @@ ENHANCEMENTS:
 - Question flow visualization
 - Branching rules editor
 - Enhanced preview with branching simulation
+
+CHANGES IN V2.0.5:
+- FIXED: V2.0.4 made the delete/archive button clickable again, but gated
+  it on totalResponses > 0 -- wrong condition. Tony confirmed the backend
+  actually enforces "only Draft surveys can be deleted" regardless of
+  response count; an Active or Closed survey with zero responses still
+  can't be deleted. Button and confirmDeleteSurvey() now gate on
+  survey.status === 'Draft' instead, matching the real backend rule.
+  Archive prompt wording updated to reflect status rather than response
+  count. No change to deleteSurveyFrontend/changeSurveyStatus themselves.
 
 CHANGES IN V2.0.4:
 - FIXED: Archive Survey was completely unreachable. The delete/archive
@@ -1660,9 +1670,9 @@ CHANGES IN V1.8.0 (glass-morphism base):
                                     📋 Duplicate Survey
                                 </button>
                                 <div class="dropdown-divider"></div>
-                                <button onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', ${survey.totalResponses}); this.closest('.dropdown-menu').classList.remove('show');"
+                                <button onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', '${survey.status}'); this.closest('.dropdown-menu').classList.remove('show');"
                                         class="danger">
-                                    🗑️ ${survey.totalResponses > 0 ? 'Archive Survey' : 'Delete Survey'}
+                                    🗑️ ${survey.status === 'Draft' ? 'Delete Survey' : 'Archive Survey'}
                                 </button>
                                 ${statusButtons}
                             </div>
@@ -3927,9 +3937,9 @@ function renderResults(data) {
             document.head.appendChild(script);
         }
 
-        function confirmDeleteSurvey(surveyId, surveyTitle, responseCount) {
-            if (responseCount > 0) {
-                if (confirm(`Cannot delete "${surveyTitle}" because it has ${responseCount} response(s). Would you like to archive it instead?`)) {
+        function confirmDeleteSurvey(surveyId, surveyTitle, status) {
+            if (status !== 'Draft') {
+                if (confirm(`Only Draft surveys can be deleted. "${surveyTitle}" is ${status}. Would you like to archive it instead?`)) {
                     changeSurveyStatus(surveyId, 'Archived');
                 }
                 return;
