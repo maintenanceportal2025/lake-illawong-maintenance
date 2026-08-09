@@ -4,8 +4,8 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.0.2 (Duplicate survey)
-LAST UPDATED: May 25, 2026
+VERSION: 2.0.3 (JSONP audit fix)
+LAST UPDATED: August 2026
 BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
 - Custom rating labels support
@@ -13,6 +13,23 @@ ENHANCEMENTS:
 - Question flow visualization
 - Branching rules editor
 - Enhanced preview with branching simulation
+
+CHANGES IN V2.0.3:
+- FIXED: System-wide JSONP audit -- 5 of this file's 10 separate JSONP
+  call sites (callAPI, the inline clearCallback in updateSurveyInBatches,
+  changeSurveyStatus, duplicateSurvey, deleteSurveyFrontend) had both a
+  success handler and a script.onerror handler with no settled-guard
+  between them, risking "apiCallback_...", "statusCallback_...",
+  "deleteCallback_..." etc "is not defined" if onerror fired spuriously
+  during Apps Script's redirect chain ahead of a genuinely successful
+  late response. Fixed with the standard no-op-reassignment + settled
+  flag pattern. The other 5 call sites (loadSurveys, loadDetailedResponses,
+  previewSurvey, loadResults, loadSurveyForEditing) have only a success
+  handler with no onerror or timeout at all -- deletion only ever happens
+  as the last step inside that same successful invocation, so there's no
+  premature-deletion path and no actual race; left untouched rather than
+  changed for the sake of it. No functional change to survey creation,
+  editing, results, duplication, or deletion.
 
 CHANGES IN V2.0.2:
 - NEW: Duplicate Survey — copies metadata and all questions into a new Draft
@@ -2533,13 +2550,19 @@ CHANGES IN V1.8.0 (glass-morphism base):
         // JSONP HELPER FUNCTION
         function callAPI(action, data, callback) {
             const callbackName = 'apiCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-            
+            let settled = false;
+
+            function cleanup() {
+                window[callbackName] = function() {};
+                const s = document.querySelector(`script[src*="${callbackName}"]`);
+                if (s) s.remove();
+            }
+
             window[callbackName] = function(response) {
+                if (settled) return;
+                settled = true;
+                cleanup();
                 callback(response);
-                // Cleanup
-                delete window[callbackName];
-                const script = document.querySelector(`script[src*="${callbackName}"]`);
-                if (script) script.remove();
             };
             
             const script = document.createElement('script');
@@ -2552,8 +2575,10 @@ CHANGES IN V1.8.0 (glass-morphism base):
             
             script.src = url;
             script.onerror = function() {
+                if (settled) return;
+                settled = true;
+                cleanup();
                 callback({ success: false, error: 'Network error' });
-                delete window[callbackName];
             };
             
             document.head.appendChild(script);
@@ -2740,8 +2765,11 @@ CHANGES IN V1.8.0 (glass-morphism base):
                 updateSaveStatus(messageDiv, saveBtn, 'saving', 'Clearing old questions...');
 
                 const callbackName = 'clearCallback_' + Date.now();
+                let settled = false;
                 window[callbackName] = function(clearResult) {
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    window[callbackName] = function() {};
                     if (!clearResult.success) {
                         onSaveError(saveBtn, messageDiv, originalBtnText, clearResult.message || clearResult.error);
                         return;
@@ -2760,8 +2788,10 @@ CHANGES IN V1.8.0 (glass-morphism base):
                 const script = document.createElement('script');
                 script.src = `${SURVEY_API_URL}?action=clearSurveyQuestions&surveyId=${encodeURIComponent(surveyData.surveyId)}&callback=${callbackName}`;
                 script.onerror = function() {
+                    if (settled) return;
+                    settled = true;
+                    window[callbackName] = function() {};
                     onSaveError(saveBtn, messageDiv, originalBtnText, 'Network error clearing questions');
-                    delete window[callbackName];
                 };
                 document.head.appendChild(script);
             });
@@ -2857,24 +2887,29 @@ CHANGES IN V1.8.0 (glass-morphism base):
 
             // Call via JSONP (simple parameters, no complex data)
             const callbackName = 'statusCallback_' + Date.now();
+            let settled = false;
             
             window[callbackName] = function(result) {
+                if (settled) return;
+                settled = true;
+                window[callbackName] = function() {};
+                const s = document.querySelector(`script[src*="${callbackName}"]`);
+                if (s) s.remove();
                 if (result.success) {
                     alert(`✅ Survey ${statusText}d successfully!`);
                     loadSurveys();
                 } else {
                     alert(`❌ Error: ${result.message || result.error}`);
                 }
-                delete window[callbackName];
-                const script = document.querySelector(`script[src*="${callbackName}"]`);
-                if (script) script.remove();
             };
 
             const script = document.createElement('script');
             script.src = `${SURVEY_API_URL}?action=toggleSurveyStatus&surveyId=${surveyId}&newStatus=${newStatus}&callback=${callbackName}`;
             script.onerror = function() {
+                if (settled) return;
+                settled = true;
+                window[callbackName] = function() {};
                 alert('❌ Error changing status');
-                delete window[callbackName];
             };
             
             document.head.appendChild(script);
@@ -3780,8 +3815,11 @@ function renderResults(data) {
 
             // Step 1: Fetch full survey details
             const callbackName = 'duplicateLoadCallback_' + Date.now();
+            let settled = false;
             window[callbackName] = function(data) {
-                delete window[callbackName];
+                if (settled) return;
+                settled = true;
+                window[callbackName] = function() {};
 
                 if (!data.success) {
                     buttonElement.disabled = false;
@@ -3863,7 +3901,9 @@ function renderResults(data) {
             const script = document.createElement('script');
             script.src = `${SURVEY_API_URL}?action=getSurveyDetails&surveyId=${encodeURIComponent(surveyId)}&callback=${callbackName}`;
             script.onerror = function() {
-                delete window[callbackName];
+                if (settled) return;
+                settled = true;
+                window[callbackName] = function() {};
                 buttonElement.disabled = false;
                 buttonElement.innerHTML = originalText;
                 alert('❌ Network error loading survey');
@@ -3892,8 +3932,12 @@ function renderResults(data) {
             }
             
             const callbackName = 'deleteCallback_' + Date.now();
+            let settled = false;
             
             window[callbackName] = function(result) {
+                if (settled) return;
+                settled = true;
+                window[callbackName] = function() {};
                 if (result.success) {
                     alert(`✅ Survey "${surveyTitle}" deleted successfully!`);
                     loadSurveys();
@@ -3904,18 +3948,19 @@ function renderResults(data) {
                         deleteBtn.innerHTML = '🗑️ Delete';
                     }
                 }
-                delete window[callbackName];
             };
             
             const script = document.createElement('script');
             script.src = `${SURVEY_API_URL}?action=deleteSurvey&surveyId=${surveyId}&callback=${callbackName}`;
             script.onerror = function() {
+                if (settled) return;
+                settled = true;
+                window[callbackName] = function() {};
                 alert('❌ Network error deleting survey');
                 if (deleteBtn) {
                     deleteBtn.disabled = false;
                     deleteBtn.innerHTML = '🗑️ Delete';
                 }
-                delete window[callbackName];
             };
             
             document.head.appendChild(script);
