@@ -4,17 +4,27 @@ ResidentSubmissionForm.html - RESIDENT PROBLEM SUBMISSION FORM
 =====================================================================
 
 DOCUMENT INFORMATION:
-  File Name:        ResidentSubmissionForm_V1_10_0.html
+  File Name:        ResidentSubmissionForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.10.0
+  Frontend Version: V1.10.1
   Backend:          ResidentSubmissionForm V1.5
   Status:           PRODUCTION
   Created:          Oct 2025
-  Last Modified:    May 2026
+  Last Modified:    Aug 2026
 
 
 VERSION HISTORY:
+  V1.10.1 (Aug 2026): System-wide JSONP audit fix -- both callScript() and
+    submitFault() deleted their callback on completion/onerror instead of
+    replacing it with a no-op (no timeout in either, so this was the
+    onerror/redirect-chain race variant). Corrected stale header File
+    Name field (was "ResidentSubmissionForm_V1_10_0.html" -- wrong
+    filename convention, same issue found in ComplaintForm). No
+    functional change to submission itself. Note: the known concurrency
+    issue on this submission path (overlapping trigger runs, no
+    LockService guard) is a separate, deliberately-deferred backend fix
+    -- not addressed here.
   V1.0.0 (Oct 2025): Initial release
   V1.1.0 (Nov 2025): Searchable dropdowns replacing static select elements
   V1.2.0 (Nov 2025): Success modal with tracking number and photo email link
@@ -1196,16 +1206,24 @@ TECHNICAL:
                 params.append('callback', callbackName);
                 
                 script.src = `${WEB_APP_URL}?${params.toString()}`;
-                
+
+                let settled = false;
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    try { document.head.removeChild(script); } catch (e) {}
+                }
+
                 window[callbackName] = function(response) {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(response);
                 };
                 
                 script.onerror = function() {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('Script loading failed'));
                 };
                 
@@ -1288,20 +1306,26 @@ TECHNICAL:
                 params.append('callback', callbackName);
                 
                 script.src = `${WEB_APP_URL}?${params.toString()}`;
+
+                let settled = false;
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    try { document.head.removeChild(script); } catch (e) {}
+                }
                 
                 // Set up callback function
                 window[callbackName] = function(response) {
-                    // Clean up
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(response);
                 };
                 
                 // Handle errors
                 script.onerror = function() {
-                    // Clean up
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('Network request failed'));
                 };
                 
