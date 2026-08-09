@@ -6,8 +6,8 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.1
-LAST UPDATED: May 2026
+VERSION: V1.1.2
+LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
 DEPENDENCIES:
@@ -28,6 +28,18 @@ REPORTS:
   8. Work Completed by Person    (Ben's activity by date range)
 
 VERSION HISTORY:
+  V1.1.2 (Aug 2026): System-wide JSONP audit fix -- makeRequest() deleted
+                     its callback on timeout/success instead of replacing
+                     it with a no-op, with no settled-guard, so a
+                     genuinely late cold-start response could throw
+                     "rh_cb_... is not defined" in console. No
+                     script.onerror handler exists (unchanged, not part
+                     of this fix -- network failure just waits out the
+                     30s timeout). No functional change to report
+                     generation. NOTE: this file's changelog had no
+                     entry for the V1.0.0 -> V1.1.1 jump already present
+                     before this touch -- not reconstructed here, flagged
+                     for confirmation instead of guessing.
   V1.0.0 (May 2026): Initial release. All 8 report types. PDF export.
                      Glass-morphism Design System V2.0.
 =====================================================================
@@ -435,16 +447,25 @@ function makeRequest(action) {
     return new Promise((resolve, reject) => {
         const cbName = 'rh_cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
         const script = document.createElement('script');
-        const timeout = setTimeout(() => {
-            delete window[cbName];
+        let settled = false;
+
+        function cleanup() {
+            window[cbName] = () => {};
             if (script.parentNode) script.parentNode.removeChild(script);
+        }
+
+        const timeout = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
             reject(new Error('Timeout: ' + action));
         }, 30000);
 
         window[cbName] = (data) => {
+            if (settled) return;
+            settled = true;
             clearTimeout(timeout);
-            delete window[cbName];
-            if (script.parentNode) script.parentNode.removeChild(script);
+            cleanup();
             resolve(data);
         };
 
