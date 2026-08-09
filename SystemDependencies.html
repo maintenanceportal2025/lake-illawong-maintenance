@@ -10,14 +10,29 @@
     =====================================================================
     PURPOSE: Dynamic architecture mapping and dependency tracking
     PORTAL: SysAdmin Portal
-    VERSION: V1.1.0
-    LAST UPDATED: May 2026
+    VERSION: V1.1.1
+    LAST UPDATED: August 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from white card design)
     - JS-generated inline styles updated to glass equivalents
     - Modals retain white background (popup detail views)
     AUTHENTICATION: Session guard — portalSysAdminVerified
-    BACKEND: SystemDependencies backend (getCompleteDependencyMap)
+    BACKEND: SystemServices.js (getCompleteDependencyMap) -- corrected
+    from "SystemDependencies backend", confirmed via direct inspection.
+    SystemServices.js was renamed from PasswordManager V1.1 (May 2026)
+    and is also the backend behind SystemLogs.html.
+
+    CHANGES IN V1.1.1 (Aug 2026):
+    - FIXED: System-wide JSONP audit -- loadSystemDependencies() had no
+      settled-guard between its timeout and success paths. A genuinely
+      late cold-start response arriving after the timeout already
+      removed the script tag would throw trying to remove it a second
+      time (this file uses a fixed, non-randomized callback name, so the
+      "callback is not defined" symptom seen elsewhere in this sweep
+      doesn't apply here -- this is the double-removeChild variant of
+      the same underlying race). No functional change to the dependency
+      map display.
+    - Corrected header BACKEND reference (see above).
 
     CHANGE LOG
     - V1.1.0 (May 2026): Glass-morphism conversion. All static CSS and
@@ -411,19 +426,32 @@
             showLoading(true);
             const script = document.createElement('script');
             const callbackName = 'handleDependencyData';
+            let settled = false;
+
+            function cleanup() {
+                try { document.head.removeChild(script); } catch (e) {}
+            }
+
             script.src = `${CONFIG.BACKEND_URL}?action=getCompleteDependencyMap&callback=${callbackName}`;
             script.onerror = function() {
+                if (settled) return;
+                settled = true;
+                cleanup();
                 showError('Failed to load system dependencies. Please check your connection and try again.');
                 showLoading(false);
             };
             const timeout = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                cleanup();
                 showError('Request timed out. Please refresh the page and try again.');
                 showLoading(false);
-                document.head.removeChild(script);
             }, CONFIG.TIMEOUT);
             window[callbackName] = function(response) {
+                if (settled) return;
+                settled = true;
                 clearTimeout(timeout);
-                document.head.removeChild(script);
+                cleanup();
                 if (response.success) { systemData = response; initializeUI(); }
                 else { showError('Error loading dependencies: ' + response.error); }
                 showLoading(false);
