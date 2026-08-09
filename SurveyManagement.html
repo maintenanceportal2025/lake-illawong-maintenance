@@ -4,7 +4,7 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.2.0 (Restore/Unarchive added)
+VERSION: 2.3.0 (Status feedback + bug fixes)
 LAST UPDATED: August 2026
 BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
@@ -13,6 +13,25 @@ ENHANCEMENTS:
 - Question flow visualization
 - Branching rules editor
 - Enhanced preview with branching simulation
+
+CHANGES IN V2.3.0 (all found by Tony testing V2.2.0):
+- FIXED: "All Surveys" no longer excludes Archived -- reverted the
+  V2.1.0 exclusion. "All Surveys" now genuinely means all surveys;
+  Draft/Active/Closed/Archived tabs remain as convenience filters on
+  top of that, not a replacement for it.
+- FIXED: changeSurveyStatus()'s statusText was a binary Active/else-close
+  ternary, written when the function only ever had two callers. Adding
+  Archived as a third target in V2.0.4 exposed the bug: archiving a
+  Closed survey asked "close this survey?" and announced "Survey closed
+  successfully!" while actually setting status to Archived. Replaced
+  with a proper three-way map (Active/Closed/Archived).
+- NEW: Interim feedback during status changes. The button that triggers
+  changeSurveyStatus sits in a dropdown that closes immediately on
+  click, so feedback goes on the survey card's status badge instead
+  ("⏳ Working..." until the request resolves, reverts on failure).
+  buttonElement threaded through changeSurveyStatus and
+  confirmDeleteSurvey (all four call sites: Activate, Close, Restore,
+  and the Archive-from-delete-button path) to make this possible.
 
 CHANGES IN V2.2.0:
 - NEW: Restore Survey option for Archived surveys, extending the existing
@@ -1627,12 +1646,7 @@ CHANGES IN V1.8.0 (glass-morphism base):
             const container = document.getElementById('surveyList');
             
             let surveys = allSurveys;
-            if (currentFilter === 'all') {
-                // "All Surveys" means all active-lifecycle surveys, not archived ones --
-                // archiving is meant to get a survey out of the main list; Archived tab
-                // is the dedicated place to see them.
-                surveys = allSurveys.filter(s => s.status !== 'Archived');
-            } else {
+            if (currentFilter !== 'all') {
                 surveys = allSurveys.filter(s => s.status === currentFilter);
             }
 
@@ -1652,11 +1666,11 @@ CHANGES IN V1.8.0 (glass-morphism base):
             container.innerHTML = surveys.map(survey => {
                 // Build status buttons outside template to avoid nested template issues
                 const statusButtons = survey.status === 'Draft' 
-                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active'); this.closest('.dropdown-menu').classList.remove('show');" class="success">▶️ Activate Survey</button>`
+                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active', this); this.closest('.dropdown-menu').classList.remove('show');" class="success">▶️ Activate Survey</button>`
                     : survey.status === 'Active'
-                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Closed'); this.closest('.dropdown-menu').classList.remove('show');" class="warning">⏸️ Close Survey</button>`
+                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Closed', this); this.closest('.dropdown-menu').classList.remove('show');" class="warning">⏸️ Close Survey</button>`
                     : survey.status === 'Archived'
-                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active'); this.closest('.dropdown-menu').classList.remove('show');" class="success">↩️ Restore Survey</button>`
+                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active', this); this.closest('.dropdown-menu').classList.remove('show');" class="success">↩️ Restore Survey</button>`
                     : '';
                 
                 return `
@@ -1709,7 +1723,7 @@ CHANGES IN V1.8.0 (glass-morphism base):
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 ${survey.status !== 'Archived' ? `
-                                <button onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', '${survey.status}'); this.closest('.dropdown-menu').classList.remove('show');"
+                                <button onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', '${survey.status}', this); this.closest('.dropdown-menu').classList.remove('show');"
                                         class="danger">
                                     🗑️ ${survey.status === 'Draft' ? 'Delete Survey' : 'Archive Survey'}
                                 </button>
@@ -2945,10 +2959,25 @@ CHANGES IN V1.8.0 (glass-morphism base):
         }
 
         // CHANGE SURVEY STATUS
-        function changeSurveyStatus(surveyId, newStatus) {
-            const statusText = newStatus === 'Active' ? 'activate' : 'close';
+        function changeSurveyStatus(surveyId, newStatus, buttonElement) {
+            const statusVerbs = { Active: 'activate', Closed: 'close', Archived: 'archive' };
+            const statusText = statusVerbs[newStatus] || newStatus.toLowerCase();
             if (!confirm(`Are you sure you want to ${statusText} this survey?`)) {
                 return;
+            }
+
+            // Interim feedback while the request is in flight -- the dropdown menu
+            // that contains the triggering button closes immediately on click, so
+            // feedback goes on the survey card itself instead.
+            const card = buttonElement ? buttonElement.closest('.survey-card') : null;
+            let statusBadge = null;
+            let originalBadgeText = null;
+            if (card) {
+                statusBadge = card.querySelector('.status-badge');
+                if (statusBadge) {
+                    originalBadgeText = statusBadge.textContent;
+                    statusBadge.textContent = '⏳ Working...';
+                }
             }
 
             // Call via JSONP (simple parameters, no complex data)
@@ -2965,6 +2994,7 @@ CHANGES IN V1.8.0 (glass-morphism base):
                     alert(`✅ Survey ${statusText}d successfully!`);
                     loadSurveys();
                 } else {
+                    if (statusBadge) statusBadge.textContent = originalBadgeText;
                     alert(`❌ Error: ${result.message || result.error}`);
                 }
             };
@@ -2975,6 +3005,7 @@ CHANGES IN V1.8.0 (glass-morphism base):
                 if (settled) return;
                 settled = true;
                 window[callbackName] = function() {};
+                if (statusBadge) statusBadge.textContent = originalBadgeText;
                 alert('❌ Error changing status');
             };
             
@@ -3977,10 +4008,10 @@ function renderResults(data) {
             document.head.appendChild(script);
         }
 
-        function confirmDeleteSurvey(surveyId, surveyTitle, status) {
+        function confirmDeleteSurvey(surveyId, surveyTitle, status, buttonElement) {
             if (status !== 'Draft') {
                 if (confirm(`Only Draft surveys can be deleted. "${surveyTitle}" is ${status}. Would you like to archive it instead?`)) {
-                    changeSurveyStatus(surveyId, 'Archived');
+                    changeSurveyStatus(surveyId, 'Archived', buttonElement);
                 }
                 return;
             }
