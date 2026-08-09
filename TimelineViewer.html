@@ -10,8 +10,8 @@
     =====================================================================
     PURPOSE: Activity history and problem tracking for Field Ops
     PORTAL: Field Operations Portal
-    VERSION: V1.1.0
-    LAST UPDATED: May 2026
+    VERSION: V1.1.1
+    LAST UPDATED: August 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from white card design)
     - CSS variables remapped to glass equivalents so JS-generated
@@ -20,6 +20,13 @@
     BACKEND: Explorer V1.2.1 (getFaultLogData)
 
     CHANGE LOG
+    - V1.1.1 (Aug 2026): System-wide JSONP audit fix -- makeAPICall()
+                         (same compounding pattern as DesktopExplorer:
+                         weak `if (window[callbackName])` timeout check,
+                         could race success/onerror and double-
+                         removeChild) deleted its callback instead of
+                         replacing it with a no-op. No functional change
+                         to timeline display or search.
     - V1.1.0 (May 2026): Glass-morphism conversion. CSS variables
                          remapped to glass values. Back button
                          standardised to portal-back-btn. Header
@@ -355,23 +362,31 @@
                 const script = document.createElement('script');
                 const queryParams = new URLSearchParams({ action, callback: callbackName, ...params });
                 script.src = `${API_URL}?${queryParams}`;
+                let settled = false;
+
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    try { document.head.removeChild(script); } catch (e) {}
+                }
+
                 window[callbackName] = function(response) {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(response);
                 };
                 script.onerror = function() {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('Network request failed'));
                 };
                 document.head.appendChild(script);
                 setTimeout(() => {
-                    if (window[callbackName]) {
-                        document.head.removeChild(script);
-                        delete window[callbackName];
-                        reject(new Error('Request timeout'));
-                    }
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    reject(new Error('Request timeout'));
                 }, 15000);
             });
         }
