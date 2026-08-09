@@ -4,8 +4,18 @@ PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
 PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: V1.4.1
-LAST UPDATED: May 2026
+VERSION: V1.4.2
+LAST UPDATED: August 2026
+
+CHANGELOG V1.4.2:
+ - FIXED: System-wide JSONP audit -- fetchAllProblems() deleted its
+   callback on timeout/success/onerror instead of replacing it with a
+   no-op, and had no settled-guard, so a genuinely late cold-start
+   response could throw "jsonpCallback_... is not defined" in console.
+   No functional change to queue display.
+ - Corrected stale "Design System: v1.4" label -- actual CSS confirmed
+   glass-morphism/current (2px corners, backdrop-filter), same pattern
+   found elsewhere in this sweep. Label only, no style change.
 
 CHANGELOG V1.4.1:
  - FIXED: "Open in Maintenance Module" button now stores PID in sessionStorage
@@ -18,7 +28,7 @@ CHANGELOG V1.3.12:
  - Search filters the displayed queue in real-time
  - Clear button resets search and restores full queue
  - Search works across both Current and Programmed queue types
-DESIGN SYSTEM: Lake Illawong Unified v1.4
+DESIGN SYSTEM: Lake Illawong Unified V2.4
 - Terminology: "Problem" standard (V1.4 update)
 - Header: Transparent with logo
 - Colors: Primary gradient page background
@@ -1081,12 +1091,18 @@ function goBackToPortal() {
             return new Promise((resolve, reject) => {
                 const callbackName = 'jsonpCallback_' + Math.random().toString(36).substring(7);
                 const script = document.createElement('script');
+                let settled = false;
+
                 const timeout = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
                     cleanup();
                     reject(new Error('Request timeout'));
                 }, 30000);
 
                 window[callbackName] = (data) => {
+                    if (settled) return;
+                    settled = true;
                     cleanup();
                     if (data.success) {
                         resolve(data.data || []);
@@ -1097,7 +1113,7 @@ function goBackToPortal() {
 
                 function cleanup() {
                     clearTimeout(timeout);
-                    delete window[callbackName];
+                    window[callbackName] = () => {};
                     if (script.parentNode) {
                         script.parentNode.removeChild(script);
                     }
@@ -1105,6 +1121,8 @@ function goBackToPortal() {
 
                 script.src = `${API_URL}?action=getFaultLogData&callback=${callbackName}`;
                 script.onerror = () => {
+                    if (settled) return;
+                    settled = true;
                     cleanup();
                     reject(new Error('Network error'));
                 };
