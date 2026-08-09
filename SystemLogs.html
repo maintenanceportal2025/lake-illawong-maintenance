@@ -4,8 +4,8 @@
 =====================================================================
 PURPOSE: Centralized viewer for all system logging activities
 PORTAL: SysAdmin Portal Module
-VERSION: v1.3.7
-LAST UPDATED: May 2026
+VERSION: v1.3.8
+LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Glass-morphism applied to all UI panels, stats, filter bars, tab nav
 - Data tables retain white background per Design System rule
@@ -24,6 +24,16 @@ FEATURES:
 • Preset + date picker range filtering on all applicable tabs
 • Access log (Connections by Person summary removed)
 VERSION HISTORY:
+* v1.3.8 (Aug 2026): System-wide JSONP audit fix -- callAPI() (weak
+*   `if (window[callbackName])` timeout check, no true settled-guard,
+*   onerror never removed the script tag) and loadAccessLog()
+*   (onerror/redirect-chain race, no timeout) both deleted their
+*   callback instead of replacing it with a no-op. No functional
+*   change to log display. NOTE: the "Password Changes (24h)" stat
+*   card on the dashboard will now permanently read 0 -- this is a
+*   separate, already-known issue from the PasswordSettings
+*   retirement, not touched here (Tony to decide whether to remove
+*   the card or leave it).
 * v1.3.7 (May 2026): Email tab — sent-fallback status added to filter
 *   dropdown and styled with amber badge. Supports NotificationServer
 *   V3.4.0 MailApp fallback sends.
@@ -774,10 +784,18 @@ VERSION HISTORY:
         function callAPI(action, params = {}) {
             return new Promise((resolve, reject) => {
                 const callbackName = `callback_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+                let settled = false;
+
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    const s = document.getElementById(callbackName);
+                    if (s) s.remove();
+                }
                 
                 window[callbackName] = function(data) {
-                    delete window[callbackName];
-                    document.getElementById(callbackName).remove();
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(data);
                 };
                 
@@ -792,7 +810,9 @@ VERSION HISTORY:
                 
                 script.src = `${API_URL}?${queryParams.toString()}`;
                 script.onerror = () => {
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('API call failed'));
                 };
                 
@@ -800,13 +820,10 @@ VERSION HISTORY:
                 
                 // Timeout after 30 seconds
                 setTimeout(() => {
-                    if (window[callbackName]) {
-                        delete window[callbackName];
-                        if (document.getElementById(callbackName)) {
-                            document.getElementById(callbackName).remove();
-                        }
-                        reject(new Error('API call timeout'));
-                    }
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    reject(new Error('API call timeout'));
                 }, 30000);
             });
         }
@@ -1477,11 +1494,18 @@ VERSION HISTORY:
                 </div>`;
 
             const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substring(7);
+            let settled = false;
+
+            function cleanup() {
+                window[callbackName] = function() {};
+                const s = document.getElementById(callbackName);
+                if (s) s.remove();
+            }
 
             window[callbackName] = function(response) {
-                delete window[callbackName];
-                const el = document.getElementById(callbackName);
-                if (el) el.remove();
+                if (settled) return;
+                settled = true;
+                cleanup();
                 if (response.success) {
                     renderAccessTable(response.data || []);
                 } else {
@@ -1500,7 +1524,9 @@ VERSION HISTORY:
                        + '&days=' + encodeURIComponent(days)
                        + '&type=' + encodeURIComponent(type);
             script.onerror = function() {
-                delete window[callbackName];
+                if (settled) return;
+                settled = true;
+                cleanup();
                 document.getElementById('access-log-container').innerHTML = `
                     <div class="empty-state">
                         <div class="empty-icon">&#9888;&#65039;</div>
