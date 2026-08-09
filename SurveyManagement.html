@@ -4,7 +4,7 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.3.2 (Badge paint + Archived colour fixed)
+VERSION: 2.3.3 (Badge lookup actually fixed)
 LAST UPDATED: August 2026
 BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
@@ -13,6 +13,28 @@ ENHANCEMENTS:
 - Question flow visualization
 - Branching rules editor
 - Enhanced preview with branching simulation
+
+CHANGES IN V2.3.3 (found by Tony testing V2.3.2, confirmed in a second
+browser -- ruled out the paint-timing theory from V2.3.2):
+- FIXED: The actual root cause of the missing "Working..." badge --
+  buttonElement.closest('.survey-card') never worked at all, in any
+  browser, because openDropdown() moves the entire dropdown menu (button
+  included) to document.body when opened ("portal pattern", used for
+  z-index/overflow positioning). By the time the button is clicked, it
+  is no longer a descendant of .survey-card in the DOM, so closest()
+  always returned null. This is the same problem deleteSurveyFrontend()
+  had already worked around elsewhere in this file, using a substring
+  onclick-attribute selector -- confirms this was a known, previously
+  solved issue that the new status-change code didn't account for.
+  Fixed properly: each survey card now carries data-survey-id; the badge
+  is looked up via a document-rooted selector instead of DOM ancestry,
+  which works regardless of where the triggering button currently lives.
+  Also removed the setTimeout/two-function split added in V2.3.2 -- that
+  was chasing a paint-timing theory that turned out to be wrong (the
+  lookup was failing outright, not late); the real fix doesn't need it,
+  so simplified back to one function. buttonElement parameter dropped
+  from changeSurveyStatus and confirmDeleteSurvey entirely, no longer
+  needed anywhere.
 
 CHANGES IN V2.3.2 (found by Tony testing V2.3.1):
 - FIXED: "⏳ Working..." badge still not appearing even after removing the
@@ -1697,15 +1719,15 @@ CHANGES IN V1.8.0 (glass-morphism base):
             container.innerHTML = surveys.map(survey => {
                 // Build status buttons outside template to avoid nested template issues
                 const statusButtons = survey.status === 'Draft' 
-                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active', this); this.closest('.dropdown-menu').classList.remove('show');" class="success">▶️ Activate Survey</button>`
+                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active'); this.closest('.dropdown-menu').classList.remove('show');" class="success">▶️ Activate Survey</button>`
                     : survey.status === 'Active'
-                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Closed', this); this.closest('.dropdown-menu').classList.remove('show');" class="warning">⏸️ Close Survey</button>`
+                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Closed'); this.closest('.dropdown-menu').classList.remove('show');" class="warning">⏸️ Close Survey</button>`
                     : survey.status === 'Archived'
-                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active', this); this.closest('.dropdown-menu').classList.remove('show');" class="success">↩️ Restore Survey</button>`
+                    ? `<button onclick="changeSurveyStatus('${survey.surveyId}', 'Active'); this.closest('.dropdown-menu').classList.remove('show');" class="success">↩️ Restore Survey</button>`
                     : '';
                 
                 return `
-                <div class="survey-card">
+                <div class="survey-card" data-survey-id="${survey.surveyId}">
                     <div class="survey-card-header">
                         <div class="survey-title">${escapeHtml(survey.title)}</div>
                         <span class="status-badge status-${survey.status.toLowerCase()}">${survey.status}</span>
@@ -1754,7 +1776,7 @@ CHANGES IN V1.8.0 (glass-morphism base):
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 ${survey.status !== 'Archived' ? `
-                                <button onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', '${survey.status}', this); this.closest('.dropdown-menu').classList.remove('show');"
+                                <button onclick="confirmDeleteSurvey('${survey.surveyId}', '${escapeHtml(survey.title).replace(/'/g, "\\'")}', '${survey.status}'); this.closest('.dropdown-menu').classList.remove('show');"
                                         class="danger">
                                     🗑️ ${survey.status === 'Draft' ? 'Delete Survey' : 'Archive Survey'}
                                 </button>
@@ -2990,27 +3012,19 @@ CHANGES IN V1.8.0 (glass-morphism base):
         }
 
         // CHANGE SURVEY STATUS
-        function changeSurveyStatus(surveyId, newStatus, buttonElement, skipConfirm) {
+        function changeSurveyStatus(surveyId, newStatus, skipConfirm) {
             const statusVerbs = { Active: 'activate', Closed: 'close', Archived: 'archive' };
             const statusText = statusVerbs[newStatus] || newStatus.toLowerCase();
             if (!skipConfirm && !confirm(`Are you sure you want to ${statusText} this survey?`)) {
                 return;
             }
 
-            // Defer to the next tick before touching the DOM. Browsers don't
-            // reliably paint changes made in the exact same synchronous tick as
-            // a native confirm() dialog closing -- without this, the "Working..."
-            // badge update can be silently skipped/never painted.
-            setTimeout(() => {
-                doChangeSurveyStatus(surveyId, newStatus, buttonElement, statusText);
-            }, 0);
-        }
-
-        function doChangeSurveyStatus(surveyId, newStatus, buttonElement, statusText) {
-            // Interim feedback while the request is in flight -- the dropdown menu
-            // that contains the triggering button closes immediately on click, so
-            // feedback goes on the survey card itself instead.
-            const card = buttonElement ? buttonElement.closest('.survey-card') : null;
+            // Interim feedback while the request is in flight. The dropdown menu
+            // containing the triggering button gets moved to document.body when
+            // opened (portal pattern, see openDropdown) -- so a DOM-ancestry
+            // lookup from the button never works. Find the card via
+            // data-survey-id from document root instead.
+            const card = document.querySelector(`.survey-card[data-survey-id="${surveyId}"]`);
             let statusBadge = null;
             let originalBadgeText = null;
             if (card) {
@@ -4049,10 +4063,10 @@ function renderResults(data) {
             document.head.appendChild(script);
         }
 
-        function confirmDeleteSurvey(surveyId, surveyTitle, status, buttonElement) {
+        function confirmDeleteSurvey(surveyId, surveyTitle, status) {
             if (status !== 'Draft') {
                 if (confirm(`Only Draft surveys can be deleted. "${surveyTitle}" is ${status}. Would you like to archive it instead?`)) {
-                    changeSurveyStatus(surveyId, 'Archived', buttonElement, true);
+                    changeSurveyStatus(surveyId, 'Archived', true);
                 }
                 return;
             }
