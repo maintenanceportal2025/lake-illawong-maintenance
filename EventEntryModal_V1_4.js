@@ -11,6 +11,17 @@
  *   backend (addEvent action).
  *
  * VERSION HISTORY:
+ *   Aug 2026: System-wide JSONP audit fix -- the shared _cleanup() helper
+ *     deleted the window callback instead of replacing it with a no-op,
+ *     risking "eemSaveCallback_... is not defined" in console on a
+ *     genuinely late cold-start response. Single-point fix (same pattern
+ *     as ComplaintsManager's shared cleanup() earlier in this audit) --
+ *     reassignment to no-op is inherently idempotent regardless of which
+ *     of timeout/success/onerror fires first. No functional change to
+ *     event recording. Filename stays fixed at V1_4 -- referenced exactly
+ *     by ComplaintsManager and DisputesManager, same convention as
+ *     VerificationModal_V1_0.js.
+ *
  *   V1.4 (Jun 2026): Evidence Received mandatory "Where Stored" field removed.
  *     EVIDENCE_TYPES constant and all special-case logic removed.
  *     Evidence Received now behaves like Meeting/Phone Call/Inspection --
@@ -305,7 +316,7 @@ const EventEntryModal = (function () {
 
   // ── JSONP cleanup
   function _cleanup(name) {
-    try { delete window[name]; } catch(e) {}
+    window[name] = function() {};
     var s = document.querySelector('script[src*="' + name + '"]');
     if (s && s.parentNode) s.parentNode.removeChild(s);
   }
