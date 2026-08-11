@@ -6,13 +6,19 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepComplaints.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.6
+  Frontend Version: V1.0.7
   Backend:          ComplaintsManager V3.0.40
   Status:           PRODUCTION
   Created:          May 2026
-  Last Modified:    Jul 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.0.7 (Aug 2026): System-wide JSONP audit fix -- the single shared
+    cleanup(name) helper deleted the window callback instead of
+    replacing it with a no-op, risking "zrcCallback_... is not defined"
+    in console on a genuinely late cold-start response. Also fixed:
+    cleanup() never removed the <script> tag from the DOM on any path --
+    now does. No functional change to complaint loading or filtering.
   V1.0.6 (Jul 2026): Brought current to ComplaintsManager V3.0.40 -- this
     module had not been touched since May 2026 and was still built around
     the old 28-day "response" deadline model, despite the Timeline
@@ -497,28 +503,32 @@ TECHNICAL:
             + '&zone='     + encodeURIComponent(currentZone)
             + '&callback=' + callbackName;
 
+        const script = document.createElement('script');
+
         const timeout = setTimeout(function () {
-            cleanup(callbackName);
+            cleanup(callbackName, script);
             showPageError('Server did not respond. Please try refreshing.');
         }, 15000);
 
         window[callbackName] = function (data) {
             clearTimeout(timeout);
-            cleanup(callbackName);
+            cleanup(callbackName, script);
             handleLoaded(data);
         };
 
-        const script = document.createElement('script');
         script.onerror = function () {
             clearTimeout(timeout);
-            cleanup(callbackName);
+            cleanup(callbackName, script);
             showPageError('Could not reach the server. Please check your connection.');
         };
         script.src = url;
         document.head.appendChild(script);
     }
 
-    function cleanup(name) { delete window[name]; }
+    function cleanup(name, script) {
+        window[name] = function () {};
+        if (script) { try { document.head.removeChild(script); } catch (e) {} }
+    }
 
     function handleLoaded(data) {
         if (!data.success) { showPageError(data.error || 'Failed to load complaints.'); return; }
