@@ -9,8 +9,8 @@
     LAKE ILLAWONG - ZONE REP SUBMISSION FORM
     =====================================================================
     PURPOSE: Zone Rep problem submission with zone-filtered selection
-    VERSION: V1.1.0
-    LAST UPDATED: May 2026
+    VERSION: V1.1.1
+    LAST UPDATED: August 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from V1.4 white card design)
     - Back button: portal-back-btn standard
@@ -26,6 +26,18 @@
     6. Everything else works exactly like normal submission
 
     CHANGE LOG
+    - V1.1.1 (Aug 2026): System-wide JSONP audit fix -- callScript() deleted
+                         its callback on completion/onerror instead of
+                         replacing it with a no-op (onerror/redirect-chain
+                         race variant, no timeout). Same fix as
+                         ResidentSubmissionForm/BulkSubmissionForm's
+                         identical pattern. Note: this shares
+                         ResidentSubmissionForm's backend and its known,
+                         deliberately-deferred concurrency issue (overlapping
+                         trigger runs, no LockService guard) -- not
+                         addressed here, remains a separate backend fix
+                         for after this sweep. No functional change to
+                         submission itself.
     - V1.1.0 (May 2026): Glass-morphism conversion. Design System V2.0
                          applied throughout. Back button standardised to
                          portal-back-btn. All JS unchanged.
@@ -501,14 +513,23 @@
                 const params = new URLSearchParams(data);
                 params.append('callback', callbackName);
                 script.src = `${WEB_APP_URL}?${params.toString()}`;
+
+                let settled = false;
+                function cleanup() {
+                    window[callbackName] = function() {};
+                    try { document.head.removeChild(script); } catch (e) {}
+                }
+
                 window[callbackName] = function(response) {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     resolve(response);
                 };
                 script.onerror = function() {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     reject(new Error('Script loading failed'));
                 };
                 document.head.appendChild(script);
