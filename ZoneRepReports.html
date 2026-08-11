@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          4 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.2
+VERSION: V1.0.3
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -24,6 +24,19 @@ REPORTS (cut-down from full Reports Hub):
   5. Programmed Works     (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.0.3 (Aug 2026): Priority and Assigned To dropdowns were hardcoded
+                     (Priority: static High/Medium/Low, actually missing
+                     the Urgent level entirely; Assigned To: derived from
+                     whoever happened to have assignments in the currently
+                     loaded data, so someone with zero current assignments
+                     could never be selected). Both now sourced from the
+                     Dropdowns sheet via MaintenanceModule's backend
+                     (getDropdownOptions) -- reusing that existing,
+                     working lookup rather than duplicating Dropdowns-
+                     sheet logic on Explorer's backend. Same fallback
+                     values as MaintenanceModule itself if the call fails.
+                     Raised by Tony; same issue found and fixed in
+                     ReportsHub.html (which this module was derived from).
   V1.0.2 (Aug 2026): System-wide JSONP audit fix -- makeRequest() deleted
                      its callback on timeout/success instead of replacing
                      it with a no-op, with no settled-guard, so a
@@ -400,6 +413,12 @@ VERSION HISTORY:
 // =====================================================================
 const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
 
+// Dropdown options (Priority, Assigned To) are sourced from MaintenanceModule's
+// backend rather than duplicated here -- it already reads the Dropdowns sheet
+// and is the canonical source other modules use for these lists.
+const DROPDOWN_API_URL = 'https://script.google.com/macros/s/AKfycbxtdMfxB5b1F5K401X0lJxnK2-DGkiG2zYZNukJvAHx0K1AqgPTMIdiunwS3etm0FOL/exec';
+let dropdownOptions = { priorities: [], assignedTo: [] };
+
 // =====================================================================
 // DATA CACHE
 // =====================================================================
@@ -419,7 +438,8 @@ function isProgrammed(p) {
 // =====================================================================
 // DATA LOADING (JSONP)
 // =====================================================================
-function makeRequest(action) {
+function makeRequest(action, targetUrl) {
+    const url = targetUrl || API_URL;
     return new Promise((resolve, reject) => {
         const cbName = 'rh_cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
         const script = document.createElement('script');
@@ -445,9 +465,34 @@ function makeRequest(action) {
             resolve(data);
         };
 
-        script.src = API_URL + '?action=' + action + '&callback=' + cbName;
+        script.src = url + '?action=' + action + '&callback=' + cbName;
         document.body.appendChild(script);
     });
+}
+
+// Fetches Priority and Assigned To lists from the Dropdowns sheet via
+// MaintenanceModule's backend. Falls back to the same defaults
+// MaintenanceModule itself falls back to, so behaviour degrades the same
+// way in both places if the sheet is ever empty or the call fails.
+async function fetchDropdownOptions() {
+    try {
+        const response = await makeRequest('getDropdownOptions', DROPDOWN_API_URL);
+        if (response && response.success && response.data) {
+            dropdownOptions = {
+                priorities: (response.data.priorities && response.data.priorities.length)
+                    ? response.data.priorities : ['Low', 'Medium', 'High', 'Urgent'],
+                assignedTo: (response.data.assignedTo && response.data.assignedTo.length)
+                    ? response.data.assignedTo : ['Ben', 'David', 'Jade', 'Residents Committee']
+            };
+            return;
+        }
+    } catch (err) {
+        console.warn('Dropdown options fetch failed, using fallback values:', err);
+    }
+    dropdownOptions = {
+        priorities: ['Low', 'Medium', 'High', 'Urgent'],
+        assignedTo: ['Ben', 'David', 'Jade', 'Residents Committee']
+    };
 }
 
 async function loadAllData() {
@@ -455,7 +500,8 @@ async function loadAllData() {
     try {
         const [cr, lr] = await Promise.all([
             makeRequest('getFaultLogData'),
-            makeRequest('getLegacyLogData')
+            makeRequest('getLegacyLogData'),
+            fetchDropdownOptions()
         ]);
 
         const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
@@ -725,7 +771,7 @@ async function exportUnitHistoryPDF() {
 // =====================================================================
 function renderOpenProblems() {
     const zones = [...new Set(currentData.map(p=>p.zone).filter(Boolean))].sort();
-    const people = [...new Set(currentData.map(p=>p.assignedTo).filter(Boolean))].sort();
+    const people = dropdownOptions.assignedTo; // sourced from Dropdowns sheet via MaintenanceModule backend
 
     showPanel(`
         <div class="report-heading">🔓 Open Problems</div>
@@ -742,9 +788,7 @@ function renderOpenProblems() {
                 <span class="filter-label">Priority</span>
                 <select id="opPriority" class="glass-select">
                     <option value="all">All Priorities</option>
-                    <option value="High">High</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Low">Low</option>
+                    ${dropdownOptions.priorities.map(p=>`<option value="${p}">${p}</option>`).join('')}
                 </select>
             </div>
             <div class="filter-group">
@@ -1417,7 +1461,7 @@ async function exportKeywordPDF() {
 // REPORT 8 — WORK BY PERSON
 // =====================================================================
 function renderWorkByPersonForm() {
-    const people = [...new Set(currentData.map(p=>p.assignedTo).filter(Boolean))].sort();
+    const people = dropdownOptions.assignedTo; // sourced from Dropdowns sheet via MaintenanceModule backend
 
     showPanel(`
         <div class="report-heading">👷 Work by Person</div>
@@ -1549,7 +1593,7 @@ async function exportWorkPDF() {
 // =====================================================================
 function renderProgrammedWorks() {
     const zones  = [...new Set(programmedData.map(p=>p.zone).filter(Boolean))].sort();
-    const people = [...new Set(programmedData.map(p=>p.assignedTo).filter(Boolean))].sort();
+    const people = dropdownOptions.assignedTo; // sourced from Dropdowns sheet via MaintenanceModule backend
     const cats   = [...new Set(programmedData.map(p=>p.category).filter(Boolean))].sort();
 
     showPanel(`
