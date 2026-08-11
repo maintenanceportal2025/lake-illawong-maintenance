@@ -7,21 +7,35 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepPortal.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Portal
-  Frontend Version: V2.3.0
+  Frontend Version: V2.3.1
   Status:           PRODUCTION
   Created:          2025
-  Last Modified:    May 2026
+  Last Modified:    Aug 2026
 
 VERSION HISTORY:
-  V1.0.0 (2025):     Original release — white card design. PasswordManager
-                     authentication. 6 module cards including future cards.
-  V2.0.0 (2025):     Glass-morphism redesign — Design System V2.0.
-                     Converted to VerificationModal OTP authentication.
+  V2.3.1 (Aug 2026): System-wide JSONP audit fix -- logPortalAccess() was
+                     the same shared function found across AdminPortal/
+                     FieldOperationsPortal/SysAdminPortal, same bug:
+                     deleted its callback on completion/onerror instead
+                     of replacing it with a no-op. Also found and fixed:
+                     the detail parameter was a literal, never-substituted
+                     '%%PORTAL_NAME%%' template placeholder -- every
+                     access log entry from this portal had been recording
+                     that broken string instead of "Zone Rep Portal".
+                     Checked the other three portals sharing this
+                     function; none had the same placeholder issue, this
+                     one was missed in isolation. Also corrected a stale
+                     console.log still saying "v2.1" despite the header
+                     being at V2.3.0. No functional change to navigation.
   V2.3.0 (May 2026): Zone Analytics future card replaced with Zone Reports
                      (active) — links to ZoneRepReports.html.
   V2.2.0 (May 2026): Zone Complaints module card added.
   V2.1.0 (Apr 2026): Portal access logging added. logPortalAccess()
                      fires on successful authentication.
+  V2.0.0 (2025):     Glass-morphism redesign — Design System V2.0.
+                     Converted to VerificationModal OTP authentication.
+  V1.0.0 (2025):     Original release — white card design. PasswordManager
+                     authentication. 6 module cards including future cards.
 
 AUTHENTICATION:
   OTP via VerificationModal_V1_0.js
@@ -749,19 +763,26 @@ MODULES (6 active, 1 future):
         // Performance monitoring
         window.addEventListener('load', function() {
             const loadTime = (performance.now() / 1000).toFixed(2);
-            console.log(`⚡ Zone Rep Portal v2.1 (Complete 6-Card + Fixed Header) loaded in ${loadTime} seconds`);
+            console.log(`⚡ Zone Rep Portal V2.3 loaded in ${loadTime} seconds`);
         });
       function logPortalAccess(name, unit) {
     var cbName = 'logcb_' + Date.now();
     var script = document.createElement('script');
-    window[cbName] = function() { delete window[cbName]; try { document.head.removeChild(script); } catch(e){} };
-    script.onerror = function() { delete window[cbName]; try { document.head.removeChild(script); } catch(e){} };
+    var settled = false;
+    function finish() {
+        if (settled) return;
+        settled = true;
+        window[cbName] = function() {};
+        try { document.head.removeChild(script); } catch(e){}
+    }
+    window[cbName] = function() { finish(); };
+    script.onerror = function() { finish(); };
     script.src = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
         + '?action=logAccess&callback=' + cbName
         + '&type=Portal-Login'
         + '&name=' + encodeURIComponent(name || '')
         + '&unit=' + encodeURIComponent(unit || '')
-        + '&detail=' + encodeURIComponent('%%PORTAL_NAME%%');
+        + '&detail=' + encodeURIComponent('Zone Rep Portal');
     document.head.appendChild(script);
 }
     </script>
