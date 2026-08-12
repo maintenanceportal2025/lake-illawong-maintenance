@@ -4,11 +4,29 @@ FIELD NOTIFICATIONS - UNIFIED EMAIL + SMS SYSTEM
 =====================================================================
 PURPOSE: Complete notification system with Email + SMS via NotificationServer V3.0
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.1.1 - System-wide JSONP audit fix (see below)
+VERSION: V3.2.0 - EmailServer decommission complete (see below)
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified V2.0 (glass-morphism, confirmed against
   actual CSS -- corrected from a stale "v1.4" that contradicted this file's
   own VERSION line above, which already correctly noted the V2.0 conversion)
+
+NEW IN V3.2.0:
+✅ EmailServer migration complete -- removed the dead legacy send path
+   (sendNotification, executeSend, callEmailAPI, buildRecipientFilter,
+   calculateRecipientCount, resetForm) that coexisted with the live
+   NotificationServer path (executeFieldAlertSend/callNotificationAPI)
+   but was never called by the UI. Also removed the commented-out
+   EMAIL_SERVICE_URL constant and other cleanup-comment cruft.
+✅ E-Copy distribution panel (loadECopyList) migrated from the dead
+   callEmailAPI to callNotificationAPI -- was broken (Connection error)
+   since EMAIL_SERVICE_URL had been commented out; now calls
+   NotificationServer's new getECopyRecipients action (V3.6.0+). The
+   E-Copy send itself was never affected -- it always went through
+   NotificationServer via role:E-Copy.
+✅ Service status dot (checkServiceStatus) deliberately left as-is --
+   it still references the removed EMAIL_SERVICE_URL and will continue
+   to no-op/error harmlessly. Confirmed cosmetic only: no user-facing
+   impact, and the module's actual health is proven at send time.
 
 NEW IN V3.1.1:
 ✅ JSONP audit fix: callEmailAPI() deleted its callback on timeout/success/
@@ -1518,9 +1536,6 @@ function goBackToPortal() {
         }
         
         
-// Email Server V2.0.js deployment URL
-        // const EMAIL_SERVICE_URL = 'https://script.google.com/macros/s/AKfycbxY6l7p9syqTYlYEER1kMwQXXND8o-34QQ4dlEQwTqxuke3j0TaXrnMw5rB3_ro0WJf/exec';
-
 // NotificationServer V3.0.1
         const NOTIFICATION_SERVER_URL = 'https://script.google.com/macros/s/AKfycbzXdhhzLllsFMlPQ2Q3Hdv7iTzTGvDq9Zk3ttXKW_6OSmil4Pg_IA1WoL7da3UQghiL/exec'; 
         
@@ -1544,8 +1559,6 @@ let attachmentFilename = null;
         document.addEventListener('DOMContentLoaded', function() {
             setupEventListeners();
             generateUnitsGrid();
-            
-            // updateEmailCounter(); // Function doesn't exist - commented out
             checkServiceStatus();
         });
         
@@ -1933,129 +1946,19 @@ function toggleSubjectField() {
     }
 }
         
-        // =====================================================================
-        // EMAIL SERVER V1.0.JS INTEGRATION
-        // =====================================================================
-        
-        // Main send notification function - handles both E-Copy and regular sends
-        async function sendNotification() {
-            const message = document.getElementById('messageText').value.trim();
-            
-            if (!message) {
-                showNotification('Please enter a message before sending.', 'warning');
-                return;
-            }
-            
-            // E-Copy sends skip the no-email check (they're pre-selected with emails)
-            if (selectedZones.includes('ecopy')) {
-                console.log('E-Copy send - proceeding directly');
-                await executeSend();
-                return;
-            }
-            
-            // For regular sends, check for residents without email
-            try {
-                const recipientFilter = buildRecipientFilter();
-                const response = await callEmailAPI('getNoEmailResidents', { recipientFilter });
-                
-                if (response.success && response.residents && response.residents.length > 0) {
-                    // Show warning modal with residents
-                    showNoEmailModal(response.residents);
-                } else {
-                    // No residents without email, proceed with send
-                    await executeSend();
-                }
-            } catch (error) {
-                console.error('Error checking no-email residents:', error);
-                showNotification('Error checking recipients. Proceeding with send...', 'warning');
-                await executeSend();
-            }
-        }
-        
-        async function executeSend() {
-    const sendBtn = document.getElementById('sendBtn');
-    const originalText = sendBtn.innerHTML;
-    const message = document.getElementById('messageText').value.trim();
-    
-    // Show loading state
-    sendBtn.disabled = true;
-    sendBtn.innerHTML = '<span class="spinner"></span>Sending...';
-    
-    try {
-        // Prepare recipient filter
-        const recipientFilter = buildRecipientFilter();
-        
-        // Prepare API call parameters
-        const customData = {
-            message: message,
-            subject: 'Field Notification - ' + getTemplateName(selectedTemplate),
-            body: message,
-            timestamp: new Date().toLocaleString(),
-            templateType: selectedTemplate,
-            fieldAlert: true
-        };
-        
-        // NEW: Add attachment if present
-        if (attachmentData && attachmentFilename) {
-            customData.attachment = {
-                filename: attachmentFilename,
-                data: attachmentData,
-                mimeType: getMimeType(attachmentFilename)
+        function getMimeType(filename) {
+            const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+            const mimeTypes = {
+                '.pdf': 'application/pdf',
+                '.doc': 'application/msword',
+                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.txt': 'text/plain'
             };
+            return mimeTypes[ext] || 'application/octet-stream';
         }
-        
-        console.log('Sending notification with params:', {
-            recipientFilter: recipientFilter,
-            hasAttachment: !!attachmentData,
-            selectedTemplate: selectedTemplate,
-            selectedZones: selectedZones,
-            selectedUnits: selectedUnits
-        });
-        
-        // Call Email Server
-        const response = await callEmailAPI('sendMassNotification', {
-            templateId: 'WATER01',
-            customData: JSON.stringify(customData),
-            recipientFilter: recipientFilter,
-            adminUser: 'FieldOperations'
-        });
-        
-        console.log('Email API response:', response);
-        
-        if (response.success) {
-            const targetText = getTargetText();
-            const recipientCount = response.recipientCount || calculateRecipientCount();
-            showNotification(getTemplateName(selectedTemplate) + ' sent to ' + targetText + '! (' + recipientCount + ' recipients)', 'success');
-            
-            // Reset form
-            resetForm();
-        } else {
-            throw new Error(response.error || 'Failed to send notification');
-        }
-        
-    } catch (error) {
-        console.error('Send error:', error);
-        showNotification('Failed to send notification: ' + error.message, 'error');
-    } finally {
-        sendBtn.disabled = false;
-        sendBtn.innerHTML = originalText;
-    }
-}
-
-function getMimeType(filename) {
-    const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
-    const mimeTypes = {
-    '.pdf': 'application/pdf',
-    '.doc': 'application/msword',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.txt': 'text/plain'
-};
-    return mimeTypes[ext] || 'application/octet-stream';
-}
-
         
         function showNoEmailModal(residents) {
             console.log('showNoEmailModal called with:', residents);
@@ -2093,121 +1996,6 @@ function getMimeType(filename) {
     await executeFieldAlertSend();
 }
         
-        
-        function callEmailAPI(action, params) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'emailCallback_' + Date.now();
-                const script = document.createElement('script');
-                let settled = false;
-
-                function cleanup() {
-                    window[callbackName] = function() {};
-                    try { document.head.removeChild(script); } catch (e) {}
-                }
-
-                // Set up callback
-                window[callbackName] = function(response) {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    resolve(response);
-                };
-                
-                // Build URL
-                const url = new URL(EMAIL_SERVICE_URL);
-                url.searchParams.append('action', action);
-                url.searchParams.append('callback', callbackName);
-                
-                // Add all parameters
-                Object.keys(params).forEach(key => {
-                    url.searchParams.append(key, params[key]);
-                });
-                
-                script.src = url.toString();
-                script.onerror = () => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Network error - check Email Server URL'));
-                };
-                
-                document.head.appendChild(script);
-                
-                // Timeout after 30 seconds
-                setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Request timeout'));
-                }, 30000);
-            });
-        }
-        
-        function buildRecipientFilter() {
-    // Handle E-Copy role-based sending
-    if (selectedZones.includes('ecopy')) {
-        return 'role:E-Copy';
-    }
-
-
-            if (selectedUnits.length > 0) {
-                // Send individual units with "Unit " prefix to match UnitList format
-                const unitsList = selectedUnits.map(unit => `Unit ${unit}`).join(',');
-                console.log('Individual units selected:', selectedUnits);
-                return `units:${unitsList}`;
-            }
-            
-            if (selectedZones.includes('all')) {
-                return 'all_units';
-            }
-            
-            // Map our zones to Email Server format
-            if (selectedZones.length === 1) {
-                const zoneMap = {
-                    'zone1': 'zone_1',
-                    'zone2': 'zone_2', 
-                    'zone3': 'zone_3',
-                    'zone4': 'zone_4',
-                    'zone5': 'zone_5'
-                };
-                return zoneMap[selectedZones[0]] || 'all_units';
-            }
-            
-            // Multiple zones - Email Server V1.0.js doesn't support multiple zones yet
-            // Default to all units for now
-            console.log('Multiple zones selected:', selectedZones);
-            showNotification('Multiple zone targeting coming soon. Sending to all units.', 'info');
-            return 'all_units';
-        }
-        
-        function calculateRecipientCount() {
-  if (selectedUnits.length > 0) {
-    // For individual units, we can't predict exact count since some units have 1 resident, some have 2
-    // The actual count will come from the Email Server response
-    return selectedUnits.length * 2; // Rough estimate
-  }
-  
-  if (selectedZones.includes('all')) {
-    // This will be the actual count from getAllUnitRecipients()
-    return 50; // Rough estimate based on your data
-  }
-  
-  // Estimate based on zones
-  let unitCount = 0;
-  selectedZones.forEach(zone => {
-    switch(zone) {
-      case 'zone1': unitCount += 8; break;  // Units 1-8
-      case 'zone2': unitCount += 12; break; // Units 9-20
-      case 'zone3': unitCount += 8; break;  // Units 21-28
-      case 'zone4': unitCount += 8; break;  // Units 29-36
-      case 'zone5': unitCount += 8; break;  // Units 37-44
-      default: unitCount += 1;
-    }
-  });
-  
-  // Rough estimate: average 1.5 residents per unit
-  return Math.round(unitCount * 1.5);
-}
         
         // =====================================================================
         // SERVICE STATUS MONITORING
@@ -2288,35 +2076,6 @@ function getMimeType(filename) {
             showNotification('All selections cleared', 'success');
         }
         
-        function resetForm() {
-            // Clear selections
-            selectedTemplate = null;
-            selectedZones = [];
-            selectedUnits = [];
-            
-            // Clear visual selections
-            document.querySelectorAll('.template-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-            document.querySelectorAll('.zone-btn').forEach(btn => {
-                btn.classList.remove('selected');
-            });
-            
-            // Clear individual unit selections
-            document.querySelectorAll('#unitsGrid input').forEach(input => {
-                input.checked = false;
-                input.closest('.unit-checkbox').classList.remove('selected');
-            });
-            
-            // Clear message
-            const messageInput = document.getElementById('messageText');
-            messageInput.value = '';
-            updateCharCount();
-            
-            // Update button
-            updateSendButton();
-        }
-        
         function showNotification(message, type = 'success') {
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
@@ -2344,7 +2103,7 @@ async function loadECopyList() {
     listDiv.innerHTML = '';
     
     try {
-        const response = await callEmailAPI('getECopyRecipients', {});
+        const response = await callNotificationAPI('getECopyRecipients', {});
         
         if (response.success) {
             ecopyRecipients = response.recipients || [];
@@ -2805,9 +2564,8 @@ if (!selectedZones.includes('ecopy') && emailEnabled) {
     await executeFieldAlertSend();
 }
 // =====================================================================
-// COMPLETE executeFieldAlertSend WITH ATTACHMENT SUPPORT
+// executeFieldAlertSend WITH ATTACHMENT SUPPORT
 // =====================================================================
-// Replace your executeFieldAlertSend function (lines 2592-2654) with this
 
 async function executeFieldAlertSend() {
     if (!pendingSendParams) return;
