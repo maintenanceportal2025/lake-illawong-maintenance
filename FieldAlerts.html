@@ -4,11 +4,26 @@ FIELD NOTIFICATIONS - UNIFIED EMAIL + SMS SYSTEM
 =====================================================================
 PURPOSE: Complete notification system with Email + SMS via NotificationServer V3.0
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.2.0 - EmailServer decommission complete (see below)
+VERSION: V3.2.1 - E-Copy panel fixes (see below)
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified V2.0 (glass-morphism, confirmed against
   actual CSS -- corrected from a stale "v1.4" that contradicted this file's
   own VERSION line above, which already correctly noted the V2.0 conversion)
+
+NEW IN V3.2.1:
+✅ Fixed "Unit Unit 14" style double-prefix in the E-Copy distribution
+   panel -- UnitList col A sometimes already contains a "Unit" prefix,
+   same root cause fixed the same way (cleanUnitNumber helper) in
+   FacilitiesBooking V2.0.0.
+✅ Fixed the E-Copy panel's loading indicator -- it used a static 🔄
+   emoji (doesn't animate) instead of the CSS .spinner element the rest
+   of the system uses.
+✅ Fixed intermittent "Connection error" requiring a manual Refresh --
+   loadECopyList() now retries automatically (up to 2 attempts,
+   progressive backoff) on a genuine network/connection failure, same
+   idiom as MaintenanceModule's makeRequest retry pattern. A real
+   backend error (response.success: false) is NOT retried -- retrying
+   that wouldn't help and would only delay showing the actual problem.
 
 NEW IN V3.2.0:
 ✅ EmailServer migration complete -- removed the dead legacy send path
@@ -1326,7 +1341,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
     </div>
     
     <div class="distribution-summary" id="distributionSummary">
-        <div style="color: #6b7280;">Loading recipients...</div>
+        <div style="color: #6b7280;"><span class="spinner"></span>Loading recipients...</div>
     </div>
     
     <div class="distribution-list" id="distributionList">
@@ -2093,13 +2108,26 @@ function toggleSubjectField() {
 // E-COPY DISTRIBUTION LIST
 // =====================================================================
 
-async function loadECopyList() {
-    console.log('📋 Loading E-Copy distribution list...');
+function cleanUnitNumber(unit) {
+    // UnitList col A sometimes already contains a "Unit" prefix (e.g. "Unit 14"
+    // instead of just "14") -- same data quirk fixed the same way in
+    // FacilitiesBooking.html (cleanUnitNumber, V2.0.0). Strips it so display
+    // code can safely prepend "Unit " itself without doubling up.
+    if (!unit) return '';
+    return unit.toString().replace(/^unit\s*#?\s*/i, '').trim();
+}
+
+async function loadECopyList(retryCount = 0) {
+    const MAX_RETRIES = 2; // matches the retry idiom used elsewhere (MaintenanceModule's makeRequest)
+    console.log(`📋 Loading E-Copy distribution list (attempt ${retryCount + 1})...`);
     
     const summaryDiv = document.getElementById('distributionSummary');
     const listDiv = document.getElementById('distributionList');
     
-    summaryDiv.innerHTML = '<div style="color: #6b7280;">🔄 Loading recipients...</div>';
+    summaryDiv.className = 'distribution-summary';
+    summaryDiv.innerHTML = retryCount === 0
+        ? '<span class="spinner"></span>Loading recipients...'
+        : `<span class="spinner"></span>Connection slow, retrying... (${retryCount}/${MAX_RETRIES})`;
     listDiv.innerHTML = '';
     
     try {
@@ -2115,9 +2143,13 @@ async function loadECopyList() {
         }
     } catch (error) {
         console.error('Error loading E-Copy list:', error);
-        summaryDiv.className = 'distribution-summary warning';
-        summaryDiv.innerHTML = '❌ Connection error';
-        showNotification('Failed to connect to server', 'error');
+        if (retryCount < MAX_RETRIES) {
+            setTimeout(() => loadECopyList(retryCount + 1), 1500 * (retryCount + 1));
+        } else {
+            summaryDiv.className = 'distribution-summary warning';
+            summaryDiv.innerHTML = '❌ Connection error';
+            showNotification('Failed to connect to server after multiple attempts', 'error');
+        }
     }
 }
 
@@ -2151,7 +2183,7 @@ function displayECopyList() {
         
         html += `
             <div class="recipient-item ${hasEmail ? '' : 'no-email'}">
-                <div class="recipient-unit">Unit ${r.unit}</div>
+                <div class="recipient-unit">Unit ${cleanUnitNumber(r.unit)}</div>
                 <div class="recipient-name">${escapeHtml(r.name)}</div>
                 <div class="recipient-email ${hasEmail ? '' : 'missing'}">
                     ${hasEmail ? escapeHtml(r.email) : '⚠️ NO EMAIL ADDRESS'}
