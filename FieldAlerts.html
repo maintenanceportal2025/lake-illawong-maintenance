@@ -4,11 +4,42 @@ FIELD NOTIFICATIONS - UNIFIED EMAIL + SMS SYSTEM
 =====================================================================
 PURPOSE: Complete notification system with Email + SMS via NotificationServer V3.0
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.2.1 - E-Copy panel fixes (see below)
+VERSION: V3.2.3 - Clear Selections + E-Copy pre-warm (see below)
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified V2.0 (glass-morphism, confirmed against
   actual CSS -- corrected from a stale "v1.4" that contradicted this file's
   own VERSION line above, which already correctly noted the V2.0 conversion)
+
+NEW IN V3.2.3:
+✅ Fixed Clear Selections not closing the E-Copy distribution preview
+   panel -- clearAllSelections() cleared every other selection state but
+   never hid #distributionPreview/#attachmentSection, unlike every other
+   deselect path in the file (selectZone/deselectZone both explicitly
+   hide them). Now consistent.
+✅ Added a silent pre-warm call (testConnection) on page load to reduce
+   the ~8s cold-start delay noticed when opening E-Copy Recipients --
+   Apps Script containers that haven't been hit recently take several
+   seconds to spin up on the first real request; this fires a cheap
+   background call at page load so a later genuine request has a better
+   chance of hitting an already-warm instance. This is a best-effort
+   optimisation, not a guarantee -- GAS cold-start timing isn't fully
+   controllable client-side, and containers still recycle over time.
+
+NEW IN V3.2.2:
+LAST UPDATED: August 2026
+DESIGN SYSTEM: Lake Illawong Unified V2.0 (glass-morphism, confirmed against
+  actual CSS -- corrected from a stale "v1.4" that contradicted this file's
+  own VERSION line above, which already correctly noted the V2.0 conversion)
+
+NEW IN V3.2.2:
+✅ checkServiceStatus() was throwing an uncaught ReferenceError on every
+   page load and every 2-minute poll (EMAIL_SERVICE_URL no longer exists
+   as of V3.2.0's cleanup) -- this was assessed as cosmetic in V3.2.0/1
+   since a rejected promise from a fire-and-forget async call can't
+   halt unrelated code, but it's a real uncaught exception regardless
+   and worth just not throwing. Reduced to a no-throw no-op that marks
+   the dot inert ('N/A') -- not reinstated against NotificationServer;
+   the dot itself still has no ongoing purpose, per V3.2.0/1.
 
 NEW IN V3.2.1:
 ✅ Fixed "Unit Unit 14" style double-prefix in the E-Copy distribution
@@ -1575,6 +1606,15 @@ let attachmentFilename = null;
             setupEventListeners();
             generateUnitsGrid();
             checkServiceStatus();
+            
+            // Pre-warm the NotificationServer Apps Script container in the
+            // background. GAS cold-starts can take several seconds on the
+            // first real request; firing a cheap, silent testConnection call
+            // here means a genuinely user-triggered call later (e.g. opening
+            // E-Copy Recipients) has a better chance of hitting an already-warm
+            // instance. Failure here is expected/harmless and silently ignored
+            // -- this is an optimisation attempt, not a required step.
+            callNotificationAPI('testConnection', {}).catch(() => {});
         });
         
         // =====================================================================
@@ -2017,31 +2057,18 @@ function toggleSubjectField() {
         // =====================================================================
         
         async function checkServiceStatus() {
+            // EmailServer is fully decommissioned (see V3.2.0 changelog) -- this
+            // function's original ping target no longer exists and never will
+            // again, so there's nothing left to check. Reduced to a no-throw
+            // no-op that just marks the dot inert, rather than attempting a
+            // ping that can only ever fail. Not reinstated against
+            // NotificationServer -- per Tony, the dot itself has no ongoing
+            // value; this fix is scoped to stopping the uncaught exception
+            // only, not to giving the dot a new meaning.
             const serviceDot = document.getElementById('serviceDot');
             const serviceStatus = document.getElementById('serviceStatus');
-            
-            if (EMAIL_SERVICE_URL === 'YOUR_EMAIL_SERVER_V1_URL_HERE') {
-                serviceDot.classList.add('offline');
-                serviceStatus.textContent = 'Not Configured';
-                return;
-            }
-            
-            try {
-                // Test connection to Email Server
-                const response = await callEmailAPI('checkEmailQuota', {});
-                
-                if (response.success) {
-                    serviceDot.classList.remove('offline');
-                    serviceStatus.textContent = 'Email Service';
-                } else {
-                    serviceDot.classList.add('offline');
-                    serviceStatus.textContent = 'Service Error';
-                }
-            } catch (error) {
-                serviceDot.classList.add('offline');
-                serviceStatus.textContent = 'Service Offline';
-                console.error('Service check failed:', error);
-            }
+            if (serviceDot) serviceDot.classList.add('offline');
+            if (serviceStatus) serviceStatus.textContent = 'N/A';
             
             updateLastUpdateTime();
         }
@@ -2077,6 +2104,14 @@ function toggleSubjectField() {
                 input.checked = false;
                 input.closest('.unit-checkbox').classList.remove('selected');
             });
+            
+            // Hide E-Copy distribution preview + attachment section (same as
+            // every other deselect path in selectZone()/deselectZone() --
+            // this function was missing this step)
+            const preview = document.getElementById('distributionPreview');
+            const attachmentSection = document.getElementById('attachmentSection');
+            if (preview) preview.classList.remove('show');
+            if (attachmentSection) attachmentSection.classList.remove('show');
             
             // Clear message text
             const messageInput = document.getElementById('messageText');
