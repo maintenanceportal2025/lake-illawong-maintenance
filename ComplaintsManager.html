@@ -6,13 +6,26 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.44
-  Backend:          ComplaintsManager V3.0.38
+  Frontend Version: V3.0.45
+  Backend:          ComplaintsManager.js
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V3.0.45 (Aug 2026): JSONP hardening -- cleanup() previously only
+    neutralised the callback function (window[name] = no-op) and never
+    removed the <script> tag itself, leaking one element into <head> per
+    JSONP call across this file's 13 call sites over a long admin
+    session. Now also removes the tag, matched via the callback name
+    already embedded in every request URL (&callback=<name>), so no
+    call site needed individual changes. Also dropped the pinned
+    backend version in the header (was V3.0.38) per the locked design
+    decision against pinning backend versions in frontend headers --
+    removing the pin rather than updating the number, since updating it
+    just restarts the same staleness cycle found repeatedly this
+    session.
   V3.0.44 (Aug 2026): System-wide JSONP audit fix -- the single shared
     cleanup(name) helper deleted the window callback instead of replacing
     it with a no-op, so a genuinely late cold-start response (arriving
@@ -2189,7 +2202,21 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    function cleanup(name) { window[name] = function () {}; }
+    function cleanup(name) {
+        window[name] = function () {};
+        // JSONP hardening (Aug 2026): the callback name is always embedded
+        // in the request URL as "&callback=<name>" (confirmed across all
+        // 13 call sites in this file), so this reliably finds and removes
+        // exactly the <script> tag this call created, regardless of which
+        // call site triggered cleanup() -- no need to thread the script
+        // element through 13 separate closures individually. Previously
+        // cleanup() only neutralised the callback function and never
+        // removed the tag itself, leaking one <script> element into <head>
+        // per JSONP call over a long admin session.
+        document.querySelectorAll('script[src*="callback=' + name + '"]').forEach(function (s) {
+            try { document.head.removeChild(s); } catch (e) {}
+        });
+    }
 
     function handleLoaded(data) {
         if (!data.success) { showPageError(data.error || 'Failed to load complaints.'); return; }
