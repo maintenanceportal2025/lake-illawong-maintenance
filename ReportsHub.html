@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.5
+VERSION: V1.1.6
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -28,6 +28,24 @@ REPORTS:
   8. Work Completed by Person    (Ben's activity by date range)
 
 VERSION HISTORY:
+  V1.1.6 (Aug 2026): Root cause of intermittent load failures found by
+                     comparing with DesktopExplorer, which hits the same
+                     Explorer endpoints reliably: it retries (3x) and
+                     loads the two heavy calls sequentially; this file
+                     fired both concurrently with zero retries, so one
+                     transient dead response (Apps Script's one-time
+                     googleusercontent redirect going stale / serving an
+                     error page -- the 404 and nosniff sightings noted in
+                     V1.1.5) failed the whole load. No timeout length can
+                     rescue a response that will never execute, which is
+                     why V1.1.5's 120s made no difference. Fix: timeout
+                     reverted to 30s per attempt; retry-with-backoff
+                     added (2 retries, 2s delay) on timeout, onerror and
+                     dead response; the two Explorer calls now run
+                     sequentially (dropdown fetch stays parallel -- it
+                     hits a different deployment); script.onload
+                     dead-response detection fails the attempt fast
+                     instead of burning the full timeout.
   V1.1.5 (Aug 2026): getLegacyLogData was timing out (30s) even though
                      the data genuinely loads -- confirmed via Desktop
                      Explorer successfully returning the same underlying
@@ -487,7 +505,16 @@ function isProgrammed(p) {
 // =====================================================================
 // DATA LOADING (JSONP)
 // =====================================================================
-function makeRequest(action, targetUrl) {
+// Retry-with-backoff pattern mirrored from DesktopExplorer's makeRequest,
+// which hits the same Explorer endpoints reliably. The intermittent
+// failures here were never slowness: Apps Script's one-time
+// googleusercontent redirect occasionally goes stale (404) or serves an
+// error page with the wrong content-type (Safari nosniff refusal). Those
+// responses will never execute the callback no matter how long we wait --
+// V1.1.5's 120s timeout proved that. The cure is fail fast + retry, not
+// wait longer.
+function makeRequest(action, targetUrl, retries) {
+    if (retries === undefined) retries = 2;
     const url = targetUrl || API_URL;
     return new Promise((resolve, reject) => {
         const cbName = 'rh_cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
@@ -499,19 +526,27 @@ function makeRequest(action, targetUrl) {
             if (script.parentNode) script.parentNode.removeChild(script);
         }
 
-        // 120s (was 30s). getLegacyLogData in particular can now take a
-        // genuinely long time to return -- confirmed via Desktop Explorer
-        // successfully loading the same underlying data, just slowly, on
-        // "All Data". 30s was failing legitimate slow-but-working calls,
-        // not just genuinely broken ones. Provisional value pending an
-        // actual timing measurement from Tony -- may need tuning once we
-        // know how long a real worst-case pull takes.
-        const timeout = setTimeout(() => {
+        // Shared failure path: retry if attempts remain, otherwise reject.
+        // Settled-guard makes double-fires (e.g. onerror + timeout) safe.
+        function failOrRetry(reason) {
             if (settled) return;
             settled = true;
+            clearTimeout(timeout);
             cleanup();
-            reject(new Error('Timeout: ' + action));
-        }, 120000);
+            if (retries > 0) {
+                console.warn('Retrying ' + action + ' (' + reason + ', ' + retries + ' attempt(s) left)');
+                setTimeout(() => {
+                    makeRequest(action, targetUrl, retries - 1).then(resolve).catch(reject);
+                }, 2000);
+            } else {
+                reject(new Error(reason + ': ' + action));
+            }
+        }
+
+        // 30s per attempt (reverted from V1.1.5's 120s -- see header note).
+        // Genuine slow-but-working calls complete well inside 30s; anything
+        // that hasn't answered by then is dead and retrying beats waiting.
+        const timeout = setTimeout(() => failOrRetry('Timeout'), 30000);
 
         window[cbName] = (data) => {
             if (settled) return;
@@ -521,12 +556,17 @@ function makeRequest(action, targetUrl) {
             resolve(data);
         };
 
-        script.onerror = () => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timeout);
-            cleanup();
-            reject(new Error('Network error: ' + action));
+        script.onerror = () => failOrRetry('Network error');
+
+        // Dead-response detection: a JSONP callback runs during script
+        // execution, i.e. before onload fires. So if onload fires and we're
+        // still not settled, the response arrived but didn't execute the
+        // callback (HTML error page served with HTTP 200, truncated payload,
+        // etc.). Fail the attempt now rather than burning the full 30s.
+        // Short grace delay purely as insurance against execution-order
+        // edge cases; the settled-guard makes it a no-op on success.
+        script.onload = () => {
+            setTimeout(() => failOrRetry('Dead response'), 500);
         };
 
         script.src = url + '?action=' + action + '&callback=' + cbName;
@@ -562,11 +602,18 @@ async function fetchDropdownOptions() {
 async function loadAllData() {
     setDataStatus('loading', 'Loading FaultLog...');
     try {
-        const [cr, lr] = await Promise.all([
-            makeRequest('getFaultLogData'),
-            makeRequest('getLegacyLogData'),
-            fetchDropdownOptions()
-        ]);
+        // Sequential, not Promise.all. Two simultaneous anonymous hits on
+        // the same Apps Script deployment made the stale-redirect failure
+        // more likely, and Promise.all meant one dead response failed the
+        // entire load. DesktopExplorer loads these same two endpoints
+        // sequentially and doesn't exhibit the problem. The dropdown fetch
+        // stays parallel -- it targets a different deployment and handles
+        // its own failures with fallback values.
+        const dropdownPromise = fetchDropdownOptions();
+        const cr = await makeRequest('getFaultLogData');
+        setDataStatus('loading', 'Loading LegacyLog...');
+        const lr = await makeRequest('getLegacyLogData');
+        await dropdownPromise;
 
         const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
         const rawLegacy  = (lr && lr.success) ? (lr.data || []) : [];
