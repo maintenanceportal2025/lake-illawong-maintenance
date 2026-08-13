@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.3
+VERSION: V1.1.4
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -28,6 +28,20 @@ REPORTS:
   8. Work Completed by Person    (Ben's activity by date range)
 
 VERSION HISTORY:
+  V1.1.4 (Aug 2026): Added the script.onerror handler that V1.1.2's
+                     audit fix deliberately left out (flagged at the
+                     time, not fixed then). Genuine network failures
+                     were waiting out the full 30s timeout instead of
+                     failing fast. Uses the existing settled-guard, same
+                     defensive pattern as the timeout/success handlers,
+                     so no new race condition. Checked this isn't a
+                     repeat of ComplaintForm's V1.2.1 issue (onerror
+                     removed there after firing as a false positive on
+                     Apps Script's redirect chain) -- onerror is already
+                     in successful, undocumented-issue use across 14+
+                     call sites elsewhere in this system (ComplaintsManager,
+                     CommunitySurveys), so that looks like it was specific
+                     to that one deployment, not a universal risk.
   V1.1.3 (Aug 2026): Priority and Assigned To dropdowns were hardcoded
                      (Priority: static High/Medium/Low, missing Urgent
                      entirely; Assigned To: derived from whoever had
@@ -486,6 +500,14 @@ function makeRequest(action, targetUrl) {
             clearTimeout(timeout);
             cleanup();
             resolve(data);
+        };
+
+        script.onerror = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            cleanup();
+            reject(new Error('Network error: ' + action));
         };
 
         script.src = url + '?action=' + action + '&callback=' + cbName;
