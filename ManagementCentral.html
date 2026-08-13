@@ -7,13 +7,55 @@ DOCUMENT INFORMATION:
   File Name:        ManagementCentral.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module (Admin Portal)
-  Frontend Version: V1.4.1
-  Backend:          ManagementCentral V1.3.js
+  Frontend Version: V1.4.2
+  Backend:          ManagementCentral.js
   Status:           PRODUCTION
   Created:          2025
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.4.2 (Aug 2026): Removed two entire orphaned tabs left over from an
+                     earlier iteration -- "users-tab" (Add User /
+                     Activate-Deactivate, old password-account tooling
+                     from before the system moved to OTP verification)
+                     and "sync-tab" (its own on-page text called itself
+                     "System Integration - STEP 4, final step after all
+                     components working" -- an unfinished dev/integration
+                     harness, never completed). Neither had a nav button
+                     -- the visible tab bar only ever offered Contact
+                     Management / Dropdowns / Role Assignment, confirmed
+                     against the live page. Two of the tab's own actions
+                     (addUser, updateUserStatus) don't exist on the real
+                     ManagementCentral.js backend either, so even if
+                     reached they'd have failed -- but since neither tab
+                     was reachable, this had zero live impact; V1.2.0's
+                     changelog already claims "removed Quick Navigation &
+                     Test buttons" -- the visible buttons went, but the
+                     backing JS/CSS/HTML apparently never did, and
+                     persisted three more versions as dead weight.
+                     Removed alongside: the addUserModal HTML block, all
+                     now-orphaned JS (loadUserAccounts, showAddUserModal,
+                     hideAddUserModal, toggleUserStatus, exportUserData,
+                     editUser, updateUserAccount, resetPassword,
+                     filterUsers, testRolesConnection, navigateToTab,
+                     testDropdownConnection, loadSheetLinks), showTab()'s
+                     now-dead "users" auto-load branch, three now-unused
+                     state variables (allUsers, filteredUsers,
+                     sheetsCreated), and orphaned CSS for a navigation
+                     dropdown that, on inspection, was never actually
+                     added to the HTML in the first place. Contact
+                     Management, Dropdowns (Categories/SubCategories/
+                     Assigned To), and Role Assignment -- the three tabs
+                     genuinely reachable and in daily use -- confirmed
+                     unaffected; every one of their ~21 backend actions
+                     checked directly against ManagementCentral.js's real
+                     case list and confirmed to match. Also dropped the
+                     backend version pins in the header (was V1.3.js,
+                     three versions stale against real V1.5.1) per the
+                     locked design decision against pinning backend
+                     versions in frontend headers -- removing the pin
+                     rather than updating the number, since updating it
+                     just restarts the same staleness cycle.
   V1.4.1 (Aug 2026): System-wide JSONP audit fix -- makeAPICall() deleted
                      its callback on success/onerror instead of replacing
                      it with a no-op, and its timeout guard (`if
@@ -37,9 +79,9 @@ AUTHENTICATION:
   Direct URL access redirects to AdminPortal.html.
 
 SYSTEM CONNECTIONS:
-  Backend API:      ManagementCentral V1.3.js
+  Backend API:      ManagementCentral.js
   Data Source:      UnitList sheet (resident and unit data)
-  Notifications:    NotificationServer V3.2.0 (security alerts)
+  Notifications:    NotificationServer (security alerts)
   URL Parameters:   None
 
 PRIMARY FEATURES:
@@ -813,22 +855,6 @@ TECHNICAL:
             margin-top: 15px;
         }
 
-        .filter-select[onchange*="navigateToTab"] {
-            background: rgba(30, 64, 175, 0.7);
-            border: 1px solid var(--glass-border);
-            color: white;
-            font-weight: 500;
-            border-radius: 2px;
-            min-height: 44px;
-        }
-
-        .filter-select[onchange*="navigateToTab"] option { background: #1e3a8a; }
-
-        .filter-select[onchange*="navigateToTab"]:hover {
-            border-color: var(--glass-border-hover);
-            background: rgba(30, 64, 175, 0.9);
-        }
-
 @media (max-width: 480px) {
     .header-content {
         flex-direction: column;
@@ -984,46 +1010,6 @@ TECHNICAL:
                 </div>
             </div>
 
-            <!-- UPDATED: User Accounts Tab with full functionality -->
-            <div id="users-tab" class="tab-content">
-                <div class="action-bar">
-                    <button class="btn-primary" onclick="showAddUserModal()">
-                        ➕ Add New User
-                    </button>
-                    <button class="btn-primary" onclick="loadUserAccounts()">
-                        🔄 Refresh Users
-                    </button>
-                    <button class="btn-warning" onclick="exportUserData()">
-                        📤 Export User Data
-                    </button>
-                </div>
-
-                <!-- User Filter Controls -->
-                <div class="filters">
-                    <input type="text" class="search-box" id="userSearch" placeholder="Search users..." onkeyup="filterUsers()" />
-                    <select class="filter-select" id="userRoleFilter" onchange="filterUsers()">
-                        <option value="">All Roles</option>
-                        <option value="Administrator">Administrator</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Staff">Staff</option>
-                        <option value="Committee">Committee</option>
-                    </select>
-                    <select class="filter-select" id="userStatusFilter" onchange="filterUsers()">
-                        <option value="">All Status</option>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </select>
-                </div>
-
-                <!-- User Accounts Grid -->
-                <div class="user-accounts-grid" id="userAccountsGrid">
-                    <div style="text-align: center; padding: 40px; color: var(--text-muted); grid-column: 1 / -1;">
-                        👥 <strong>User Accounts Ready</strong><br>
-                        Click "Refresh Users" to load user accounts from the UserAccounts TAB
-                    </div>
-                </div>
-            </div>
-
             <div id="roles-tab" class="tab-content">
                 <div class="action-bar">
                     <button class="btn-primary" onclick="loadRoles()">
@@ -1047,17 +1033,6 @@ TECHNICAL:
                 </div>
 
                 
-            </div>
-
-            <div id="sync-tab" class="tab-content">
-                <div class="action-bar">
-                    <button class="btn-primary" id="sync-ranges-btn">🔄 Test Named Range Sync</button>
-                    <button class="btn-success" id="test-integration-btn">🧪 Test Full Integration</button>
-                </div>
-                <div style="text-align: center; padding: 60px; color: var(--text-muted);">
-                    🔄 <strong>System Integration - STEP 4</strong><br>
-                    Final step after all components working
-                </div>
             </div>
         </div>
     </div>
@@ -1165,49 +1140,6 @@ TECHNICAL:
         </div>
     </div>
 
-    <!-- Add User Modal -->
-    <div id="addUserModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px;">
-            <h3 style="margin-bottom: 20px;">➕ Add New User</h3>
-            <form id="addUserForm">
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Username *</label>
-                    <input type="text" id="newUsername" required style="width: 100%; padding: 10px; border: 2px solid var(--border-primary); border-radius: 6px;">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Full Name *</label>
-                    <input type="text" id="newFullName" required style="width: 100%; padding: 10px; border: 2px solid var(--border-primary); border-radius: 6px;">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Email *</label>
-                    <input type="email" id="newEmail" required style="width: 100%; padding: 10px; border: 2px solid var(--border-primary); border-radius: 6px;">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Role *</label>
-                    <select id="newRole" required style="width: 100%; padding: 10px; border: 2px solid var(--border-primary); border-radius: 6px;">
-                        <option value="">Select Role</option>
-                        <option value="Administrator">Administrator</option>
-                        <option value="Manager">Manager</option>
-                        <option value="Staff">Staff</option>
-                        <option value="Committee">Committee</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                    <button type="button" onclick="hideAddUserModal()" style="padding: 10px 20px; border: 1px solid var(--border-primary); background: white; border-radius: 6px; cursor: pointer;">
-                        Cancel
-                    </button>
-                    <button type="submit" style="padding: 10px 20px; background: var(--primary-blue); color: white; border: none; border-radius: 6px; cursor: pointer;">
-                        Create User
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-
-
-
-
     <script>
 
 		// SESSION GUARD
@@ -1224,9 +1156,6 @@ TECHNICAL:
         let categoriesData = [];
         let subCategoriesData = [];
         let assignedByData = [];
-        let allUsers = [];
-        let filteredUsers = [];
-        let sheetsCreated = false;
         let currentEditResident = null;
 	window.currentStageFilter = '';
 
@@ -1536,11 +1465,6 @@ TECHNICAL:
             
             // Add active to selected tab
             event.target.classList.add('active');
-
-            // Auto-load data when switching to users tab
-            if (tabName === 'users' && allUsers.length === 0) {
-                loadUserAccounts();
-            }
         }
 
         function showToast(message, type = 'info') {
@@ -1558,295 +1482,6 @@ TECHNICAL:
 
         function showMessage(message) {
             showToast(message, 'info');
-        }
-
-        // ==========================================
-        // USER ACCOUNTS FUNCTIONS - NEWLY ADDED
-        // ==========================================
-
-        async function loadUserAccounts() {
-            try {
-                const container = document.getElementById('userAccountsGrid');
-                
-                // Show loading state
-                container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; grid-column: 1 / -1;">
-                        <div style="color: var(--text-muted); font-size: 1.2rem; margin-bottom: 10px;">⏳</div>
-                        <strong>Loading user accounts from UserAccounts TAB...</strong>
-                    </div>
-                `;
-                
-                const data = await makeAPICall('getUserAccounts');
-                
-                if (data.success && data.users) {
-                    allUsers = data.users;
-                    filteredUsers = [...allUsers];
-                    displayUserAccounts(filteredUsers);
-                    
-                    // Show success message
-                    const successMsg = document.createElement('div');
-                    successMsg.style.cssText = 'background: var(--success-bg); color: var(--success-green); padding: 10px; border-radius: 6px; margin-bottom: 15px; border: 1px solid var(--success-green);';
-                    successMsg.innerHTML = `✅ Successfully loaded ${data.count} user accounts from UserAccounts TAB`;
-                    container.parentNode.insertBefore(successMsg, container);
-                    
-                    setTimeout(() => successMsg.remove(), 3000);
-                    
-                } else {
-                    container.innerHTML = `
-                        <div style="text-align: center; padding: 40px; color: var(--error-red); grid-column: 1 / -1;">
-                            ❌ <strong>Failed to load user accounts:</strong> ${data.error || 'Unknown error'}
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                document.getElementById('userAccountsGrid').innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: var(--error-red); grid-column: 1 / -1;">
-                        ❌ <strong>Error loading user accounts:</strong> ${error.message}
-                    </div>
-                `;
-            }
-        }
-
-        function displayUserAccounts(users) {
-            const container = document.getElementById('userAccountsGrid');
-            
-            if (users.length === 0) {
-                container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: var(--text-muted); grid-column: 1 / -1;">
-                        📭 No user accounts found matching your criteria
-                    </div>
-                `;
-                return;
-            }
-
-            const usersHTML = users.map(user => {
-                const lastLogin = user.lastLogin ? 
-                    new Date(user.lastLogin).toLocaleDateString() + ' ' + 
-                    new Date(user.lastLogin).toLocaleTimeString() : 'Never';
-                
-                const statusColor = user.status === 'active' ? 'var(--success-green)' : 'var(--error-red)';
-                const statusClass = user.status === 'active' ? 'status-active' : 'status-inactive';
-                
-                return `
-                    <div class="user-card">
-                        <div class="user-header">
-                            <div class="user-avatar">
-                                ${user.fullName ? user.fullName.charAt(0).toUpperCase() : user.username.charAt(0).toUpperCase()}
-                            </div>
-                            <div class="user-info">
-                                <h4>${user.fullName || 'No Name'}</h4>
-                                <div class="user-username">@${user.username}</div>
-                            </div>
-                        </div>
-                        
-                        <div class="user-role">${user.role || 'No Role'}</div>
-                        
-                        <div class="user-details">
-                            <div class="user-detail-item"><strong>Email:</strong> ${user.email || 'No email'}</div>
-                            <div class="user-detail-item"><strong>Status:</strong> <span class="${statusClass}">${user.status || 'unknown'}</span></div>
-                            <div class="user-detail-item"><strong>Last Login:</strong> ${lastLogin}</div>
-                            <div class="user-detail-item"><strong>Created:</strong> ${user.dateCreated ? new Date(user.dateCreated).toLocaleDateString() : 'Unknown'}</div>
-                        </div>
-                        
-                        <div class="user-actions">
-                            <button class="btn-small btn-edit" onclick="editUser('${user.username}', ${user.rowNumber})">
-                                ✏️ Edit
-                            </button>
-                            <button class="btn-small" style="background: var(--warning-amber); color: white;" onclick="resetPassword('${user.username}')">
-                                🔑 Reset
-                            </button>
-                            <button class="btn-small" style="background: ${user.status === 'active' ? 'var(--error-red)' : 'var(--success-green)'}; color: white;" 
-                                onclick="toggleUserStatus('${user.username}', ${user.rowNumber}, '${user.status}')">
-                                ${user.status === 'active' ? '❌ Deactivate' : '✅ Activate'}
-                            </button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            container.innerHTML = usersHTML;
-        }
-
-        function filterUsers() {
-            const searchTerm = document.getElementById('userSearch').value.toLowerCase();
-            const roleFilter = document.getElementById('userRoleFilter').value;
-            const statusFilter = document.getElementById('userStatusFilter').value;
-            
-            if (allUsers.length === 0) {
-                return;
-            }
-            
-            filteredUsers = allUsers.filter(user => {
-                // Search filter
-                const matchesSearch = !searchTerm || 
-                    (user.username && user.username.toLowerCase().includes(searchTerm)) ||
-                    (user.fullName && user.fullName.toLowerCase().includes(searchTerm)) ||
-                    (user.email && user.email.toLowerCase().includes(searchTerm));
-                
-                // Role filter
-                const matchesRole = !roleFilter || user.role === roleFilter;
-                
-                // Status filter
-                const matchesStatus = !statusFilter || user.status === statusFilter;
-                
-                return matchesSearch && matchesRole && matchesStatus;
-            });
-            
-            displayUserAccounts(filteredUsers);
-        }
-
-        function showAddUserModal() {
-            document.getElementById('addUserModal').style.display = 'block';
-        }
-
-        function hideAddUserModal() {
-            document.getElementById('addUserModal').style.display = 'none';
-            document.getElementById('addUserForm').reset();
-        }
-
-        // Add User Form Submission
-        document.getElementById('addUserForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const newUser = {
-                username: document.getElementById('newUsername').value.trim(),
-                fullName: document.getElementById('newFullName').value.trim(),
-                email: document.getElementById('newEmail').value.trim(),
-                role: document.getElementById('newRole').value
-            };
-            
-            try {
-                const result = await makeAPICall('addUser', newUser);
-                
-                if (result.success) {
-                    alert('✅ User created successfully!\n\nUsername: ' + newUser.username + '\nTemporary password: ' + (result.tempPassword || 'generated'));
-                    hideAddUserModal();
-                    loadUserAccounts(); // Refresh the list
-                } else {
-                    alert('❌ Failed to create user: ' + result.error);
-                }
-            } catch (error) {
-                alert('❌ Error creating user: ' + error.message);
-            }
-        });
-
-        async function toggleUserStatus(username, rowNumber, currentStatus) {
-            const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-            
-            if (confirm(`Are you sure you want to ${newStatus === 'active' ? 'activate' : 'deactivate'} user ${username}?`)) {
-                try {
-                    const result = await makeAPICall('updateUserStatus', {
-                        username: username,
-                        rowNumber: rowNumber,
-                        status: newStatus
-                    });
-                    
-                    if (result.success) {
-                        alert(`✅ User ${username} ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully!`);
-                        loadUserAccounts(); // Refresh the list
-                    } else {
-                        alert('❌ Failed to update user status: ' + result.error);
-                    }
-                } catch (error) {
-                    alert('❌ Error updating user status: ' + error.message);
-                }
-            }
-        }
-
-        function exportUserData() {
-            if (allUsers.length === 0) {
-                alert('No user data to export. Please load user accounts first.');
-                return;
-            }
-            
-            // Create CSV content
-            let csvContent = "Username,Full Name,Email,Role,Status,Last Login,Date Created\n";
-            
-            allUsers.forEach(user => {
-                csvContent += `"${user.username || ''}","${user.fullName || ''}","${user.email || ''}",` +
-                             `"${user.role || ''}","${user.status || ''}","${user.lastLogin || ''}",` +
-                             `"${user.dateCreated || ''}"\n`;
-            });
-            
-            // Create download link
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', 'user_accounts_export.csv');
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            alert('📊 User data exported successfully!');
-        }
-
-        async function testUserAccounts() {
-            try {
-                showToast('Testing User Accounts API...', 'info');
-                const data = await makeAPICall('getUserAccounts');
-                
-                if (data.success) {
-                    showToast('✅ User Accounts API Working!\n\n' + 
-                              'Total Users: ' + data.count + '\n' +
-                              'Users: ' + data.users.map(u => u.username).join(', '), 'success');
-                } else {
-                    throw new Error(data.error || 'User Accounts API Failed');
-                }
-            } catch (error) {
-                showToast('❌ User Accounts Error: ' + error.message, 'error');
-            }
-        }
-
-        function editUser(username, rowNumber) {
-            const user = allUsers.find(u => u.username === username);
-            if (!user) {
-                alert('User not found');
-                return;
-            }
-            
-            // Create simple edit form in prompt
-            const newName = prompt(`Edit User: ${username}\n\nEnter new full name:`, user.fullName);
-            if (newName === null) return; // User cancelled
-            
-            const newEmail = prompt(`Edit User: ${username}\n\nEnter new email:`, user.email);
-            if (newEmail === null) return; // User cancelled
-            
-            const newRole = prompt(`Edit User: ${username}\n\nEnter new role (Administrator/Manager/Staff/Committee):`, user.role);
-            if (newRole === null) return; // User cancelled
-            
-            if (newName && newEmail && newRole) {
-                updateUserAccount(username, rowNumber, {
-                    fullName: newName,
-                    email: newEmail,
-                    role: newRole
-                });
-            }
-        }
-
-        async function updateUserAccount(username, rowNumber, updates) {
-            try {
-                alert(`✅ User Update Ready\n\n` +
-                      `Username: ${username}\n` +
-                      `Row: ${rowNumber}\n` +
-                      `Full Name: ${updates.fullName}\n` +
-                      `Email: ${updates.email}\n` +
-                      `Role: ${updates.role}\n\n` +
-                      `This will use updateUserAccount API when fully implemented.`);
-                
-                // Reload user accounts to refresh display
-                loadUserAccounts();
-                
-            } catch (error) {
-                alert('❌ Error updating user account: ' + error.message);
-            }
-        }
-
-        function resetPassword(username) {
-            if (confirm(`🔑 Reset Password for ${username}?\n\nThis will generate a new temporary password.`)) {
-                alert('Password Reset - functionality ready');
-            }
         }
 
         // ==========================================
@@ -2430,58 +2065,6 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
             } catch (error) {
                 console.error('Update role error:', error);
                 showToast('❌ Failed to update role: ' + error.message, 'error');
-            }
-        }
-
-        function testRolesConnection() {
-            testDropdownConnection();
-        }
-
-        function navigateToTab(url) {
-            if (url) {
-                window.open(url, '_blank');
-                event.target.value = '';
-            }
-        }
-
-        async function testDropdownConnection() {
-            try {
-                showToast('Testing dropdown API connection...', 'info');
-                
-                const response = await makeAPICall('testDropdownConnection');
-                
-                if (response.success) {
-                    showToast(`✅ Dropdown API connected: ${response.message}`, 'success');
-                    console.log('Dropdown API info:', response);
-                } else {
-                    throw new Error(response.error || 'Dropdown connection failed');
-                }
-            } catch (error) {
-                console.error('Dropdown connection test error:', error);
-                showToast('❌ Dropdown API connection failed: ' + error.message, 'error');
-            }
-        }
-
-        async function loadSheetLinks() {
-            try {
-                const response = await makeAPICall('getSheetGIDs');
-                if (response.success) {
-                    const navigationDropdown = document.querySelector('.filter-select[onchange*="navigateToTab"]');
-                    if (navigationDropdown) {
-                        while (navigationDropdown.options.length > 1) {
-                            navigationDropdown.remove(1);
-                        }
-                        
-                        response.sheets.forEach(sheet => {
-                            const option = document.createElement('option');
-                            option.value = sheet.url;
-                            option.textContent = `📄 ${sheet.name}`;
-                            navigationDropdown.appendChild(option);
-                        });
-                    }
-                }
-            } catch (error) {
-                console.log('Could not load dynamic sheet links, using static ones');
             }
         }
 
