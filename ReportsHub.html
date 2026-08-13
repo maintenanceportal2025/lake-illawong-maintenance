@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.4
+VERSION: V1.1.5
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -28,6 +28,18 @@ REPORTS:
   8. Work Completed by Person    (Ben's activity by date range)
 
 VERSION HISTORY:
+  V1.1.5 (Aug 2026): getLegacyLogData was timing out (30s) even though
+                     the data genuinely loads -- confirmed via Desktop
+                     Explorer successfully returning the same underlying
+                     data on "All Data", just slowly. Root cause looks
+                     like it's on Explorer's backend (legacy log data has
+                     likely grown large enough to trip Apps Script's
+                     large-response echo/proxy path, which a Chrome
+                     console 404 and a Safari-only "nosniff" script
+                     refusal both pointed to), not this file. Raised the
+                     timeout to 120s as an immediate mitigation while
+                     that's investigated properly -- provisional value,
+                     not measured against a real worst-case pull time.
   V1.1.4 (Aug 2026): Added the script.onerror handler that V1.1.2's
                      audit fix deliberately left out (flagged at the
                      time, not fixed then). Genuine network failures
@@ -487,12 +499,19 @@ function makeRequest(action, targetUrl) {
             if (script.parentNode) script.parentNode.removeChild(script);
         }
 
+        // 120s (was 30s). getLegacyLogData in particular can now take a
+        // genuinely long time to return -- confirmed via Desktop Explorer
+        // successfully loading the same underlying data, just slowly, on
+        // "All Data". 30s was failing legitimate slow-but-working calls,
+        // not just genuinely broken ones. Provisional value pending an
+        // actual timing measurement from Tony -- may need tuning once we
+        // know how long a real worst-case pull takes.
         const timeout = setTimeout(() => {
             if (settled) return;
             settled = true;
             cleanup();
             reject(new Error('Timeout: ' + action));
-        }, 30000);
+        }, 120000);
 
         window[cbName] = (data) => {
             if (settled) return;
