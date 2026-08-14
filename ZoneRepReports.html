@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          7 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.17
+VERSION: V1.0.18
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -21,9 +21,12 @@ REPORTS (cut-down from full Reports Hub):
   3. Month-on-Month Completed (trend, resolution volume over time)
   4. Priorities            (Reported/Completed trend + Currently Open
                              snapshot, by priority)
-  5. By Zone               (zone summary with chart)
-  6. Keyword Search        (both logs)
-  7. Programmed Works      (scheduled and completed programmed works)
+  5. Top Units             (top 10 by problem count, filterable by
+                             zone/period/dataset)
+  6. By Zone               (zone summary with chart, period filter,
+                             completion rate)
+  7. Keyword Search        (both logs)
+  8. Programmed Works      (scheduled and completed programmed works)
 
 Deliberately NOT exposed to this audience: Month-on-Month Reported (raw
 volume of new complaints, not resolution -- doesn't answer what Zone Reps
@@ -33,6 +36,25 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.0.18 (Aug 2026): Two additions raised by Tony. (1) New Top Units
+                     report -- same "Top 10 by Unit" concept as Desktop
+                     Explorer's generateChart('unit') (count problems per
+                     unitNumber, sort descending, top 10), extended with
+                     Zone and Period filters so a Zone Rep can see which
+                     units in their own patch are generating repeat
+                     reports, not just a system-wide top 10. (2) By Zone
+                     enhanced rather than duplicated into a separate
+                     "zone performance" report -- it already put every
+                     zone side by side, which is the actual comparison
+                     Tony was after; it just lacked a time window and a
+                     rate. Added a Period filter (same Months pattern as
+                     MoM/Priorities/Top Units) and a Completion Rate
+                     column: Completed / (Completed + Cancelled),
+                     deliberately excluding still-open items since they
+                     haven't reached a final outcome yet and including
+                     them would penalise a zone just for having recent,
+                     legitimate new reports. Both PDF exports show the
+                     selected period/zone in the header and filename.
   V1.0.17 (Aug 2026): Priorities Reported/Completed Trend reworked again,
                      per Tony -- V1.0.16's multi-line chart was still
                      messy with every priority shown at once, whether as
@@ -631,6 +653,9 @@ VERSION HISTORY:
 
             <div class="catalogue-divider"></div>
 
+            <div class="report-item" onclick="selectReport('top-units')" id="cat-top-units">
+                <span class="report-icon">🏘️</span>Top Units
+            </div>
             <div class="report-item" onclick="selectReport('by-zone')" id="cat-by-zone">
                 <span class="report-icon">🗺️</span>By Zone
             </div>
@@ -893,6 +918,7 @@ function runCurrentReport() {
         case 'open-problems':     renderOpenProblems();       break;
         case 'mom-completed':     renderMoMCompleted();       break;
         case 'priorities':        renderPriorities();         break;
+        case 'top-units':         renderTopUnits();           break;
         case 'by-zone':           renderByZone();             break;
         case 'keyword-search':    renderKeywordForm();        break;
         case 'programmed-works':  renderProgrammedWorks();    break;
@@ -1848,13 +1874,181 @@ async function exportPrioritiesPDF() {
 }
 
 // =====================================================================
+// REPORT — TOP UNITS (raised by Tony, Aug 2026 -- same "Top 10 by Unit"
+// concept as DesktopExplorer's generateChart('unit'): count problems per
+// unitNumber, sort descending, top 10. Extended here with Zone and Period
+// filters so a Zone Rep can see which units in their own patch are
+// generating repeat reports, not just a system-wide top 10.
+// =====================================================================
+function renderTopUnits() {
+    const zones = [...new Set(allData.map(p=>p.zone).filter(Boolean))].sort();
+
+    showPanel(`
+        <div class="report-heading">🏘️ Top Units</div>
+        <div class="report-subheading">Units with the most problem reports in the selected period -- useful for spotting recurring issues at a specific unit.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="tuZone" class="glass-select" onchange="runTopUnits()">
+                    <option value="all">All Zones</option>
+                    ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Period</span>
+                <select id="tuMonths" class="glass-select" onchange="runTopUnits()">
+                    <option value="3">Last 3 months</option>
+                    <option value="6">Last 6 months</option>
+                    <option value="12" selected>Last 12 months</option>
+                    <option value="all">All time</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="tuDataset" class="glass-select" onchange="runTopUnits()">
+                    <option value="all">Current + Legacy</option>
+                    <option value="current">Current only</option>
+                </select>
+            </div>
+            <button class="pdf-btn" onclick="exportTopUnitsPDF()">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="tuResults"></div>`);
+
+    runTopUnits();
+}
+
+let topUnitsData = {};
+
+function runTopUnits() {
+    if (!dataLoaded) return;
+    const zone    = document.getElementById('tuZone').value;
+    const months  = document.getElementById('tuMonths').value;
+    const dataset = document.getElementById('tuDataset').value;
+    let pool = dataset === 'current' ? currentData : allData;
+    if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
+    if (months !== 'all') {
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - parseInt(months));
+        pool = pool.filter(p => {
+            const d = new Date(p.timestamp);
+            return !isNaN(d) && d >= cutoff;
+        });
+    }
+
+    const counts = {};
+    pool.forEach(p => {
+        const unit = p.unitNumber || 'Unknown';
+        counts[unit] = (counts[unit]||0) + 1;
+    });
+
+    const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const total  = pool.length;
+    topUnitsData = { zone, sorted, total };
+
+    const el = document.getElementById('tuResults');
+    if (!sorted.length) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🏘️</div>
+            <div class="placeholder-title">No Records</div>
+            <div class="placeholder-text">No problems match the selected filters.</div></div>`;
+        return;
+    }
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">Total in Period</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${sorted.length}</div><div class="stat-pill-label">Units Shown</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${sorted[0][0]}</div><div class="stat-pill-label">Top Unit</div></div>
+        </div>
+        <div class="chart-wrap">
+            <div class="chart-title">Top ${sorted.length} Units by Problem Count</div>
+            <canvas id="tuChart" height="110"></canvas>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
+            <thead><tr><th>Unit</th><th>Count</th><th>% of Period Total</th></tr></thead>
+            <tbody>
+                ${sorted.map(([u,c])=>`<tr>
+                    <td><strong>${u}</strong></td>
+                    <td>${c}</td>
+                    <td>${total?Math.round(c/total*100):0}%</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+
+    if (activeChart) { activeChart.destroy(); activeChart = null; }
+    const ctx = document.getElementById('tuChart').getContext('2d');
+    activeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sorted.map(([u])=>u),
+            datasets: [{
+                label: 'Reports',
+                data: sorted.map(([,c])=>c),
+                backgroundColor: 'rgba(245,158,11,0.75)',
+                borderRadius: 3
+            }]
+        },
+        options: {
+            responsive: true, plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+async function exportTopUnitsPDF() {
+    const chartCanvas = document.getElementById('tuChart');
+    if (!chartCanvas) return;
+    await loadPdfLib();
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p','mm','a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+
+    const { zone, sorted, total } = topUnitsData;
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong — Top Units by Problem Count', pw/2, 12, {align:'center'});
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    const chartImg = chartCanvas.toDataURL('image/png');
+    pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
+
+    let y = 122;
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
+    pdf.text('Unit',16,y+5); pdf.text('Count',100,y+5); pdf.text('% of Total',140,y+5); y+=7;
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    sorted.forEach(([u,c],i)=>{
+        if (y>ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
+        pdf.text(String(u),16,y+4.2); pdf.text(String(c),100,y+4.2);
+        pdf.text(`${total?Math.round(c/total*100):0}%`,140,y+4.2); y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`Top_Units_${zone==='all'?'AllZones':'Zone'+zone}_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
 // REPORT 6 — BY ZONE
 // =====================================================================
 function renderByZone() {
     showPanel(`
         <div class="report-heading">🗺️ Problems by Zone</div>
-        <div class="report-subheading">Summary of reported, open, completed and cancelled problems per zone. Total = Open + Completed + Cancelled.</div>
+        <div class="report-subheading">Summary of reported, open, completed and cancelled problems per zone, reported within the selected period. Total = Open + Completed + Cancelled. Completion Rate = Completed / (Completed + Cancelled) -- still-open items are excluded since they haven't reached a verdict yet.</div>
         <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Period</span>
+                <select id="zoneMonths" class="glass-select" onchange="runByZone()">
+                    <option value="3">Last 3 months</option>
+                    <option value="6">Last 6 months</option>
+                    <option value="12" selected>Last 12 months</option>
+                    <option value="all">All time</option>
+                </select>
+            </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
                 <select id="zoneDataset" class="glass-select" onchange="runByZone()">
@@ -1872,8 +2066,22 @@ let zoneReportData = {};
 
 function runByZone() {
     if (!dataLoaded) return;
+    const months  = document.getElementById('zoneMonths').value;
     const dataset = document.getElementById('zoneDataset').value;
-    const pool    = dataset === 'current' ? currentData : allData;
+    let pool = dataset === 'current' ? currentData : allData;
+
+    // Period filter (v1.0.18) -- previously only Current/Legacy toggle,
+    // no way to ask "how did zones compare this quarter". Filters to
+    // problems reported within the window, same Months pattern used
+    // elsewhere (MoM, Priorities, Top Units).
+    if (months !== 'all') {
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - parseInt(months));
+        pool = pool.filter(p => {
+            const d = new Date(p.timestamp);
+            return !isNaN(d) && d >= cutoff;
+        });
+    }
 
     const zones = {};
     pool.forEach(p => {
@@ -1891,6 +2099,13 @@ function runByZone() {
     const totals  = sorted.map(([,v])=>v.total);
     const opens   = sorted.map(([,v])=>v.open);
 
+    // Completion Rate (v1.0.18) -- Completed / (Completed + Cancelled).
+    // Deliberately excludes still-open items: they haven't reached a
+    // final outcome yet, so counting them would penalise a zone just for
+    // having recent, legitimate new reports rather than for how well
+    // closed-out work actually gets resolved.
+    const rate = v => (v.completed + v.cancelled) ? Math.round(v.completed/(v.completed+v.cancelled)*100) : null;
+
     const el = document.getElementById('zoneResults');
     el.innerHTML = `
         <div class="chart-wrap">
@@ -1898,7 +2113,7 @@ function runByZone() {
             <canvas id="zoneChart" height="110"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
-            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>Cancelled</th></tr></thead>
+            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>Cancelled</th><th>Completion Rate</th></tr></thead>
             <tbody>
                 ${sorted.map(([z,v])=>`<tr>
                     <td><strong>${z}</strong></td>
@@ -1906,6 +2121,7 @@ function runByZone() {
                     <td>${v.open}</td>
                     <td>${v.completed}</td>
                     <td>${v.cancelled}</td>
+                    <td>${rate(v) === null ? '—' : rate(v) + '%'}</td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
@@ -1937,34 +2153,39 @@ async function exportZonePDF() {
     const pw  = pdf.internal.pageSize.getWidth();
     const ph  = pdf.internal.pageSize.getHeight();
 
+    const monthsSel = document.getElementById('zoneMonths').value;
+    const periodLabel = monthsSel === 'all' ? 'All time' : `Last ${monthsSel} months`;
+
     pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
     pdf.setTextColor(255,255,255);
     pdf.setFontSize(13); pdf.setFont('helvetica','bold');
     pdf.text('Lake Illawong — Problems by Zone', pw/2, 12, {align:'center'});
     pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+    pdf.text(`${periodLabel}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
 
     const chartImg = chartCanvas.toDataURL('image/png');
     pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
 
     let y = 124;
     const sorted = Object.entries(zoneReportData).sort((a,b)=>b[1].total-a[1].total);
+    const rate = v => (v.completed + v.cancelled) ? Math.round(v.completed/(v.completed+v.cancelled)*100) : null;
     pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
     pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-    pdf.text('Zone',16,y+5); pdf.text('Total',60,y+5); pdf.text('Open',95,y+5);
-    pdf.text('Completed',130,y+5); pdf.text('Cancelled',170,y+5); y+=7;
+    pdf.text('Zone',16,y+5); pdf.text('Total',55,y+5); pdf.text('Open',85,y+5);
+    pdf.text('Completed',115,y+5); pdf.text('Cancelled',150,y+5); pdf.text('Completion Rate',180,y+5); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     sorted.forEach(([z,v],i)=>{
         if (y>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
         pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
-        pdf.text(z,16,y+4.2); pdf.text(String(v.total),60,y+4.2);
-        pdf.text(String(v.open),95,y+4.2); pdf.text(String(v.completed),130,y+4.2);
-        pdf.text(String(v.cancelled),170,y+4.2); y+=6;
+        pdf.text(z,16,y+4.2); pdf.text(String(v.total),55,y+4.2);
+        pdf.text(String(v.open),85,y+4.2); pdf.text(String(v.completed),115,y+4.2);
+        pdf.text(String(v.cancelled),150,y+4.2);
+        pdf.text(rate(v) === null ? '—' : rate(v)+'%',180,y+4.2); y+=6;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`By_Zone_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`By_Zone_${monthsSel === 'all' ? 'AllTime' : 'Last' + monthsSel + 'mo'}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
