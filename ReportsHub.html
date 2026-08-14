@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.10
+VERSION: V1.1.11
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -28,6 +28,21 @@ REPORTS:
   9. Programmed Works            (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.11 (Aug 2026): Work by Person now has the same click-to-expand
+                     Notes row as Unit Problem History/Open Problems/
+                     Programmed Works -- raised by Tony after Gary needed
+                     to see whether reported/in-progress records (not
+                     just completed ones) for a person had any progress
+                     recorded, and this report showed status only, no way
+                     to drill into what's actually happening on a job.
+                     Labelled generically as "Notes" (not "Resolution")
+                     since records here span Reported/In Progress/
+                     Completed, matching Programmed Works' approach.
+                     No separate completion-date meta line needed --
+                     unlike Unit History, this report already has its own
+                     dedicated Completed column. PDF prints a wrapped
+                     "Notes:" line under any record with comments,
+                     alongside the Category wrap already added in V1.1.9.
   V1.1.10 (Aug 2026): Correction -- V1.1.9's changelog and my own reply
                      claimed ReportsHub had no Programmed Works report
                      ("it's ZoneRep-specific"). Wrong: it's fully present
@@ -1895,9 +1910,9 @@ function runWorkByPerson() {
             <div class="stat-pill"><div class="stat-pill-value">${completed && wpData.length ? Math.round(completed/wpData.length*100) : 0}%</div><div class="stat-pill-label">Completion Rate</div></div>
         </div>
         <div class="table-wrap"><table class="data-table">
-            <thead><tr><th>Reported</th><th>Completed</th><th>Unit</th><th>Zone</th><th>Description</th><th>Category</th><th>Priority</th><th>Status</th></tr></thead>
+            <thead><tr><th>Reported</th><th>Completed</th><th>Unit</th><th>Zone</th><th>Description</th><th>Category</th><th>Priority</th><th>Status</th><th></th></tr></thead>
             <tbody>
-                ${wpData.map(p=>`<tr>
+                ${wpData.map((p, idx) => `<tr class="exp-row" id="wpRow${idx}" onclick="toggleWpDetail(${idx})">
                     <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
                     <td style="white-space:nowrap">${isCompleted(p)?fmt(p.completionDate):'—'}</td>
                     <td>${p.unitNumber||'—'}</td>
@@ -1906,10 +1921,27 @@ function runWorkByPerson() {
                     <td>${p.category||'—'}</td>
                     <td>${priorityBadge(p.problemPriority)}</td>
                     <td>${statusBadge(p.problemStatus)}</td>
+                    <td class="exp-chev" id="wpChev${idx}">&#9662;</td>
+                </tr>
+                <tr id="wpDetail${idx}" style="display:none;">
+                    <td colspan="9" class="exp-detail-cell">
+                        <div class="exp-detail-label">Notes</div>
+                        <div class="exp-detail-text">${p.comments || 'No notes recorded.'}</div>
+                    </td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
     document.getElementById('wpPdfBtn').style.display = '';
+}
+
+// Same expand pattern as the other reports' toggle functions -- own id
+// namespace (wpRow/wpDetail) so expand states don't clash.
+function toggleWpDetail(idx) {
+    const row  = document.getElementById('wpRow' + idx);
+    const detail = document.getElementById('wpDetail' + idx);
+    const isOpenRow = detail.style.display !== 'none';
+    detail.style.display = isOpenRow ? 'none' : 'table-row';
+    row.classList.toggle('expanded', !isOpenRow);
 }
 
 async function exportWorkPDF() {
@@ -1937,11 +1969,16 @@ async function exportWorkPDF() {
     let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     wpData.forEach((p,i)=>{
+        const hasNote = !!(p.comments && String(p.comments).trim());
+        const noteLines = hasNote ? pdf.splitTextToSize('Notes: ' + String(p.comments).trim(), pw - 34) : [];
         const catLines = pdfCategoryLines(pdf, p.category, widths[5]);
-        const rowHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const catHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const rowHeight = catHeight + (hasNote ? (noteLines.length * 3.2 + 2) : 0);
+
         if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
         pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
         [fmt(p.timestamp),isCompleted(p)?fmt(p.completionDate):'—',
          p.unitNumber||'—',p.zone||'—',(p.problemDescription||'').substring(0,65),
          null,p.problemPriority||'—',p.problemStatus||'—'
@@ -1951,7 +1988,14 @@ async function exportWorkPDF() {
             else pdf.text(String(v), x+1, y+4.2);
             x+=widths[j];
         });
-        y+=rowHeight;
+
+        if (hasNote) {
+            pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
+            pdf.text(noteLines, 15, y + catHeight + 3, { lineHeightFactor: 1.15 });
+            pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        }
+
+        y += rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
