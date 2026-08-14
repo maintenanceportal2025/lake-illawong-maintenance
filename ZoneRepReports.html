@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          4 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.10
+VERSION: V1.0.11
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -23,6 +23,25 @@ REPORTS (cut-down from full Reports Hub):
   5. Programmed Works     (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.0.11 (Aug 2026): Two fixes raised by Tony. (1) By Zone's High
+                     Priority column removed -- it counted High priority
+                     records regardless of status (open, completed or
+                     cancelled all included), so it didn't tell a Zone
+                     Rep what's actually urgent right now; removed rather
+                     than redefined, per Tony's steer. (2) Category
+                     column wasn't wrapping in PDF exports -- every
+                     report's PDF drew Category with a single
+                     non-wrapping pdf.text() call in a fixed-width
+                     column, so long category names overflowed into the
+                     neighbouring column. Same copy-pasted pattern
+                     existed in all five report PDFs (Unit History, Open
+                     Problems, Keyword Search, Work by Person, Programmed
+                     Works), fixed in the same pass rather than just the
+                     one Tony hit. Added a shared pdfCategoryLines()
+                     helper; row height now grows to fit wrapped Category
+                     text (and, on Unit History/Open Problems, still
+                     accounts for wrapped resolution/progress notes on
+                     top of that).
   V1.0.10 (Aug 2026): By Zone table's Total/Open/Completed didn't
                      reconcile -- Total counted every status including
                      Cancelled, but Open explicitly excludes Cancelled
@@ -569,6 +588,15 @@ function loadPdfLib() {
     return pdfLibPromise;
 }
 
+// Wraps a Category cell's text to fit its PDF column width (v1.0.11) --
+// every report's PDF table drew Category with a single non-wrapping
+// pdf.text() call, so any category name too long for its column overflowed
+// straight into the neighbouring Description column instead of wrapping.
+// Used by all five report PDF exports that have a Category column.
+function pdfCategoryLines(pdf, category, colWidthMm) {
+    return pdf.splitTextToSize(String(category || '—'), colWidthMm - 2);
+}
+
 // =====================================================================
 // DATA LOADING (JSONP)
 // =====================================================================
@@ -954,7 +982,9 @@ async function exportUnitHistoryPDF() {
     uhData.forEach((p, idx) => {
         const hasNote = !!(p.comments && String(p.comments).trim());
         const noteLines = hasNote ? pdf.splitTextToSize('Resolution: ' + String(p.comments).trim(), pw - 34) : [];
-        const rowHeight = hasNote ? (6 + noteLines.length * 3.2 + 2) : 6;
+        const catLines = pdfCategoryLines(pdf, p.category, widths[2]);
+        const catHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const rowHeight = catHeight + (hasNote ? (noteLines.length * 3.2 + 2) : 0);
 
         if (y + rowHeight > ph - 20) { pdf.addPage(); y = 15; }
 
@@ -962,16 +992,21 @@ async function exportUnitHistoryPDF() {
         pdf.rect(14, y, pw-28, rowHeight, 'F');
         x = 14;
         const row = [
-            fmt(p.timestamp), p.internalId||'—', p.category||'—', p.subCategory||'—',
+            fmt(p.timestamp), p.internalId||'—', null, p.subCategory||'—',
             (p.problemDescription||'—').substring(0,55), p.problemPriority||'—',
             p.problemStatus||'—', p.assignedTo||'—'
         ];
         pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
-        row.forEach((v,i) => { pdf.setFontSize(7); pdf.text(String(v), x+1, y+4.2); x += widths[i]; });
+        row.forEach((v,i) => {
+            pdf.setFontSize(7);
+            if (i === 2) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x += widths[i];
+        });
 
         if (hasNote) {
             pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
-            pdf.text(noteLines, 15, y + 9, { lineHeightFactor: 1.15 });
+            pdf.text(noteLines, 15, y + catHeight + 3, { lineHeightFactor: 1.15 });
             pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
         }
 
@@ -1137,20 +1172,27 @@ async function exportOpenPDF() {
     opData.forEach((p,idx)=>{
         const hasNote = !!(p.comments && String(p.comments).trim());
         const noteLines = hasNote ? pdf.splitTextToSize('Progress: ' + String(p.comments).trim(), pw - 34) : [];
-        const rowHeight = hasNote ? (6 + noteLines.length * 3.2 + 2) : 6;
+        const catLines = pdfCategoryLines(pdf, p.category, widths[3]);
+        const catHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const rowHeight = catHeight + (hasNote ? (noteLines.length * 3.2 + 2) : 0);
 
         if (y + rowHeight > ph-20) { pdf.addPage(); y=15; }
         pdf.setFillColor(idx%2===0?248:255, idx%2===0?250:255, idx%2===0?252:255);
         pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
         pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
-        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',p.category||'—',
+        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',null,
          (p.problemDescription||'').substring(0,60),p.problemPriority||'—',
          p.problemStatus||'—',p.assignedTo||'Unassigned'
-        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
+        ].forEach((v,i)=>{
+            pdf.setFontSize(7);
+            if (i === 3) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x+=widths[i];
+        });
 
         if (hasNote) {
             pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
-            pdf.text(noteLines, 15, y + 9, { lineHeightFactor: 1.15 });
+            pdf.text(noteLines, 15, y + catHeight + 3, { lineHeightFactor: 1.15 });
             pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
         }
 
@@ -1504,12 +1546,11 @@ function runByZone() {
     const zones = {};
     pool.forEach(p => {
         const z = p.zone || 'Unknown';
-        if (!zones[z]) zones[z] = { total:0, open:0, completed:0, cancelled:0, high:0 };
+        if (!zones[z]) zones[z] = { total:0, open:0, completed:0, cancelled:0 };
         zones[z].total++;
         if (isOpen(p))      zones[z].open++;
         if (isCompleted(p)) zones[z].completed++;
         if ((p.problemStatus||'').toLowerCase()==='cancelled') zones[z].cancelled++;
-        if ((p.problemPriority||'').toLowerCase()==='high') zones[z].high++;
     });
     zoneReportData = zones;
 
@@ -1525,7 +1566,7 @@ function runByZone() {
             <canvas id="zoneChart" height="110"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
-            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>Cancelled</th><th>High Priority</th></tr></thead>
+            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>Cancelled</th></tr></thead>
             <tbody>
                 ${sorted.map(([z,v])=>`<tr>
                     <td><strong>${z}</strong></td>
@@ -1533,7 +1574,6 @@ function runByZone() {
                     <td>${v.open}</td>
                     <td>${v.completed}</td>
                     <td>${v.cancelled}</td>
-                    <td>${v.high}</td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
@@ -1579,16 +1619,16 @@ async function exportZonePDF() {
     const sorted = Object.entries(zoneReportData).sort((a,b)=>b[1].total-a[1].total);
     pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
     pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-    pdf.text('Zone',16,y+5); pdf.text('Total',50,y+5); pdf.text('Open',75,y+5);
-    pdf.text('Completed',100,y+5); pdf.text('Cancelled',132,y+5); pdf.text('High Priority',165,y+5); y+=7;
+    pdf.text('Zone',16,y+5); pdf.text('Total',60,y+5); pdf.text('Open',95,y+5);
+    pdf.text('Completed',130,y+5); pdf.text('Cancelled',170,y+5); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     sorted.forEach(([z,v],i)=>{
         if (y>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
         pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
-        pdf.text(z,16,y+4.2); pdf.text(String(v.total),50,y+4.2);
-        pdf.text(String(v.open),75,y+4.2); pdf.text(String(v.completed),100,y+4.2);
-        pdf.text(String(v.cancelled),132,y+4.2); pdf.text(String(v.high),165,y+4.2); y+=6;
+        pdf.text(z,16,y+4.2); pdf.text(String(v.total),60,y+4.2);
+        pdf.text(String(v.open),95,y+4.2); pdf.text(String(v.completed),130,y+4.2);
+        pdf.text(String(v.cancelled),170,y+4.2); y+=6;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
@@ -1709,13 +1749,20 @@ async function exportKeywordPDF() {
     let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     kwData.forEach((p,i)=>{
-        if (y>ph-15) { pdf.addPage(); y=15; }
+        const catLines = pdfCategoryLines(pdf, p.category, widths[4]);
+        const rowHeight = Math.max(6, catLines.length * 3.2 + 2);
+        if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
         [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',
-         (p.problemDescription||'').substring(0,80),p.category||'—',p.problemStatus||'—'
-        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
-        y+=6;
+         (p.problemDescription||'').substring(0,80),null,p.problemStatus||'—'
+        ].forEach((v,j)=>{
+            pdf.setFontSize(7);
+            if (j === 4) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x+=widths[j];
+        });
+        y+=rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
@@ -1840,14 +1887,21 @@ async function exportWorkPDF() {
     let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     wpData.forEach((p,i)=>{
-        if (y>ph-15) { pdf.addPage(); y=15; }
+        const catLines = pdfCategoryLines(pdf, p.category, widths[5]);
+        const rowHeight = Math.max(6, catLines.length * 3.2 + 2);
+        if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
         [fmt(p.timestamp),isCompleted(p)?fmt(p.completionDate):'—',
          p.unitNumber||'—',p.zone||'—',(p.problemDescription||'').substring(0,65),
-         p.category||'—',p.problemPriority||'—',p.problemStatus||'—'
-        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
-        y+=6;
+         null,p.problemPriority||'—',p.problemStatus||'—'
+        ].forEach((v,j)=>{
+            pdf.setFontSize(7);
+            if (j === 5) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x+=widths[j];
+        });
+        y+=rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
@@ -1983,15 +2037,22 @@ async function exportProgrammedPDF() {
 
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     pwData.forEach((p,i)=>{
-        if (y>ph-15) { pdf.addPage(); y=15; }
+        const catLines = pdfCategoryLines(pdf, p.category, widths[3]);
+        const rowHeight = Math.max(6, catLines.length * 3.2 + 2);
+        if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); x=14;
-        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',p.category||'—',
+        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
+        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',null,
          (p.problemDescription||'').substring(0,65),p.assignedTo||'—',
          p.problemStatus||'—',
          p.problemStatus==='Programmed-Completed'?fmt(p.completionDate):'—'
-        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
-        y+=6;
+        ].forEach((v,j)=>{
+            pdf.setFontSize(7);
+            if (j === 3) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x+=widths[j];
+        });
+        y+=rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
