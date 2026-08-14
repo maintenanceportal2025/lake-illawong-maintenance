@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.6
+VERSION: V1.1.7
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -28,6 +28,16 @@ REPORTS:
   8. Work Completed by Person    (Ben's activity by date range)
 
 VERSION HISTORY:
+  V1.1.7 (Aug 2026): Wired up Explorer V1.3's lean=1 mode on both
+                     getFaultLogData and getLegacyLogData calls. Confirmed
+                     safe first: neither this file nor ZoneRepReports
+                     references any field lean mode omits (activityLog,
+                     photo/legacy-placeholder fields). This is on top of
+                     V1.1.6's retry/sequential fix, not a replacement for
+                     it -- V1.1.6 solved delivery failures (dead
+                     responses), this addresses payload size, which
+                     testing showed was independently causing very long
+                     (25-80s) load times even on successful loads.
   V1.1.6 (Aug 2026): Root cause of intermittent load failures found by
                      comparing with DesktopExplorer, which hits the same
                      Explorer endpoints reliably: it retries (3x) and
@@ -513,7 +523,11 @@ function isProgrammed(p) {
 // responses will never execute the callback no matter how long we wait --
 // V1.1.5's 120s timeout proved that. The cure is fail fast + retry, not
 // wait longer.
-function makeRequest(action, targetUrl, retries) {
+// lean=true requests Explorer V1.3's stripped-down payload (omits
+// activityLog and legacy placeholder fields) on getFaultLogData/
+// getLegacyLogData -- safe here, this file doesn't reference any field
+// lean mode omits. No effect on other actions (e.g. getDropdownOptions).
+function makeRequest(action, targetUrl, retries, lean) {
     if (retries === undefined) retries = 2;
     const url = targetUrl || API_URL;
     return new Promise((resolve, reject) => {
@@ -536,7 +550,7 @@ function makeRequest(action, targetUrl, retries) {
             if (retries > 0) {
                 console.warn('Retrying ' + action + ' (' + reason + ', ' + retries + ' attempt(s) left)');
                 setTimeout(() => {
-                    makeRequest(action, targetUrl, retries - 1).then(resolve).catch(reject);
+                    makeRequest(action, targetUrl, retries - 1, lean).then(resolve).catch(reject);
                 }, 2000);
             } else {
                 reject(new Error(reason + ': ' + action));
@@ -569,7 +583,7 @@ function makeRequest(action, targetUrl, retries) {
             setTimeout(() => failOrRetry('Dead response'), 500);
         };
 
-        script.src = url + '?action=' + action + '&callback=' + cbName;
+        script.src = url + '?action=' + action + '&callback=' + cbName + (lean ? '&lean=1' : '');
         document.body.appendChild(script);
     });
 }
@@ -610,9 +624,9 @@ async function loadAllData() {
         // stays parallel -- it targets a different deployment and handles
         // its own failures with fallback values.
         const dropdownPromise = fetchDropdownOptions();
-        const cr = await makeRequest('getFaultLogData');
+        const cr = await makeRequest('getFaultLogData', null, undefined, true);
         setDataStatus('loading', 'Loading LegacyLog...');
-        const lr = await makeRequest('getLegacyLogData');
+        const lr = await makeRequest('getLegacyLogData', null, undefined, true);
         await dropdownPromise;
 
         const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
