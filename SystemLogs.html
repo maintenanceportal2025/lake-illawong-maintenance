@@ -4,7 +4,7 @@
 =====================================================================
 PURPOSE: Centralized viewer for all system logging activities
 PORTAL: SysAdmin Portal Module
-VERSION: v1.3.9
+VERSION: v1.3.10
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Glass-morphism applied to all UI panels, stats, filter bars, tab nav
@@ -24,6 +24,11 @@ FEATURES:
 • Preset + date picker range filtering on all applicable tabs
 • Access log (Connections by Person summary removed)
 VERSION HISTORY:
+* v1.3.10 (Aug 2026): Access Log tab -- added a Detail dropdown filter,
+*   populated dynamically from the detail values present in the currently
+*   loaded date range (no hardcoded portal list). Filtering is client-side
+*   against the already-loaded entries, same pattern as the Contact tab's
+*   Detail Type filter -- no backend change. Raised by Tony.
 * v1.3.9 (Aug 2026): Fixed hardcoded "2,000" daily email quota label and
 *   progress-bar divisor on the Email Activity tab -- corrected to 100
 *   (this system runs on a consumer Gmail account, not Workspace).
@@ -698,6 +703,12 @@ VERSION HISTORY:
                             <option value="Directory-Access">Directory Access</option>
                         </select>
                     </div>
+                    <div class="filter-group">
+                        <div class="filter-label">Detail</div>
+                        <select class="glass-select" id="access-detail-filter" onchange="filterAccessTable()">
+                            <option value="all">All Details</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div id="access-log-container">
@@ -741,6 +752,7 @@ VERSION HISTORY:
         let emailLogsData = [];
         let smsLogsData = [];
         let contactLogsData = [];
+        let accessLogData = [];
         let dashboardData = null;
 
         // =====================================================================
@@ -1514,7 +1526,9 @@ VERSION HISTORY:
                 settled = true;
                 cleanup();
                 if (response.success) {
-                    renderAccessTable(response.data || []);
+                    accessLogData = response.data || [];
+                    populateAccessDetailFilter(accessLogData);
+                    filterAccessTable();
                 } else {
                     document.getElementById('access-log-container').innerHTML = `
                         <div class="empty-state">
@@ -1544,15 +1558,38 @@ VERSION HISTORY:
             document.body.appendChild(script);
         }
 
-        
+        function populateAccessDetailFilter(entries) {
+            const select = document.getElementById('access-detail-filter');
+            const current = select.value;
+            const details = Array.from(new Set(entries.map(e => e.detail).filter(Boolean))).sort();
+
+            select.innerHTML = '<option value="all">All Details</option>' +
+                details.map(d => `<option value="${d.replace(/"/g, '&quot;')}">${d}</option>`).join('');
+
+            // Preserve the user's previous selection if it's still a valid option
+            select.value = details.includes(current) ? current : 'all';
+        }
+
+        function filterAccessTable() {
+            const detailFilter = document.getElementById('access-detail-filter').value;
+            const filtered = detailFilter === 'all'
+                ? accessLogData
+                : accessLogData.filter(e => e.detail === detailFilter);
+            renderAccessTable(filtered);
+        }
+
         function renderAccessTable(entries) {
             const container = document.getElementById('access-log-container');
             if (!entries.length) {
+                const detailFilter = document.getElementById('access-detail-filter').value;
+                const filterActive = detailFilter !== 'all';
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-icon">🔑</div>
                         <div class="empty-title">No Access Records</div>
-                        <div class="empty-text">No access events recorded in this date range.</div>
+                        <div class="empty-text">${filterActive
+                            ? 'No access events match the selected detail filter.'
+                            : 'No access events recorded in this date range.'}</div>
                     </div>`;
                 return;
             }
