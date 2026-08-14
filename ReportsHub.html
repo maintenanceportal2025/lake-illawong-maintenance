@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.8
+VERSION: V1.1.10
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -18,15 +18,64 @@ API URL: Explorer backend (same as ExecutiveDashboard)
 
 REPORTS:
   1. Unit Problem History        (current + legacy)
-  2. Open Problems               (filterable by zone/priority/status)
+  2. Open Problems               (filterable by zone/category/priority/status)
   3. Month-on-Month Reported     (bar chart + table)
   4. Month-on-Month Completed    (bar chart + table)
   5. Problems by Category        (breakdown + sub-category)
   6. Problems by Zone            (per-zone summary)
   7. Keyword Search              (both logs, e.g. "wood rot")
   8. Work Completed by Person    (Ben's activity by date range)
+  9. Programmed Works            (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.10 (Aug 2026): Correction -- V1.1.9's changelog and my own reply
+                     claimed ReportsHub had no Programmed Works report
+                     ("it's ZoneRep-specific"). Wrong: it's fully present
+                     in this file (renderProgrammedWorks/runProgrammedWorks/
+                     exportProgrammedPDF, catalogue entry) and was simply
+                     missing from the header's REPORTS list above, which
+                     is what I'd checked instead of the actual code --
+                     now corrected to 9 entries. Applied the same two
+                     fixes this report should have gotten in V1.1.9: (1)
+                     Category column PDF wrapping via the shared
+                     pdfCategoryLines() helper -- same non-wrapping
+                     pdf.text() pattern as the other four report PDFs.
+                     (2) Click-to-expand "Notes" row (on-screen + wrapped
+                     PDF line), identical to ZoneRepReports V1.0.13 --
+                     labelled generically since this report spans both
+                     open (Programmed) and completed (Programmed-
+                     Completed) records.
+  V1.1.9 (Aug 2026): Ported the full set of report-quality fixes and
+                     features built on ZoneRepReports V1.0.8-V1.0.11 --
+                     Tony asked for this module to match. (1) Unit
+                     Problem History: click-to-expand row showing
+                     Resolution notes (comments field) plus a Completed
+                     date/assignee meta line for completed records,
+                     on-screen and in PDF (wrapped note line + meta line,
+                     independent of each other). (2) Open Problems: same
+                     expand pattern labelled Progress notes; added a
+                     Category filter dropdown (options derived live from
+                     loaded data, same pattern as the existing Zone
+                     filter). (3) Problems by Zone: removed the High
+                     Priority column (it counted High-priority records
+                     regardless of status, so it didn't reflect what's
+                     actually urgent -- Tony's call was to remove rather
+                     than redefine it); added a Cancelled column so
+                     Total/Open/Completed/Cancelled reconcile without
+                     mental arithmetic (previously Total silently
+                     included cancelled records that vanished from the
+                     visible Open/Completed columns). (4) Category
+                     column PDF wrapping fixed across all four report
+                     PDFs that have one (Unit History, Open Problems,
+                     Keyword Search, Work by Person) via a shared
+                     pdfCategoryLines() helper -- previously a single
+                     non-wrapping pdf.text() call let long category
+                     names overflow into the neighbouring column.
+                     Problems by Category (category-as-row-label,
+                     structurally different) and the two Month-on-Month
+                     reports were left as-is -- not part of what was
+                     built on ZoneRepReports and not the same shape of
+                     bug.
   V1.1.8 (Aug 2026): Fixed "module takes too long to open" -- Network
                      waterfall showed jsPDF and html2canvas (both @latest
                      on unpkg, so effectively uncacheable) stalling page-
@@ -366,6 +415,22 @@ VERSION HISTORY:
 
         .data-table tbody tr:hover { background: #f8fafc; }
 
+        /* ── EXPANDABLE ROW (ported from ZoneRepReports V1.0.8-V1.0.9) ── */
+        .exp-row { cursor: pointer; }
+        .exp-row.expanded { background: #eff6ff; }
+        .exp-chev { color: #9ca3af; text-align: center; width: 20px; }
+        .exp-row.expanded .exp-chev { color: #1e40af; font-weight: 600; }
+        .exp-detail-cell {
+            padding: 12px 16px !important; background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        .exp-detail-label {
+            font-size: 0.68rem; color: #9ca3af; text-transform: uppercase;
+            letter-spacing: 0.05em; margin-bottom: 4px;
+        }
+        .exp-detail-text { font-size: 0.83rem; color: #374151; line-height: 1.5; white-space: pre-wrap; }
+        .exp-detail-meta { font-size: 0.72rem; color: #9ca3af; margin-top: 8px; }
+
         /* ── STATUS BADGE ───────────────────────────────────── */
         .badge {
             padding: 2px 8px; border-radius: 10px; font-size: 0.70rem;
@@ -553,6 +618,15 @@ function loadPdfLib() {
         document.body.appendChild(script);
     });
     return pdfLibPromise;
+}
+
+// Wraps a Category cell's text to fit its PDF column width (ported from
+// ZoneRepReports V1.0.11) -- report PDFs drew Category with a single
+// non-wrapping pdf.text() call, so long category names overflowed into
+// the neighbouring column. Used by every report PDF export with a
+// Category column.
+function pdfCategoryLines(pdf, category, colWidthMm) {
+    return pdf.splitTextToSize(String(category || '—'), colWidthMm - 2);
 }
 
 // =====================================================================
@@ -859,10 +933,10 @@ function runUnitHistory() {
             <table class="data-table">
                 <thead><tr>
                     <th>Date</th><th>ID</th><th>Category</th><th>Description</th>
-                    <th>Priority</th><th>Status</th><th>Assigned To</th>
+                    <th>Priority</th><th>Status</th><th>Assigned To</th><th></th>
                 </tr></thead>
                 <tbody>
-                    ${uhData.map(p => `<tr>
+                    ${uhData.map((p, idx) => `<tr class="exp-row" id="uhRow${idx}" onclick="toggleUhDetail(${idx})">
                         <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
                         <td style="white-space:nowrap;font-size:0.75rem;color:#6b7280">${p.internalId || '—'}</td>
                         <td>${p.category || '—'}${p.subCategory ? '<br><span style="font-size:0.75rem;color:#6b7280">'+p.subCategory+'</span>' : ''}</td>
@@ -870,12 +944,32 @@ function runUnitHistory() {
                         <td>${priorityBadge(p.problemPriority)}</td>
                         <td>${statusBadge(p.problemStatus)}</td>
                         <td>${p.assignedTo || '—'}</td>
+                        <td class="exp-chev" id="uhChev${idx}">&#9662;</td>
+                    </tr>
+                    <tr id="uhDetail${idx}" style="display:none;">
+                        <td colspan="8" class="exp-detail-cell">
+                            <div class="exp-detail-label">Resolution notes</div>
+                            <div class="exp-detail-text">${p.comments || 'No notes recorded.'}</div>
+                            ${(p.completionDate && isCompleted(p)) ? `<div class="exp-detail-meta">Completed ${fmt(p.completionDate)}${p.assignedTo ? ' &middot; ' + p.assignedTo : ''}</div>` : ''}
+                        </td>
                     </tr>`).join('')}
                 </tbody>
             </table>
         </div>`;
 
     document.getElementById('uhPdfBtn').style.display = '';
+}
+
+// Toggles the resolution-notes detail row beneath a clicked table row.
+// Row index (not internalId) is the key -- always unique within a single
+// render, since legacy internalId (LEGACY-n) and current internalId
+// formats differ and aren't guaranteed distinct across pools.
+function toggleUhDetail(idx) {
+    const row  = document.getElementById('uhRow' + idx);
+    const detail = document.getElementById('uhDetail' + idx);
+    const isOpenRow = detail.style.display !== 'none';
+    detail.style.display = isOpenRow ? 'none' : 'table-row';
+    row.classList.toggle('expanded', !isOpenRow);
 }
 
 async function exportUnitHistoryPDF() {
@@ -916,20 +1010,57 @@ async function exportUnitHistoryPDF() {
     cols.forEach((c,i) => { pdf.text(c, x+1, y+5); x += widths[i]; });
     y += 7;
 
-    // Table rows
+    // Table rows. Resolution notes print as a wrapped italic line under any
+    // record that has comments; completed records also get a "Completed
+    // <date> · <person>" meta line, matching the on-screen expandable row
+    // regardless of whether a note exists. Category wraps to fit its
+    // column instead of overflowing into Description. Row height is
+    // computed per-record so nothing overlaps or gets cut off at a page
+    // boundary. (Ported from ZoneRepReports V1.0.8-V1.0.12.)
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     uhData.forEach((p, idx) => {
-        if (y > ph - 20) { pdf.addPage(); y = 15; }
+        const hasNote = !!(p.comments && String(p.comments).trim());
+        const noteLines = hasNote ? pdf.splitTextToSize('Resolution: ' + String(p.comments).trim(), pw - 34) : [];
+        const showMeta = isCompleted(p) && !!p.completionDate;
+        const metaText = showMeta ? `Completed ${fmt(p.completionDate)}${p.assignedTo ? ' \u00b7 ' + p.assignedTo : ''}` : '';
+        const catLines = pdfCategoryLines(pdf, p.category, widths[2]);
+        const catHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const noteBlockHeight = hasNote ? (noteLines.length * 3.2 + 2) : 0;
+        const metaBlockHeight = showMeta ? 4 : 0;
+        const rowHeight = catHeight + noteBlockHeight + metaBlockHeight;
+
+        if (y + rowHeight > ph - 20) { pdf.addPage(); y = 15; }
+
         pdf.setFillColor(idx % 2 === 0 ? 248 : 255, idx % 2 === 0 ? 250 : 255, idx % 2 === 0 ? 252 : 255);
-        pdf.rect(14, y, pw-28, 6, 'F');
+        pdf.rect(14, y, pw-28, rowHeight, 'F');
         x = 14;
         const row = [
-            fmt(p.timestamp), p.internalId||'—', p.category||'—', p.subCategory||'—',
+            fmt(p.timestamp), p.internalId||'—', null, p.subCategory||'—',
             (p.problemDescription||'—').substring(0,55), p.problemPriority||'—',
             p.problemStatus||'—', p.assignedTo||'—'
         ];
-        row.forEach((v,i) => { pdf.setFontSize(7); pdf.text(String(v), x+1, y+4.2); x += widths[i]; });
-        y += 6;
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        row.forEach((v,i) => {
+            pdf.setFontSize(7);
+            if (i === 2) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x += widths[i];
+        });
+
+        let extraY = y + catHeight + 3;
+        if (hasNote) {
+            pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
+            pdf.text(noteLines, 15, extraY, { lineHeightFactor: 1.15 });
+            pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+            extraY += noteBlockHeight;
+        }
+        if (showMeta) {
+            pdf.setFontSize(6); pdf.setFont('helvetica','normal'); pdf.setTextColor(150,150,150);
+            pdf.text(metaText, 15, extraY);
+            pdf.setTextColor(55,65,81);
+        }
+
+        y += rowHeight;
     });
 
     // Footer
@@ -943,18 +1074,26 @@ async function exportUnitHistoryPDF() {
 // REPORT 2 — OPEN PROBLEMS
 // =====================================================================
 function renderOpenProblems() {
-    const zones = [...new Set(currentData.map(p=>p.zone).filter(Boolean))].sort();
-    const people = dropdownOptions.assignedTo; // sourced from Dropdowns sheet via MaintenanceModule backend
+    const zones      = [...new Set(currentData.map(p=>p.zone).filter(Boolean))].sort();
+    const categories = [...new Set(currentData.map(p=>p.category).filter(Boolean))].sort();
+    const people     = dropdownOptions.assignedTo; // sourced from Dropdowns sheet via MaintenanceModule backend
 
     showPanel(`
         <div class="report-heading">🔓 Open Problems</div>
-        <div class="report-subheading">All currently open problems from the active FaultLog, filterable by zone, priority and assigned person.</div>
+        <div class="report-subheading">All currently open problems from the active FaultLog, filterable by zone, category, priority and assigned person.</div>
         <div class="filter-row">
             <div class="filter-group">
                 <span class="filter-label">Zone</span>
                 <select id="opZone" class="glass-select">
                     <option value="all">All Zones</option>
                     ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Category</span>
+                <select id="opCategory" class="glass-select">
+                    <option value="all">All Categories</option>
+                    ${categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
                 </select>
             </div>
             <div class="filter-group">
@@ -986,12 +1125,14 @@ let opData = [];
 function runOpenProblems() {
     if (!dataLoaded) return;
     const zone     = document.getElementById('opZone').value;
+    const category = document.getElementById('opCategory').value;
     const priority = document.getElementById('opPriority').value;
     const person   = document.getElementById('opPerson').value;
 
     opData = currentData.filter(p => {
         if (!isOpen(p)) return false;
         if (zone !== 'all' && p.zone !== zone) return false;
+        if (category !== 'all' && (p.category||'') !== category) return false;
         if (priority !== 'all' && (p.problemPriority||'') !== priority) return false;
         if (person === 'unassigned' && p.assignedTo) return false;
         if (person !== 'all' && person !== 'unassigned' && p.assignedTo !== person) return false;
@@ -1020,9 +1161,9 @@ function runOpenProblems() {
             <div class="stat-pill"><div class="stat-pill-value">${unasgn}</div><div class="stat-pill-label">Unassigned</div></div>
         </div>
         <div class="table-wrap"><table class="data-table">
-            <thead><tr><th>Reported</th><th>Unit</th><th>Zone</th><th>Category</th><th>Description</th><th>Priority</th><th>Status</th><th>Assigned To</th></tr></thead>
+            <thead><tr><th>Reported</th><th>Unit</th><th>Zone</th><th>Category</th><th>Description</th><th>Priority</th><th>Status</th><th>Assigned To</th><th></th></tr></thead>
             <tbody>
-                ${opData.map(p=>`<tr>
+                ${opData.map((p, idx) => `<tr class="exp-row" id="opRow${idx}" onclick="toggleOpDetail(${idx})">
                     <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
                     <td>${p.unitNumber||'—'}</td>
                     <td>${p.zone||'—'}</td>
@@ -1031,10 +1172,27 @@ function runOpenProblems() {
                     <td>${priorityBadge(p.problemPriority)}</td>
                     <td>${statusBadge(p.problemStatus)}</td>
                     <td>${p.assignedTo||'Unassigned'}</td>
+                    <td class="exp-chev" id="opChev${idx}">&#9662;</td>
+                </tr>
+                <tr id="opDetail${idx}" style="display:none;">
+                    <td colspan="9" class="exp-detail-cell">
+                        <div class="exp-detail-label">Progress notes</div>
+                        <div class="exp-detail-text">${p.comments || 'No notes recorded.'}</div>
+                    </td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
     document.getElementById('opPdfBtn').style.display = '';
+}
+
+// Same expand pattern as toggleUhDetail -- own id namespace so the two
+// reports' expand states don't clash.
+function toggleOpDetail(idx) {
+    const row  = document.getElementById('opRow' + idx);
+    const detail = document.getElementById('opDetail' + idx);
+    const isOpenRow = detail.style.display !== 'none';
+    detail.style.display = isOpenRow ? 'none' : 'table-row';
+    row.classList.toggle('expanded', !isOpenRow);
 }
 
 async function exportOpenPDF() {
@@ -1062,14 +1220,33 @@ async function exportOpenPDF() {
 
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     opData.forEach((p,idx)=>{
-        if (y > ph-20) { pdf.addPage(); y=15; }
+        const hasNote = !!(p.comments && String(p.comments).trim());
+        const noteLines = hasNote ? pdf.splitTextToSize('Progress: ' + String(p.comments).trim(), pw - 34) : [];
+        const catLines = pdfCategoryLines(pdf, p.category, widths[3]);
+        const catHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const rowHeight = catHeight + (hasNote ? (noteLines.length * 3.2 + 2) : 0);
+
+        if (y + rowHeight > ph-20) { pdf.addPage(); y=15; }
         pdf.setFillColor(idx%2===0?248:255, idx%2===0?250:255, idx%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); x=14;
-        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',p.category||'—',
+        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',null,
          (p.problemDescription||'').substring(0,60),p.problemPriority||'—',
          p.problemStatus||'—',p.assignedTo||'Unassigned'
-        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
-        y+=6;
+        ].forEach((v,i)=>{
+            pdf.setFontSize(7);
+            if (i === 3) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x+=widths[i];
+        });
+
+        if (hasNote) {
+            pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
+            pdf.text(noteLines, 15, y + catHeight + 3, { lineHeightFactor: 1.15 });
+            pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        }
+
+        y += rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
@@ -1394,7 +1571,7 @@ async function exportCategoryPDF() {
 function renderByZone() {
     showPanel(`
         <div class="report-heading">🗺️ Problems by Zone</div>
-        <div class="report-subheading">Summary of reported and open problems per zone.</div>
+        <div class="report-subheading">Summary of reported, open, completed and cancelled problems per zone. Total = Open + Completed + Cancelled.</div>
         <div class="filter-row">
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
@@ -1419,11 +1596,11 @@ function runByZone() {
     const zones = {};
     pool.forEach(p => {
         const z = p.zone || 'Unknown';
-        if (!zones[z]) zones[z] = { total:0, open:0, completed:0, high:0 };
+        if (!zones[z]) zones[z] = { total:0, open:0, completed:0, cancelled:0 };
         zones[z].total++;
         if (isOpen(p))      zones[z].open++;
         if (isCompleted(p)) zones[z].completed++;
-        if ((p.problemPriority||'').toLowerCase()==='high') zones[z].high++;
+        if ((p.problemStatus||'').toLowerCase()==='cancelled') zones[z].cancelled++;
     });
     zoneReportData = zones;
 
@@ -1439,14 +1616,14 @@ function runByZone() {
             <canvas id="zoneChart" height="110"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
-            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>High Priority</th></tr></thead>
+            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>Cancelled</th></tr></thead>
             <tbody>
                 ${sorted.map(([z,v])=>`<tr>
                     <td><strong>${z}</strong></td>
                     <td>${v.total}</td>
                     <td>${v.open}</td>
                     <td>${v.completed}</td>
-                    <td>${v.high}</td>
+                    <td>${v.cancelled}</td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
@@ -1492,16 +1669,16 @@ async function exportZonePDF() {
     const sorted = Object.entries(zoneReportData).sort((a,b)=>b[1].total-a[1].total);
     pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
     pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-    pdf.text('Zone',16,y+5); pdf.text('Total',60,y+5); pdf.text('Open',90,y+5);
-    pdf.text('Completed',120,y+5); pdf.text('High Priority',162,y+5); y+=7;
+    pdf.text('Zone',16,y+5); pdf.text('Total',60,y+5); pdf.text('Open',95,y+5);
+    pdf.text('Completed',130,y+5); pdf.text('Cancelled',170,y+5); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     sorted.forEach(([z,v],i)=>{
         if (y>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
         pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
         pdf.text(z,16,y+4.2); pdf.text(String(v.total),60,y+4.2);
-        pdf.text(String(v.open),90,y+4.2); pdf.text(String(v.completed),120,y+4.2);
-        pdf.text(String(v.high),162,y+4.2); y+=6;
+        pdf.text(String(v.open),95,y+4.2); pdf.text(String(v.completed),130,y+4.2);
+        pdf.text(String(v.cancelled),170,y+4.2); y+=6;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
@@ -1622,13 +1799,20 @@ async function exportKeywordPDF() {
     let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     kwData.forEach((p,i)=>{
-        if (y>ph-15) { pdf.addPage(); y=15; }
+        const catLines = pdfCategoryLines(pdf, p.category, widths[4]);
+        const rowHeight = Math.max(6, catLines.length * 3.2 + 2);
+        if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
         [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',
-         (p.problemDescription||'').substring(0,80),p.category||'—',p.problemStatus||'—'
-        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
-        y+=6;
+         (p.problemDescription||'').substring(0,80),null,p.problemStatus||'—'
+        ].forEach((v,j)=>{
+            pdf.setFontSize(7);
+            if (j === 4) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x+=widths[j];
+        });
+        y+=rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
@@ -1753,14 +1937,21 @@ async function exportWorkPDF() {
     let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     wpData.forEach((p,i)=>{
-        if (y>ph-15) { pdf.addPage(); y=15; }
+        const catLines = pdfCategoryLines(pdf, p.category, widths[5]);
+        const rowHeight = Math.max(6, catLines.length * 3.2 + 2);
+        if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
         [fmt(p.timestamp),isCompleted(p)?fmt(p.completionDate):'—',
          p.unitNumber||'—',p.zone||'—',(p.problemDescription||'').substring(0,65),
-         p.category||'—',p.problemPriority||'—',p.problemStatus||'—'
-        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
-        y+=6;
+         null,p.problemPriority||'—',p.problemStatus||'—'
+        ].forEach((v,j)=>{
+            pdf.setFontSize(7);
+            if (j === 5) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x+=widths[j];
+        });
+        y+=rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
@@ -1852,10 +2043,10 @@ function runProgrammedWorks() {
         <div class="table-wrap"><table class="data-table">
             <thead><tr>
                 <th>Date</th><th>Unit</th><th>Zone</th><th>Category</th>
-                <th>Description</th><th>Assigned To</th><th>Status</th><th>Completed</th>
+                <th>Description</th><th>Assigned To</th><th>Status</th><th>Completed</th><th></th>
             </tr></thead>
             <tbody>
-                ${pwData.map(p=>`<tr>
+                ${pwData.map((p, idx) => `<tr class="exp-row" id="pwRow${idx}" onclick="togglePwDetail(${idx})">
                     <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
                     <td>${p.unitNumber||'—'}</td>
                     <td>${p.zone||'—'}</td>
@@ -1864,9 +2055,26 @@ function runProgrammedWorks() {
                     <td>${p.assignedTo||'—'}</td>
                     <td><span class="badge ${p.problemStatus==='Programmed-Completed'?'badge-completed':'badge-inprogress'}">${p.problemStatus}</span></td>
                     <td style="white-space:nowrap">${p.problemStatus==='Programmed-Completed'?fmt(p.completionDate):'—'}</td>
+                    <td class="exp-chev" id="pwChev${idx}">&#9662;</td>
+                </tr>
+                <tr id="pwDetail${idx}" style="display:none;">
+                    <td colspan="9" class="exp-detail-cell">
+                        <div class="exp-detail-label">Notes</div>
+                        <div class="exp-detail-text">${p.comments || 'No notes recorded.'}</div>
+                    </td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
+}
+
+// Same expand pattern as toggleUhDetail/toggleOpDetail -- own id
+// namespace (pwRow/pwDetail) so expand states between reports don't clash.
+function togglePwDetail(idx) {
+    const row  = document.getElementById('pwRow' + idx);
+    const detail = document.getElementById('pwDetail' + idx);
+    const isOpenRow = detail.style.display !== 'none';
+    detail.style.display = isOpenRow ? 'none' : 'table-row';
+    row.classList.toggle('expanded', !isOpenRow);
 }
 
 async function exportProgrammedPDF() {
@@ -1896,15 +2104,34 @@ async function exportProgrammedPDF() {
 
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     pwData.forEach((p,i)=>{
-        if (y>ph-15) { pdf.addPage(); y=15; }
+        const hasNote = !!(p.comments && String(p.comments).trim());
+        const noteLines = hasNote ? pdf.splitTextToSize('Notes: ' + String(p.comments).trim(), pw - 34) : [];
+        const catLines = pdfCategoryLines(pdf, p.category, widths[3]);
+        const catHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const rowHeight = catHeight + (hasNote ? (noteLines.length * 3.2 + 2) : 0);
+
+        if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); x=14;
-        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',p.category||'—',
+        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',null,
          (p.problemDescription||'').substring(0,65),p.assignedTo||'—',
          p.problemStatus||'—',
          p.problemStatus==='Programmed-Completed'?fmt(p.completionDate):'—'
-        ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
-        y+=6;
+        ].forEach((v,j)=>{
+            pdf.setFontSize(7);
+            if (j === 3) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
+            else pdf.text(String(v), x+1, y+4.2);
+            x+=widths[j];
+        });
+
+        if (hasNote) {
+            pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
+            pdf.text(noteLines, 15, y + catHeight + 3, { lineHeightFactor: 1.15 });
+            pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        }
+
+        y += rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
