@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          7 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.14
+VERSION: V1.0.15
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -33,6 +33,24 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.0.15 (Aug 2026): Both V1.0.14 additions ported straight from
+                     ReportsHub with no way to isolate a single zone --
+                     correctly flagged by Tony as a real gap for this
+                     audience: a system-wide chart tells a Zone Rep
+                     nothing about their own patch. Added a Zone filter
+                     to both. Month-on-Month Completed: filter sits
+                     alongside the existing Dataset/Months selects.
+                     Priorities: filter applies uniformly across all
+                     three views (it sits above the view-conditional
+                     Dataset/Months row rather than inside it), and its
+                     selection is preserved across View changes the same
+                     way View itself already was. Both PDF exports now
+                     show which zone was selected in the header ("All
+                     Zones" or "Zone X") and in the filename, so an
+                     exported PDF is self-explanatory once shared or
+                     printed. Zone list is derived live from the loaded
+                     data, same pattern as every other zone filter in
+                     this system.
   V1.0.14 (Aug 2026): Closed the ZoneRepReports/ReportsHub catalogue gap
                      deliberately deferred until ReportsHub was settled.
                      Reviewed all four reports ReportsHub has that this
@@ -1303,15 +1321,26 @@ function renderMoM(mode) {
     const title = mode === 'reported' ? 'Month-on-Month Problems Reported' : 'Month-on-Month Problems Completed';
     const icon  = mode === 'reported' ? '📈' : '📉';
     const desc  = mode === 'reported'
-        ? 'Number of problems reported per month across all datasets.'
-        : 'Number of problems completed per month across all datasets.';
+        ? 'Number of problems reported per month, optionally filtered to your zone.'
+        : 'Number of problems completed per month, optionally filtered to your zone.';
 
-    const months = getLast12MonthLabels();
+    // Zone filter (v1.0.15) -- a system-wide trend line tells a Zone Rep
+    // nothing about their own patch. Preserve the selected zone across
+    // Dataset/Months changes (they call runMoM directly, not a full
+    // re-render, so momZone survives in the DOM regardless).
+    const zones = [...new Set(allData.map(p=>p.zone).filter(Boolean))].sort();
 
     showPanel(`
         <div class="report-heading">${icon} ${title}</div>
         <div class="report-subheading">${desc}</div>
         <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="momZone" class="glass-select" onchange="runMoM('${mode}')">
+                    <option value="all">All Zones</option>
+                    ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
                 <select id="momDataset" class="glass-select" onchange="runMoM('${mode}')">
@@ -1338,9 +1367,11 @@ let momChartData = {};
 
 function runMoM(mode) {
     if (!dataLoaded) return;
+    const zone    = document.getElementById('momZone').value;
     const dataset = document.getElementById('momDataset').value;
     const months  = document.getElementById('momMonths').value;
-    const pool    = dataset === 'current' ? currentData : allData;
+    let pool      = dataset === 'current' ? currentData : allData;
+    if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
     // Build monthly counts
     const counts = {};
@@ -1434,7 +1465,8 @@ async function exportMoMPDF(mode) {
     const title = mode==='reported' ? 'Month-on-Month Problems Reported' : 'Month-on-Month Problems Completed';
     pdf.text(`Lake Illawong — ${title}`, pw/2, 12, {align:'center'});
     pdf.setFontSize(10); pdf.setFont('helvetica','normal');
-    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+    const zoneLabel = document.getElementById('momZone').value;
+    pdf.text(`${zoneLabel === 'all' ? 'All Zones' : 'Zone ' + zoneLabel}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
 
     // Embed chart
     const chartImg = chartCanvas.toDataURL('image/png');
@@ -1458,7 +1490,7 @@ async function exportMoMPDF(mode) {
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`MoM_${mode}_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`MoM_${mode}_${zoneLabel === 'all' ? 'AllZones' : 'Zone' + zoneLabel}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 
@@ -1473,12 +1505,19 @@ const PRIORITY_ORDER  = ['Urgent','High','Medium','Low'];
 const PRIORITY_COLORS = { Urgent:'#7c3aed', High:'#ef4444', Medium:'#f59e0b', Low:'#10b981' };
 
 function renderPriorities() {
-    // Preserve the selected view across re-renders (the View selector
-    // itself triggers a full re-render since Reported/Completed need a
-    // Dataset+Months filter row that the Snapshot view doesn't).
-    const existing = document.getElementById('prView');
-    const view = existing ? existing.value : 'reported';
+    // Preserve the selected view and zone across re-renders (the View
+    // selector itself triggers a full re-render since Reported/Completed
+    // need a Dataset+Months filter row that the Snapshot view doesn't).
+    const existingView = document.getElementById('prView');
+    const existingZone = document.getElementById('prZone');
+    const view = existingView ? existingView.value : 'reported';
+    const zone = existingZone ? existingZone.value : 'all';
     const isSnapshot = view === 'open';
+
+    // Zone filter (v1.0.15) -- a system-wide priority chart tells a Zone
+    // Rep nothing about their own patch. Applies to all three views, so
+    // it sits above the view-conditional filters rather than inside them.
+    const zones = [...new Set(allData.map(p=>p.zone).filter(Boolean))].sort();
 
     const desc = isSnapshot
         ? 'Currently open problems (current data only), broken down by priority.'
@@ -1494,6 +1533,13 @@ function renderPriorities() {
                     <option value="reported" ${view==='reported'?'selected':''}>Reported Trend</option>
                     <option value="completed" ${view==='completed'?'selected':''}>Completed Trend</option>
                     <option value="open" ${view==='open'?'selected':''}>Currently Open (Snapshot)</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="prZone" class="glass-select" onchange="runPriorities()">
+                    <option value="all" ${zone==='all'?'selected':''}>All Zones</option>
+                    ${zones.map(z=>`<option value="${z}" ${zone===z?'selected':''}>${z}</option>`).join('')}
                 </select>
             </div>
             ${isSnapshot ? '' : `
@@ -1529,9 +1575,11 @@ function runPriorities() {
 }
 
 function runPrioritiesTrend(view) {
+    const zone    = document.getElementById('prZone').value;
     const dataset = document.getElementById('prDataset').value;
     const months  = document.getElementById('prMonths').value;
-    const pool    = dataset === 'current' ? currentData : allData;
+    let pool      = dataset === 'current' ? currentData : allData;
+    if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
     // month key -> { priority -> count }
     const monthly = {};
@@ -1572,7 +1620,7 @@ function runPrioritiesTrend(view) {
         backgroundColor: PRIORITY_COLORS[pr] || '#9ca3af'
     }));
 
-    priorityChartData = { view, labels, keys, priorities, monthly };
+    priorityChartData = { view, zone, labels, keys, priorities, monthly };
 
     const totalsByPriority = {};
     priorities.forEach(pr => {
@@ -1623,7 +1671,9 @@ function runPrioritiesSnapshot() {
     // them as part of "currently open" workload would badly overstate
     // what's actually outstanding today. Same dataset choice Open
     // Problems already makes.
-    const openPool = currentData.filter(isOpen);
+    const zone = document.getElementById('prZone').value;
+    let openPool = currentData.filter(isOpen);
+    if (zone !== 'all') openPool = openPool.filter(p => p.zone === zone);
 
     const counts = {};
     openPool.forEach(p => {
@@ -1635,7 +1685,7 @@ function runPrioritiesSnapshot() {
         .concat(Object.keys(counts).filter(pr => !PRIORITY_ORDER.includes(pr)).sort());
 
     const total = openPool.length;
-    priorityChartData = { view: 'open', priorities, counts, total };
+    priorityChartData = { view: 'open', zone, priorities, counts, total };
 
     const el = document.getElementById('prResults');
     el.innerHTML = `
@@ -1688,7 +1738,7 @@ async function exportPrioritiesPDF() {
     const pw  = pdf.internal.pageSize.getWidth();
     const ph  = pdf.internal.pageSize.getHeight();
 
-    const { view } = priorityChartData;
+    const { view, zone } = priorityChartData;
     const title = view === 'open' ? 'Currently Open Problems by Priority'
                 : view === 'reported' ? 'Month-on-Month Reported by Priority'
                 : 'Month-on-Month Completed by Priority';
@@ -1698,7 +1748,7 @@ async function exportPrioritiesPDF() {
     pdf.setFontSize(13); pdf.setFont('helvetica','bold');
     pdf.text(`Lake Illawong — ${title}`, pw/2, 12, {align:'center'});
     pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
 
     const chartImg = chartCanvas.toDataURL('image/png');
     pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
@@ -1753,7 +1803,7 @@ async function exportPrioritiesPDF() {
 
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`Priorities_${view}_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`Priorities_${view}_${zone === 'all' ? 'AllZones' : 'Zone' + zone}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
