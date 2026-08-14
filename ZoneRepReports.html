@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          7 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.16
+VERSION: V1.0.17
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -33,6 +33,22 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.0.17 (Aug 2026): Priorities Reported/Completed Trend reworked again,
+                     per Tony -- V1.0.16's multi-line chart was still
+                     messy with every priority shown at once, whether as
+                     bars or lines. Replaced with a Priority filter
+                     (options derived live from the data, "All
+                     Priorities" combined as the default) plus a single,
+                     clean bar-per-month for whichever is selected -- a
+                     single series is unambiguous either way, and Tony's
+                     own read was that bar suits this better than line
+                     once it's down to one series. Stats strip, table and
+                     PDF export all simplified to match the single-series
+                     shape (same pattern Month-on-Month already uses).
+                     Currently Open Snapshot untouched -- it already
+                     compares priorities side by side at a single point
+                     in time, which is exactly what that bar chart is
+                     for, so it was never the messy one.
   V1.0.16 (Aug 2026): Switched trend charts from bar to line, per Tony --
                      bars suit comparing discrete categories at a point
                      in time, not a trajectory over months. Month-on-
@@ -1525,13 +1541,16 @@ const PRIORITY_ORDER  = ['Urgent','High','Medium','Low'];
 const PRIORITY_COLORS = { Urgent:'#7c3aed', High:'#ef4444', Medium:'#f59e0b', Low:'#10b981' };
 
 function renderPriorities() {
-    // Preserve the selected view and zone across re-renders (the View
+    // Preserve the selected view/zone/priority across re-renders (the View
     // selector itself triggers a full re-render since Reported/Completed
-    // need a Dataset+Months filter row that the Snapshot view doesn't).
-    const existingView = document.getElementById('prView');
-    const existingZone = document.getElementById('prZone');
-    const view = existingView ? existingView.value : 'reported';
-    const zone = existingZone ? existingZone.value : 'all';
+    // need a Dataset+Months+Priority filter row that the Snapshot view
+    // doesn't).
+    const existingView     = document.getElementById('prView');
+    const existingZone     = document.getElementById('prZone');
+    const existingPriority = document.getElementById('prPriorityFilter');
+    const view     = existingView ? existingView.value : 'reported';
+    const zone     = existingZone ? existingZone.value : 'all';
+    const priority = existingPriority ? existingPriority.value : 'all';
     const isSnapshot = view === 'open';
 
     // Zone filter (v1.0.15) -- a system-wide priority chart tells a Zone
@@ -1539,9 +1558,19 @@ function renderPriorities() {
     // it sits above the view-conditional filters rather than inside them.
     const zones = [...new Set(allData.map(p=>p.zone).filter(Boolean))].sort();
 
+    // Priority filter (v1.0.17) -- all priorities on one trend chart at
+    // once was messy whether stacked bar or overlapping lines. Pick one
+    // priority (or "All Priorities" combined) and show it as a single,
+    // clean bar-per-month. Only applies to the two trend views -- the
+    // Snapshot already compares priorities side by side at a single point
+    // in time, which is exactly what that bar chart is for.
+    const priorityOptions = PRIORITY_ORDER.filter(pr => allData.some(p => (p.problemPriority||'').trim() === pr))
+        .concat([...new Set(allData.map(p=>(p.problemPriority||'').trim()).filter(Boolean))]
+            .filter(pr => !PRIORITY_ORDER.includes(pr)).sort());
+
     const desc = isSnapshot
         ? 'Currently open problems (current data only), broken down by priority.'
-        : `Number of problems ${view === 'reported' ? 'reported' : 'completed'} per month, broken down by priority.`;
+        : `Number of problems ${view === 'reported' ? 'reported' : 'completed'} per month${priority === 'all' ? ', all priorities combined' : ' — ' + priority + ' priority'}.`;
 
     showPanel(`
         <div class="report-heading">🚦 Priorities</div>
@@ -1563,6 +1592,13 @@ function renderPriorities() {
                 </select>
             </div>
             ${isSnapshot ? '' : `
+            <div class="filter-group">
+                <span class="filter-label">Priority</span>
+                <select id="prPriorityFilter" class="glass-select" onchange="runPriorities()">
+                    <option value="all" ${priority==='all'?'selected':''}>All Priorities</option>
+                    ${priorityOptions.map(pr=>`<option value="${pr}" ${priority===pr?'selected':''}>${pr}</option>`).join('')}
+                </select>
+            </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
                 <select id="prDataset" class="glass-select" onchange="runPriorities()">
@@ -1595,25 +1631,28 @@ function runPriorities() {
 }
 
 function runPrioritiesTrend(view) {
-    const zone    = document.getElementById('prZone').value;
-    const dataset = document.getElementById('prDataset').value;
-    const months  = document.getElementById('prMonths').value;
-    let pool      = dataset === 'current' ? currentData : allData;
+    const zone     = document.getElementById('prZone').value;
+    const dataset  = document.getElementById('prDataset').value;
+    const months   = document.getElementById('prMonths').value;
+    const priority = document.getElementById('prPriorityFilter').value;
+    let pool = dataset === 'current' ? currentData : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
-    // month key -> { priority -> count }
+    // Single series -- either one selected priority, or all combined
+    // (v1.0.17). Showing every priority at once, whether as a stacked bar
+    // or overlapping lines, was too cluttered to actually read. Filter
+    // down to what's being asked for, then it's just a clean count per
+    // month, same shape as Month-on-Month.
     const monthly = {};
-    const seen = new Set();
     pool.forEach(p => {
         const dateStr = view === 'reported' ? p.timestamp : (isCompleted(p) ? p.completionDate : null);
         if (!dateStr) return;
         const d = new Date(dateStr);
         if (isNaN(d)) return;
+        const pr = (p.problemPriority || 'Unspecified').trim();
+        if (priority !== 'all' && pr !== priority) return;
         const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-        const pr  = (p.problemPriority || 'Unspecified').trim();
-        seen.add(pr);
-        if (!monthly[key]) monthly[key] = {};
-        monthly[key][pr] = (monthly[key][pr]||0) + 1;
+        monthly[key] = (monthly[key]||0) + 1;
     });
 
     let keys = Object.keys(monthly).sort();
@@ -1627,69 +1666,52 @@ function runPrioritiesTrend(view) {
         const [y,m] = k.split('-');
         return new Date(y, m-1).toLocaleDateString('en-AU',{month:'short',year:'numeric'});
     });
+    const values = keys.map(k => monthly[k] || 0);
 
-    // Known priorities first in a sensible urgency order, then anything
-    // unexpected found in the data appended alphabetically -- never
-    // silently drops a priority value just because it wasn't anticipated.
-    const priorities = PRIORITY_ORDER.filter(p => seen.has(p))
-        .concat([...seen].filter(p => !PRIORITY_ORDER.includes(p)).sort());
+    priorityChartData = { view, zone, priority, labels, keys, values };
 
-    // One line per priority, not stacked (v1.0.16) -- a stacked bar/area
-    // shows the total nicely but obscures whether an individual priority
-    // level is trending up or down, which is the actual question this
-    // report exists to answer. Table below still shows the per-month
-    // totals for anyone who wants that number.
-    const datasets = priorities.map(pr => {
-        const color = PRIORITY_COLORS[pr] || '#9ca3af';
-        return {
-            label: pr,
-            data: keys.map(k => (monthly[k] && monthly[k][pr]) || 0),
-            borderColor: color, backgroundColor: color,
-            borderWidth: 2, fill: false, tension: 0,
-            pointRadius: 3, pointBackgroundColor: color
-        };
-    });
-
-    priorityChartData = { view, zone, labels, keys, priorities, monthly };
-
-    const totalsByPriority = {};
-    priorities.forEach(pr => {
-        totalsByPriority[pr] = keys.reduce((sum,k) => sum + ((monthly[k]&&monthly[k][pr])||0), 0);
-    });
-    const grandTotal = Object.values(totalsByPriority).reduce((a,b)=>a+b,0);
+    const total = values.reduce((a,b)=>a+b,0);
+    const avg   = keys.length ? Math.round(total/keys.length) : 0;
+    const peak  = Math.max(...values, 0);
+    const peakMonth = labels[values.indexOf(peak)] || '—';
+    const color = priority === 'all' ? '#3b82f6' : (PRIORITY_COLORS[priority] || '#9ca3af');
 
     const el = document.getElementById('prResults');
     el.innerHTML = `
         <div class="stats-strip">
-            <div class="stat-pill"><div class="stat-pill-value">${grandTotal}</div><div class="stat-pill-label">Total</div></div>
-            ${priorities.map(pr => `<div class="stat-pill"><div class="stat-pill-value">${totalsByPriority[pr]}</div><div class="stat-pill-label">${pr}</div></div>`).join('')}
+            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">Total</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${avg}</div><div class="stat-pill-label">Monthly Avg</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${peak}</div><div class="stat-pill-label">Peak Month</div></div>
+            <div class="stat-pill"><div class="stat-pill-value" style="font-size:1rem;">${peakMonth}</div><div class="stat-pill-label">Peak Period</div></div>
         </div>
         <div class="chart-wrap">
-            <div class="chart-title">${view === 'reported' ? 'Problems Reported' : 'Problems Completed'} by Month &amp; Priority</div>
+            <div class="chart-title">${view === 'reported' ? 'Problems Reported' : 'Problems Completed'} by Month${priority === 'all' ? ' — All Priorities' : ' — ' + priority}</div>
             <canvas id="prChart" height="120"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
-            <thead><tr><th>Month</th>${priorities.map(pr=>`<th>${pr}</th>`).join('')}<th>Total</th></tr></thead>
+            <thead><tr><th>Month</th><th>Count</th></tr></thead>
             <tbody>
-                ${keys.map((k,i) => {
-                    const rowTotal = priorities.reduce((s,pr) => s + ((monthly[k]&&monthly[k][pr])||0), 0);
-                    return `<tr>
-                        <td>${labels[i]}</td>
-                        ${priorities.map(pr=>`<td>${(monthly[k]&&monthly[k][pr])||0}</td>`).join('')}
-                        <td><strong>${rowTotal}</strong></td>
-                    </tr>`;
-                }).reverse().join('')}
+                ${keys.map((k,i)=>`<tr>
+                    <td>${labels[i]}</td>
+                    <td><strong>${values[i]}</strong></td>
+                </tr>`).reverse().join('')}
             </tbody>
         </table></div>`;
 
     if (activeChart) { activeChart.destroy(); activeChart = null; }
     const ctx = document.getElementById('prChart').getContext('2d');
     activeChart = new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets },
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: priority === 'all' ? 'All Priorities' : priority,
+                data: values,
+                backgroundColor: color, borderRadius: 3
+            }]
+        },
         options: {
-            responsive: true,
-            plugins: { legend: { display: true, position: 'bottom' } },
+            responsive: true, plugins: { legend: { display: false } },
             scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
         }
     });
@@ -1768,10 +1790,13 @@ async function exportPrioritiesPDF() {
     const pw  = pdf.internal.pageSize.getWidth();
     const ph  = pdf.internal.pageSize.getHeight();
 
-    const { view, zone } = priorityChartData;
-    const title = view === 'open' ? 'Currently Open Problems by Priority'
-                : view === 'reported' ? 'Month-on-Month Reported by Priority'
-                : 'Month-on-Month Completed by Priority';
+    const { view, zone, priority } = priorityChartData;
+    const baseTitle = view === 'open' ? 'Currently Open Problems by Priority'
+                : view === 'reported' ? 'Month-on-Month Reported'
+                : 'Month-on-Month Completed';
+    const title = (view !== 'open')
+        ? `${baseTitle} \u2014 ${priority === 'all' ? 'All Priorities' : priority}`
+        : baseTitle;
 
     pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
     pdf.setTextColor(255,255,255);
@@ -1799,41 +1824,27 @@ async function exportPrioritiesPDF() {
             pdf.text(`${total?Math.round(counts[pr]/total*100):0}%`,140,y+4.2); y+=6;
         });
     } else {
-        const { labels, keys, priorities, monthly } = priorityChartData;
-        const monthColW = 40;
-        const totalColW = 24;
-        const priColW   = (pw - 28 - monthColW - totalColW) / priorities.length;
-
-        pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+        // Single series now (v1.0.17), same simple month/count table shape
+        // as Month-on-Month's own PDF export.
+        const { labels, keys, values } = priorityChartData;
+        pdf.setFillColor(30,64,175); pdf.rect(14,y,60,7,'F');
         pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-        let x = 14;
-        pdf.text('Month', x+1, y+5); x += monthColW;
-        priorities.forEach(pr => { pdf.text(pr, x+1, y+5); x += priColW; });
-        pdf.text('Total', x+1, y+5);
-        y += 7;
-
+        pdf.text('Month', 16, y+5); pdf.text('Count', 46, y+5); y+=7;
         pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
-        [...keys].reverse().forEach((k,ri) => {
-            if (y>ph-15) { pdf.addPage(); y=15; }
-            const idx = keys.length - 1 - ri;
-            pdf.setFillColor(ri%2===0?248:255,ri%2===0?250:255,ri%2===0?252:255);
-            pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
-            x = 14;
-            pdf.text(labels[idx], x+1, y+4.2); x += monthColW;
-            let rowTotal = 0;
-            priorities.forEach(pr => {
-                const c = (monthly[k] && monthly[k][pr]) || 0;
-                rowTotal += c;
-                pdf.text(String(c), x+1, y+4.2); x += priColW;
-            });
-            pdf.text(String(rowTotal), x+1, y+4.2);
-            y += 6;
+        [...keys].reverse().forEach((k,i)=>{
+            if (y > ph-15) { pdf.addPage(); y=15; }
+            pdf.setFillColor(i%2===0?248:255, i%2===0?250:255, i%2===0?252:255);
+            pdf.rect(14,y,60,6,'F');
+            pdf.setFontSize(8);
+            pdf.text(labels[labels.length-1-i], 16, y+4.2);
+            pdf.text(String(values[values.length-1-i]), 46, y+4.2);
+            y+=6;
         });
     }
 
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`Priorities_${view}_${zone === 'all' ? 'AllZones' : 'Zone' + zone}_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`Priorities_${view}_${view!=='open' && priority!=='all' ? priority+'_' : ''}${zone === 'all' ? 'AllZones' : 'Zone' + zone}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
