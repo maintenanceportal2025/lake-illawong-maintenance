@@ -6,15 +6,14 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.7
+VERSION: V1.1.8
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
 DEPENDENCIES:
   - Explorer_V1_2.js backend (getFaultLogData, getLegacyLogData)
   - Chart.js 4.4.0 (cdn.jsdelivr.net)
-  - jsPDF (unpkg)
-  - html2canvas (unpkg)
+  - jsPDF 4.2.1 (unpkg) -- lazy-loaded on first export, not on page open
 API URL: Explorer backend (same as ExecutiveDashboard)
 
 REPORTS:
@@ -28,6 +27,23 @@ REPORTS:
   8. Work Completed by Person    (Ben's activity by date range)
 
 VERSION HISTORY:
+  V1.1.8 (Aug 2026): Fixed "module takes too long to open" -- Network
+                     waterfall showed jsPDF and html2canvas (both @latest
+                     on unpkg, so effectively uncacheable) stalling page-
+                     interactive by ~14s each, on every single open.
+                     html2canvas removed entirely: confirmed unused
+                     anywhere in this file -- PDF export uses jsPDF's own
+                     text/table drawing, not a screenshot approach.
+                     jsPDF pinned to 4.2.1 (was @latest) and lazy-loaded
+                     on first export click instead of blocking page open,
+                     across all 8 export functions. Also fixed a bug this
+                     surfaced: lean mode (V1.1.7) was missing
+                     unitPrimaryName on getFaultLogData, so the Unit
+                     Problem History resident name was silently blanking
+                     out (degraded via existing `|| '—'` fallback, not a
+                     crash, but wrong) -- fixed on Explorer V1.3.1, no
+                     frontend change needed since this file already reads
+                     that field correctly.
   V1.1.7 (Aug 2026): Wired up Explorer V1.3's lean=1 mode on both
                      getFaultLogData and getLegacyLogData calls. Confirmed
                      safe first: neither this file nor ZoneRepReports
@@ -117,8 +133,13 @@ VERSION HISTORY:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reports Hub - Lake Illawong</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
-    <script src="https://unpkg.com/html2canvas@latest/dist/html2canvas.min.js"></script>
+    <!-- jsPDF loaded lazily on first export click (see loadPdfLib()) rather
+         than blocking page open -- Network waterfall showed it and
+         html2canvas together stalling page-interactive by 14s. html2canvas
+         removed entirely (v1.1.8): confirmed unused anywhere in this file --
+         PDF export uses jsPDF's own text/table drawing, not the screenshot
+         approach html2canvas would support. Pinned to 4.2.1 instead of
+         @latest so the browser can actually cache it between visits. -->
     <style>
         :root {
             --glass-bg:           rgba(255,255,255,0.08);
@@ -513,6 +534,28 @@ function isProgrammed(p) {
 }
 
 // =====================================================================
+// PDF LIBRARY LAZY LOAD (v1.1.8)
+// =====================================================================
+// jsPDF is only needed when a report is actually exported, not to open the
+// module -- loading it up front was adding ~14s of stalled network wait to
+// every page open (confirmed via Network waterfall). Injected on first
+// export click instead; cached in-browser and on subsequent calls resolves
+// immediately since window.jspdf already exists.
+let pdfLibPromise = null;
+function loadPdfLib() {
+    if (window.jspdf) return Promise.resolve();
+    if (pdfLibPromise) return pdfLibPromise;
+    pdfLibPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/jspdf@4.2.1/dist/jspdf.umd.min.js';
+        script.onload = () => resolve();
+        script.onerror = () => { pdfLibPromise = null; reject(new Error('Failed to load jsPDF')); };
+        document.body.appendChild(script);
+    });
+    return pdfLibPromise;
+}
+
+// =====================================================================
 // DATA LOADING (JSONP)
 // =====================================================================
 // Retry-with-backoff pattern mirrored from DesktopExplorer's makeRequest,
@@ -839,6 +882,7 @@ async function exportUnitHistoryPDF() {
     if (!uhData.length) return;
     const unit    = document.getElementById('uhUnit').value.trim();
     const resName = uhData[0].unitPrimaryName || '—';
+    await loadPdfLib();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('l', 'mm', 'a4');
     const pw  = pdf.internal.pageSize.getWidth();
@@ -995,6 +1039,7 @@ function runOpenProblems() {
 
 async function exportOpenPDF() {
     if (!opData.length) return;
+    await loadPdfLib();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('l','mm','a4');
     const pw = pdf.internal.pageSize.getWidth();
@@ -1160,6 +1205,7 @@ function runMoM(mode) {
 async function exportMoMPDF(mode) {
     const chartCanvas = document.getElementById('momChart');
     if (!chartCanvas) return;
+    await loadPdfLib();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('l','mm','a4');
     const pw  = pdf.internal.pageSize.getWidth();
@@ -1302,6 +1348,7 @@ function runByCategory() {
 async function exportCategoryPDF() {
     const chartCanvas = document.getElementById('catChart');
     if (!chartCanvas) return;
+    await loadPdfLib();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p','mm','a4');
     const pw  = pdf.internal.pageSize.getWidth();
@@ -1425,6 +1472,7 @@ function runByZone() {
 async function exportZonePDF() {
     const chartCanvas = document.getElementById('zoneChart');
     if (!chartCanvas) return;
+    await loadPdfLib();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('l','mm','a4');
     const pw  = pdf.internal.pageSize.getWidth();
@@ -1553,6 +1601,7 @@ function runKeywordSearch() {
 
 async function exportKeywordPDF() {
     if (!kwData.length) return;
+    await loadPdfLib();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('l','mm','a4');
     const pw = pdf.internal.pageSize.getWidth();
@@ -1682,6 +1731,7 @@ function runWorkByPerson() {
 async function exportWorkPDF() {
     if (!wpData.length) return;
     const person = document.getElementById('wpPerson').value;
+    await loadPdfLib();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('l','mm','a4');
     const pw = pdf.internal.pageSize.getWidth();
@@ -1821,6 +1871,7 @@ function runProgrammedWorks() {
 
 async function exportProgrammedPDF() {
     if (!pwData.length) return;
+    await loadPdfLib();
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('l','mm','a4');
     const pw  = pdf.internal.pageSize.getWidth();
