@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          4 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.11
+VERSION: V1.0.12
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -23,6 +23,17 @@ REPORTS (cut-down from full Reports Hub):
   5. Programmed Works     (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.0.12 (Aug 2026): Unit History PDF wasn't showing the completion date
+                     -- the on-screen expandable row always shows
+                     "Completed <date> · <person>" for completed records
+                     regardless of whether there's a resolution note, but
+                     the PDF only ever drew anything extra when a note
+                     existed, and even then never printed the completion
+                     date at all. PDF now matches on-screen behaviour:
+                     completed records get the meta line whether or not
+                     they have a note. Open Problems PDF untouched --
+                     it only ever contains open records, so this
+                     situation can't occur there.
   V1.0.11 (Aug 2026): Two fixes raised by Tony. (1) By Zone's High
                      Priority column removed -- it counted High priority
                      records regardless of status (open, completed or
@@ -982,9 +993,18 @@ async function exportUnitHistoryPDF() {
     uhData.forEach((p, idx) => {
         const hasNote = !!(p.comments && String(p.comments).trim());
         const noteLines = hasNote ? pdf.splitTextToSize('Resolution: ' + String(p.comments).trim(), pw - 34) : [];
+        // Completion meta (v1.0.12) -- matches the on-screen expandable row,
+        // which always shows "Completed <date> · <person>" for completed
+        // records regardless of whether there's a note. The PDF previously
+        // only drew anything extra when hasNote was true, and even then
+        // never printed the completion date at all.
+        const showMeta = isCompleted(p) && !!p.completionDate;
+        const metaText = showMeta ? `Completed ${fmt(p.completionDate)}${p.assignedTo ? ' \u00b7 ' + p.assignedTo : ''}` : '';
         const catLines = pdfCategoryLines(pdf, p.category, widths[2]);
         const catHeight = Math.max(6, catLines.length * 3.2 + 2);
-        const rowHeight = catHeight + (hasNote ? (noteLines.length * 3.2 + 2) : 0);
+        const noteBlockHeight = hasNote ? (noteLines.length * 3.2 + 2) : 0;
+        const metaBlockHeight = showMeta ? 4 : 0;
+        const rowHeight = catHeight + noteBlockHeight + metaBlockHeight;
 
         if (y + rowHeight > ph - 20) { pdf.addPage(); y = 15; }
 
@@ -1004,10 +1024,17 @@ async function exportUnitHistoryPDF() {
             x += widths[i];
         });
 
+        let extraY = y + catHeight + 3;
         if (hasNote) {
             pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
-            pdf.text(noteLines, 15, y + catHeight + 3, { lineHeightFactor: 1.15 });
+            pdf.text(noteLines, 15, extraY, { lineHeightFactor: 1.15 });
             pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+            extraY += noteBlockHeight;
+        }
+        if (showMeta) {
+            pdf.setFontSize(6); pdf.setFont('helvetica','normal'); pdf.setTextColor(150,150,150);
+            pdf.text(metaText, 15, extraY);
+            pdf.setTextColor(55,65,81);
         }
 
         y += rowHeight;
