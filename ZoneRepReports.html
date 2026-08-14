@@ -3,10 +3,10 @@
 LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - ZONE REP REPORTS
 =====================================================================
 PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
-         4 reports relevant to zone representative role.
+         7 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.13
+VERSION: V1.0.14
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -18,11 +18,48 @@ DEPENDENCIES:
 REPORTS (cut-down from full Reports Hub):
   1. Unit Problem History  (current + legacy)
   2. Open Problems         (filterable by zone/category/priority/assigned)
-  3. By Zone              (zone summary with chart)
-  4. Keyword Search       (both logs)
-  5. Programmed Works     (scheduled and completed programmed works)
+  3. Month-on-Month Completed (trend, resolution volume over time)
+  4. Priorities            (Reported/Completed trend + Currently Open
+                             snapshot, by priority)
+  5. By Zone               (zone summary with chart)
+  6. Keyword Search        (both logs)
+  7. Programmed Works      (scheduled and completed programmed works)
+
+Deliberately NOT exposed to this audience: Month-on-Month Reported (raw
+volume of new complaints, not resolution -- doesn't answer what Zone Reps
+actually need), Problems by Category (a Board/maintenance-planning tool,
+not a Zone Rep one), Work by Person (individual staff performance data --
+Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
+code cleanup.
 
 VERSION HISTORY:
+  V1.0.14 (Aug 2026): Closed the ZoneRepReports/ReportsHub catalogue gap
+                     deliberately deferred until ReportsHub was settled.
+                     Reviewed all four reports ReportsHub has that this
+                     file didn't (MoM Reported, MoM Completed, Priorities,
+                     By Category) against what a Zone Rep actually needs
+                     -- added Priorities (strongest fit: a Zone Rep facing
+                     "why is this still open" can show how urgent the
+                     outstanding backlog actually is) and Month-on-Month
+                     Completed (a real trend line beats "trust me, it's
+                     being resolved"). Left out MoM Reported (raw
+                     complaint volume, doesn't speak to resolution) and
+                     By Category (a Board/maintenance-planning tool, not
+                     a Zone Rep one). Also found and removed dead code:
+                     renderByCategory/runByCategory/exportCategoryPDF and
+                     renderWorkByPersonForm/runWorkByPerson/exportWorkPDF
+                     had been present in this file since it was first
+                     derived from ReportsHub V1.1.1, fully functional but
+                     never wired into the catalogue or switch statement --
+                     unreachable via the UI, but technically callable via
+                     browser console. Work by Person in particular is
+                     Tony's explicit staff-sensitivity exclusion for this
+                     audience, so removing the dead code (not just leaving
+                     it unreachable) actually closes that gap rather than
+                     just hiding it. renderMoMReported() wrapper also
+                     removed (unused, since only Completed is wired) --
+                     renderMoM(mode) and exportMoMPDF(mode) themselves
+                     stay generic since Completed needs them.
   V1.0.13 (Aug 2026): Extended to Programmed Works, raised by Tony -- same
                      expand-row pattern as Unit Problem History/Open
                      Problems (own id namespace, pwRow/pwDetail). Labelled
@@ -535,6 +572,15 @@ VERSION HISTORY:
 
             <div class="catalogue-divider"></div>
 
+            <div class="report-item" onclick="selectReport('mom-completed')" id="cat-mom-completed">
+                <span class="report-icon">📉</span>Month-on-Month Completed
+            </div>
+            <div class="report-item" onclick="selectReport('priorities')" id="cat-priorities">
+                <span class="report-icon">🚦</span>Priorities
+            </div>
+
+            <div class="catalogue-divider"></div>
+
             <div class="report-item" onclick="selectReport('by-zone')" id="cat-by-zone">
                 <span class="report-icon">🗺️</span>By Zone
             </div>
@@ -795,6 +841,8 @@ function runCurrentReport() {
     switch (currentReportId) {
         case 'unit-history':      renderUnitHistoryForm();   break;
         case 'open-problems':     renderOpenProblems();       break;
+        case 'mom-completed':     renderMoMCompleted();       break;
+        case 'priorities':        renderPriorities();         break;
         case 'by-zone':           renderByZone();             break;
         case 'keyword-search':    renderKeywordForm();        break;
         case 'programmed-works':  renderProgrammedWorks();    break;
@@ -1245,7 +1293,10 @@ async function exportOpenPDF() {
 // =====================================================================
 // REPORT 3 & 4 — MONTH-ON-MONTH (shared renderer, mode param)
 // =====================================================================
-function renderMoMReported() { renderMoM('reported'); }
+// Only the Completed wrapper is wired to the catalogue -- Reported (raw
+// volume, not resolution) was deliberately left out for the Zone Rep
+// audience; see V1.0.14 changelog. renderMoM(mode) itself stays generic
+// since exportMoMPDF(mode) and the shared rendering logic need it.
 function renderMoMCompleted() { renderMoM('completed'); }
 
 function renderMoM(mode) {
@@ -1410,148 +1461,299 @@ async function exportMoMPDF(mode) {
     pdf.save(`MoM_${mode}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
+
 // =====================================================================
-// REPORT 5 — BY CATEGORY
+// REPORT — PRIORITIES (raised by Tony, Aug 2026 -- companion to the two
+// Month-on-Month reports above, plus a currently-open snapshot. Intended
+// use: selected reports generated and emailed to the Board on a schedule
+// (not yet built -- that's a separate, future automation piece; this
+// report is the first building block for it).
 // =====================================================================
-function renderByCategory() {
+const PRIORITY_ORDER  = ['Urgent','High','Medium','Low'];
+const PRIORITY_COLORS = { Urgent:'#7c3aed', High:'#ef4444', Medium:'#f59e0b', Low:'#10b981' };
+
+function renderPriorities() {
+    // Preserve the selected view across re-renders (the View selector
+    // itself triggers a full re-render since Reported/Completed need a
+    // Dataset+Months filter row that the Snapshot view doesn't).
+    const existing = document.getElementById('prView');
+    const view = existing ? existing.value : 'reported';
+    const isSnapshot = view === 'open';
+
+    const desc = isSnapshot
+        ? 'Currently open problems (current data only), broken down by priority.'
+        : `Number of problems ${view === 'reported' ? 'reported' : 'completed'} per month, broken down by priority.`;
+
     showPanel(`
-        <div class="report-heading">🏷️ Problems by Category</div>
-        <div class="report-subheading">Breakdown of problems by category and sub-category.</div>
+        <div class="report-heading">🚦 Priorities</div>
+        <div class="report-subheading">${desc}</div>
         <div class="filter-row">
             <div class="filter-group">
+                <span class="filter-label">View</span>
+                <select id="prView" class="glass-select" onchange="renderPriorities()">
+                    <option value="reported" ${view==='reported'?'selected':''}>Reported Trend</option>
+                    <option value="completed" ${view==='completed'?'selected':''}>Completed Trend</option>
+                    <option value="open" ${view==='open'?'selected':''}>Currently Open (Snapshot)</option>
+                </select>
+            </div>
+            ${isSnapshot ? '' : `
+            <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="catDataset" class="glass-select" onchange="runByCategory()">
-                    <option value="current">Current only</option>
+                <select id="prDataset" class="glass-select" onchange="runPriorities()">
                     <option value="all">Current + Legacy</option>
+                    <option value="current">Current only</option>
                 </select>
             </div>
             <div class="filter-group">
-                <span class="filter-label">Status</span>
-                <select id="catStatus" class="glass-select" onchange="runByCategory()">
-                    <option value="all">All</option>
-                    <option value="open">Open only</option>
-                    <option value="completed">Completed only</option>
+                <span class="filter-label">Months</span>
+                <select id="prMonths" class="glass-select" onchange="runPriorities()">
+                    <option value="12">Last 12 months</option>
+                    <option value="24">Last 24 months</option>
+                    <option value="all">All time</option>
                 </select>
-            </div>
-            <button class="pdf-btn" onclick="exportCategoryPDF()">&#8595; PDF</button>
+            </div>`}
+            <button class="pdf-btn" onclick="exportPrioritiesPDF()">&#8595; PDF</button>
         </div>
-        <div class="results-area" id="catResults"></div>`);
+        <div class="results-area" id="prResults"></div>`);
 
-    runByCategory();
+    runPriorities();
 }
 
-let catReportData = {};
+let priorityChartData = {};
 
-function runByCategory() {
+function runPriorities() {
     if (!dataLoaded) return;
-    const dataset = document.getElementById('catDataset').value;
-    const status  = document.getElementById('catStatus').value;
+    const view = document.getElementById('prView').value;
+    if (view === 'open') runPrioritiesSnapshot();
+    else runPrioritiesTrend(view);
+}
+
+function runPrioritiesTrend(view) {
+    const dataset = document.getElementById('prDataset').value;
+    const months  = document.getElementById('prMonths').value;
     const pool    = dataset === 'current' ? currentData : allData;
 
-    let filtered = pool;
-    if (status === 'open')      filtered = pool.filter(isOpen);
-    if (status === 'completed') filtered = pool.filter(isCompleted);
-
-    // Group by category then sub-category
-    const cats = {};
-    filtered.forEach(p => {
-        const cat    = p.category    || 'Uncategorised';
-        const subcat = p.subCategory || '—';
-        if (!cats[cat]) cats[cat] = { total: 0, subs: {} };
-        cats[cat].total++;
-        cats[cat].subs[subcat] = (cats[cat].subs[subcat]||0) + 1;
+    // month key -> { priority -> count }
+    const monthly = {};
+    const seen = new Set();
+    pool.forEach(p => {
+        const dateStr = view === 'reported' ? p.timestamp : (isCompleted(p) ? p.completionDate : null);
+        if (!dateStr) return;
+        const d = new Date(dateStr);
+        if (isNaN(d)) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        const pr  = (p.problemPriority || 'Unspecified').trim();
+        seen.add(pr);
+        if (!monthly[key]) monthly[key] = {};
+        monthly[key][pr] = (monthly[key][pr]||0) + 1;
     });
-    catReportData = { cats, total: filtered.length };
 
-    const sorted = Object.entries(cats).sort((a,b)=>b[1].total-a[1].total);
-    const labels = sorted.map(([k])=>k);
-    const values = sorted.map(([,v])=>v.total);
+    let keys = Object.keys(monthly).sort();
+    if (months !== 'all') {
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - parseInt(months));
+        keys = keys.filter(k => new Date(k+'-01') >= cutoff);
+    }
 
-    const el = document.getElementById('catResults');
+    const labels = keys.map(k => {
+        const [y,m] = k.split('-');
+        return new Date(y, m-1).toLocaleDateString('en-AU',{month:'short',year:'numeric'});
+    });
+
+    // Known priorities first in a sensible urgency order, then anything
+    // unexpected found in the data appended alphabetically -- never
+    // silently drops a priority value just because it wasn't anticipated.
+    const priorities = PRIORITY_ORDER.filter(p => seen.has(p))
+        .concat([...seen].filter(p => !PRIORITY_ORDER.includes(p)).sort());
+
+    const datasets = priorities.map(pr => ({
+        label: pr,
+        data: keys.map(k => (monthly[k] && monthly[k][pr]) || 0),
+        backgroundColor: PRIORITY_COLORS[pr] || '#9ca3af'
+    }));
+
+    priorityChartData = { view, labels, keys, priorities, monthly };
+
+    const totalsByPriority = {};
+    priorities.forEach(pr => {
+        totalsByPriority[pr] = keys.reduce((sum,k) => sum + ((monthly[k]&&monthly[k][pr])||0), 0);
+    });
+    const grandTotal = Object.values(totalsByPriority).reduce((a,b)=>a+b,0);
+
+    const el = document.getElementById('prResults');
     el.innerHTML = `
         <div class="stats-strip">
-            <div class="stat-pill"><div class="stat-pill-value">${filtered.length}</div><div class="stat-pill-label">Total Problems</div></div>
-            <div class="stat-pill"><div class="stat-pill-value">${sorted.length}</div><div class="stat-pill-label">Categories</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${grandTotal}</div><div class="stat-pill-label">Total</div></div>
+            ${priorities.map(pr => `<div class="stat-pill"><div class="stat-pill-value">${totalsByPriority[pr]}</div><div class="stat-pill-label">${pr}</div></div>`).join('')}
         </div>
         <div class="chart-wrap">
-            <div class="chart-title">Problems by Category</div>
-            <canvas id="catChart" height="100"></canvas>
+            <div class="chart-title">${view === 'reported' ? 'Problems Reported' : 'Problems Completed'} by Month &amp; Priority</div>
+            <canvas id="prChart" height="120"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
-            <thead><tr><th>Category</th><th>Sub-Category</th><th>Count</th><th>% of Total</th></tr></thead>
+            <thead><tr><th>Month</th>${priorities.map(pr=>`<th>${pr}</th>`).join('')}<th>Total</th></tr></thead>
             <tbody>
-                ${sorted.map(([cat,v])=>
-                    Object.entries(v.subs).sort((a,b)=>b[1]-a[1]).map(([ sub, cnt], si) => `<tr>
-                        ${si===0 ? `<td rowspan="${Object.keys(v.subs).length}" style="font-weight:600;vertical-align:top;border-right:2px solid #e5e7eb">${cat}<br><span style="font-size:0.75rem;color:#6b7280">${v.total} total</span></td>` : ''}
-                        <td>${sub}</td>
-                        <td><strong>${cnt}</strong></td>
-                        <td>${Math.round(cnt/filtered.length*100)}%</td>
-                    </tr>`).join('')
-                ).join('')}
+                ${keys.map((k,i) => {
+                    const rowTotal = priorities.reduce((s,pr) => s + ((monthly[k]&&monthly[k][pr])||0), 0);
+                    return `<tr>
+                        <td>${labels[i]}</td>
+                        ${priorities.map(pr=>`<td>${(monthly[k]&&monthly[k][pr])||0}</td>`).join('')}
+                        <td><strong>${rowTotal}</strong></td>
+                    </tr>`;
+                }).reverse().join('')}
             </tbody>
         </table></div>`;
 
     if (activeChart) { activeChart.destroy(); activeChart = null; }
-    const ctx = document.getElementById('catChart').getContext('2d');
+    const ctx = document.getElementById('prChart').getContext('2d');
     activeChart = new Chart(ctx, {
         type: 'bar',
-        data: {
-            labels,
-            datasets: [{
-                data: values,
-                backgroundColor: labels.map((_,i)=>`hsla(${210+i*25},70%,55%,0.75)`),
-                borderRadius: 3
-            }]
-        },
+        data: { labels, datasets },
         options: {
-            indexAxis: 'y', responsive: true,
-            plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            responsive: true,
+            plugins: { legend: { display: true, position: 'bottom' } },
+            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } } }
         }
     });
 }
 
-async function exportCategoryPDF() {
-    const chartCanvas = document.getElementById('catChart');
+function runPrioritiesSnapshot() {
+    // Always current data only, never legacy -- legacy records are all
+    // status "Unknown" (can't verify from the old paper log), so counting
+    // them as part of "currently open" workload would badly overstate
+    // what's actually outstanding today. Same dataset choice Open
+    // Problems already makes.
+    const openPool = currentData.filter(isOpen);
+
+    const counts = {};
+    openPool.forEach(p => {
+        const pr = (p.problemPriority || 'Unspecified').trim();
+        counts[pr] = (counts[pr]||0) + 1;
+    });
+
+    const priorities = PRIORITY_ORDER.filter(pr => counts[pr])
+        .concat(Object.keys(counts).filter(pr => !PRIORITY_ORDER.includes(pr)).sort());
+
+    const total = openPool.length;
+    priorityChartData = { view: 'open', priorities, counts, total };
+
+    const el = document.getElementById('prResults');
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">Currently Open</div></div>
+            ${priorities.map(pr => `<div class="stat-pill"><div class="stat-pill-value">${counts[pr]}</div><div class="stat-pill-label">${pr}</div></div>`).join('')}
+        </div>
+        <div class="chart-wrap">
+            <div class="chart-title">Currently Open Problems by Priority</div>
+            <canvas id="prChart" height="120"></canvas>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
+            <thead><tr><th>Priority</th><th>Count</th><th>% of Open</th></tr></thead>
+            <tbody>
+                ${priorities.map(pr=>`<tr>
+                    <td><strong>${pr}</strong></td>
+                    <td>${counts[pr]}</td>
+                    <td>${total ? Math.round(counts[pr]/total*100) : 0}%</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+
+    if (activeChart) { activeChart.destroy(); activeChart = null; }
+    const ctx = document.getElementById('prChart').getContext('2d');
+    activeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: priorities,
+            datasets: [{
+                label: 'Currently Open',
+                data: priorities.map(pr=>counts[pr]),
+                backgroundColor: priorities.map(pr=>PRIORITY_COLORS[pr]||'#9ca3af'),
+                borderRadius: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+async function exportPrioritiesPDF() {
+    const chartCanvas = document.getElementById('prChart');
     if (!chartCanvas) return;
     await loadPdfLib();
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF('p','mm','a4');
+    const pdf = new jsPDF('l','mm','a4');
     const pw  = pdf.internal.pageSize.getWidth();
     const ph  = pdf.internal.pageSize.getHeight();
+
+    const { view } = priorityChartData;
+    const title = view === 'open' ? 'Currently Open Problems by Priority'
+                : view === 'reported' ? 'Month-on-Month Reported by Priority'
+                : 'Month-on-Month Completed by Priority';
 
     pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
     pdf.setTextColor(255,255,255);
     pdf.setFontSize(13); pdf.setFont('helvetica','bold');
-    pdf.text('Lake Illawong — Problems by Category', pw/2, 12, {align:'center'});
+    pdf.text(`Lake Illawong — ${title}`, pw/2, 12, {align:'center'});
     pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}  |  ${catReportData.total} problems`, pw/2, 21, {align:'center'});
+    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
 
     const chartImg = chartCanvas.toDataURL('image/png');
     pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
 
-    let y = 124;
-    const sorted = Object.entries(catReportData.cats).sort((a,b)=>b[1].total-a[1].total);
-    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
-    pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-    pdf.text('Category', 16, y+5); pdf.text('Sub-Category', 70, y+5);
-    pdf.text('Count', 142, y+5); pdf.text('%', 158, y+5); y+=7;
-    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
-    let rowIdx = 0;
-    sorted.forEach(([cat,v])=>{
-        Object.entries(v.subs).sort((a,b)=>b[1]-a[1]).forEach(([sub,cnt])=>{
-            if (y > ph-15) { pdf.addPage(); y=15; }
-            pdf.setFillColor(rowIdx%2===0?248:255, rowIdx%2===0?250:255, rowIdx%2===0?252:255);
+    let y = 122;
+
+    if (view === 'open') {
+        const { priorities, counts, total } = priorityChartData;
+        pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+        pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
+        pdf.text('Priority',16,y+5); pdf.text('Count',90,y+5); pdf.text('% of Open',140,y+5); y+=7;
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        priorities.forEach((pr,i)=>{
+            if (y>ph-15) { pdf.addPage(); y=15; }
+            pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
             pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
-            pdf.text(cat, 16, y+4.2); pdf.text(sub, 70, y+4.2);
-            pdf.text(String(cnt), 142, y+4.2);
-            pdf.text(Math.round(cnt/catReportData.total*100)+'%', 158, y+4.2);
-            y+=6; rowIdx++;
+            pdf.text(pr,16,y+4.2); pdf.text(String(counts[pr]),90,y+4.2);
+            pdf.text(`${total?Math.round(counts[pr]/total*100):0}%`,140,y+4.2); y+=6;
         });
-    });
+    } else {
+        const { labels, keys, priorities, monthly } = priorityChartData;
+        const monthColW = 40;
+        const totalColW = 24;
+        const priColW   = (pw - 28 - monthColW - totalColW) / priorities.length;
+
+        pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+        pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
+        let x = 14;
+        pdf.text('Month', x+1, y+5); x += monthColW;
+        priorities.forEach(pr => { pdf.text(pr, x+1, y+5); x += priColW; });
+        pdf.text('Total', x+1, y+5);
+        y += 7;
+
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        [...keys].reverse().forEach((k,ri) => {
+            if (y>ph-15) { pdf.addPage(); y=15; }
+            const idx = keys.length - 1 - ri;
+            pdf.setFillColor(ri%2===0?248:255,ri%2===0?250:255,ri%2===0?252:255);
+            pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
+            x = 14;
+            pdf.text(labels[idx], x+1, y+4.2); x += monthColW;
+            let rowTotal = 0;
+            priorities.forEach(pr => {
+                const c = (monthly[k] && monthly[k][pr]) || 0;
+                rowTotal += c;
+                pdf.text(String(c), x+1, y+4.2); x += priColW;
+            });
+            pdf.text(String(rowTotal), x+1, y+4.2);
+            y += 6;
+        });
+    }
+
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`By_Category_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`Priorities_${view}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
@@ -1806,145 +2008,6 @@ async function exportKeywordPDF() {
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
     pdf.save(`Keyword_${kwTerm.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`);
-}
-
-// =====================================================================
-// REPORT 8 — WORK BY PERSON
-// =====================================================================
-function renderWorkByPersonForm() {
-    const people = dropdownOptions.assignedTo; // sourced from Dropdowns sheet via MaintenanceModule backend
-
-    showPanel(`
-        <div class="report-heading">👷 Work by Person</div>
-        <div class="report-subheading">Problems assigned to and completed by a specific person in a date range.</div>
-        <div class="filter-row">
-            <div class="filter-group">
-                <span class="filter-label">Person</span>
-                <select id="wpPerson" class="glass-select">
-                    ${people.map(p=>`<option value="${p}">${p}</option>`).join('')}
-                </select>
-            </div>
-            <div class="filter-group">
-                <span class="filter-label">From</span>
-                <input type="date" id="wpFrom" class="glass-input">
-            </div>
-            <div class="filter-group">
-                <span class="filter-label">To</span>
-                <input type="date" id="wpTo" class="glass-input">
-            </div>
-            <button class="run-btn" onclick="runWorkByPerson()">Run Report</button>
-            <button class="pdf-btn" id="wpPdfBtn" onclick="exportWorkPDF()" style="display:none;">&#8595; PDF</button>
-        </div>
-        <div class="results-area" id="wpResults">
-            <div class="placeholder"><div class="placeholder-icon">👷</div>
-            <div class="placeholder-text">Select a person and date range, then click Run Report.</div></div>
-        </div>`);
-
-    // Default date range — last 30 days
-    const to = new Date(); const from = new Date();
-    from.setDate(from.getDate()-29);
-    document.getElementById('wpFrom').value = from.toISOString().split('T')[0];
-    document.getElementById('wpTo').value   = to.toISOString().split('T')[0];
-}
-
-let wpData = [];
-
-function runWorkByPerson() {
-    if (!dataLoaded) { alert('Data is still loading — please wait a moment and try again.'); return; }
-    const person = document.getElementById('wpPerson').value;
-    const from   = new Date(document.getElementById('wpFrom').value);
-    const to     = new Date(document.getElementById('wpTo').value);
-    to.setHours(23,59,59);
-
-    if (isNaN(from) || isNaN(to)) { alert('Please set a valid date range.'); return; }
-
-    wpData = currentData.filter(p => {
-        if (p.assignedTo !== person) return false;
-        const d = new Date(p.timestamp);
-        return !isNaN(d) && d >= from && d <= to;
-    }).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
-
-    const el = document.getElementById('wpResults');
-    if (!wpData.length) {
-        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">👷</div>
-            <div class="placeholder-title">No Records</div>
-            <div class="placeholder-text">${person} has no assigned problems in the selected date range.</div></div>`;
-        document.getElementById('wpPdfBtn').style.display = 'none';
-        return;
-    }
-
-    const completed = wpData.filter(isCompleted).length;
-    const open      = wpData.filter(isOpen).length;
-
-    el.innerHTML = `
-        <div class="stats-strip">
-            <div class="stat-pill"><div class="stat-pill-value">${wpData.length}</div><div class="stat-pill-label">Assigned</div></div>
-            <div class="stat-pill"><div class="stat-pill-value">${completed}</div><div class="stat-pill-label">Completed</div></div>
-            <div class="stat-pill"><div class="stat-pill-value">${open}</div><div class="stat-pill-label">Still Open</div></div>
-            <div class="stat-pill"><div class="stat-pill-value">${completed && wpData.length ? Math.round(completed/wpData.length*100) : 0}%</div><div class="stat-pill-label">Completion Rate</div></div>
-        </div>
-        <div class="table-wrap"><table class="data-table">
-            <thead><tr><th>Reported</th><th>Completed</th><th>Unit</th><th>Zone</th><th>Description</th><th>Category</th><th>Priority</th><th>Status</th></tr></thead>
-            <tbody>
-                ${wpData.map(p=>`<tr>
-                    <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
-                    <td style="white-space:nowrap">${isCompleted(p)?fmt(p.completionDate):'—'}</td>
-                    <td>${p.unitNumber||'—'}</td>
-                    <td>${p.zone||'—'}</td>
-                    <td>${p.problemDescription||'—'}</td>
-                    <td>${p.category||'—'}</td>
-                    <td>${priorityBadge(p.problemPriority)}</td>
-                    <td>${statusBadge(p.problemStatus)}</td>
-                </tr>`).join('')}
-            </tbody>
-        </table></div>`;
-    document.getElementById('wpPdfBtn').style.display = '';
-}
-
-async function exportWorkPDF() {
-    if (!wpData.length) return;
-    const person = document.getElementById('wpPerson').value;
-    await loadPdfLib();
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF('l','mm','a4');
-    const pw = pdf.internal.pageSize.getWidth();
-    const ph = pdf.internal.pageSize.getHeight();
-
-    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
-    pdf.setTextColor(255,255,255);
-    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
-    pdf.text(`Lake Illawong — Work by Person: ${person}`, pw/2, 12, {align:'center'});
-    const comp = wpData.filter(isCompleted).length;
-    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(`${wpData.length} assigned  |  ${comp} completed  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
-
-    let y = 36;
-    const cols   = ['Reported','Completed','Unit','Zone','Description','Category','Priority','Status'];
-    const widths = [22,22,16,20,90,28,20,22];
-    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
-    pdf.setTextColor(255,255,255); pdf.setFontSize(7); pdf.setFont('helvetica','bold');
-    let x=14; cols.forEach((c,i)=>{ pdf.text(c,x+1,y+5); x+=widths[i]; }); y+=7;
-    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
-    wpData.forEach((p,i)=>{
-        const catLines = pdfCategoryLines(pdf, p.category, widths[5]);
-        const rowHeight = Math.max(6, catLines.length * 3.2 + 2);
-        if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
-        pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
-        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
-        [fmt(p.timestamp),isCompleted(p)?fmt(p.completionDate):'—',
-         p.unitNumber||'—',p.zone||'—',(p.problemDescription||'').substring(0,65),
-         null,p.problemPriority||'—',p.problemStatus||'—'
-        ].forEach((v,j)=>{
-            pdf.setFontSize(7);
-            if (j === 5) pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 });
-            else pdf.text(String(v), x+1, y+4.2);
-            x+=widths[j];
-        });
-        y+=rowHeight;
-    });
-    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`Work_${person.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
