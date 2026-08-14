@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          4 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.12
+VERSION: V1.0.13
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -23,6 +23,18 @@ REPORTS (cut-down from full Reports Hub):
   5. Programmed Works     (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.0.13 (Aug 2026): Extended to Programmed Works, raised by Tony -- same
+                     expand-row pattern as Unit Problem History/Open
+                     Problems (own id namespace, pwRow/pwDetail). Labelled
+                     generically as "Notes" since this report spans both
+                     open (Programmed) and completed (Programmed-
+                     Completed) records, rather than "Resolution" or
+                     "Progress" which each only fit one status. No
+                     separate completion-date meta line needed here (the
+                     on-screen table and PDF already have a dedicated
+                     Completed column). PDF prints a wrapped "Notes:"
+                     line under any record with comments, same approach
+                     as the other three reports.
   V1.0.12 (Aug 2026): Unit History PDF wasn't showing the completion date
                      -- the on-screen expandable row always shows
                      "Completed <date> · <person>" for completed records
@@ -2020,10 +2032,10 @@ function runProgrammedWorks() {
         <div class="table-wrap"><table class="data-table">
             <thead><tr>
                 <th>Date</th><th>Unit</th><th>Zone</th><th>Category</th>
-                <th>Description</th><th>Assigned To</th><th>Status</th><th>Completed</th>
+                <th>Description</th><th>Assigned To</th><th>Status</th><th>Completed</th><th></th>
             </tr></thead>
             <tbody>
-                ${pwData.map(p=>`<tr>
+                ${pwData.map((p, idx) => `<tr class="exp-row" id="pwRow${idx}" onclick="togglePwDetail(${idx})">
                     <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
                     <td>${p.unitNumber||'—'}</td>
                     <td>${p.zone||'—'}</td>
@@ -2032,9 +2044,26 @@ function runProgrammedWorks() {
                     <td>${p.assignedTo||'—'}</td>
                     <td><span class="badge ${p.problemStatus==='Programmed-Completed'?'badge-completed':'badge-inprogress'}">${p.problemStatus}</span></td>
                     <td style="white-space:nowrap">${p.problemStatus==='Programmed-Completed'?fmt(p.completionDate):'—'}</td>
+                    <td class="exp-chev" id="pwChev${idx}">&#9662;</td>
+                </tr>
+                <tr id="pwDetail${idx}" style="display:none;">
+                    <td colspan="9" class="exp-detail-cell">
+                        <div class="exp-detail-label">Notes</div>
+                        <div class="exp-detail-text">${p.comments || 'No notes recorded.'}</div>
+                    </td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
+}
+
+// Same expand pattern as Unit Problem History / Open Problems -- own id
+// namespace (pwRow/pwDetail) so expand states between reports don't clash.
+function togglePwDetail(idx) {
+    const row  = document.getElementById('pwRow' + idx);
+    const detail = document.getElementById('pwDetail' + idx);
+    const isOpenRow = detail.style.display !== 'none';
+    detail.style.display = isOpenRow ? 'none' : 'table-row';
+    row.classList.toggle('expanded', !isOpenRow);
 }
 
 async function exportProgrammedPDF() {
@@ -2064,11 +2093,16 @@ async function exportProgrammedPDF() {
 
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     pwData.forEach((p,i)=>{
+        const hasNote = !!(p.comments && String(p.comments).trim());
+        const noteLines = hasNote ? pdf.splitTextToSize('Notes: ' + String(p.comments).trim(), pw - 34) : [];
         const catLines = pdfCategoryLines(pdf, p.category, widths[3]);
-        const rowHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const catHeight = Math.max(6, catLines.length * 3.2 + 2);
+        const rowHeight = catHeight + (hasNote ? (noteLines.length * 3.2 + 2) : 0);
+
         if (y+rowHeight>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
         pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
         [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',null,
          (p.problemDescription||'').substring(0,65),p.assignedTo||'—',
          p.problemStatus||'—',
@@ -2079,6 +2113,12 @@ async function exportProgrammedPDF() {
             else pdf.text(String(v), x+1, y+4.2);
             x+=widths[j];
         });
+
+        if (hasNote) {
+            pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
+            pdf.text(noteLines, 15, y + catHeight + 3, { lineHeightFactor: 1.15 });
+            pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        }
         y+=rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
