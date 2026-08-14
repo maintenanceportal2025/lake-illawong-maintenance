@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          4 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.9
+VERSION: V1.0.10
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -23,6 +23,19 @@ REPORTS (cut-down from full Reports Hub):
   5. Programmed Works     (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.0.10 (Aug 2026): By Zone table's Total/Open/Completed didn't
+                     reconcile -- Total counted every status including
+                     Cancelled, but Open explicitly excludes Cancelled
+                     (isOpen() = not completed AND not cancelled) and
+                     Completed only counts exact "Completed", so
+                     cancelled records vanished from the visible columns
+                     while still being counted in Total. Spotted by Tony
+                     doing the arithmetic himself on a Zone 5 total that
+                     didn't add up. Added an explicit Cancelled column
+                     (on-screen table and PDF) so the numbers reconcile
+                     without mental subtraction; subheading now states
+                     the identity directly (Total = Open + Completed +
+                     Cancelled).
   V1.0.9 (Aug 2026): Extended to Open Problems, raised by Tony -- same
                      expand-row pattern as Unit Problem History's V1.0.8
                      ("Progress notes" instead of "Resolution notes",
@@ -1466,7 +1479,7 @@ async function exportCategoryPDF() {
 function renderByZone() {
     showPanel(`
         <div class="report-heading">🗺️ Problems by Zone</div>
-        <div class="report-subheading">Summary of reported and open problems per zone.</div>
+        <div class="report-subheading">Summary of reported, open, completed and cancelled problems per zone. Total = Open + Completed + Cancelled.</div>
         <div class="filter-row">
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
@@ -1491,10 +1504,11 @@ function runByZone() {
     const zones = {};
     pool.forEach(p => {
         const z = p.zone || 'Unknown';
-        if (!zones[z]) zones[z] = { total:0, open:0, completed:0, high:0 };
+        if (!zones[z]) zones[z] = { total:0, open:0, completed:0, cancelled:0, high:0 };
         zones[z].total++;
         if (isOpen(p))      zones[z].open++;
         if (isCompleted(p)) zones[z].completed++;
+        if ((p.problemStatus||'').toLowerCase()==='cancelled') zones[z].cancelled++;
         if ((p.problemPriority||'').toLowerCase()==='high') zones[z].high++;
     });
     zoneReportData = zones;
@@ -1511,13 +1525,14 @@ function runByZone() {
             <canvas id="zoneChart" height="110"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
-            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>High Priority</th></tr></thead>
+            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>Cancelled</th><th>High Priority</th></tr></thead>
             <tbody>
                 ${sorted.map(([z,v])=>`<tr>
                     <td><strong>${z}</strong></td>
                     <td>${v.total}</td>
                     <td>${v.open}</td>
                     <td>${v.completed}</td>
+                    <td>${v.cancelled}</td>
                     <td>${v.high}</td>
                 </tr>`).join('')}
             </tbody>
@@ -1564,16 +1579,16 @@ async function exportZonePDF() {
     const sorted = Object.entries(zoneReportData).sort((a,b)=>b[1].total-a[1].total);
     pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
     pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-    pdf.text('Zone',16,y+5); pdf.text('Total',60,y+5); pdf.text('Open',90,y+5);
-    pdf.text('Completed',120,y+5); pdf.text('High Priority',162,y+5); y+=7;
+    pdf.text('Zone',16,y+5); pdf.text('Total',50,y+5); pdf.text('Open',75,y+5);
+    pdf.text('Completed',100,y+5); pdf.text('Cancelled',132,y+5); pdf.text('High Priority',165,y+5); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     sorted.forEach(([z,v],i)=>{
         if (y>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
         pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
-        pdf.text(z,16,y+4.2); pdf.text(String(v.total),60,y+4.2);
-        pdf.text(String(v.open),90,y+4.2); pdf.text(String(v.completed),120,y+4.2);
-        pdf.text(String(v.high),162,y+4.2); y+=6;
+        pdf.text(z,16,y+4.2); pdf.text(String(v.total),50,y+4.2);
+        pdf.text(String(v.open),75,y+4.2); pdf.text(String(v.completed),100,y+4.2);
+        pdf.text(String(v.cancelled),132,y+4.2); pdf.text(String(v.high),165,y+4.2); y+=6;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
