@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          7 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.15
+VERSION: V1.0.16
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -33,6 +33,22 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.0.16 (Aug 2026): Switched trend charts from bar to line, per Tony --
+                     bars suit comparing discrete categories at a point
+                     in time, not a trajectory over months. Month-on-
+                     Month Completed: single line, light fill under the
+                     curve, straight segments (tension: 0, no smoothing
+                     that could misrepresent the actual data). Priorities
+                     Reported/Completed Trend: one line per priority
+                     level instead of a stacked bar -- shows whether an
+                     individual priority is trending up or down on its
+                     own, which a stacked total obscures; the table below
+                     the chart still has the per-month totals for anyone
+                     who wants that number. Left untouched, correctly:
+                     Priorities' Currently Open Snapshot and By Zone are
+                     genuine category comparisons (priority levels, zones)
+                     at a single point in time, not time series, so bars
+                     are the right chart type for both.
   V1.0.15 (Aug 2026): Both V1.0.14 additions ported straight from
                      ReportsHub with no way to isolate a single zone --
                      correctly flagged by Tony as a real gap for this
@@ -1429,18 +1445,22 @@ function runMoM(mode) {
     // Chart
     if (activeChart) { activeChart.destroy(); activeChart = null; }
     const ctx = document.getElementById('momChart').getContext('2d');
+    // Line, not bar (v1.0.16) -- this is a trend over time, and a line
+    // shows the trajectory month-to-month far more readably than bars.
+    // tension: 0 keeps the line honest to the actual data points rather
+    // than smoothing between them.
+    const momColor = mode === 'reported' ? 'rgba(59,130,246,1)' : 'rgba(16,185,129,1)';
     activeChart = new Chart(ctx, {
-        type: 'bar',
+        type: 'line',
         data: {
             labels,
             datasets: [{
                 label: mode === 'reported' ? 'Reported' : 'Completed',
                 data: values,
-                backgroundColor: mode === 'reported'
-                    ? 'rgba(59,130,246,0.7)' : 'rgba(16,185,129,0.7)',
-                borderColor: mode === 'reported'
-                    ? 'rgba(59,130,246,1)' : 'rgba(16,185,129,1)',
-                borderWidth: 1, borderRadius: 3
+                borderColor: momColor,
+                backgroundColor: momColor.replace(',1)', ',0.15)'),
+                borderWidth: 2, fill: true, tension: 0,
+                pointRadius: 3, pointBackgroundColor: momColor
             }]
         },
         options: {
@@ -1614,11 +1634,21 @@ function runPrioritiesTrend(view) {
     const priorities = PRIORITY_ORDER.filter(p => seen.has(p))
         .concat([...seen].filter(p => !PRIORITY_ORDER.includes(p)).sort());
 
-    const datasets = priorities.map(pr => ({
-        label: pr,
-        data: keys.map(k => (monthly[k] && monthly[k][pr]) || 0),
-        backgroundColor: PRIORITY_COLORS[pr] || '#9ca3af'
-    }));
+    // One line per priority, not stacked (v1.0.16) -- a stacked bar/area
+    // shows the total nicely but obscures whether an individual priority
+    // level is trending up or down, which is the actual question this
+    // report exists to answer. Table below still shows the per-month
+    // totals for anyone who wants that number.
+    const datasets = priorities.map(pr => {
+        const color = PRIORITY_COLORS[pr] || '#9ca3af';
+        return {
+            label: pr,
+            data: keys.map(k => (monthly[k] && monthly[k][pr]) || 0),
+            borderColor: color, backgroundColor: color,
+            borderWidth: 2, fill: false, tension: 0,
+            pointRadius: 3, pointBackgroundColor: color
+        };
+    });
 
     priorityChartData = { view, zone, labels, keys, priorities, monthly };
 
@@ -1655,12 +1685,12 @@ function runPrioritiesTrend(view) {
     if (activeChart) { activeChart.destroy(); activeChart = null; }
     const ctx = document.getElementById('prChart').getContext('2d');
     activeChart = new Chart(ctx, {
-        type: 'bar',
+        type: 'line',
         data: { labels, datasets },
         options: {
             responsive: true,
             plugins: { legend: { display: true, position: 'bottom' } },
-            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } } }
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
         }
     });
 }
