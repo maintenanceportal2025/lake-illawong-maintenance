@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          4 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.8
+VERSION: V1.0.9
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -17,12 +17,30 @@ DEPENDENCIES:
 
 REPORTS (cut-down from full Reports Hub):
   1. Unit Problem History  (current + legacy)
-  2. Open Problems         (filterable by zone/priority)
+  2. Open Problems         (filterable by zone/category/priority/assigned)
   3. By Zone              (zone summary with chart)
   4. Keyword Search       (both logs)
   5. Programmed Works     (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.0.9 (Aug 2026): Extended to Open Problems, raised by Tony -- same
+                     expand-row pattern as Unit Problem History's V1.0.8
+                     ("Progress notes" instead of "Resolution notes",
+                     since these are open records, not yet closed).
+                     Generalised the V1.0.8 CSS from uh-* to report-
+                     agnostic exp-* class names first so both reports
+                     share one set of styles rather than duplicating it;
+                     Unit Problem History's markup updated to match, no
+                     behaviour change there. Own id namespace
+                     (opRow/opDetail vs uhRow/uhDetail) so the two
+                     reports' expand states don't clash. PDF export
+                     prints a wrapped "Progress:" line under any record
+                     with comments, same approach as Unit History's PDF.
+                     Also added a Category filter dropdown, options
+                     derived live from the loaded FaultLog data (same
+                     pattern as the existing Zone filter) rather than a
+                     hardcoded list, so it can't drift from what
+                     categories actually exist.
   V1.0.8 (Aug 2026): Unit Problem History now surfaces resolution detail
                      -- raised by Tony after a Zone Rep relayed resident
                      complaints about faults being closed without real
@@ -352,20 +370,20 @@ VERSION HISTORY:
         .data-table tbody tr:hover { background: #f8fafc; }
 
         /* ── EXPANDABLE ROW (v1.0.7 -- Unit Problem History resolution detail) ── */
-        .uh-row { cursor: pointer; }
-        .uh-row.expanded { background: #eff6ff; }
-        .uh-chev { color: #9ca3af; text-align: center; width: 20px; }
-        .uh-row.expanded .uh-chev { color: #1e40af; font-weight: 600; }
-        .uh-detail-cell {
+        .exp-row { cursor: pointer; }
+        .exp-row.expanded { background: #eff6ff; }
+        .exp-chev { color: #9ca3af; text-align: center; width: 20px; }
+        .exp-row.expanded .exp-chev { color: #1e40af; font-weight: 600; }
+        .exp-detail-cell {
             padding: 12px 16px !important; background: #f8fafc;
             border-bottom: 1px solid #e2e8f0 !important;
         }
-        .uh-detail-label {
+        .exp-detail-label {
             font-size: 0.68rem; color: #9ca3af; text-transform: uppercase;
             letter-spacing: 0.05em; margin-bottom: 4px;
         }
-        .uh-detail-text { font-size: 0.83rem; color: #374151; line-height: 1.5; white-space: pre-wrap; }
-        .uh-detail-meta { font-size: 0.72rem; color: #9ca3af; margin-top: 8px; }
+        .exp-detail-text { font-size: 0.83rem; color: #374151; line-height: 1.5; white-space: pre-wrap; }
+        .exp-detail-meta { font-size: 0.72rem; color: #9ca3af; margin-top: 8px; }
 
         /* ── STATUS BADGE ───────────────────────────────────── */
         .badge {
@@ -840,7 +858,7 @@ function runUnitHistory() {
                     <th>Priority</th><th>Status</th><th>Assigned To</th><th></th>
                 </tr></thead>
                 <tbody>
-                    ${uhData.map((p, idx) => `<tr class="uh-row" id="uhRow${idx}" onclick="toggleUhDetail(${idx})">
+                    ${uhData.map((p, idx) => `<tr class="exp-row" id="uhRow${idx}" onclick="toggleUhDetail(${idx})">
                         <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
                         <td style="white-space:nowrap;font-size:0.75rem;color:#6b7280">${p.internalId || '—'}</td>
                         <td>${p.category || '—'}${p.subCategory ? '<br><span style="font-size:0.75rem;color:#6b7280">'+p.subCategory+'</span>' : ''}</td>
@@ -848,13 +866,13 @@ function runUnitHistory() {
                         <td>${priorityBadge(p.problemPriority)}</td>
                         <td>${statusBadge(p.problemStatus)}</td>
                         <td>${p.assignedTo || '—'}</td>
-                        <td class="uh-chev" id="uhChev${idx}">&#9662;</td>
+                        <td class="exp-chev" id="uhChev${idx}">&#9662;</td>
                     </tr>
                     <tr id="uhDetail${idx}" style="display:none;">
-                        <td colspan="8" class="uh-detail-cell">
-                            <div class="uh-detail-label">Resolution notes</div>
-                            <div class="uh-detail-text">${p.comments || 'No notes recorded.'}</div>
-                            ${(p.completionDate && isCompleted(p)) ? `<div class="uh-detail-meta">Completed ${fmt(p.completionDate)}${p.assignedTo ? ' &middot; ' + p.assignedTo : ''}</div>` : ''}
+                        <td colspan="8" class="exp-detail-cell">
+                            <div class="exp-detail-label">Resolution notes</div>
+                            <div class="exp-detail-text">${p.comments || 'No notes recorded.'}</div>
+                            ${(p.completionDate && isCompleted(p)) ? `<div class="exp-detail-meta">Completed ${fmt(p.completionDate)}${p.assignedTo ? ' &middot; ' + p.assignedTo : ''}</div>` : ''}
                         </td>
                     </tr>`).join('')}
                 </tbody>
@@ -958,18 +976,26 @@ async function exportUnitHistoryPDF() {
 // REPORT 2 — OPEN PROBLEMS
 // =====================================================================
 function renderOpenProblems() {
-    const zones = [...new Set(currentData.map(p=>p.zone).filter(Boolean))].sort();
-    const people = dropdownOptions.assignedTo; // sourced from Dropdowns sheet via MaintenanceModule backend
+    const zones      = [...new Set(currentData.map(p=>p.zone).filter(Boolean))].sort();
+    const categories = [...new Set(currentData.map(p=>p.category).filter(Boolean))].sort();
+    const people     = dropdownOptions.assignedTo; // sourced from Dropdowns sheet via MaintenanceModule backend
 
     showPanel(`
         <div class="report-heading">🔓 Open Problems</div>
-        <div class="report-subheading">All currently open problems from the active FaultLog, filterable by zone, priority and assigned person.</div>
+        <div class="report-subheading">All currently open problems from the active FaultLog, filterable by zone, category, priority and assigned person.</div>
         <div class="filter-row">
             <div class="filter-group">
                 <span class="filter-label">Zone</span>
                 <select id="opZone" class="glass-select">
                     <option value="all">All Zones</option>
                     ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Category</span>
+                <select id="opCategory" class="glass-select">
+                    <option value="all">All Categories</option>
+                    ${categories.map(c=>`<option value="${c}">${c}</option>`).join('')}
                 </select>
             </div>
             <div class="filter-group">
@@ -1001,12 +1027,14 @@ let opData = [];
 function runOpenProblems() {
     if (!dataLoaded) return;
     const zone     = document.getElementById('opZone').value;
+    const category = document.getElementById('opCategory').value;
     const priority = document.getElementById('opPriority').value;
     const person   = document.getElementById('opPerson').value;
 
     opData = currentData.filter(p => {
         if (!isOpen(p)) return false;
         if (zone !== 'all' && p.zone !== zone) return false;
+        if (category !== 'all' && (p.category||'') !== category) return false;
         if (priority !== 'all' && (p.problemPriority||'') !== priority) return false;
         if (person === 'unassigned' && p.assignedTo) return false;
         if (person !== 'all' && person !== 'unassigned' && p.assignedTo !== person) return false;
@@ -1035,9 +1063,9 @@ function runOpenProblems() {
             <div class="stat-pill"><div class="stat-pill-value">${unasgn}</div><div class="stat-pill-label">Unassigned</div></div>
         </div>
         <div class="table-wrap"><table class="data-table">
-            <thead><tr><th>Reported</th><th>Unit</th><th>Zone</th><th>Category</th><th>Description</th><th>Priority</th><th>Status</th><th>Assigned To</th></tr></thead>
+            <thead><tr><th>Reported</th><th>Unit</th><th>Zone</th><th>Category</th><th>Description</th><th>Priority</th><th>Status</th><th>Assigned To</th><th></th></tr></thead>
             <tbody>
-                ${opData.map(p=>`<tr>
+                ${opData.map((p, idx) => `<tr class="exp-row" id="opRow${idx}" onclick="toggleOpDetail(${idx})">
                     <td style="white-space:nowrap">${fmt(p.timestamp)}</td>
                     <td>${p.unitNumber||'—'}</td>
                     <td>${p.zone||'—'}</td>
@@ -1046,10 +1074,27 @@ function runOpenProblems() {
                     <td>${priorityBadge(p.problemPriority)}</td>
                     <td>${statusBadge(p.problemStatus)}</td>
                     <td>${p.assignedTo||'Unassigned'}</td>
+                    <td class="exp-chev" id="opChev${idx}">&#9662;</td>
+                </tr>
+                <tr id="opDetail${idx}" style="display:none;">
+                    <td colspan="9" class="exp-detail-cell">
+                        <div class="exp-detail-label">Progress notes</div>
+                        <div class="exp-detail-text">${p.comments || 'No notes recorded.'}</div>
+                    </td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
     document.getElementById('opPdfBtn').style.display = '';
+}
+
+// Same expand pattern as Unit Problem History's toggleUhDetail -- own id
+// namespace (opRow/opDetail) so the two reports' expand states don't clash.
+function toggleOpDetail(idx) {
+    const row  = document.getElementById('opRow' + idx);
+    const detail = document.getElementById('opDetail' + idx);
+    const isOpenRow = detail.style.display !== 'none';
+    detail.style.display = isOpenRow ? 'none' : 'table-row';
+    row.classList.toggle('expanded', !isOpenRow);
 }
 
 async function exportOpenPDF() {
@@ -1077,14 +1122,26 @@ async function exportOpenPDF() {
 
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     opData.forEach((p,idx)=>{
-        if (y > ph-20) { pdf.addPage(); y=15; }
+        const hasNote = !!(p.comments && String(p.comments).trim());
+        const noteLines = hasNote ? pdf.splitTextToSize('Progress: ' + String(p.comments).trim(), pw - 34) : [];
+        const rowHeight = hasNote ? (6 + noteLines.length * 3.2 + 2) : 6;
+
+        if (y + rowHeight > ph-20) { pdf.addPage(); y=15; }
         pdf.setFillColor(idx%2===0?248:255, idx%2===0?250:255, idx%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); x=14;
+        pdf.rect(14,y,pw-28,rowHeight,'F'); x=14;
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
         [fmt(p.timestamp),p.unitNumber||'—',p.zone||'—',p.category||'—',
          (p.problemDescription||'').substring(0,60),p.problemPriority||'—',
          p.problemStatus||'—',p.assignedTo||'Unassigned'
         ].forEach((v,i)=>{ pdf.setFontSize(7); pdf.text(String(v),x+1,y+4.2); x+=widths[i]; });
-        y+=6;
+
+        if (hasNote) {
+            pdf.setFontSize(6.5); pdf.setFont('helvetica','italic'); pdf.setTextColor(100,116,139);
+            pdf.text(noteLines, 15, y + 9, { lineHeightFactor: 1.15 });
+            pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+        }
+
+        y += rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
