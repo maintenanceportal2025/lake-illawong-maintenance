@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.13
+VERSION: V1.1.14
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -31,6 +31,29 @@ REPORTS:
   11. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.14 (Aug 2026): Two Backlog Aging fixes, both correct on Tony's
+                     first look. (1) The Minimum Days Open filter only
+                     touched the table below it -- chart and stats stayed
+                     identical no matter what was selected, which made
+                     the filter feel broken. Now the whole report
+                     reshapes together: buckets entirely below the
+                     threshold drop out of the chart rather than showing
+                     as empty bars, and stats/table are computed from the
+                     same filtered set. Added a "% of All Open" stat so
+                     the fixed reference point (how much of the *whole*
+                     backlog meets this bar) doesn't get lost once you
+                     filter down -- that number stays meaningful at every
+                     threshold, unlike the raw count. (2) The "Open 240+
+                     Days" stat pill was unreadable -- its value/label
+                     were styled dark maroon (#7f1d1d) but every stat
+                     pill sits on a dark glass background with a
+                     hardcoded white text color; the override put dark
+                     text on a dark panel, nearly invisible. Fixed to a
+                     bright red (#fca5a5) that actually contrasts.
+                     Table's dark-red highlight for 240+ day rows left
+                     unchanged -- that's on a light table background,
+                     genuinely a different context, was never the
+                     problem.
   V1.1.13 (Aug 2026): New Backlog Aging report, raised by Tony -- the
                      Board has no way to see how LONG problems have been
                      open, only counts and status; a 269-day-old Medium
@@ -1354,7 +1377,7 @@ function renderBacklogAging() {
                 </select>
             </div>
             <div class="filter-group">
-                <span class="filter-label">Table: Minimum Days Open</span>
+                <span class="filter-label">Minimum Days Open</span>
                 <select id="baMinDays" class="glass-select" onchange="runBacklogAging()">
                     <option value="0">Show all open</option>
                     <option value="30">30+ days</option>
@@ -1392,52 +1415,67 @@ function runBacklogAging() {
         return Object.assign({}, p, { daysOpen: days });
     }).filter(p => p.daysOpen !== null);
 
+    // Minimum Days Open now reshapes the whole report, not just the table
+    // below it (v1.1.14 -- flagged by Tony: the chart looked identical no
+    // matter what was selected, which made the filter feel pointless).
+    // Everything -- chart, stats, table -- is computed from the same
+    // threshold-filtered set below.
+    const allOpenCount = openPool.length;
+    const filtered = withAge.filter(p => p.daysOpen >= minDays);
+
     // Age buckets -- ProblemQueue's existing 30/60 day boundaries reused
     // rather than inventing new ones (already established in the system,
     // even if currently unenforced there), extended past 60 so the
     // genuinely extreme tail (240+) can't hide inside a single "60+"
-    // bucket the way it does in ProblemQueue today.
-    const buckets = [
+    // bucket the way it does in ProblemQueue today. Buckets entirely
+    // below the selected threshold are dropped from the chart rather
+    // than shown as empty bars -- this is what makes the chart visibly
+    // change per selection instead of always showing the same 5 bars.
+    const allBuckets = [
         { label: '0-29 days',    min: 0,   max: 29,       color: '#10b981' },
         { label: '30-59 days',   min: 30,  max: 59,       color: '#f59e0b' },
         { label: '60-119 days',  min: 60,  max: 119,      color: '#f97316' },
         { label: '120-239 days', min: 120, max: 239,      color: '#ef4444' },
-        { label: '240+ days',    min: 240, max: Infinity, color: '#7f1d1d' }
+        { label: '240+ days',    min: 240, max: Infinity, color: '#b91c1c' }
     ];
-    buckets.forEach(b => { b.count = withAge.filter(p => p.daysOpen >= b.min && p.daysOpen <= b.max).length; });
+    const buckets = allBuckets.filter(b => b.min >= minDays);
+    buckets.forEach(b => { b.count = filtered.filter(p => p.daysOpen >= b.min && p.daysOpen <= b.max).length; });
 
-    const total = withAge.length;
-    const sortedDays = withAge.map(p=>p.daysOpen).sort((a,b)=>a-b);
+    const total = filtered.length;
+    const percentOfAll = allOpenCount ? Math.round(total/allOpenCount*100) : 0;
+    const sortedDays = filtered.map(p=>p.daysOpen).sort((a,b)=>a-b);
     const median = sortedDays.length
         ? (sortedDays.length % 2 ? sortedDays[(sortedDays.length-1)/2]
            : Math.round((sortedDays[sortedDays.length/2 - 1] + sortedDays[sortedDays.length/2]) / 2))
         : 0;
     const oldest = sortedDays.length ? sortedDays[sortedDays.length-1] : 0;
-    const over240 = buckets[4].count;
+    const over240 = filtered.filter(p => p.daysOpen >= 240).length;
 
-    const table = withAge.filter(p => p.daysOpen >= minDays).sort((a,b)=>b.daysOpen-a.daysOpen);
-    backlogAgingData = { zone, buckets, total, median, oldest, over240, table };
+    const table = [...filtered].sort((a,b)=>b.daysOpen-a.daysOpen);
+    const totalLabel = minDays === 0 ? 'Total Open' : `Open \u2265${minDays}d`;
+    backlogAgingData = { zone, minDays, totalLabel, total, allOpenCount, percentOfAll, median, oldest, over240, table };
 
     const el = document.getElementById('baResults');
     if (!total) {
         el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">✅</div>
-            <div class="placeholder-title">No Open Problems</div>
-            <div class="placeholder-text">Nothing open matches the selected filters.</div></div>`;
+            <div class="placeholder-title">No Matching Problems</div>
+            <div class="placeholder-text">Nothing open meets the selected threshold.</div></div>`;
         return;
     }
 
     el.innerHTML = `
         <div class="stats-strip">
-            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">Total Open</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">${totalLabel}</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${percentOfAll}%</div><div class="stat-pill-label">% of All Open</div></div>
             <div class="stat-pill"><div class="stat-pill-value">${median}</div><div class="stat-pill-label">Median Days Open</div></div>
             <div class="stat-pill"><div class="stat-pill-value">${oldest}</div><div class="stat-pill-label">Oldest (Days)</div></div>
-            <div class="stat-pill" style="background:rgba(127,29,29,0.1);border-color:rgba(127,29,29,0.3);">
-                <div class="stat-pill-value" style="color:#7f1d1d;">${over240}</div>
-                <div class="stat-pill-label" style="color:#7f1d1d;">Open 240+ Days</div>
+            <div class="stat-pill" style="background:rgba(239,68,68,0.22);border-color:rgba(239,68,68,0.55);">
+                <div class="stat-pill-value" style="color:#fca5a5;">${over240}</div>
+                <div class="stat-pill-label" style="color:#fca5a5;">Open 240+ Days</div>
             </div>
         </div>
         <div class="chart-wrap">
-            <div class="chart-title">Open Problems by Age</div>
+            <div class="chart-title">Open Problems by Age${minDays > 0 ? ` (\u2265${minDays} days)` : ''}</div>
             <canvas id="baChart" height="110"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;">
@@ -1446,7 +1484,7 @@ function runBacklogAging() {
             <thead><tr><th>Days Open</th><th>Unit</th><th>Description</th><th>Category</th><th>Zone</th><th>Priority</th><th>Assigned To</th></tr></thead>
             <tbody>
                 ${table.map(p=>`<tr>
-                    <td><strong style="${p.daysOpen>=240?'color:#7f1d1d;':''}">${p.daysOpen}</strong></td>
+                    <td><strong style="${p.daysOpen>=240?'color:#b91c1c;':''}">${p.daysOpen}</strong></td>
                     <td>${p.unitNumber||'—'}</td>
                     <td>${p.problemDescription||'—'}</td>
                     <td>${p.category||'—'}</td>
@@ -1486,18 +1524,18 @@ async function exportBacklogAgingPDF() {
     const pw  = pdf.internal.pageSize.getWidth();
     const ph  = pdf.internal.pageSize.getHeight();
 
-    const { zone, total, median, oldest, over240, table } = backlogAgingData;
+    const { zone, minDays, totalLabel, total, percentOfAll, median, oldest, over240, table } = backlogAgingData;
 
     pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
     pdf.setTextColor(255,255,255);
     pdf.setFontSize(14); pdf.setFont('helvetica','bold');
     pdf.text('Lake Illawong — Backlog Aging', pw/2, 12, {align:'center'});
     pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}  |  Generated: ${new Date().toLocaleDateString('en-AU')}  |  No formal resolution target exists`, pw/2, 21, {align:'center'});
+    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}${minDays > 0 ? '  |  \u2265' + minDays + ' days' : ''}  |  Generated: ${new Date().toLocaleDateString('en-AU')}  |  No formal resolution target exists`, pw/2, 21, {align:'center'});
 
     let y = 34;
     pdf.setTextColor(55,65,81); pdf.setFontSize(10); pdf.setFont('helvetica','bold');
-    pdf.text(`Total Open: ${total}    Median Days Open: ${median}    Oldest: ${oldest} days    Open 240+ Days: ${over240}`, pw/2, y, {align:'center'});
+    pdf.text(`${totalLabel}: ${total} (${percentOfAll}% of all open)    Median Days Open: ${median}    Oldest: ${oldest} days    Open 240+ Days: ${over240}`, pw/2, y, {align:'center'});
     y += 8;
 
     const chartImg = chartCanvas.toDataURL('image/png');
@@ -1533,7 +1571,7 @@ async function exportBacklogAgingPDF() {
 
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`Backlog_Aging_${zone==='all'?'AllZones':'Zone'+zone}_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`Backlog_Aging_${zone==='all'?'AllZones':'Zone'+zone}_${minDays>0?minDays+'plus_days_':''}${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
