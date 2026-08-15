@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.15
+VERSION: V1.1.16
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -21,16 +21,41 @@ REPORTS:
   2. Open Problems               (filterable by zone/category/priority/status)
   3. Backlog Aging               (age-bucket chart + Longest Outstanding
                                    table, no formal resolution target exists)
-  4. Month-on-Month Reported     (bar chart + table)
-  5. Month-on-Month Completed    (bar chart + table)
-  6. Priorities                  (Reported/Completed trend + Currently Open snapshot, by priority)
-  7. Problems by Category        (breakdown + sub-category)
-  8. Problems by Zone            (per-zone summary)
-  9. Keyword Search              (both logs, e.g. "wood rot")
-  10. Work Completed by Person   (Ben's activity by date range)
-  11. Programmed Works           (scheduled and completed programmed works)
+  4. Top Units                   (top 10 by problem count, filterable by
+                                   zone/period/dataset)
+  5. Month-on-Month Reported     (line chart + table, zone filter)
+  6. Month-on-Month Completed    (line chart + table, zone filter)
+  7. Priorities                  (Reported/Completed trend, single-series
+                                   bar with a priority picker, + Currently
+                                   Open snapshot; zone filter throughout)
+  8. Problems by Category        (breakdown + sub-category)
+  9. Problems by Zone            (per-zone summary, period filter,
+                                   completion rate)
+  10. Keyword Search             (both logs, e.g. "wood rot")
+  11. Work Completed by Person   (Ben's activity by date range)
+  12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.16 (Aug 2026): Full sync from ZoneRepReports V1.0.18 -- closes out
+                     the gap that opened while ZoneRepReports iterated
+                     ahead across several sessions. (1) New Top Units
+                     report ported wholesale (Zone/Period/Dataset
+                     filters, top 10 by unit). (2) Month-on-Month:
+                     converted bar to line (trend reads better as a
+                     trajectory than discrete bars) and added a Zone
+                     filter. (3) Priorities: reworked from a stacked/
+                     multi-line chart showing every priority at once
+                     (too cluttered to read) to a Priority picker plus a
+                     single clean bar-per-month; added a Zone filter
+                     across all three views. (4) Problems by Zone: added
+                     a Period filter and a Completion Rate column
+                     (Completed / (Completed + Cancelled), still-open
+                     items excluded since they haven't reached a verdict
+                     yet). All four ported as direct code transplants
+                     from the already-tested, already-iterated
+                     ZoneRepReports versions, not rebuilt from scratch --
+                     lower risk, and keeps the two modules' shared
+                     reports behaviourally identical going forward.
   V1.1.15 (Aug 2026): Two Backlog Aging PDF fixes. (1) "≥" (used for
                      "≥120 days" etc.) rendered as garbled text in the
                      PDF header and summary line -- jsPDF's built-in
@@ -634,6 +659,9 @@ VERSION HISTORY:
             <div class="report-item" onclick="selectReport('backlog-aging')" id="cat-backlog-aging">
                 <span class="report-icon">⏳</span>Backlog Aging
             </div>
+            <div class="report-item" onclick="selectReport('top-units')" id="cat-top-units">
+                <span class="report-icon">🏘️</span>Top Units
+            </div>
 
             <div class="catalogue-divider"></div>
 
@@ -920,6 +948,7 @@ function runCurrentReport() {
         case 'unit-history':      renderUnitHistoryForm();   break;
         case 'open-problems':     renderOpenProblems();       break;
         case 'backlog-aging':     renderBacklogAging();       break;
+        case 'top-units':         renderTopUnits();           break;
         case 'mom-reported':      renderMoMReported();        break;
         case 'mom-completed':      renderMoMCompleted();       break;
         case 'priorities':         renderPriorities();         break;
@@ -1614,6 +1643,165 @@ async function exportBacklogAgingPDF() {
 }
 
 // =====================================================================
+// REPORT — TOP UNITS (raised by Tony, Aug 2026 -- same "Top 10 by Unit"
+// concept as DesktopExplorer's generateChart('unit'): count problems per
+// unitNumber, sort descending, top 10. Extended here with Zone and Period
+// filters so a Zone Rep can see which units in their own patch are
+// generating repeat reports, not just a system-wide top 10.
+// =====================================================================
+function renderTopUnits() {
+    const zones = [...new Set(allData.map(p=>p.zone).filter(Boolean))].sort();
+
+    showPanel(`
+        <div class="report-heading">🏘️ Top Units</div>
+        <div class="report-subheading">Units with the most problem reports in the selected period -- useful for spotting recurring issues at a specific unit.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="tuZone" class="glass-select" onchange="runTopUnits()">
+                    <option value="all">All Zones</option>
+                    ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Period</span>
+                <select id="tuMonths" class="glass-select" onchange="runTopUnits()">
+                    <option value="3">Last 3 months</option>
+                    <option value="6">Last 6 months</option>
+                    <option value="12" selected>Last 12 months</option>
+                    <option value="all">All time</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="tuDataset" class="glass-select" onchange="runTopUnits()">
+                    <option value="all">Current + Legacy</option>
+                    <option value="current">Current only</option>
+                </select>
+            </div>
+            <button class="pdf-btn" onclick="exportTopUnitsPDF()">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="tuResults"></div>`);
+
+    runTopUnits();
+}
+
+let topUnitsData = {};
+
+function runTopUnits() {
+    if (!dataLoaded) return;
+    const zone    = document.getElementById('tuZone').value;
+    const months  = document.getElementById('tuMonths').value;
+    const dataset = document.getElementById('tuDataset').value;
+    let pool = dataset === 'current' ? currentData : allData;
+    if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
+    if (months !== 'all') {
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - parseInt(months));
+        pool = pool.filter(p => {
+            const d = new Date(p.timestamp);
+            return !isNaN(d) && d >= cutoff;
+        });
+    }
+
+    const counts = {};
+    pool.forEach(p => {
+        const unit = p.unitNumber || 'Unknown';
+        counts[unit] = (counts[unit]||0) + 1;
+    });
+
+    const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const total  = pool.length;
+    topUnitsData = { zone, sorted, total };
+
+    const el = document.getElementById('tuResults');
+    if (!sorted.length) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">🏘️</div>
+            <div class="placeholder-title">No Records</div>
+            <div class="placeholder-text">No problems match the selected filters.</div></div>`;
+        return;
+    }
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">Total in Period</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${sorted.length}</div><div class="stat-pill-label">Units Shown</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${sorted[0][0]}</div><div class="stat-pill-label">Top Unit</div></div>
+        </div>
+        <div class="chart-wrap">
+            <div class="chart-title">Top ${sorted.length} Units by Problem Count</div>
+            <canvas id="tuChart" height="110"></canvas>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
+            <thead><tr><th>Unit</th><th>Count</th><th>% of Period Total</th></tr></thead>
+            <tbody>
+                ${sorted.map(([u,c])=>`<tr>
+                    <td><strong>${u}</strong></td>
+                    <td>${c}</td>
+                    <td>${total?Math.round(c/total*100):0}%</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+
+    if (activeChart) { activeChart.destroy(); activeChart = null; }
+    const ctx = document.getElementById('tuChart').getContext('2d');
+    activeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sorted.map(([u])=>u),
+            datasets: [{
+                label: 'Reports',
+                data: sorted.map(([,c])=>c),
+                backgroundColor: 'rgba(245,158,11,0.75)',
+                borderRadius: 3
+            }]
+        },
+        options: {
+            responsive: true, plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+async function exportTopUnitsPDF() {
+    const chartCanvas = document.getElementById('tuChart');
+    if (!chartCanvas) return;
+    await loadPdfLib();
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p','mm','a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+
+    const { zone, sorted, total } = topUnitsData;
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong — Top Units by Problem Count', pw/2, 12, {align:'center'});
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+
+    const chartImg = chartCanvas.toDataURL('image/png');
+    pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
+
+    let y = 122;
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
+    pdf.text('Unit',16,y+5); pdf.text('Count',100,y+5); pdf.text('% of Total',140,y+5); y+=7;
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    sorted.forEach(([u,c],i)=>{
+        if (y>ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
+        pdf.text(String(u),16,y+4.2); pdf.text(String(c),100,y+4.2);
+        pdf.text(`${total?Math.round(c/total*100):0}%`,140,y+4.2); y+=6;
+    });
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`Top_Units_${zone==='all'?'AllZones':'Zone'+zone}_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
 // REPORT 3 & 4 — MONTH-ON-MONTH (shared renderer, mode param)
 // =====================================================================
 function renderMoMReported() { renderMoM('reported'); }
@@ -1623,15 +1811,26 @@ function renderMoM(mode) {
     const title = mode === 'reported' ? 'Month-on-Month Problems Reported' : 'Month-on-Month Problems Completed';
     const icon  = mode === 'reported' ? '📈' : '📉';
     const desc  = mode === 'reported'
-        ? 'Number of problems reported per month across all datasets.'
-        : 'Number of problems completed per month across all datasets.';
+        ? 'Number of problems reported per month, optionally filtered to your zone.'
+        : 'Number of problems completed per month, optionally filtered to your zone.';
 
-    const months = getLast12MonthLabels();
+    // Zone filter (v1.0.15) -- a system-wide trend line tells a Zone Rep
+    // nothing about their own patch. Preserve the selected zone across
+    // Dataset/Months changes (they call runMoM directly, not a full
+    // re-render, so momZone survives in the DOM regardless).
+    const zones = [...new Set(allData.map(p=>p.zone).filter(Boolean))].sort();
 
     showPanel(`
         <div class="report-heading">${icon} ${title}</div>
         <div class="report-subheading">${desc}</div>
         <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="momZone" class="glass-select" onchange="runMoM('${mode}')">
+                    <option value="all">All Zones</option>
+                    ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
                 <select id="momDataset" class="glass-select" onchange="runMoM('${mode}')">
@@ -1658,9 +1857,11 @@ let momChartData = {};
 
 function runMoM(mode) {
     if (!dataLoaded) return;
+    const zone    = document.getElementById('momZone').value;
     const dataset = document.getElementById('momDataset').value;
     const months  = document.getElementById('momMonths').value;
-    const pool    = dataset === 'current' ? currentData : allData;
+    let pool      = dataset === 'current' ? currentData : allData;
+    if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
     // Build monthly counts
     const counts = {};
@@ -1718,18 +1919,22 @@ function runMoM(mode) {
     // Chart
     if (activeChart) { activeChart.destroy(); activeChart = null; }
     const ctx = document.getElementById('momChart').getContext('2d');
+    // Line, not bar (v1.0.16) -- this is a trend over time, and a line
+    // shows the trajectory month-to-month far more readably than bars.
+    // tension: 0 keeps the line honest to the actual data points rather
+    // than smoothing between them.
+    const momColor = mode === 'reported' ? 'rgba(59,130,246,1)' : 'rgba(16,185,129,1)';
     activeChart = new Chart(ctx, {
-        type: 'bar',
+        type: 'line',
         data: {
             labels,
             datasets: [{
                 label: mode === 'reported' ? 'Reported' : 'Completed',
                 data: values,
-                backgroundColor: mode === 'reported'
-                    ? 'rgba(59,130,246,0.7)' : 'rgba(16,185,129,0.7)',
-                borderColor: mode === 'reported'
-                    ? 'rgba(59,130,246,1)' : 'rgba(16,185,129,1)',
-                borderWidth: 1, borderRadius: 3
+                borderColor: momColor,
+                backgroundColor: momColor.replace(',1)', ',0.15)'),
+                borderWidth: 2, fill: true, tension: 0,
+                pointRadius: 3, pointBackgroundColor: momColor
             }]
         },
         options: {
@@ -1754,7 +1959,8 @@ async function exportMoMPDF(mode) {
     const title = mode==='reported' ? 'Month-on-Month Problems Reported' : 'Month-on-Month Problems Completed';
     pdf.text(`Lake Illawong — ${title}`, pw/2, 12, {align:'center'});
     pdf.setFontSize(10); pdf.setFont('helvetica','normal');
-    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+    const zoneLabel = document.getElementById('momZone').value;
+    pdf.text(`${zoneLabel === 'all' ? 'All Zones' : 'Zone ' + zoneLabel}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
 
     // Embed chart
     const chartImg = chartCanvas.toDataURL('image/png');
@@ -1778,7 +1984,7 @@ async function exportMoMPDF(mode) {
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`MoM_${mode}_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`MoM_${mode}_${zoneLabel === 'all' ? 'AllZones' : 'Zone' + zoneLabel}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
@@ -1792,16 +1998,36 @@ const PRIORITY_ORDER  = ['Urgent','High','Medium','Low'];
 const PRIORITY_COLORS = { Urgent:'#7c3aed', High:'#ef4444', Medium:'#f59e0b', Low:'#10b981' };
 
 function renderPriorities() {
-    // Preserve the selected view across re-renders (the View selector
-    // itself triggers a full re-render since Reported/Completed need a
-    // Dataset+Months filter row that the Snapshot view doesn't).
-    const existing = document.getElementById('prView');
-    const view = existing ? existing.value : 'reported';
+    // Preserve the selected view/zone/priority across re-renders (the View
+    // selector itself triggers a full re-render since Reported/Completed
+    // need a Dataset+Months+Priority filter row that the Snapshot view
+    // doesn't).
+    const existingView     = document.getElementById('prView');
+    const existingZone     = document.getElementById('prZone');
+    const existingPriority = document.getElementById('prPriorityFilter');
+    const view     = existingView ? existingView.value : 'reported';
+    const zone     = existingZone ? existingZone.value : 'all';
+    const priority = existingPriority ? existingPriority.value : 'all';
     const isSnapshot = view === 'open';
+
+    // Zone filter (v1.0.15) -- a system-wide priority chart tells a Zone
+    // Rep nothing about their own patch. Applies to all three views, so
+    // it sits above the view-conditional filters rather than inside them.
+    const zones = [...new Set(allData.map(p=>p.zone).filter(Boolean))].sort();
+
+    // Priority filter (v1.0.17) -- all priorities on one trend chart at
+    // once was messy whether stacked bar or overlapping lines. Pick one
+    // priority (or "All Priorities" combined) and show it as a single,
+    // clean bar-per-month. Only applies to the two trend views -- the
+    // Snapshot already compares priorities side by side at a single point
+    // in time, which is exactly what that bar chart is for.
+    const priorityOptions = PRIORITY_ORDER.filter(pr => allData.some(p => (p.problemPriority||'').trim() === pr))
+        .concat([...new Set(allData.map(p=>(p.problemPriority||'').trim()).filter(Boolean))]
+            .filter(pr => !PRIORITY_ORDER.includes(pr)).sort());
 
     const desc = isSnapshot
         ? 'Currently open problems (current data only), broken down by priority.'
-        : `Number of problems ${view === 'reported' ? 'reported' : 'completed'} per month, broken down by priority.`;
+        : `Number of problems ${view === 'reported' ? 'reported' : 'completed'} per month${priority === 'all' ? ', all priorities combined' : ' — ' + priority + ' priority'}.`;
 
     showPanel(`
         <div class="report-heading">🚦 Priorities</div>
@@ -1815,7 +2041,21 @@ function renderPriorities() {
                     <option value="open" ${view==='open'?'selected':''}>Currently Open (Snapshot)</option>
                 </select>
             </div>
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="prZone" class="glass-select" onchange="runPriorities()">
+                    <option value="all" ${zone==='all'?'selected':''}>All Zones</option>
+                    ${zones.map(z=>`<option value="${z}" ${zone===z?'selected':''}>${z}</option>`).join('')}
+                </select>
+            </div>
             ${isSnapshot ? '' : `
+            <div class="filter-group">
+                <span class="filter-label">Priority</span>
+                <select id="prPriorityFilter" class="glass-select" onchange="runPriorities()">
+                    <option value="all" ${priority==='all'?'selected':''}>All Priorities</option>
+                    ${priorityOptions.map(pr=>`<option value="${pr}" ${priority===pr?'selected':''}>${pr}</option>`).join('')}
+                </select>
+            </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
                 <select id="prDataset" class="glass-select" onchange="runPriorities()">
@@ -1848,23 +2088,28 @@ function runPriorities() {
 }
 
 function runPrioritiesTrend(view) {
-    const dataset = document.getElementById('prDataset').value;
-    const months  = document.getElementById('prMonths').value;
-    const pool    = dataset === 'current' ? currentData : allData;
+    const zone     = document.getElementById('prZone').value;
+    const dataset  = document.getElementById('prDataset').value;
+    const months   = document.getElementById('prMonths').value;
+    const priority = document.getElementById('prPriorityFilter').value;
+    let pool = dataset === 'current' ? currentData : allData;
+    if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
-    // month key -> { priority -> count }
+    // Single series -- either one selected priority, or all combined
+    // (v1.0.17). Showing every priority at once, whether as a stacked bar
+    // or overlapping lines, was too cluttered to actually read. Filter
+    // down to what's being asked for, then it's just a clean count per
+    // month, same shape as Month-on-Month.
     const monthly = {};
-    const seen = new Set();
     pool.forEach(p => {
         const dateStr = view === 'reported' ? p.timestamp : (isCompleted(p) ? p.completionDate : null);
         if (!dateStr) return;
         const d = new Date(dateStr);
         if (isNaN(d)) return;
+        const pr = (p.problemPriority || 'Unspecified').trim();
+        if (priority !== 'all' && pr !== priority) return;
         const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-        const pr  = (p.problemPriority || 'Unspecified').trim();
-        seen.add(pr);
-        if (!monthly[key]) monthly[key] = {};
-        monthly[key][pr] = (monthly[key][pr]||0) + 1;
+        monthly[key] = (monthly[key]||0) + 1;
     });
 
     let keys = Object.keys(monthly).sort();
@@ -1878,48 +2123,35 @@ function runPrioritiesTrend(view) {
         const [y,m] = k.split('-');
         return new Date(y, m-1).toLocaleDateString('en-AU',{month:'short',year:'numeric'});
     });
+    const values = keys.map(k => monthly[k] || 0);
 
-    // Known priorities first in a sensible urgency order, then anything
-    // unexpected found in the data appended alphabetically -- never
-    // silently drops a priority value just because it wasn't anticipated.
-    const priorities = PRIORITY_ORDER.filter(p => seen.has(p))
-        .concat([...seen].filter(p => !PRIORITY_ORDER.includes(p)).sort());
+    priorityChartData = { view, zone, priority, labels, keys, values };
 
-    const datasets = priorities.map(pr => ({
-        label: pr,
-        data: keys.map(k => (monthly[k] && monthly[k][pr]) || 0),
-        backgroundColor: PRIORITY_COLORS[pr] || '#9ca3af'
-    }));
-
-    priorityChartData = { view, labels, keys, priorities, monthly };
-
-    const totalsByPriority = {};
-    priorities.forEach(pr => {
-        totalsByPriority[pr] = keys.reduce((sum,k) => sum + ((monthly[k]&&monthly[k][pr])||0), 0);
-    });
-    const grandTotal = Object.values(totalsByPriority).reduce((a,b)=>a+b,0);
+    const total = values.reduce((a,b)=>a+b,0);
+    const avg   = keys.length ? Math.round(total/keys.length) : 0;
+    const peak  = Math.max(...values, 0);
+    const peakMonth = labels[values.indexOf(peak)] || '—';
+    const color = priority === 'all' ? '#3b82f6' : (PRIORITY_COLORS[priority] || '#9ca3af');
 
     const el = document.getElementById('prResults');
     el.innerHTML = `
         <div class="stats-strip">
-            <div class="stat-pill"><div class="stat-pill-value">${grandTotal}</div><div class="stat-pill-label">Total</div></div>
-            ${priorities.map(pr => `<div class="stat-pill"><div class="stat-pill-value">${totalsByPriority[pr]}</div><div class="stat-pill-label">${pr}</div></div>`).join('')}
+            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">Total</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${avg}</div><div class="stat-pill-label">Monthly Avg</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${peak}</div><div class="stat-pill-label">Peak Month</div></div>
+            <div class="stat-pill"><div class="stat-pill-value" style="font-size:1rem;">${peakMonth}</div><div class="stat-pill-label">Peak Period</div></div>
         </div>
         <div class="chart-wrap">
-            <div class="chart-title">${view === 'reported' ? 'Problems Reported' : 'Problems Completed'} by Month &amp; Priority</div>
+            <div class="chart-title">${view === 'reported' ? 'Problems Reported' : 'Problems Completed'} by Month${priority === 'all' ? ' — All Priorities' : ' — ' + priority}</div>
             <canvas id="prChart" height="120"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
-            <thead><tr><th>Month</th>${priorities.map(pr=>`<th>${pr}</th>`).join('')}<th>Total</th></tr></thead>
+            <thead><tr><th>Month</th><th>Count</th></tr></thead>
             <tbody>
-                ${keys.map((k,i) => {
-                    const rowTotal = priorities.reduce((s,pr) => s + ((monthly[k]&&monthly[k][pr])||0), 0);
-                    return `<tr>
-                        <td>${labels[i]}</td>
-                        ${priorities.map(pr=>`<td>${(monthly[k]&&monthly[k][pr])||0}</td>`).join('')}
-                        <td><strong>${rowTotal}</strong></td>
-                    </tr>`;
-                }).reverse().join('')}
+                ${keys.map((k,i)=>`<tr>
+                    <td>${labels[i]}</td>
+                    <td><strong>${values[i]}</strong></td>
+                </tr>`).reverse().join('')}
             </tbody>
         </table></div>`;
 
@@ -1927,11 +2159,17 @@ function runPrioritiesTrend(view) {
     const ctx = document.getElementById('prChart').getContext('2d');
     activeChart = new Chart(ctx, {
         type: 'bar',
-        data: { labels, datasets },
+        data: {
+            labels,
+            datasets: [{
+                label: priority === 'all' ? 'All Priorities' : priority,
+                data: values,
+                backgroundColor: color, borderRadius: 3
+            }]
+        },
         options: {
-            responsive: true,
-            plugins: { legend: { display: true, position: 'bottom' } },
-            scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } } }
+            responsive: true, plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
         }
     });
 }
@@ -1942,7 +2180,9 @@ function runPrioritiesSnapshot() {
     // them as part of "currently open" workload would badly overstate
     // what's actually outstanding today. Same dataset choice Open
     // Problems already makes.
-    const openPool = currentData.filter(isOpen);
+    const zone = document.getElementById('prZone').value;
+    let openPool = currentData.filter(isOpen);
+    if (zone !== 'all') openPool = openPool.filter(p => p.zone === zone);
 
     const counts = {};
     openPool.forEach(p => {
@@ -1954,7 +2194,7 @@ function runPrioritiesSnapshot() {
         .concat(Object.keys(counts).filter(pr => !PRIORITY_ORDER.includes(pr)).sort());
 
     const total = openPool.length;
-    priorityChartData = { view: 'open', priorities, counts, total };
+    priorityChartData = { view: 'open', zone, priorities, counts, total };
 
     const el = document.getElementById('prResults');
     el.innerHTML = `
@@ -2007,17 +2247,20 @@ async function exportPrioritiesPDF() {
     const pw  = pdf.internal.pageSize.getWidth();
     const ph  = pdf.internal.pageSize.getHeight();
 
-    const { view } = priorityChartData;
-    const title = view === 'open' ? 'Currently Open Problems by Priority'
-                : view === 'reported' ? 'Month-on-Month Reported by Priority'
-                : 'Month-on-Month Completed by Priority';
+    const { view, zone, priority } = priorityChartData;
+    const baseTitle = view === 'open' ? 'Currently Open Problems by Priority'
+                : view === 'reported' ? 'Month-on-Month Reported'
+                : 'Month-on-Month Completed';
+    const title = (view !== 'open')
+        ? `${baseTitle} \u2014 ${priority === 'all' ? 'All Priorities' : priority}`
+        : baseTitle;
 
     pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
     pdf.setTextColor(255,255,255);
     pdf.setFontSize(13); pdf.setFont('helvetica','bold');
     pdf.text(`Lake Illawong — ${title}`, pw/2, 12, {align:'center'});
     pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
 
     const chartImg = chartCanvas.toDataURL('image/png');
     pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
@@ -2038,41 +2281,27 @@ async function exportPrioritiesPDF() {
             pdf.text(`${total?Math.round(counts[pr]/total*100):0}%`,140,y+4.2); y+=6;
         });
     } else {
-        const { labels, keys, priorities, monthly } = priorityChartData;
-        const monthColW = 40;
-        const totalColW = 24;
-        const priColW   = (pw - 28 - monthColW - totalColW) / priorities.length;
-
-        pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+        // Single series now (v1.0.17), same simple month/count table shape
+        // as Month-on-Month's own PDF export.
+        const { labels, keys, values } = priorityChartData;
+        pdf.setFillColor(30,64,175); pdf.rect(14,y,60,7,'F');
         pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-        let x = 14;
-        pdf.text('Month', x+1, y+5); x += monthColW;
-        priorities.forEach(pr => { pdf.text(pr, x+1, y+5); x += priColW; });
-        pdf.text('Total', x+1, y+5);
-        y += 7;
-
+        pdf.text('Month', 16, y+5); pdf.text('Count', 46, y+5); y+=7;
         pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
-        [...keys].reverse().forEach((k,ri) => {
-            if (y>ph-15) { pdf.addPage(); y=15; }
-            const idx = keys.length - 1 - ri;
-            pdf.setFillColor(ri%2===0?248:255,ri%2===0?250:255,ri%2===0?252:255);
-            pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
-            x = 14;
-            pdf.text(labels[idx], x+1, y+4.2); x += monthColW;
-            let rowTotal = 0;
-            priorities.forEach(pr => {
-                const c = (monthly[k] && monthly[k][pr]) || 0;
-                rowTotal += c;
-                pdf.text(String(c), x+1, y+4.2); x += priColW;
-            });
-            pdf.text(String(rowTotal), x+1, y+4.2);
-            y += 6;
+        [...keys].reverse().forEach((k,i)=>{
+            if (y > ph-15) { pdf.addPage(); y=15; }
+            pdf.setFillColor(i%2===0?248:255, i%2===0?250:255, i%2===0?252:255);
+            pdf.rect(14,y,60,6,'F');
+            pdf.setFontSize(8);
+            pdf.text(labels[labels.length-1-i], 16, y+4.2);
+            pdf.text(String(values[values.length-1-i]), 46, y+4.2);
+            y+=6;
         });
     }
 
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`Priorities_${view}_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`Priorities_${view}_${view!=='open' && priority!=='all' ? priority+'_' : ''}${zone === 'all' ? 'AllZones' : 'Zone' + zone}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
@@ -2225,8 +2454,17 @@ async function exportCategoryPDF() {
 function renderByZone() {
     showPanel(`
         <div class="report-heading">🗺️ Problems by Zone</div>
-        <div class="report-subheading">Summary of reported, open, completed and cancelled problems per zone. Total = Open + Completed + Cancelled.</div>
+        <div class="report-subheading">Summary of reported, open, completed and cancelled problems per zone, reported within the selected period. Total = Open + Completed + Cancelled. Completion Rate = Completed / (Completed + Cancelled) -- still-open items are excluded since they haven't reached a verdict yet.</div>
         <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Period</span>
+                <select id="zoneMonths" class="glass-select" onchange="runByZone()">
+                    <option value="3">Last 3 months</option>
+                    <option value="6">Last 6 months</option>
+                    <option value="12" selected>Last 12 months</option>
+                    <option value="all">All time</option>
+                </select>
+            </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
                 <select id="zoneDataset" class="glass-select" onchange="runByZone()">
@@ -2244,8 +2482,22 @@ let zoneReportData = {};
 
 function runByZone() {
     if (!dataLoaded) return;
+    const months  = document.getElementById('zoneMonths').value;
     const dataset = document.getElementById('zoneDataset').value;
-    const pool    = dataset === 'current' ? currentData : allData;
+    let pool = dataset === 'current' ? currentData : allData;
+
+    // Period filter (v1.0.18) -- previously only Current/Legacy toggle,
+    // no way to ask "how did zones compare this quarter". Filters to
+    // problems reported within the window, same Months pattern used
+    // elsewhere (MoM, Priorities, Top Units).
+    if (months !== 'all') {
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - parseInt(months));
+        pool = pool.filter(p => {
+            const d = new Date(p.timestamp);
+            return !isNaN(d) && d >= cutoff;
+        });
+    }
 
     const zones = {};
     pool.forEach(p => {
@@ -2263,6 +2515,13 @@ function runByZone() {
     const totals  = sorted.map(([,v])=>v.total);
     const opens   = sorted.map(([,v])=>v.open);
 
+    // Completion Rate (v1.0.18) -- Completed / (Completed + Cancelled).
+    // Deliberately excludes still-open items: they haven't reached a
+    // final outcome yet, so counting them would penalise a zone just for
+    // having recent, legitimate new reports rather than for how well
+    // closed-out work actually gets resolved.
+    const rate = v => (v.completed + v.cancelled) ? Math.round(v.completed/(v.completed+v.cancelled)*100) : null;
+
     const el = document.getElementById('zoneResults');
     el.innerHTML = `
         <div class="chart-wrap">
@@ -2270,7 +2529,7 @@ function runByZone() {
             <canvas id="zoneChart" height="110"></canvas>
         </div>
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
-            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>Cancelled</th></tr></thead>
+            <thead><tr><th>Zone</th><th>Total</th><th>Open</th><th>Completed</th><th>Cancelled</th><th>Completion Rate</th></tr></thead>
             <tbody>
                 ${sorted.map(([z,v])=>`<tr>
                     <td><strong>${z}</strong></td>
@@ -2278,6 +2537,7 @@ function runByZone() {
                     <td>${v.open}</td>
                     <td>${v.completed}</td>
                     <td>${v.cancelled}</td>
+                    <td>${rate(v) === null ? '—' : rate(v) + '%'}</td>
                 </tr>`).join('')}
             </tbody>
         </table></div>`;
@@ -2309,34 +2569,39 @@ async function exportZonePDF() {
     const pw  = pdf.internal.pageSize.getWidth();
     const ph  = pdf.internal.pageSize.getHeight();
 
+    const monthsSel = document.getElementById('zoneMonths').value;
+    const periodLabel = monthsSel === 'all' ? 'All time' : `Last ${monthsSel} months`;
+
     pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
     pdf.setTextColor(255,255,255);
     pdf.setFontSize(13); pdf.setFont('helvetica','bold');
     pdf.text('Lake Illawong — Problems by Zone', pw/2, 12, {align:'center'});
     pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(`Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
+    pdf.text(`${periodLabel}  |  Generated: ${new Date().toLocaleDateString('en-AU')}`, pw/2, 21, {align:'center'});
 
     const chartImg = chartCanvas.toDataURL('image/png');
     pdf.addImage(chartImg, 'PNG', 14, 34, pw-28, 80);
 
     let y = 124;
     const sorted = Object.entries(zoneReportData).sort((a,b)=>b[1].total-a[1].total);
+    const rate = v => (v.completed + v.cancelled) ? Math.round(v.completed/(v.completed+v.cancelled)*100) : null;
     pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
     pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
-    pdf.text('Zone',16,y+5); pdf.text('Total',60,y+5); pdf.text('Open',95,y+5);
-    pdf.text('Completed',130,y+5); pdf.text('Cancelled',170,y+5); y+=7;
+    pdf.text('Zone',16,y+5); pdf.text('Total',55,y+5); pdf.text('Open',85,y+5);
+    pdf.text('Completed',115,y+5); pdf.text('Cancelled',150,y+5); pdf.text('Completion Rate',180,y+5); y+=7;
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     sorted.forEach(([z,v],i)=>{
         if (y>ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
         pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(8);
-        pdf.text(z,16,y+4.2); pdf.text(String(v.total),60,y+4.2);
-        pdf.text(String(v.open),95,y+4.2); pdf.text(String(v.completed),130,y+4.2);
-        pdf.text(String(v.cancelled),170,y+4.2); y+=6;
+        pdf.text(z,16,y+4.2); pdf.text(String(v.total),55,y+4.2);
+        pdf.text(String(v.open),85,y+4.2); pdf.text(String(v.completed),115,y+4.2);
+        pdf.text(String(v.cancelled),150,y+4.2);
+        pdf.text(rate(v) === null ? '—' : rate(v)+'%',180,y+4.2); y+=6;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
-    pdf.save(`By_Zone_${new Date().toISOString().slice(0,10)}.pdf`);
+    pdf.save(`By_Zone_${monthsSel === 'all' ? 'AllTime' : 'Last' + monthsSel + 'mo'}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
