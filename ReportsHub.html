@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.14
+VERSION: V1.1.15
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -31,6 +31,24 @@ REPORTS:
   11. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.15 (Aug 2026): Two Backlog Aging PDF fixes. (1) "≥" (used for
+                     "≥120 days" etc.) rendered as garbled text in the
+                     PDF header and summary line -- jsPDF's built-in
+                     helvetica font can't render that character, only
+                     the on-screen HTML/canvas context could. Swapped to
+                     plain ">=" for every PDF text call; the on-screen
+                     "≥" stays as-is, that context renders fine. (2)
+                     Description was hard-truncated at 60 characters,
+                     often mid-word ("...underneath ba"); Category had
+                     the same non-wrapping overflow problem already fixed
+                     on every other report PDF in this system, just never
+                     applied here since this report was built fresh
+                     rather than derived from an existing one. Both now
+                     wrap via the existing pdfCategoryLines() helper,
+                     joined by Assigned To (names can run long too). Row
+                     height grows to fit whichever of the three needs the
+                     most lines. Days Open/Unit/Zone/Priority stay
+                     single-line -- always short, fixed-format values.
   V1.1.14 (Aug 2026): Two Backlog Aging fixes, both correct on Tony's
                      first look. (1) The Minimum Days Open filter only
                      touched the table below it -- chart and stats stayed
@@ -1524,18 +1542,22 @@ async function exportBacklogAgingPDF() {
     const pw  = pdf.internal.pageSize.getWidth();
     const ph  = pdf.internal.pageSize.getHeight();
 
-    const { zone, minDays, totalLabel, total, percentOfAll, median, oldest, over240, table } = backlogAgingData;
+    const { zone, minDays, total, percentOfAll, median, oldest, over240, table } = backlogAgingData;
+    // Separate ASCII-safe label for the PDF -- totalLabel (used on screen)
+    // contains "≥", which jsPDF's built-in helvetica font can't render and
+    // was showing up as garbled text.
+    const totalLabelPdf = minDays === 0 ? 'Total Open' : `Open >=${minDays}d`;
 
     pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
     pdf.setTextColor(255,255,255);
     pdf.setFontSize(14); pdf.setFont('helvetica','bold');
     pdf.text('Lake Illawong — Backlog Aging', pw/2, 12, {align:'center'});
     pdf.setFontSize(9); pdf.setFont('helvetica','normal');
-    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}${minDays > 0 ? '  |  \u2265' + minDays + ' days' : ''}  |  Generated: ${new Date().toLocaleDateString('en-AU')}  |  No formal resolution target exists`, pw/2, 21, {align:'center'});
+    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}${minDays > 0 ? '  |  >=' + minDays + ' days' : ''}  |  Generated: ${new Date().toLocaleDateString('en-AU')}  |  No formal resolution target exists`, pw/2, 21, {align:'center'});
 
     let y = 34;
     pdf.setTextColor(55,65,81); pdf.setFontSize(10); pdf.setFont('helvetica','bold');
-    pdf.text(`${totalLabel}: ${total} (${percentOfAll}% of all open)    Median Days Open: ${median}    Oldest: ${oldest} days    Open 240+ Days: ${over240}`, pw/2, y, {align:'center'});
+    pdf.text(`${totalLabelPdf}: ${total} (${percentOfAll}% of all open)    Median Days Open: ${median}    Oldest: ${oldest} days    Open 240+ Days: ${over240}`, pw/2, y, {align:'center'});
     y += 8;
 
     const chartImg = chartCanvas.toDataURL('image/png');
@@ -1551,22 +1573,39 @@ async function exportBacklogAgingPDF() {
 
     pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
     table.forEach((p,i)=>{
-        if (y > ph-15) { pdf.addPage(); y=15; }
+        // Description, Category, Assigned To wrap to fit their columns
+        // (v1.1.15) -- previously Description was hard-truncated at 60
+        // chars mid-word/mid-sentence, and Category had the same
+        // non-wrapping overflow issue already fixed on every other report
+        // PDF in this system, just never applied here since this report
+        // was built fresh. Days Open/Unit/Zone/Priority stay single-line
+        // -- always short, fixed-format values, genuinely never at risk.
+        const descLines = pdfCategoryLines(pdf, p.problemDescription, widths[2]);
+        const catLines  = pdfCategoryLines(pdf, p.category, widths[3]);
+        const asgLines  = pdfCategoryLines(pdf, p.assignedTo || 'Unassigned', widths[6]);
+        const maxLines  = Math.max(descLines.length, catLines.length, asgLines.length, 1);
+        const rowHeight = Math.max(6, maxLines * 3.2 + 2);
+
+        if (y + rowHeight > ph-15) { pdf.addPage(); y=15; }
         pdf.setFillColor(i%2===0?248:255, i%2===0?250:255, i%2===0?252:255);
-        pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(7);
+        pdf.rect(14,y,pw-28,rowHeight,'F'); pdf.setFontSize(7);
         x = 14;
-        const row = [
-            String(p.daysOpen), p.unitNumber||'—', (p.problemDescription||'—').substring(0,60),
-            p.category||'—', p.zone||'—', p.problemPriority||'—', p.assignedTo||'Unassigned'
-        ];
-        row.forEach((v,idx)=>{
-            const isOverdue = idx===0 && p.daysOpen>=240;
-            if (isOverdue) { pdf.setTextColor(127,29,29); pdf.setFont('helvetica','bold'); }
-            pdf.text(v, x+1, y+4.2);
-            if (isOverdue) { pdf.setTextColor(55,65,81); pdf.setFont('helvetica','normal'); }
-            x += widths[idx];
-        });
-        y += 6;
+        pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+
+        const isOverdue = p.daysOpen>=240;
+        if (isOverdue) { pdf.setTextColor(127,29,29); pdf.setFont('helvetica','bold'); }
+        pdf.text(String(p.daysOpen), x+1, y+4.2);
+        if (isOverdue) { pdf.setTextColor(55,65,81); pdf.setFont('helvetica','normal'); }
+        x += widths[0];
+
+        pdf.text(p.unitNumber||'—', x+1, y+4.2); x += widths[1];
+        pdf.text(descLines, x+1, y+4.2, { lineHeightFactor: 1.1 }); x += widths[2];
+        pdf.text(catLines, x+1, y+4.2, { lineHeightFactor: 1.1 }); x += widths[3];
+        pdf.text(p.zone||'—', x+1, y+4.2); x += widths[4];
+        pdf.text(p.problemPriority||'—', x+1, y+4.2); x += widths[5];
+        pdf.text(asgLines, x+1, y+4.2, { lineHeightFactor: 1.1 }); x += widths[6];
+
+        y += rowHeight;
     });
 
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
