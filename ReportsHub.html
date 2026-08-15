@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.12
+VERSION: V1.1.13
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -19,16 +19,45 @@ API URL: Explorer backend (same as ExecutiveDashboard)
 REPORTS:
   1. Unit Problem History        (current + legacy)
   2. Open Problems               (filterable by zone/category/priority/status)
-  3. Month-on-Month Reported     (bar chart + table)
-  4. Month-on-Month Completed    (bar chart + table)
-  5. Priorities                  (Reported/Completed trend + Currently Open snapshot, by priority)
-  6. Problems by Category        (breakdown + sub-category)
-  7. Problems by Zone            (per-zone summary)
-  8. Keyword Search              (both logs, e.g. "wood rot")
-  9. Work Completed by Person    (Ben's activity by date range)
-  10. Programmed Works           (scheduled and completed programmed works)
+  3. Backlog Aging               (age-bucket chart + Longest Outstanding
+                                   table, no formal resolution target exists)
+  4. Month-on-Month Reported     (bar chart + table)
+  5. Month-on-Month Completed    (bar chart + table)
+  6. Priorities                  (Reported/Completed trend + Currently Open snapshot, by priority)
+  7. Problems by Category        (breakdown + sub-category)
+  8. Problems by Zone            (per-zone summary)
+  9. Keyword Search              (both logs, e.g. "wood rot")
+  10. Work Completed by Person   (Ben's activity by date range)
+  11. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.13 (Aug 2026): New Backlog Aging report, raised by Tony -- the
+                     Board has no way to see how LONG problems have been
+                     open, only counts and status; a 269-day-old Medium
+                     priority item and a 187-day-old High priority item
+                     prompted this. Three parts: headline stat pills
+                     (Total Open, Median Days Open, Oldest, and a
+                     visually distinct "Open 240+ Days" pill), a 5-tier
+                     age-bucket bar chart, and a Longest Outstanding
+                     table sorted oldest-first with a Minimum Days filter.
+                     Deliberate design call, discussed with Tony first:
+                     no formal resolution target exists in this system,
+                     so the report doesn't invent one -- it states that
+                     plainly and lets the raw distribution make the case,
+                     which is a stronger argument for establishing a
+                     target than quietly asserting an arbitrary line as
+                     if it were policy. Age buckets (0-29/30-59/60-119/
+                     120-239/240+) reuse ProblemQueue's existing 30/60 day
+                     boundaries rather than inventing new ones -- already
+                     established in the system, even if currently
+                     unenforced there -- extended past 60 so the 240+
+                     tail can't hide inside a single "60+" bucket the way
+                     it does in ProblemQueue today. Current data only,
+                     never legacy, same dataset choice Priorities'
+                     Snapshot and Open Problems already make -- legacy
+                     status is always "Unknown" rather than a genuine
+                     still-open signal, so "days open" wouldn't mean the
+                     same thing for those records.
   V1.1.12 (Aug 2026): New Priorities report, raised by Tony as a
                      companion to Month-on-Month Reported/Completed --
                      first building block toward eventually generating
@@ -561,6 +590,9 @@ VERSION HISTORY:
             <div class="report-item" onclick="selectReport('open-problems')" id="cat-open-problems">
                 <span class="report-icon">🔓</span>Open Problems
             </div>
+            <div class="report-item" onclick="selectReport('backlog-aging')" id="cat-backlog-aging">
+                <span class="report-icon">⏳</span>Backlog Aging
+            </div>
 
             <div class="catalogue-divider"></div>
 
@@ -846,6 +878,7 @@ function runCurrentReport() {
     switch (currentReportId) {
         case 'unit-history':      renderUnitHistoryForm();   break;
         case 'open-problems':     renderOpenProblems();       break;
+        case 'backlog-aging':     renderBacklogAging();       break;
         case 'mom-reported':      renderMoMReported();        break;
         case 'mom-completed':      renderMoMCompleted();       break;
         case 'priorities':         renderPriorities();         break;
@@ -1293,6 +1326,214 @@ async function exportOpenPDF() {
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
     pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
     pdf.save(`Open_Problems_${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// =====================================================================
+// REPORT — BACKLOG AGING (raised by Tony, Aug 2026 -- the Board has no
+// way to see HOW LONG problems have been open, only counts and status.
+// A 269-day-old Medium priority item and a 187-day-old High priority item
+// prompted this: existing reports show "7 open" per zone with no sense
+// that one of those 7 has been open since Christmas. No formal
+// resolution target exists in this system, so this report deliberately
+// doesn't claim one -- it shows the raw distribution and states plainly
+// that no target exists, which is a stronger case for establishing one
+// than quietly asserting an arbitrary line as if it were policy.
+// =====================================================================
+function renderBacklogAging() {
+    const zones = [...new Set(currentData.map(p=>p.zone).filter(Boolean))].sort();
+
+    showPanel(`
+        <div class="report-heading">⏳ Backlog Aging</div>
+        <div class="report-subheading">How long currently open problems have actually been open (current data only). No formal resolution target exists in this system -- this shows the raw distribution as it stands, not performance against a target that was never set.</div>
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Zone</span>
+                <select id="baZone" class="glass-select" onchange="runBacklogAging()">
+                    <option value="all">All Zones</option>
+                    ${zones.map(z=>`<option value="${z}">${z}</option>`).join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Table: Minimum Days Open</span>
+                <select id="baMinDays" class="glass-select" onchange="runBacklogAging()">
+                    <option value="0">Show all open</option>
+                    <option value="30">30+ days</option>
+                    <option value="60" selected>60+ days</option>
+                    <option value="120">120+ days</option>
+                    <option value="240">240+ days</option>
+                </select>
+            </div>
+            <button class="pdf-btn" onclick="exportBacklogAgingPDF()">&#8595; PDF</button>
+        </div>
+        <div class="results-area" id="baResults"></div>`);
+
+    runBacklogAging();
+}
+
+let backlogAgingData = {};
+
+function runBacklogAging() {
+    if (!dataLoaded) return;
+    const zone    = document.getElementById('baZone').value;
+    const minDays = parseInt(document.getElementById('baMinDays').value);
+
+    // Current data only, never legacy -- legacy timestamps predate proper
+    // digitisation and legacy status is always "Unknown" rather than a
+    // genuine still-open signal, so "days open" wouldn't mean the same
+    // thing for those records. Same dataset choice Priorities' Snapshot
+    // and Open Problems already make.
+    let openPool = currentData.filter(isOpen);
+    if (zone !== 'all') openPool = openPool.filter(p => p.zone === zone);
+
+    const now = new Date();
+    const withAge = openPool.map(p => {
+        const reported = new Date(p.timestamp);
+        const days = isNaN(reported) ? null : Math.floor((now - reported) / 86400000);
+        return Object.assign({}, p, { daysOpen: days });
+    }).filter(p => p.daysOpen !== null);
+
+    // Age buckets -- ProblemQueue's existing 30/60 day boundaries reused
+    // rather than inventing new ones (already established in the system,
+    // even if currently unenforced there), extended past 60 so the
+    // genuinely extreme tail (240+) can't hide inside a single "60+"
+    // bucket the way it does in ProblemQueue today.
+    const buckets = [
+        { label: '0-29 days',    min: 0,   max: 29,       color: '#10b981' },
+        { label: '30-59 days',   min: 30,  max: 59,       color: '#f59e0b' },
+        { label: '60-119 days',  min: 60,  max: 119,      color: '#f97316' },
+        { label: '120-239 days', min: 120, max: 239,      color: '#ef4444' },
+        { label: '240+ days',    min: 240, max: Infinity, color: '#7f1d1d' }
+    ];
+    buckets.forEach(b => { b.count = withAge.filter(p => p.daysOpen >= b.min && p.daysOpen <= b.max).length; });
+
+    const total = withAge.length;
+    const sortedDays = withAge.map(p=>p.daysOpen).sort((a,b)=>a-b);
+    const median = sortedDays.length
+        ? (sortedDays.length % 2 ? sortedDays[(sortedDays.length-1)/2]
+           : Math.round((sortedDays[sortedDays.length/2 - 1] + sortedDays[sortedDays.length/2]) / 2))
+        : 0;
+    const oldest = sortedDays.length ? sortedDays[sortedDays.length-1] : 0;
+    const over240 = buckets[4].count;
+
+    const table = withAge.filter(p => p.daysOpen >= minDays).sort((a,b)=>b.daysOpen-a.daysOpen);
+    backlogAgingData = { zone, buckets, total, median, oldest, over240, table };
+
+    const el = document.getElementById('baResults');
+    if (!total) {
+        el.innerHTML = `<div class="placeholder"><div class="placeholder-icon">✅</div>
+            <div class="placeholder-title">No Open Problems</div>
+            <div class="placeholder-text">Nothing open matches the selected filters.</div></div>`;
+        return;
+    }
+
+    el.innerHTML = `
+        <div class="stats-strip">
+            <div class="stat-pill"><div class="stat-pill-value">${total}</div><div class="stat-pill-label">Total Open</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${median}</div><div class="stat-pill-label">Median Days Open</div></div>
+            <div class="stat-pill"><div class="stat-pill-value">${oldest}</div><div class="stat-pill-label">Oldest (Days)</div></div>
+            <div class="stat-pill" style="background:rgba(127,29,29,0.1);border-color:rgba(127,29,29,0.3);">
+                <div class="stat-pill-value" style="color:#7f1d1d;">${over240}</div>
+                <div class="stat-pill-label" style="color:#7f1d1d;">Open 240+ Days</div>
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <div class="chart-title">Open Problems by Age</div>
+            <canvas id="baChart" height="110"></canvas>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;">
+            <div style="padding:10px 4px;font-size:0.85rem;color:#6b7280;">Longest Outstanding (${table.length} shown)</div>
+            <table class="data-table">
+            <thead><tr><th>Days Open</th><th>Unit</th><th>Description</th><th>Category</th><th>Zone</th><th>Priority</th><th>Assigned To</th></tr></thead>
+            <tbody>
+                ${table.map(p=>`<tr>
+                    <td><strong style="${p.daysOpen>=240?'color:#7f1d1d;':''}">${p.daysOpen}</strong></td>
+                    <td>${p.unitNumber||'—'}</td>
+                    <td>${p.problemDescription||'—'}</td>
+                    <td>${p.category||'—'}</td>
+                    <td>${p.zone||'—'}</td>
+                    <td>${priorityBadge(p.problemPriority)}</td>
+                    <td>${p.assignedTo||'Unassigned'}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>`;
+
+    if (activeChart) { activeChart.destroy(); activeChart = null; }
+    const ctx = document.getElementById('baChart').getContext('2d');
+    activeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: buckets.map(b=>b.label),
+            datasets: [{
+                label: 'Open Problems',
+                data: buckets.map(b=>b.count),
+                backgroundColor: buckets.map(b=>b.color),
+                borderRadius: 3
+            }]
+        },
+        options: {
+            responsive: true, plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+
+async function exportBacklogAgingPDF() {
+    const chartCanvas = document.getElementById('baChart');
+    if (!chartCanvas) return;
+    await loadPdfLib();
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('l','mm','a4');
+    const pw  = pdf.internal.pageSize.getWidth();
+    const ph  = pdf.internal.pageSize.getHeight();
+
+    const { zone, total, median, oldest, over240, table } = backlogAgingData;
+
+    pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
+    pdf.setTextColor(255,255,255);
+    pdf.setFontSize(14); pdf.setFont('helvetica','bold');
+    pdf.text('Lake Illawong — Backlog Aging', pw/2, 12, {align:'center'});
+    pdf.setFontSize(9); pdf.setFont('helvetica','normal');
+    pdf.text(`${zone === 'all' ? 'All Zones' : 'Zone ' + zone}  |  Generated: ${new Date().toLocaleDateString('en-AU')}  |  No formal resolution target exists`, pw/2, 21, {align:'center'});
+
+    let y = 34;
+    pdf.setTextColor(55,65,81); pdf.setFontSize(10); pdf.setFont('helvetica','bold');
+    pdf.text(`Total Open: ${total}    Median Days Open: ${median}    Oldest: ${oldest} days    Open 240+ Days: ${over240}`, pw/2, y, {align:'center'});
+    y += 8;
+
+    const chartImg = chartCanvas.toDataURL('image/png');
+    pdf.addImage(chartImg, 'PNG', 14, y, pw-28, 70);
+    y += 78;
+
+    const widths = [22, 20, 78, 28, 18, 20, 30];
+    pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
+    pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
+    let x = 14;
+    ['Days Open','Unit','Description','Category','Zone','Priority','Assigned To'].forEach((h,i)=>{ pdf.text(h, x+1, y+5); x+=widths[i]; });
+    y += 7;
+
+    pdf.setFont('helvetica','normal'); pdf.setTextColor(55,65,81);
+    table.forEach((p,i)=>{
+        if (y > ph-15) { pdf.addPage(); y=15; }
+        pdf.setFillColor(i%2===0?248:255, i%2===0?250:255, i%2===0?252:255);
+        pdf.rect(14,y,pw-28,6,'F'); pdf.setFontSize(7);
+        x = 14;
+        const row = [
+            String(p.daysOpen), p.unitNumber||'—', (p.problemDescription||'—').substring(0,60),
+            p.category||'—', p.zone||'—', p.problemPriority||'—', p.assignedTo||'Unassigned'
+        ];
+        row.forEach((v,idx)=>{
+            const isOverdue = idx===0 && p.daysOpen>=240;
+            if (isOverdue) { pdf.setTextColor(127,29,29); pdf.setFont('helvetica','bold'); }
+            pdf.text(v, x+1, y+4.2);
+            if (isOverdue) { pdf.setTextColor(55,65,81); pdf.setFont('helvetica','normal'); }
+            x += widths[idx];
+        });
+        y += 6;
+    });
+
+    pdf.setFontSize(7); pdf.setTextColor(150,150,150);
+    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.save(`Backlog_Aging_${zone==='all'?'AllZones':'Zone'+zone}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 // =====================================================================
