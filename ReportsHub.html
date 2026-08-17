@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.16
+VERSION: V1.1.17
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -36,6 +36,22 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.17 (Aug 2026): Problems by Zone Completion Rate formula corrected,
+                     ported from ZoneRepReports V1.0.20 -- Tony flagged
+                     the displayed rate as nonsensical (98% shown for
+                     Zone 6 against 10 open/17 completed/1 cancelled;
+                     re-checked and the old formula actually produces 94%
+                     for those figures, but Tony's underlying point stood
+                     regardless of that discrepancy). Old formula,
+                     Completed/(Completed+Cancelled), excluded Open
+                     entirely -- a zone with a large open backlog and zero
+                     cancellations would show 100%, which isn't a
+                     completion rate at all. Changed to Completed/Total
+                     (Total = Open+Completed+Cancelled), so the rate
+                     actually reflects how much of everything reported in
+                     the zone has been resolved. Subheading and code
+                     comment updated to match; PDF export uses the same
+                     corrected formula.
   V1.1.16 (Aug 2026): Full sync from ZoneRepReports V1.0.18 -- closes out
                      the gap that opened while ZoneRepReports iterated
                      ahead across several sessions. (1) New Top Units
@@ -2454,7 +2470,7 @@ async function exportCategoryPDF() {
 function renderByZone() {
     showPanel(`
         <div class="report-heading">🗺️ Problems by Zone</div>
-        <div class="report-subheading">Summary of reported, open, completed and cancelled problems per zone, reported within the selected period. Total = Open + Completed + Cancelled. Completion Rate = Completed / (Completed + Cancelled) -- still-open items are excluded since they haven't reached a verdict yet.</div>
+        <div class="report-subheading">Summary of reported, open, completed and cancelled problems per zone, reported within the selected period. Total = Open + Completed + Cancelled. Completion Rate = Completed / Total -- reflects how much of everything reported in the zone has actually been resolved.</div>
         <div class="filter-row">
             <div class="filter-group">
                 <span class="filter-label">Period</span>
@@ -2515,12 +2531,12 @@ function runByZone() {
     const totals  = sorted.map(([,v])=>v.total);
     const opens   = sorted.map(([,v])=>v.open);
 
-    // Completion Rate (v1.0.18) -- Completed / (Completed + Cancelled).
-    // Deliberately excludes still-open items: they haven't reached a
-    // final outcome yet, so counting them would penalise a zone just for
-    // having recent, legitimate new reports rather than for how well
-    // closed-out work actually gets resolved.
-    const rate = v => (v.completed + v.cancelled) ? Math.round(v.completed/(v.completed+v.cancelled)*100) : null;
+    // Completion Rate (v1.1.17) -- Completed / Total. Previously excluded
+    // Open (Completed/(Completed+Cancelled)), which meant a zone with a
+    // large open backlog and zero cancellations could show 100% -- not a
+    // meaningful completion rate. Now reflects how much of everything
+    // reported in the zone has actually been resolved.
+    const rate = v => v.total ? Math.round(v.completed/v.total*100) : null;
 
     const el = document.getElementById('zoneResults');
     el.innerHTML = `
@@ -2584,7 +2600,7 @@ async function exportZonePDF() {
 
     let y = 124;
     const sorted = Object.entries(zoneReportData).sort((a,b)=>b[1].total-a[1].total);
-    const rate = v => (v.completed + v.cancelled) ? Math.round(v.completed/(v.completed+v.cancelled)*100) : null;
+    const rate = v => v.total ? Math.round(v.completed/v.total*100) : null;
     pdf.setFillColor(30,64,175); pdf.rect(14,y,pw-28,7,'F');
     pdf.setTextColor(255,255,255); pdf.setFontSize(8); pdf.setFont('helvetica','bold');
     pdf.text('Zone',16,y+5); pdf.text('Total',55,y+5); pdf.text('Open',85,y+5);
