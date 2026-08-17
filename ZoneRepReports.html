@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          8 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.20
+VERSION: V1.0.21
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -38,6 +38,16 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.0.21 (Aug 2026): By Zone -- added a Custom range option alongside the
+                     existing Period presets, raised by Tony while the
+                     Completion Rate fix was in progress. Presets (3/6/12
+                     months, All time) stay as-is for the common case;
+                     selecting "Custom range" reveals From/To date inputs
+                     (same glass-input pattern as Work by Person), which
+                     filter the pool the same way the presets do -- on
+                     problem timestamp, inclusive of both end dates. Both
+                     the on-screen table and PDF export reflect the custom
+                     range in place of the preset label.
   V1.0.20 (Aug 2026): By Zone Completion Rate formula corrected -- Tony
                      flagged the displayed rate as nonsensical (98% shown
                      for Zone 6 against 10 open/17 completed/1 cancelled;
@@ -2317,12 +2327,19 @@ function renderByZone() {
         <div class="filter-row">
             <div class="filter-group">
                 <span class="filter-label">Period</span>
-                <select id="zoneMonths" class="glass-select" onchange="runByZone()">
+                <select id="zoneMonths" class="glass-select" onchange="toggleZoneCustomRange(); runByZone()">
                     <option value="3">Last 3 months</option>
                     <option value="6">Last 6 months</option>
                     <option value="12" selected>Last 12 months</option>
                     <option value="all">All time</option>
+                    <option value="custom">Custom range</option>
                 </select>
+            </div>
+            <div class="filter-group" id="zoneCustomGroup" style="display:none;">
+                <span class="filter-label">From</span>
+                <input type="date" id="zoneFrom" class="glass-input" onchange="runByZone()">
+                <span class="filter-label" style="margin-left:8px;">To</span>
+                <input type="date" id="zoneTo" class="glass-input" onchange="runByZone()">
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
@@ -2334,7 +2351,24 @@ function renderByZone() {
             <button class="pdf-btn" onclick="exportZonePDF()">&#8595; PDF</button>
         </div>
         <div class="results-area" id="zoneResults"></div>`);
+
+    // Default custom range -- last 30 days -- set up front (same as Work
+    // by Person) so the inputs are ready with a sensible range the moment
+    // "Custom range" is selected, rather than opening empty.
+    const to = new Date(); const from = new Date();
+    from.setDate(from.getDate()-29);
+    document.getElementById('zoneFrom').value = from.toISOString().split('T')[0];
+    document.getElementById('zoneTo').value   = to.toISOString().split('T')[0];
+
     runByZone();
+}
+
+// Shows/hides the From/To inputs based on the Period select -- the
+// presets and custom range share one dropdown rather than a separate
+// toggle, so only one "mode" is ever active at a time.
+function toggleZoneCustomRange() {
+    const isCustom = document.getElementById('zoneMonths').value === 'custom';
+    document.getElementById('zoneCustomGroup').style.display = isCustom ? '' : 'none';
 }
 
 let zoneReportData = {};
@@ -2349,7 +2383,24 @@ function runByZone() {
     // no way to ask "how did zones compare this quarter". Filters to
     // problems reported within the window, same Months pattern used
     // elsewhere (MoM, Priorities, Top Units).
-    if (months !== 'all') {
+    // Custom range (v1.0.21) -- From/To date inputs, same filtering
+    // approach as the presets (on problem timestamp) but with exact
+    // boundaries instead of a rolling window. If either date isn't set
+    // yet, no date filter is applied (equivalent to "all") rather than
+    // erroring, since both inputs default to a sensible range anyway.
+    if (months === 'custom') {
+        const fromVal = document.getElementById('zoneFrom').value;
+        const toVal   = document.getElementById('zoneTo').value;
+        if (fromVal && toVal) {
+            const from = new Date(fromVal);
+            const to   = new Date(toVal);
+            to.setHours(23,59,59,999);
+            pool = pool.filter(p => {
+                const d = new Date(p.timestamp);
+                return !isNaN(d) && d >= from && d <= to;
+            });
+        }
+    } else if (months !== 'all') {
         const cutoff = new Date();
         cutoff.setMonth(cutoff.getMonth() - parseInt(months));
         pool = pool.filter(p => {
@@ -2429,7 +2480,10 @@ async function exportZonePDF() {
     const ph  = pdf.internal.pageSize.getHeight();
 
     const monthsSel = document.getElementById('zoneMonths').value;
-    const periodLabel = monthsSel === 'all' ? 'All time' : `Last ${monthsSel} months`;
+    const periodLabel = monthsSel === 'all' ? 'All time'
+                       : monthsSel === 'custom'
+                         ? `${fmt(document.getElementById('zoneFrom').value)} \u2013 ${fmt(document.getElementById('zoneTo').value)}`
+                         : `Last ${monthsSel} months`;
 
     pdf.setFillColor(30,64,175); pdf.rect(0,0,pw,28,'F');
     pdf.setTextColor(255,255,255);
