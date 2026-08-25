@@ -2,13 +2,37 @@
 =====================================================================
 FIELD NOTIFICATIONS - UNIFIED EMAIL + SMS SYSTEM
 =====================================================================
-PURPOSE: Complete notification system with Email + SMS via NotificationServer V3.0
+PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.2.4 - Status bar removed (see below)
+VERSION: V3.3.0 - Individual resident selection for multi-resident units
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified V2.0 (glass-morphism, confirmed against
   actual CSS -- corrected from a stale "v1.4" that contradicted this file's
   own VERSION line above, which already correctly noted the V2.0 conversion)
+
+NEW IN V3.3.0:
+✅ Individual Unit Selector now shows a checkbox per resident (name + own
+   email), not one checkbox per unit, for any unit with more than one
+   resident on file -- units with 0 or 1 resident keep the original
+   single-checkbox look. Resident data comes from NotificationServer's
+   existing getAllResidents endpoint (already a dependency), fetched
+   once on page load and cached (loadResidentsCache()).
+✅ confirmUnitSelection() now resolves to selectedResidentEmails
+   ({unit, name, email} for whatever's actually checked) rather than raw
+   unit numbers. The Individual Unit Selector path now always sends an
+   explicit "emails:addr1,addr2,..." recipientFilter instead of
+   "units:Unit X,Unit Y" -- REQUIRES NotificationServer V3.8.0+, which
+   added support for this filter type. Zone/All Units/E-Copy sends are
+   unaffected (unchanged role:/zone_/all_units filters).
+✅ getTargetText()/updateSendButton()/no-email pre-send check all
+   unaffected -- they read off selectedUnits, which is still populated
+   (now derived as the deduped unit numbers behind selectedResidentEmails)
+   for display purposes.
+NOTE: The SMS cost estimate panel (updateSMSCostEstimate()) was found,
+   while making this change, to already show the SMS recipient count/cost
+   for the WHOLE village regardless of the current unit/zone selection --
+   pre-existing behaviour, not something this change touches or worsens.
+   Flagged for a separate pass; out of scope here.
 
 NEW IN V3.2.4:
 ✅ Removed the status bar entirely (service dot + "Last: HH:MM" strip
@@ -629,6 +653,51 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 
         .unit-checkbox input {
             margin: 0;
+        }
+
+        /* V3.3.0: multi-resident unit group -- spans 2 grid cells so two
+           resident names have room, styled to match .unit-checkbox exactly */
+        .unit-checkbox-group {
+            grid-column: span 2;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 8px;
+        }
+
+        .unit-group-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #6b7280;
+            margin-bottom: 6px;
+        }
+
+        .resident-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 4px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .resident-row:hover {
+            background: #f3f4f6;
+        }
+
+        .resident-row.selected {
+            background: #eff6ff;
+        }
+
+        .resident-row input {
+            margin: 0;
+        }
+
+        .units-loading {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 20px;
+            color: rgba(255,255,255,0.7);
         }
 
         .modal-actions {
@@ -1560,6 +1629,10 @@ function goBackToPortal() {
         let selectedTemplate = null;
         let selectedZones = [];
         let selectedUnits = [];
+        // Individual resident selections from the unit selector (V3.3.0) --
+        // {unit, name, email} for whatever's actually checked. selectedUnits
+        // above stays as the deduped unit numbers those residents belong to.
+        let selectedResidentEmails = [];
 
 let ecopyRecipients = [];
 let showFullList = false;
@@ -1700,6 +1773,7 @@ if (alertFormatCheckbox) {
         // All units selected - deselect others
         selectedZones = ['all'];
         selectedUnits = [];
+        selectedResidentEmails = [];
         document.querySelectorAll('.zone-btn').forEach(btn => {
             btn.classList.toggle('selected', btn.dataset.zone === 'all');
         });
@@ -1729,6 +1803,7 @@ if (alertFormatCheckbox) {
             // Select E-Copy
             selectedZones = ['ecopy'];
             selectedUnits = [];
+            selectedResidentEmails = [];
             btn.classList.add('selected');
             if (preview) {
                 preview.classList.add('show');
@@ -1773,6 +1848,7 @@ if (alertFormatCheckbox) {
         }
         
         selectedUnits = []; // Clear individual selections
+        selectedResidentEmails = [];
     }
     
     updateSendButton();
@@ -1790,42 +1866,114 @@ if (alertFormatCheckbox) {
             document.getElementById('unitModal').classList.remove('show');
         }
         
-        function generateUnitsGrid() {
+        // V3.3.0: units with more than one resident now show a checkbox per
+        // resident (name + own email) instead of one checkbox for the whole
+        // unit, so a specific person can be included/excluded from a send.
+        // Units with 0 or 1 resident keep the original single-checkbox look.
+        // Resident data is fetched once from NotificationServer's existing
+        // getAllResidents endpoint (already a FieldAlerts dependency) and
+        // cached for the rest of the session.
+        let residentsCache = null;
+        
+        async function loadResidentsCache() {
+            if (residentsCache) return residentsCache;
+            try {
+                const response = await callNotificationAPI('getAllResidents', {});
+                residentsCache = (response.success && Array.isArray(response.residents))
+                    ? response.residents : [];
+            } catch (error) {
+                console.error('Error loading residents for unit selector:', error);
+                residentsCache = [];
+            }
+            return residentsCache;
+        }
+        
+        async function generateUnitsGrid() {
             const grid = document.getElementById('unitsGrid');
+            grid.innerHTML = '<div class="units-loading">Loading residents…</div>';
+            
+            const residents = await loadResidentsCache();
+            const residentsByUnit = {};
+            residents.forEach(r => {
+                const unitNum = (r.unit || '').toString().replace(/\D/g, '');
+                if (!unitNum) return;
+                (residentsByUnit[unitNum] = residentsByUnit[unitNum] || []).push(r);
+            });
+            
+            grid.innerHTML = '';
+            
             for (let i = 1; i <= 44; i++) {
-                const unitDiv = document.createElement('div');
-                unitDiv.className = 'unit-checkbox';
-                unitDiv.innerHTML = `
-                    <input type="checkbox" id="unit${i}" value="${i}">
-                    <label for="unit${i}">Unit ${i}</label>
-                `;
-                unitDiv.addEventListener('click', function(e) {
-                    if (e.target.type !== 'checkbox') {
-                        const checkbox = this.querySelector('input');
-                        checkbox.checked = !checkbox.checked;
-                    }
-                    this.classList.toggle('selected', this.querySelector('input').checked);
-                });
-                grid.appendChild(unitDiv);
+                const unitResidents = residentsByUnit[i.toString()] || [];
+                
+                if (unitResidents.length >= 2) {
+                    // Multi-resident unit: one row per resident
+                    const groupDiv = document.createElement('div');
+                    groupDiv.className = 'unit-checkbox-group';
+                    groupDiv.innerHTML = `<div class="unit-group-label">Unit ${i}</div>` +
+                        unitResidents.map((r, idx) => `
+                            <div class="resident-row">
+                                <input type="checkbox" id="unit${i}_${idx}"
+                                    value="${escapeHtml(r.email)}"
+                                    data-unit="${i}" data-name="${escapeHtml(r.name)}">
+                                <label for="unit${i}_${idx}">${escapeHtml(r.name)}</label>
+                            </div>
+                        `).join('');
+                    groupDiv.querySelectorAll('.resident-row').forEach(row => {
+                        row.addEventListener('click', function(e) {
+                            if (e.target.type !== 'checkbox') {
+                                const checkbox = this.querySelector('input');
+                                checkbox.checked = !checkbox.checked;
+                            }
+                            this.classList.toggle('selected', this.querySelector('input').checked);
+                        });
+                    });
+                    grid.appendChild(groupDiv);
+                } else {
+                    // 0 or 1 resident: original single-checkbox layout
+                    const r = unitResidents[0];
+                    const unitDiv = document.createElement('div');
+                    unitDiv.className = 'unit-checkbox';
+                    unitDiv.innerHTML = `
+                        <input type="checkbox" id="unit${i}"
+                            value="${r ? escapeHtml(r.email) : ''}"
+                            data-unit="${i}" data-name="${r ? escapeHtml(r.name) : ''}"
+                            ${r ? '' : 'disabled'}>
+                        <label for="unit${i}">Unit ${i}${r ? '' : ' (no resident on file)'}</label>
+                    `;
+                    unitDiv.addEventListener('click', function(e) {
+                        if (e.target.type !== 'checkbox' && !this.querySelector('input').disabled) {
+                            const checkbox = this.querySelector('input');
+                            checkbox.checked = !checkbox.checked;
+                        }
+                        this.classList.toggle('selected', this.querySelector('input').checked);
+                    });
+                    grid.appendChild(unitDiv);
+                }
             }
         }
         
         function selectAllUnits() {
-            document.querySelectorAll('#unitsGrid input').forEach(input => {
+            document.querySelectorAll('#unitsGrid input:not(:disabled)').forEach(input => {
                 input.checked = true;
-                input.closest('.unit-checkbox').classList.add('selected');
+                input.closest('.unit-checkbox, .resident-row').classList.add('selected');
             });
         }
         
         function clearAllUnits() {
             document.querySelectorAll('#unitsGrid input').forEach(input => {
                 input.checked = false;
-                input.closest('.unit-checkbox').classList.remove('selected');
+                input.closest('.unit-checkbox, .resident-row').classList.remove('selected');
             });
         }
         
         function confirmUnitSelection() {
-            selectedUnits = Array.from(document.querySelectorAll('#unitsGrid input:checked')).map(input => input.value);
+            const checked = Array.from(document.querySelectorAll('#unitsGrid input:checked'));
+            selectedResidentEmails = checked.map(input => ({
+                unit: input.dataset.unit,
+                name: input.dataset.name,
+                email: input.value
+            }));
+            selectedUnits = [...new Set(selectedResidentEmails.map(r => r.unit))];
             
             if (selectedUnits.length > 0) {
                 // Clear zone selections
@@ -2031,6 +2179,7 @@ function toggleSubjectField() {
             selectedTemplate = null;
             selectedZones = [];
             selectedUnits = [];
+            selectedResidentEmails = [];
             
             // Clear template selections
             document.querySelectorAll('.template-card').forEach(card => {
@@ -2042,10 +2191,10 @@ function toggleSubjectField() {
                 btn.classList.remove('selected');
             });
             
-            // Clear individual unit selections
+            // Clear individual unit/resident selections
             document.querySelectorAll('#unitsGrid input').forEach(input => {
                 input.checked = false;
-                input.closest('.unit-checkbox').classList.remove('selected');
+                input.closest('.unit-checkbox, .resident-row').classList.remove('selected');
             });
             
             // Hide E-Copy distribution preview + attachment section (same as
@@ -2524,8 +2673,12 @@ async function sendFieldAlert() {
     if (selectedZones.includes('ecopy')) {
         recipientFilter = 'role:E-Copy';
     } else if (selectedUnits.length > 0) {
-        const unitsList = selectedUnits.map(u => `Unit ${u}`).join(',');
-        recipientFilter = `units:${unitsList}`;
+        // V3.3.0: the unit selector now resolves to the specific residents
+        // that were checked (see confirmUnitSelection()), not the whole
+        // unit -- so this always sends an explicit email list rather than
+        // a unit list. NotificationServer V3.8.0+ required.
+        const emailsList = selectedResidentEmails.map(r => r.email).filter(Boolean).join(',');
+        recipientFilter = `emails:${emailsList}`;
     } else if (selectedZones.includes('all')) {
         recipientFilter = 'all_units';
     } else if (selectedZones.length === 1) {
