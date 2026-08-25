@@ -6,12 +6,25 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.2.3
+  Frontend Version: V3.2.4
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V3.2.4 (Aug 2026): Collapsed the Resolved closure flow to a single
+    step, matching backend V3.2.5 -- Tony's explicit call after noticing
+    the "Confirm Closure" panel stayed open one click longer for
+    Resolved than it did for Unresolved. Both Acknowledged's quick-path
+    and Under Review's Resolve section now submit directly to Closed -
+    Resolved in one action (doResolveClose, replacing doResolve).
+    doResolvedClose kept, but only reachable via a minimal legacy
+    branch for any dispute still sitting in the old 'Resolved' status
+    from before this change -- not part of the normal flow going
+    forward. 'Resolved' removed from buildActionPanel's terminal array
+    so a legacy row reaches that branch instead of the generic "no
+    further actions" message; isOverdue's terminal array is untouched.
+
   V3.2.3 (Aug 2026): FIX -- doAcknowledge left over stale button text and
     a stale comment from when Acknowledge sent an email (V3.1.0-V3.2.2):
     button said "Sending…"/"✓ Sent" like every other action, misleading
@@ -1752,7 +1765,10 @@ TECHNICAL:
     function buildActionPanel(d) {
         const ref    = d.referenceNumber;
         const status = d.status;
-        const terminal = ['Resolved', 'Closed - Resolved', 'Closed - Unresolved', 'Closed - Referred', 'Closed'];
+        // V3.2.5: 'Resolved' deliberately excluded here -- handled by its
+        // own branch below (legacy affordance), not the generic terminal
+        // fallback, so an old row isn't left with no path to close.
+        const terminal = ['Closed - Resolved', 'Closed - Unresolved', 'Closed - Referred', 'Closed'];
 
         var html = '<div class="action-panel">';
         html += '<div class="action-title">Next Step</div>';
@@ -1809,18 +1825,20 @@ TECHNICAL:
                 return html + '</div>';
             }
 
-            // ── RESOLVED (quick path): Resolve Dispute only ───────────
-            // Skips Under Review entirely -- resolutionPathway (backend,
-            // V3.0.23) tags it 'quick' automatically based on elapsed time
-            // from LoggedAt, no Process Statement ever required.
-            html += '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve Dispute</div>' +
+            // ── RESOLVED (quick path): single-step Resolve & Close ────
+            // V3.2.5: matches Closed - Unresolved's shape -- one action,
+            // one notification, straight to Closed - Resolved. No
+            // separate confirm-closure step. resolutionPathway (backend)
+            // still tags this 'quick' automatically based on elapsed
+            // time from LoggedAt.
+            html += '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve &amp; Close Dispute</div>' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
                 '<textarea id="res-' + ref + '" placeholder="Summarise how the dispute was resolved and what was agreed by both parties.">' + escHtml(d.resolutionSummary || '') + '</textarea>' +
             '</div></div>' +
-            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Mark Resolved &amp; Notify Both Parties</strong> to finalise.</i></div>' +
+            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Resolve &amp; Close &amp; Notify Both Parties</strong> to finalise.</i></div>' +
             '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'resolution\')">Save Draft</button>' +
-            '<button class="btn-action" style="margin-left:8px;" onclick="doResolve(\'' + ref + '\')">Mark Resolved &amp; Notify Both Parties</button>' +
+            '<button class="btn-action" style="margin-left:8px;" onclick="doResolveClose(\'' + ref + '\')">Resolve &amp; Close &amp; Notify Both Parties</button>' +
             '<span id="fb-res-' + ref + '" class="save-feedback"></span>' +
             '<div style="margin-top:10px;">' +
                 '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="disputePathChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Status Review</a>' +
@@ -1833,24 +1851,29 @@ TECHNICAL:
         else if (status === 'Under Review') {
             // A Process Statement always exists by the time a dispute
             // reaches Under Review (enforced server-side, V3.1.0) -- no
-            // need to check/show it here. Resolve and Refer together, as
-            // both are genuinely live options at this stage.
-            html += '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve Dispute</div>' +
+            // need to check/show it here. Resolve and Close-Unresolved
+            // together, as both are genuinely live options at this stage
+            // -- both single-step, single-notification (V3.2.5).
+            html += '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolve &amp; Close Dispute</div>' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
                 '<textarea id="res-' + ref + '" placeholder="Summarise how the dispute was resolved and what was agreed by both parties.">' + escHtml(d.resolutionSummary || '') + '</textarea>' +
             '</div></div>' +
-            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Mark Resolved &amp; Notify Both Parties</strong> to finalise.</i></div>' +
+            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Resolve &amp; Close &amp; Notify Both Parties</strong> to finalise.</i></div>' +
             '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'resolution\')">Save Draft</button>' +
-            '<button class="btn-action" style="margin-left:8px;" onclick="doResolve(\'' + ref + '\')">Mark Resolved &amp; Notify Both Parties</button>' +
+            '<button class="btn-action" style="margin-left:8px;" onclick="doResolveClose(\'' + ref + '\')">Resolve &amp; Close &amp; Notify Both Parties</button>' +
             '<span id="fb-res-' + ref + '" class="save-feedback"></span>' +
             '<hr class="action-separator">' +
             buildCloseUnresolvedSection(d);
         }
 
         else if (status === 'Resolved') {
-            // Confirm closure as Closed - Resolved
-            html += '<div class="action-note" style="margin-bottom:10px;">The dispute is recorded as Resolved. Confirm closure to notify both parties and close the record.</div>' +
+            // Legacy only -- 'Resolved' is no longer reachable via normal
+            // use as of V3.2.5 (Closed - Resolved is now direct), but a
+            // row from before this change may still be sitting here.
+            // Minimal affordance so it isn't stranded with no path to
+            // close, without building the old two-step flow back out.
+            html += '<div class="action-note" style="margin-bottom:10px;">This dispute predates the single-step closure flow and is still recorded as Resolved. Confirm closure to notify both parties and close the record.</div>' +
             '<button class="btn-action" onclick="doResolvedClose(\'' + ref + '\')">&#10003; Confirm Closure &amp; Notify Both Parties</button>' +
             '<span id="fb-rc-' + ref + '" class="save-feedback"></span>';
         }
@@ -1935,15 +1958,18 @@ TECHNICAL:
             }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
 
-    function doResolve(ref) {
+    function doResolveClose(ref) {
         const res = val('res-' + ref);
         if (!res) { feedback('fb-res-' + ref, 'Resolution summary is required.', false); return; }
-        if (!confirm('Mark this dispute as Resolved and notify both parties?')) return;
+        if (!confirm('Resolve and close this dispute, and notify both parties? This cannot be undone.')) return;
         const userName = currentUserName();
         const fbIdRes = 'fb-res-' + ref;
         const btnElRes = getSendBtn(fbIdRes);
         btnSending(fbIdRes, btnElRes);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Resolved', resolutionSummary: res, userName: userName, andSend: 'true' },
+        // V3.2.5: single step direct to Closed - Resolved, matching
+        // Closed - Unresolved's shape. Backend computes ResolvedAt and
+        // resolutionPathway at this same moment.
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Closed - Resolved', resolutionSummary: res, userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
                     btnDone(fbIdRes, btnElRes, true, '');
