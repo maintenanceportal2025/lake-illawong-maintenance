@@ -6,13 +6,32 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.3
-  Backend:          DisputesManager V3.1.4
+  Frontend Version: V3.2.0
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V3.2.0 (Aug 2026): Rebuilt to match DisputesManager backend V3.2.0's
+    simplified closure model. Removed the entire External Referral
+    workflow: buildReferSection, onReferOrgChange, doRefer, and doClose
+    (the Closure Reason form) all deleted. Referred to External Body and
+    Closed - Referred removed from the status filter, summary tiles,
+    terminal-status arrays (isOverdue, buildActionPanel), status
+    badge/pill/card class maps, and the print-view badge map -- Closed -
+    Referred kept only where needed to still display legacy pre-V3.2.0
+    records correctly (getDisplayStatusLabel, the detail/print
+    "External Referral" panes), clearly labelled as legacy. Added
+    buildCloseUnresolvedSection and doCloseUnresolved, replacing the old
+    referral form: available from Under Review, optional Closure Notes
+    field (no required Referring Organisation or Closure Reason),
+    submits Closed - Unresolved. The detail-view and print-view panes
+    that read referralNarrative now distinguish legacy referral records
+    (identified by referralOrganisation being present) from V3.2.0+
+    closure notes and label each correctly, since the backend repurposed
+    that same column. Removed the countReferred summary tile -- that
+    stage no longer exists in the lifecycle.
+
   V3.1.3 (Aug 2026): System-wide JSONP audit fix -- both the main jsonp()
     helper and loadResidentList() deleted their callbacks on
     timeout/success/onerror instead of replacing them with a no-op, and
@@ -1123,7 +1142,6 @@ TECHNICAL:
             <div class="summary-tile"><div class="tile-count" id="countAcknowledged">—</div><div class="tile-label">Acknowledged</div></div>
             <div class="summary-tile"><div class="tile-count" id="countUnderReview">—</div><div class="tile-label">Under Review</div></div>
             <div class="summary-tile"><div class="tile-count" id="countResolved">—</div><div class="tile-label">Resolved</div></div>
-            <div class="summary-tile"><div class="tile-count" id="countReferred">—</div><div class="tile-label">Referred</div></div>
             <div class="summary-tile"><div class="tile-count" id="countClosed">—</div><div class="tile-label">Closed</div></div>
             <div class="summary-tile"><div class="tile-count overdue" id="countOverdue">—</div><div class="tile-label">Overdue</div></div>
         </div>
@@ -1138,9 +1156,8 @@ TECHNICAL:
                 <option value="Acknowledged">Acknowledged</option>
                 <option value="Under Review">Under Review</option>
                 <option value="Resolved">Resolved</option>
-                <option value="Referred to External Body">Referred to External Body</option>
                 <option value="Closed - Resolved">Closed - Resolved</option>
-                <option value="Closed - Referred">Closed - Referred</option>
+                <option value="Closed - Unresolved">Closed - Unresolved</option>
             </select>
             <label for="filterOverdue">Show:</label>
             <select id="filterOverdue" onchange="applyFilters()">
@@ -1433,21 +1450,19 @@ TECHNICAL:
     // ── SUMMARY STRIP ─────────────────────────────────────────────────────
 
     function updateSummary(disputes) {
-        var counts = { Open: 0, Acknowledged: 0, UnderReview: 0, Resolved: 0, Referred: 0, Closed: 0, overdue: 0 };
+        var counts = { Open: 0, Acknowledged: 0, UnderReview: 0, Resolved: 0, Closed: 0, overdue: 0 };
         disputes.forEach(function(d) {
             if (d.status === 'Open')                   counts.Open++;
             if (d.status === 'Acknowledged')           counts.Acknowledged++;
             if (d.status === 'Under Review')           counts.UnderReview++;
             if (d.status === 'Resolved')               counts.Resolved++;
-            if (d.status === 'Referred to External Body')  counts.Referred++;
-            if (d.status === 'Closed - Resolved' || d.status === 'Closed - Referred' || d.status === 'Closed') counts.Closed++;
+            if (d.status === 'Closed - Resolved' || d.status === 'Closed - Unresolved' || d.status === 'Closed - Referred' || d.status === 'Closed') counts.Closed++;
             if (isOverdue(d))                          counts.overdue++;
         });
         document.getElementById('countOpen').textContent         = counts.Open;
         document.getElementById('countAcknowledged').textContent = counts.Acknowledged;
         document.getElementById('countUnderReview').textContent  = counts.UnderReview;
         document.getElementById('countResolved').textContent     = counts.Resolved;
-        document.getElementById('countReferred').textContent     = counts.Referred;
         document.getElementById('countClosed').textContent       = counts.Closed;
         document.getElementById('countOverdue').textContent      = counts.overdue;
     }
@@ -1478,7 +1493,7 @@ TECHNICAL:
 
     function isOverdue(d) {
         if (!d.reviewDue) return false;
-        const terminal = ['Resolved', 'Referred to External Body', 'Closed - Resolved', 'Closed - Referred', 'Closed'];
+        const terminal = ['Resolved', 'Closed - Resolved', 'Closed - Unresolved', 'Closed - Referred', 'Closed'];
         if (terminal.indexOf(d.status) !== -1) return false;
         return new Date(d.reviewDue) < new Date();
     }
@@ -1610,14 +1625,26 @@ TECHNICAL:
                 true);
         }
 
-        // VicAssist referral pane
-        if (d.referralNarrative) {
+        // V3.2.0: referralNarrative is now dual-purpose -- on legacy rows
+        // (identifiable by referralOrganisation being present) it's the
+        // old referral statement; on rows closed under V3.2.0+ it's the
+        // optional closure notes for Closed - Unresolved. Label
+        // accordingly rather than always showing the old "External
+        // Referral" framing.
+        if (d.referralNarrative && d.referralOrganisation) {
+            // Legacy pre-V3.2.0 referral record -- read-only historical display.
             html += accordionPane('pane-ref-' + ref,
-                'External Referral',
+                'External Referral (legacy)',
                 d.referredAt ? fmtDate(new Date(d.referredAt)) : '',
-                (d.referralOrganisation ? '<div class="detail-section-title">Referring Organisation</div><div class="pane-text">' + escHtml(d.referralOrganisation === 'VicAssist' ? 'VicAssist Retirement Villages' : d.referralOrganisation) + '</div>' : '') +
+                '<div class="detail-section-title">Referring Organisation</div><div class="pane-text">' + escHtml(d.referralOrganisation === 'VicAssist' ? 'VicAssist Retirement Villages' : d.referralOrganisation) + '</div>' +
                 '<div class="detail-section-title">Reasons for Referral</div><div class="pane-text">' + escHtml(d.referralNarrative) + '</div>' +
                 (d.externalReferralOutcome ? '<div class="detail-section-title">Closure Outcome</div><div class="pane-text">' + escHtml(d.externalReferralOutcome) + '</div>' : ''),
+                true);
+        } else if (d.referralNarrative) {
+            html += accordionPane('pane-ref-' + ref,
+                'Closure Notes',
+                d.closedAt ? fmtDate(new Date(d.closedAt)) : '',
+                '<div class="pane-text">' + escHtml(d.referralNarrative) + '</div>',
                 true);
         }
 
@@ -1674,47 +1701,31 @@ TECHNICAL:
 
     // ── ACTION PANEL ──────────────────────────────────────────────────────
 
-    // Extracted so the Refer to External Body section can be reused both
-    // in the combined post-statement view and behind the secondary
-    // "Refer to External Body instead" link on the Status Review screen.
-    function buildReferSection(d) {
+    // ── CLOSE AS UNRESOLVED ──────────────────────────────────────────────
+    // V3.2.0: replaces buildReferSection/onReferOrgChange entirely. No
+    // Referring Organisation, no Closure Reason -- closing a dispute as
+    // Closed - Unresolved always sends both parties the standard advice
+    // on their options (VicAssist suggested first, a suggestion not a
+    // direction). Closure notes are optional context for the record,
+    // not a required field.
+    function buildCloseUnresolvedSection(d) {
         const ref = d.referenceNumber;
-        const org = d.referralOrganisation || '';
-        const isOther = org && org !== 'VicAssist';
-        return '<div class="action-title" style="color:#fed7aa;">&#9888; Refer to External Body</div>' +
-            '<div class="action-note" style="margin-bottom:8px;">Use this path if the dispute has not been resolved within 28 days, or if the Board determines referral is warranted sooner. Both parties will be notified separately.</div>' +
+        return '<div class="action-title" style="color:#fed7aa;">&#9888; Close as Unresolved</div>' +
+            '<div class="action-note" style="margin-bottom:8px;">Use this if the Board has not been able to resolve the matter internally. Both parties will automatically be sent the standard advice on their options, with VicAssist suggested as a first step -- a suggestion, not a direction -- and the Board\'s offer to help with that application.</div>' +
             '<div class="action-row"><div class="action-field">' +
-                '<label>Referring Organisation <span style="color:#fca5a5">*</span></label>' +
-                '<select id="reforg-' + ref + '" onchange="onReferOrgChange(\'' + ref + '\')">' +
-                    '<option value="">— Select —</option>' +
-                    '<option value="VicAssist"' + (org === 'VicAssist' ? ' selected' : '') + '>VicAssist Retirement Villages</option>' +
-                    '<option value="Other"' + (isOther ? ' selected' : '') + '>Other</option>' +
-                '</select>' +
+                '<label>Closure Notes <span style="color:rgba(255,255,255,0.4);font-weight:400;">(optional)</span></label>' +
+                '<textarea id="closeun-' + ref + '" placeholder="Any context on what was tried and why it couldn\'t be resolved internally. Included in the closure notice sent to both parties.">' + escHtml(d.referralNarrative || '') + '</textarea>' +
             '</div></div>' +
-            '<div class="action-row" id="reforg-other-row-' + ref + '" style="display:' + (isOther ? 'block' : 'none') + ';"><div class="action-field">' +
-                '<label>Specify Organisation <span style="color:#fca5a5">*</span></label>' +
-                '<input type="text" id="reforg-other-' + ref + '" value="' + escHtml(isOther ? org : '') + '" placeholder="e.g. Consumer Affairs Victoria, VCAT, private mediator">' +
-            '</div></div>' +
-            '<div class="action-row"><div class="action-field">' +
-                '<label>Reasons for Referral <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="ref-' + ref + '" placeholder="Describe the reasons for referral. This will be included in notifications sent to both parties.">' + escHtml(d.referralNarrative || '') + '</textarea>' +
-            '</div></div>' +
-            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Refer to External Body &amp; Notify Both Parties</strong> to finalise.</i></div>' +
-            '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'referral\')">Save Draft</button>' +
-            '<button class="btn-danger-action" style="margin-left:8px;" onclick="doRefer(\'' + ref + '\')">Refer to External Body &amp; Notify Both Parties</button>' +
-            '<span id="fb-ref-' + ref + '" class="save-feedback"></span>';
-    }
-
-    function onReferOrgChange(ref) {
-        const sel = document.getElementById('reforg-' + ref);
-        const row = document.getElementById('reforg-other-row-' + ref);
-        if (row) row.style.display = (sel && sel.value === 'Other') ? 'block' : 'none';
+            '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your notes without notifying parties. When ready, click <strong>Close as Unresolved &amp; Notify Both Parties</strong> to finalise.</i></div>' +
+            '<button class="btn-save" onclick="saveDisputeDraft(\'' + ref + '\', \'closureNotes\')">Save Draft</button>' +
+            '<button class="btn-danger-action" style="margin-left:8px;" onclick="doCloseUnresolved(\'' + ref + '\')">Close as Unresolved &amp; Notify Both Parties</button>' +
+            '<span id="fb-cu-' + ref + '" class="save-feedback"></span>';
     }
 
     function buildActionPanel(d) {
         const ref    = d.referenceNumber;
         const status = d.status;
-        const terminal = ['Resolved', 'Closed - Resolved', 'Closed - Referred', 'Closed'];
+        const terminal = ['Resolved', 'Closed - Resolved', 'Closed - Unresolved', 'Closed - Referred', 'Closed'];
 
         var html = '<div class="action-panel">';
         html += '<div class="action-title">Next Step</div>';
@@ -1808,28 +1819,7 @@ TECHNICAL:
             '<button class="btn-action" style="margin-left:8px;" onclick="doResolve(\'' + ref + '\')">Mark Resolved &amp; Notify Both Parties</button>' +
             '<span id="fb-res-' + ref + '" class="save-feedback"></span>' +
             '<hr class="action-separator">' +
-            buildReferSection(d);
-        }
-
-        else if (status === 'Referred to External Body') {
-            // Record closure reason (structured, V3.1.4) + Close as Closed - Referred
-            html += '<div class="action-note" style="margin-bottom:10px;">Select the closure reason once the external body has concluded the process.</div>' +
-            '<div class="action-row"><div class="action-field">' +
-                '<label>Closure Reason <span style="color:#fca5a5">*</span></label>' +
-                '<select id="closereason-' + ref + '">' +
-                    '<option value="">— Select —</option>' +
-                    '<option value="resolved">Both parties reached agreement via VicAssist Conciliation</option>' +
-                    '<option value="otherForum">Matter proceeded to VCAT (or other forum)</option>' +
-                    '<option value="refused">Terminated by VicAssist — one party refused to participate</option>' +
-                    '<option value="unsuitable">Terminated by VicAssist — matter unsuitable for conciliation</option>' +
-                '</select>' +
-            '</div></div>' +
-            '<div class="action-row"><div class="action-field">' +
-                '<label>Additional Notes <span style="color:rgba(255,255,255,0.4);font-weight:400;">(optional)</span></label>' +
-                '<textarea id="va-' + ref + '" placeholder="Any further detail on the outcome, beyond the closure reason above. Included in the closure notice sent to both parties."></textarea>' +
-            '</div></div>' +
-            '<button class="btn-action" onclick="doClose(\'' + ref + '\')">Record Outcome &amp; Close Dispute</button>' +
-            '<span id="fb-va-' + ref + '" class="save-feedback"></span>';
+            buildCloseUnresolvedSection(d);
         }
 
         else if (status === 'Resolved') {
@@ -1948,12 +1938,11 @@ TECHNICAL:
             if (!fieldVal) { feedback(fbId, 'Please enter a resolution summary before saving.', false); return; }
             payload  = { action: 'updateDispute', ref: ref, resolutionSummary: fieldVal, userName: currentUserName(), skipLog: 'true' };
         } else {
-            fieldVal = val('ref-' + ref);
-            fbId     = 'fb-ref-' + ref;
-            if (!fieldVal) { feedback(fbId, 'Please enter the reasons for referral before saving.', false); return; }
+            // closureNotes -- V3.2.0. Optional, so no empty-field guard.
+            fieldVal = val('closeun-' + ref);
+            fbId     = 'fb-cu-' + ref;
             payload  = { action: 'updateDispute', ref: ref, referralNarrative: fieldVal, userName: currentUserName(), skipLog: 'true' };
         }
-        var btnEl = document.querySelector('#fb-' + (type === 'resolution' ? 'res' : 'ref') + '-' + ref + ' ~ button, button[onclick*="saveDisputeDraft"]');
         feedback(fbId, 'Saving…', null);
         jsonp(payload,
             function(data) {
@@ -1967,59 +1956,23 @@ TECHNICAL:
             }, function(err) { feedback(fbId, '✗ ' + err, false); });
     }
 
-    function doRefer(ref) {
-        const orgSel = val('reforg-' + ref);
-        if (!orgSel) { feedback('fb-ref-' + ref, 'Referring Organisation is required.', false); return; }
-        var referralOrganisation = orgSel;
-        if (orgSel === 'Other') {
-            const otherOrg = val('reforg-other-' + ref);
-            if (!otherOrg) { feedback('fb-ref-' + ref, 'Please specify the organisation.', false); return; }
-            referralOrganisation = otherOrg;
-        }
-        const narrative = val('ref-' + ref);
-        if (!narrative) { feedback('fb-ref-' + ref, 'Reasons for referral are required.', false); return; }
-        if (!confirm('Refer this dispute to ' + referralOrganisation + ' and notify both parties? This action cannot be undone.')) return;
+    function doCloseUnresolved(ref) {
+        const notes = val('closeun-' + ref);  // optional
+        if (!confirm('Close this dispute as Unresolved?\n\nBoth parties will be sent the standard advice on their options and notified. This cannot be undone.')) return;
         const userName = currentUserName();
-        const fbIdRef = 'fb-ref-' + ref;
-        const btnElRef = getSendBtn(fbIdRef);
-        btnSending(fbIdRef, btnElRef);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Referred to External Body', referralNarrative: narrative, referralOrganisation: referralOrganisation, userName: userName, andSend: 'true' },
+        const fbId  = 'fb-cu-' + ref;
+        const btnEl = getSendBtn(fbId);
+        btnSending(fbId, btnEl);
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Closed - Unresolved', referralNarrative: notes, userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) {
-                    btnDone(fbIdRef, btnElRef, true, '');
+                    btnDone(fbId, btnEl, true, '');
                     refreshCard(ref, data.activityLog);
                 } else {
-                    btnDone(fbIdRef, btnElRef, false, data.error || 'Update failed.');
+                    btnDone(fbId, btnEl, false, data.error || 'Update failed.');
                 }
-            }, function(err) { btnDone(fbIdRef, btnElRef, false, err); });
+            }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
-
-    function doClose(ref) {
-        const reasonCode = val('closereason-' + ref);
-        if (!reasonCode) { feedback('fb-va-' + ref, 'Closure Reason is required.', false); return; }
-        const notes = val('va-' + ref);  // optional
-        const reasonLabels = {
-            resolved:   'Both parties reached agreement via VicAssist Conciliation',
-            otherForum: 'Matter proceeded to VCAT (or other forum)',
-            refused:    'Terminated by VicAssist — one party refused to participate',
-            unsuitable: 'Terminated by VicAssist — matter unsuitable for conciliation'
-        };
-        if (!confirm('Close this dispute?\n\nReason: ' + (reasonLabels[reasonCode] || reasonCode) + '\n\nBoth parties will be notified. This cannot be undone.')) return;
-        const userName = currentUserName();
-        const fbIdVa = 'fb-va-' + ref;
-        const btnElVa = getSendBtn(fbIdVa);
-        btnSending(fbIdVa, btnElVa);
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Closed - Referred', closureReasonCode: reasonCode, vicAssistOutcome: notes, userName: userName, andSend: 'true' },
-            function(data) {
-                if (data.success) {
-                    btnDone(fbIdVa, btnElVa, true, '');
-                    refreshCard(ref, data.activityLog);
-                } else {
-                    btnDone(fbIdVa, btnElVa, false, data.error || 'Update failed.');
-                }
-            }, function(err) { btnDone(fbIdVa, btnElVa, false, err); });
-    }
-
 
     function doResolvedClose(ref) {
         if (!confirm('Confirm closure of this dispute as Resolved? Both parties will be notified.')) return;
@@ -2579,9 +2532,9 @@ TECHNICAL:
             'Acknowledged':           'status-acknowledged',
             'Under Review':           'status-under-review',
             'Resolved':               'status-resolved',
-            'Referred to External Body':  'status-referred',
             'Closed - Resolved':       'status-closed',
-            'Closed - Referred':       'status-closed',
+            'Closed - Unresolved':     'status-closed',
+            'Closed - Referred':       'status-closed',  // legacy
             'Closed':                 'status-closed'
         }[status] || 'status-open';
     }
@@ -2592,19 +2545,17 @@ TECHNICAL:
             'Acknowledged':           'pill-acknowledged',
             'Under Review':           'pill-under-review',
             'Resolved':               'pill-resolved',
-            'Referred to External Body':  'pill-referred',
             'Closed - Resolved':       'pill-closed',
-            'Closed - Referred':       'pill-closed',
+            'Closed - Unresolved':     'pill-closed',
+            'Closed - Referred':       'pill-closed',  // legacy
             'Closed':                 'pill-closed'
         }[status] || 'pill-open';
     }
 
-    // V3.1.2 -- display-layer only. The underlying status column (M) never
-    // changes: still just 'Referred to External Body' / 'Closed - Referred'
-    // as always, so filters/pills classes/reporting/escalation logic are
-    // all untouched. This only makes the *shown text* more specific, using
-    // referralOrganisation/closureReasonCode data already captured (V3.1.4
-    // backend). Falls back to the raw status for every other case.
+    // V3.2.0: 'Referred to External Body' branch removed -- that status no
+    // longer exists going forward. The 'Closed - Referred' branch is kept
+    // so legacy pre-V3.2.0 records still display their closure-reason
+    // detail correctly; it can never be produced by the current backend.
     function getDisplayStatusLabel(d) {
         const closureLabels = {
             resolved:   'Resolved via VicAssist',
@@ -2612,13 +2563,9 @@ TECHNICAL:
             refused:    'Terminated — refused to participate',
             unsuitable: 'Terminated — unsuitable for conciliation'
         };
-        if (d.status === 'Referred to External Body' && d.referralOrganisation) {
-            const org = d.referralOrganisation === 'VicAssist' ? 'VicAssist' : d.referralOrganisation;
-            return 'Referred to External Body (' + org + ')';
-        }
         if (d.status === 'Closed - Referred' && d.closureReasonCode) {
             const label = closureLabels[d.closureReasonCode] || d.closureReasonCode;
-            return 'Closed - Referred (' + label + ')';
+            return 'Closed - Referred (' + label + ') — legacy';
         }
         return d.status;
     }
@@ -2848,9 +2795,9 @@ TECHNICAL:
             'Acknowledged':          'badge-acknowledged',
             'Under Review':          'badge-under-review',
             'Resolved':              'badge-resolved',
-            'Referred to External Body': 'badge-referred',
             'Closed - Resolved':      'badge-closed',
-            'Closed - Referred':      'badge-closed',
+            'Closed - Unresolved':    'badge-closed',
+            'Closed - Referred':      'badge-closed',  // legacy
             'Closed':                'badge-closed'
         }[d.status] || 'badge-open';
 
@@ -2931,11 +2878,16 @@ TECHNICAL:
               + '<div class="field-value">' + escHtml(d.resolutionSummary) + '</div></div>'
             : '';
 
-        // Referral narrative -- all versions
+        // Referral narrative / closure notes -- V3.2.0: dual-purpose, see
+        // buildDisputeCard's equivalent pane for the same distinction.
         var refBlock = d.referralNarrative
-            ? '<div class="section-title">External Referral' + (d.referralOrganisation ? ' — ' + escHtml(d.referralOrganisation === 'VicAssist' ? 'VicAssist Retirement Villages' : d.referralOrganisation) : '') + '</div>'
-              + '<div class="content-block" style="border-left-color:#f97316;">'
-              + '<div class="field-value">' + escHtml(d.referralNarrative) + '</div></div>'
+            ? (d.referralOrganisation
+                ? '<div class="section-title">External Referral (legacy) — ' + escHtml(d.referralOrganisation === 'VicAssist' ? 'VicAssist Retirement Villages' : d.referralOrganisation) + '</div>'
+                  + '<div class="content-block" style="border-left-color:#f97316;">'
+                  + '<div class="field-value">' + escHtml(d.referralNarrative) + '</div></div>'
+                : '<div class="section-title">Closure Notes</div>'
+                  + '<div class="content-block" style="border-left-color:#f97316;">'
+                  + '<div class="field-value">' + escHtml(d.referralNarrative) + '</div></div>')
             : '';
 
         // External outcome -- all versions
