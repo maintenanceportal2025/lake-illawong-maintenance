@@ -6,12 +6,22 @@ DOCUMENT INFORMATION:
   File Name:        DisputesManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.2.2
+  Frontend Version: V3.2.3
   Status:           PRODUCTION
   Created:          June 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V3.2.3 (Aug 2026): FIX -- doAcknowledge left over stale button text and
+    a stale comment from when Acknowledge sent an email (V3.1.0-V3.2.2):
+    button said "Sending…"/"✓ Sent" like every other action, misleading
+    now that it does neither. btnSending/btnDone given an optional
+    custom-text parameter (defaults preserve exact existing behaviour
+    for every other caller) so Acknowledge can show "Recording…"/
+    "✓ Recorded" instead. andSend changed 'true' -> 'false' (no
+    functional difference, backend ignores it for this status either
+    way, but 'true' was misleading to read). Caught via Tony's live test.
+
   V3.2.2 (Aug 2026): FIX -- matches backend V3.2.3: Acknowledge no
     longer sends any notification, only records an internal review
     timestamp. Updated the action-panel note and the confirm() dialog,
@@ -1887,16 +1897,14 @@ TECHNICAL:
         const userName = currentUserName();
         const fbId = 'fb-' + ref;
         const btnEl = getSendBtn(fbId);
-        btnSending(fbId, btnEl);
-        // V3.1.0: target status is now 'Acknowledged' (was 'Under Review'
-        // directly, pre-V3.1.0). andSend:true -- Acknowledge now sends a
-        // real notification to both parties (sendDisputeAcknowledgementNotice,
-        // backend V3.1.0), reversing the deliberately-silent V3.0.37 design
-        // to align with ComplaintsManager's proven pattern.
-        jsonp({ action: 'updateDispute', ref: ref, status: 'Acknowledged', userName: userName, andSend: 'true' },
+        btnSending(fbId, btnEl, 'Recording…');
+        // V3.2.3 (backend): Acknowledge no longer sends any notification --
+        // internal-only action, status + timestamp only. andSend left as
+        // 'false' since there's nothing to send.
+        jsonp({ action: 'updateDispute', ref: ref, status: 'Acknowledged', userName: userName, andSend: 'false' },
             function(data) {
                 if (data.success) {
-                    btnDone(fbId, btnEl, true, '');
+                    btnDone(fbId, btnEl, true, '', 'Recorded');
                     refreshCard(ref, data.activityLog);
                 } else {
                     btnDone(fbId, btnEl, false, data.error || 'Update failed.');
@@ -2648,18 +2656,18 @@ TECHNICAL:
         if (prev && prev.tagName === 'BUTTON') prev.disabled = disabled;
     }
 
-    function btnSending(fbId, btnEl) {
+    function btnSending(fbId, btnEl, sendingText) {
         // Set button to sending state
-        if (btnEl) { btnEl._origText = btnEl.textContent; btnEl.textContent = 'Sending…'; btnEl.disabled = true; }
+        if (btnEl) { btnEl._origText = btnEl.textContent; btnEl.textContent = (sendingText || 'Sending…'); btnEl.disabled = true; }
         feedback(fbId, '', null);
     }
 
-    function btnDone(fbId, btnEl, ok, msg) {
+    function btnDone(fbId, btnEl, ok, msg, doneText) {
         // Restore button and show persistent result
         if (btnEl) { btnEl.textContent = btnEl._origText || btnEl.textContent; btnEl.disabled = false; }
         var now = new Date();
         var timeStr = now.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
-        var fullMsg = ok ? '✓ Sent — ' + timeStr : '✗ ' + msg;
+        var fullMsg = ok ? '✓ ' + (doneText || 'Sent') + ' — ' + timeStr : '✗ ' + msg;
         feedback(fbId, fullMsg, ok);
     }
 
