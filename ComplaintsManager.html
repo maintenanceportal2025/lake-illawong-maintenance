@@ -6,13 +6,61 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.0.45
-  Backend:          ComplaintsManager.js
+  Frontend Version: V3.1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V3.1.1 (Aug 2026): Tony's explicit call -- acknowledgement timing
+    should match Disputes exactly, which carries no acknowledgement-
+    specific deadline concept at all (only 72h/28-day, both genuine
+    requirements). Removed entirely: the "Acknowledgement required
+    within 48 hours... please acknowledge immediately" notice,
+    isAckOverdue (business-days-based, inconsistent with the 48-raw-
+    hours notice it sat next to -- the two were never even consistent
+    with each other), the Ack overdue card badge/border, and the two
+    helpers only isAckOverdue used (businessDaysSince,
+    CONFIG.ACK_BUSINESS_DAYS). isOverdue now reflects only the 72-hour
+    Initial Determination requirement, which stays untouched -- that one
+    is real and Disputes enforces the equivalent too.
+
+  V3.1.0 (Aug 2026): Compliance rectification pass, mirroring backend
+    V3.1.0 (which mirrors DisputesManager's identical earlier
+    simplification). Removed the entire 14-day/Escalated apparatus from
+    the UI: the Closure - Pending action panel (14-day window explainer,
+    "Escalate to External Body" form), the Escalated action panel (Final
+    Note + closure-reason dropdown), the Escalated Closed panel, and the
+    "Set to Escalated" dropdown from the closed-record view. 9 functions
+    removed (getValidNextStatuses -- confirmed already dead before this
+    pass; showEscalateFromPendingForm, hideEscalateFromPendingForm,
+    onEscalatePendingOrgChange, doEscalateFromPending,
+    onEscClosureReasonChange, closeEscalated, onStatusChange -- each
+    confirmed to have zero remaining callers before removal, not just
+    superseded). saveUpdate's Escalated confirmation dialog and
+    escalationOrg URL parameter removed; its Closure - Pending-specific
+    local-cache branch simplified now that every closure is terminal in
+    one step. Status filter dropdown, statusPillClass, buildCard's
+    border-class map, and the print-view badge map all updated to match
+    -- legacy escalated-closure statuses kept in all of these, labelled
+    "(legacy)", since buildEscalatedFixedBlock/isEscalatedClosedStatus/
+    getEscalationBody are deliberately retained to correctly display any
+    old row still carrying one, mirroring the same legacy-display
+    approach already used in DisputesManager. Two dead summary counters
+    (ClosurePending, ClosedUnresolved) found and removed during this
+    pass -- computed but never actually displayed, predating this
+    rectification entirely. acknowledgeManual checked and already
+    correct, no change needed.
+
+    Flagged, not changed -- needs Tony's decision: the "Acknowledgement
+    required within 48 hours... please acknowledge immediately" notice
+    in buildActionPanel, and isAckOverdue's business-days-based overdue
+    flag (CONFIG.ACK_BUSINESS_DAYS) both imply a hard acknowledgement
+    deadline that isn't real -- the two aren't even consistent with each
+    other (raw 48 hours vs. business days). Left as-is pending a
+    decision on whether/how to soften this, rather than redesigned
+    unilaterally.
 
   V3.0.45 (Aug 2026): JSONP hardening -- cleanup() previously only
     neutralised the callback function (window[name] = no-op) and never
@@ -1962,9 +2010,8 @@ TECHNICAL:
         <div class="summary-tile"><div class="tile-count" id="countOpen">—</div><div class="tile-label">Open</div></div>
         <div class="summary-tile"><div class="tile-count" id="countAcknowledged">—</div><div class="tile-label">Acknowledged</div></div>
         <div class="summary-tile"><div class="tile-count" id="countResponded">—</div><div class="tile-label">Responded</div></div>
-        <div class="summary-tile"><div class="tile-count" id="countEscalated">—</div><div class="tile-label">Escalated</div></div>
         <div class="summary-tile"><div class="tile-count" id="countClosed">—</div><div class="tile-label">Closed</div></div>
-        <div class="summary-tile"><div class="tile-count" id="countClosedEscalated">—</div><div class="tile-label">Closed (Escalated)</div></div>
+        <div class="summary-tile"><div class="tile-count" id="countClosedEscalated">—</div><div class="tile-label">Closed (Escalated) (legacy)</div></div>
         <div class="summary-tile"><div class="tile-count overdue" id="countOverdue">—</div><div class="tile-label">Overdue</div></div>
     </div>
 
@@ -1977,15 +2024,13 @@ TECHNICAL:
             <option value="Open">Open</option>
             <option value="Acknowledged">Acknowledged</option>
             <option value="Responded">Responded</option>
-            <option value="Closure - Pending">Closure - Pending</option>
-            <option value="Escalated">Escalated</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
             <option value="Closed - Partially Resolved">Closed - Partially Resolved</option>
-            <option value="Closed - Unresolved">Closed - Unresolved (legacy)</option>
-            <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated)</option>
-            <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated)</option>
-            <option value="Closed - Unresolved (External Resolution Failed)">Closed - Unresolved (Ext. Resolution Failed)</option>
-            <option value="Closed - No Further Action">Closed - No Further Action</option>
+            <option value="Closed - Unresolved">Closed - Unresolved</option>
+            <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated) (legacy)</option>
+            <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated) (legacy)</option>
+            <option value="Closed - Unresolved (External Resolution Failed)">Closed - Unresolved (Ext. Resolution Failed) (legacy)</option>
+            <option value="Closed - No Further Action">Closed - No Further Action (legacy)</option>
             <option value="Closed - Converted to Dispute">Closed - Converted to Dispute</option>
         </select>
         <label for="filterOverdue">Show:</label>
@@ -2012,7 +2057,6 @@ TECHNICAL:
         SESSION_KEY:       'portalAdminVerified',
         PORTAL_URL:        'AdminPortal.html',
         ALLOWED_ROLES:     ['Complaints-Manager', 'Developer'],
-        ACK_BUSINESS_DAYS: 2,
         RESP_DAYS:         28
     };
 
@@ -2124,36 +2168,9 @@ TECHNICAL:
                '------------------------------------------------------------';
     }
 
-    function onStatusChange(ref, value) {
-        // Show/hide organisation dropdown when Escalated is selected
-        const orgRow = document.getElementById('esc-org-row-' + ref);
-        if (orgRow) orgRow.style.display = (value === 'Escalated') ? 'block' : 'none';
-
-        // Visual card colour preview on dropdown selection
-        const card = document.getElementById('card-' + ref);
-        if (card && value) {
-            const previewClass = {
-                'Acknowledged':                    'status-acknowledged',
-                'Status Review':                   'status-acknowledged',
-                'Responded':                       'status-responded',
-                'Escalated':                       'status-escalated',
-                'Closed - Resolved':               'status-closed-resolved',
-                'Closed - Partially Resolved':     'status-closed-unresolved',
-                'Closed - Unresolved':             'status-closed-unresolved',
-                'Closure - Pending':                               'status-closure-pending',
-                'Closed - Resolved (Escalated)':                   'status-closed-resolved-escalated',
-                'Closed - Unresolved (Escalated)':                 'status-closed-unresolved-escalated',
-                'Closed - Unresolved (External Resolution Failed)': 'status-closed-ext-failed',
-                'Closed - No Further Action':                       'status-closed-nfa',
-                'Closed - Converted to Dispute':   'status-converted-to-dispute',
-                'Closed - Converted to Dispute':   'status-converted-to-dispute'
-            }[value];
-            if (previewClass) {
-                card.className = card.className.replace(/\bstatus-\S+|\boverdue-\S+/g, '').trim();
-                card.classList.add(previewClass);
-            }
-        }
-    }
+    // V3.1.0: onStatusChange removed -- only ever wired to the "Set to
+    // Escalated" dropdown, which is gone. Confirmed zero remaining
+    // callers before removal.
 
     document.addEventListener('DOMContentLoaded', function () {
         const alreadyVerified = VerificationModal.init({
@@ -2226,22 +2243,24 @@ TECHNICAL:
     }
 
     function updateSummary(complaints) {
-        const counts = { Open: 0, Acknowledged: 0, Responded: 0, Escalated: 0, Closed: 0, ClosedEscalated: 0, overdue: 0 };
+        // V3.1.0: counts.Escalated removed from live count -- 'Escalated'
+        // can never be a current status any more, so this would always
+        // read 0. counts.ClosurePending and counts.ClosedUnresolved were
+        // already dead code before this pass (computed, never displayed
+        // -- no matching tile in the HTML) -- removed rather than kept as
+        // unused weight. ClosedEscalated kept -- genuine legacy-data tile.
+        const counts = { Open: 0, Acknowledged: 0, Responded: 0, Closed: 0, ClosedEscalated: 0, overdue: 0 };
         complaints.forEach(function (c) {
             const s = normaliseStatus(c.status);
             if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
-            if (s === 'Escalated') counts.Escalated++;
             if (s === 'Closed - Resolved' || s === 'Closed - Partially Resolved' || s === 'Closed - Unresolved' || s === 'Closed - Converted to Dispute' || s === 'Closed') counts.Closed++;
             if (s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
                 || s === 'Closed - Unresolved (External Resolution Failed)') counts.ClosedEscalated++;
-            if (s === 'Closure - Pending') counts.ClosurePending = (counts.ClosurePending || 0) + 1;
-            if (s === 'Closed - No Further Action') counts.ClosedUnresolved++;
             if (isOverdue(c)) counts.overdue++;
         });
         document.getElementById('countOpen').textContent            = counts.Open;
         document.getElementById('countAcknowledged').textContent    = counts.Acknowledged;
         document.getElementById('countResponded').textContent       = counts.Responded;
-        document.getElementById('countEscalated').textContent       = counts.Escalated;
         document.getElementById('countClosed').textContent          = counts.Closed;
         document.getElementById('countClosedEscalated').textContent = counts.ClosedEscalated;
         document.getElementById('countOverdue').textContent         = counts.overdue;
@@ -2286,11 +2305,11 @@ TECHNICAL:
         renderComplaints(filtered);
     }
 
-    function isAckOverdue(c) {
-        if (c.status !== 'Open') return false;
-        if (c.acknowledgedAt)    return false;
-        return businessDaysSince(new Date(c.submittedAt)) > CONFIG.ACK_BUSINESS_DAYS;
-    }
+    // V3.1.1: isAckOverdue removed -- acknowledgement never had a real
+    // deadline (CAV's actual standard is "as soon as practicable," no
+    // fixed figure), and Disputes carries no equivalent concept either,
+    // only 72h/28-day, both genuine requirements. Now matches Disputes
+    // exactly: isOverdue reflects only the 72-hour Initial Determination.
 
     function isRespOverdue(c) {
         const s = normaliseStatus(c.status);
@@ -2299,14 +2318,10 @@ TECHNICAL:
         return new Date(c.responseDue) < new Date();
     }
 
-    function isOverdue(c) { return isAckOverdue(c) || isRespOverdue(c); }
+    function isOverdue(c) { return isRespOverdue(c); }
 
-    function businessDaysSince(date) {
-        const now = new Date(); let count = 0; let cursor = new Date(date);
-        cursor.setHours(0,0,0,0); now.setHours(23,59,59,999);
-        while (cursor <= now) { const day = cursor.getDay(); if (day !== 0 && day !== 6) count++; cursor.setDate(cursor.getDate() + 1); }
-        return count;
-    }
+    // V3.1.1: businessDaysSince removed -- was only ever used by
+    // isAckOverdue, now gone.
 
     function renderComplaints(complaints) {
         const list = document.getElementById('complaintList');
@@ -2318,28 +2333,26 @@ TECHNICAL:
     }
 
     function buildCard(c) {
-        const ackOverdue  = isAckOverdue(c);
         const respOverdue = isRespOverdue(c);
         const normStatus  = normaliseStatus(c.status);
         let borderClass = '';
-        if      (ackOverdue)                       borderClass = 'overdue-ack';
-        else if (respOverdue)                      borderClass = 'overdue-resp';
+        if      (respOverdue)                      borderClass = 'overdue-resp';
         else if (normStatus === 'Responded')                       borderClass = 'status-responded';
         else if (normStatus === 'Closed - Resolved')               borderClass = 'status-closed-resolved';
         else if (normStatus === 'Closed - Unresolved')             borderClass = 'status-closed-unresolved';
-        else if (normStatus === 'Closure - Pending')                               borderClass = 'status-closure-pending';
+        // V3.1.0: 'Closure - Pending' and live 'Escalated' entries removed
+        // -- neither status reachable. Legacy escalated-closure entries kept.
         else if (normStatus === 'Closed - Resolved (Escalated)')                    borderClass = 'status-closed-resolved-escalated';
         else if (normStatus === 'Closed - Unresolved (Escalated)')                  borderClass = 'status-closed-unresolved-escalated';
         else if (normStatus === 'Closed - Unresolved (External Resolution Failed)') borderClass = 'status-closed-ext-failed';
         else if (normStatus === 'Closed - No Further Action')                       borderClass = 'status-closed-nfa';
-        else if (normStatus === 'Escalated')                       borderClass = 'status-escalated';
         else if (normStatus === 'Acknowledged')                    borderClass = 'status-acknowledged';
 
         const statusClass   = statusPillClass(c.status);
         const displayStatus = normaliseStatus(c.status);
         const safeRef     = escHtml(c.referenceNumber);
         const badges = [];
-        if (ackOverdue)  badges.push('<span class="overdue-badge badge-ack-overdue">Ack overdue</span>');
+        // V3.1.1: ack-overdue badge removed along with isAckOverdue.
         if (respOverdue) badges.push('<span class="overdue-badge badge-resp-overdue">Response overdue</span>');
         const submitted = formatDate(c.submittedAt);
         const datesText = submitted ? 'Submitted ' + submitted : '';
@@ -2399,21 +2412,11 @@ TECHNICAL:
         return `<div class="detail-grid">${gridItems}</div>`;
     }
 
-    function getValidNextStatuses(currentStatus) {
-        const norm = normaliseStatus(currentStatus);
-        const map = {
-            'Open':                              ['Acknowledged'],
-            'Acknowledged':                      ['Responded'],
-            'Responded':                         ['Closed - Resolved', 'Closure - Pending'],
-            'Closure - Pending':                 ['Escalated'],
-            'Closed - Resolved':                 ['Escalated'],
-            'Closed - Unresolved':               ['Escalated'],   // legacy records only
-            'Escalated':                         ['Closed - Resolved (Escalated)', 'Closed - Unresolved (Escalated)'],
-            'Closed - Resolved (Escalated)':     [],
-            'Closed - Unresolved (Escalated)':   []
-        };
-        return map[norm] || [];
-    }
+    // V3.1.0: getValidNextStatuses removed -- confirmed zero call sites in
+    // this file (only mentioned in historical changelog comments), so
+    // rather than update its stale Escalated/Closure - Pending status
+    // list for a function nothing actually calls, it's removed. The real
+    // status-transition guidance lives in buildActionPanel below.
 
     // ── HELPER: extract Final Note text from Activity Log ─────────────
     // Activity Log is newest-first. The FINAL NOTE entry is a single timestamped
@@ -2464,123 +2467,23 @@ TECHNICAL:
         if (pane) pane.classList.toggle('open');
     }
 
-    // V3.0.41: Escalate from Closure - Pending. Replaces the old
-    // showEscalationPanel(), which tried to open/scroll to the Escalation
-    // accordion pane -- that pane only renders once c.escalatedAt is already
-    // set (see buildAccordion below), so from Closure - Pending it never
-    // existed in the DOM yet and the button did nothing. These functions
-    // instead reveal an inline org-select form directly in the action panel
-    // and call the existing updateComplaint/Escalated backend path, which
-    // was already fully functional (writes escalatedAt, ESCALATION BODY
-    // activity log entry, sends Board/RC alert and resident notice) --
-    // it just had no reachable UI path from this state.
-    function showEscalateFromPendingForm(ref) {
-        const trigger = document.getElementById('escalate-pending-trigger-' + ref);
-        const form    = document.getElementById('escalate-pending-form-' + ref);
-        if (trigger) trigger.style.display = 'none';
-        if (form)    form.style.display    = 'block';
-    }
+    // V3.1.0: showEscalateFromPendingForm, hideEscalateFromPendingForm,
+    // onEscalatePendingOrgChange, and doEscalateFromPending all removed --
+    // they supported escalating from Closure - Pending, a status that no
+    // longer exists. Confirmed genuinely orphaned (no remaining call
+    // sites) before removal, not just superseded.
 
-    function hideEscalateFromPendingForm(ref) {
-        const trigger  = document.getElementById('escalate-pending-trigger-' + ref);
-        const form     = document.getElementById('escalate-pending-form-' + ref);
-        const sel      = document.getElementById('escalate-pending-org-' + ref);
-        const feedback = document.getElementById('escalate-pending-feedback-' + ref);
-        if (sel) sel.value = '';
-        if (feedback) { feedback.textContent = ''; feedback.className = 'save-feedback'; }
-        onEscalatePendingOrgChange(ref);
-        if (form)    form.style.display    = 'none';
-        if (trigger) trigger.style.display = 'block';
-    }
-
-    function onEscalatePendingOrgChange(ref) {
-        const sel    = document.getElementById('escalate-pending-org-' + ref);
-        const btn    = document.getElementById('escalate-pending-confirm-' + ref);
-        const hasOrg = sel && sel.value;
-        if (btn) {
-            btn.disabled       = !hasOrg;
-            btn.style.opacity  = hasOrg ? '1' : '0.45';
-            btn.style.cursor   = hasOrg ? 'pointer' : 'not-allowed';
-        }
-    }
-
-    function doEscalateFromPending(ref) {
-        const sel      = document.getElementById('escalate-pending-org-' + ref);
-        const org      = sel ? sel.value : '';
-        const btn      = document.getElementById('escalate-pending-confirm-' + ref);
-        const feedback = document.getElementById('escalate-pending-feedback-' + ref);
-        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-
-        if (!org) { setFeedback(feedback, 'Please select an organisation.', 'error'); return; }
-
-        const orgLabels = {
-            'VicAssist':                  'VicAssist Retirement Villages',
-            'VCAT':                       'Victorian Civil and Administrative Tribunal (VCAT)',
-            'Consumer Affairs Victoria':   'Consumer Affairs Victoria',
-            'Legal representation':       'Legal representation'
-        };
-
-        const confirmed = confirm(
-            'Escalate this complaint to ' + (orgLabels[org] || org) + '?\n\n' +
-            'The resident will be notified by email that their complaint has been escalated.\n' +
-            'This cannot be undone.\n\nProceed?'
-        );
-        if (!confirmed) return;
-
-        const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-        if (idx === -1) return;
-
-        if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; }
-        if (sel) sel.disabled = true;
-        setFeedback(feedback, 'Sending...', '');
-
-        const callbackName = 'escalatePendingCallback_' + Date.now();
-        const url = CONFIG.BACKEND_URL
-            + '?action=updateComplaint'
-            + '&ref='           + encodeURIComponent(ref)
-            + '&status=Escalated'
-            + '&escalationOrg=' + encodeURIComponent(org)
-            + '&userName='      + encodeURIComponent(userName)
-            + '&callback='      + callbackName;
-
-        const timeout = setTimeout(function() {
-            cleanup(callbackName);
-            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-            if (sel) sel.disabled = false;
-            setFeedback(feedback, 'Timed out — server may still be processing. Please refresh before retrying.', 'error');
-        }, 45000);
-
-        window[callbackName] = function(data) {
-            clearTimeout(timeout); cleanup(callbackName);
-            if (data.success) {
-                allComplaints[idx].status      = 'Escalated';
-                allComplaints[idx].escalatedAt = new Date().toString();
-                if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                rebuildAndRestoreCard(ref, idx);
-                updateSummary(allComplaints);
-            } else {
-                if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-                if (sel) sel.disabled = false;
-                setFeedback(feedback, 'Error: ' + (data.error || 'Unknown.'), 'error');
-            }
-        };
-
-        const script = document.createElement('script');
-        script.onerror = function() {
-            cleanup(callbackName);
-            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-            if (sel) sel.disabled = false;
-            setFeedback(feedback, 'Network error.', 'error');
-        };
-        script.src = url;
-        document.head.appendChild(script);
-    }
 
     // ── BUILD ACCORDION ───────────────────────────────────────────────
     function buildAccordion(c) {
         const safeRef    = c.referenceNumber.replace(/[^A-Z0-9-]/g, '');
         const normStatus = normaliseStatus(c.status);
         const isClosed   = isClosedStatus(normStatus);
+        // V3.1.0: isEscalatedClosed/isEscalated kept (not removed) --
+        // isEscalatedClosedStatus still recognises the legacy escalated
+        // closure statuses so old rows still render their Escalation pane
+        // correctly, even though nothing can reach 'Escalated' going
+        // forward. See isEscalatedClosedStatus's own V3.1.0 note.
         const isEscalatedClosed = isEscalatedClosedStatus(normStatus);
         const isEscalated      = normStatus === 'Escalated';
 
@@ -2845,16 +2748,10 @@ TECHNICAL:
         const submitted    = new Date(c.submittedAt);
         const hoursElapsed = isNaN(submitted) ? 0 : (now72 - submitted) / (1000 * 60 * 60);
 
-        let ackNotice = '';
-        if (isOpen) {
-            const ackHours = isNaN(submitted) ? 0 : hoursElapsed;
-            if (ackHours > 48) {
-                ackNotice = '<div class="response-notice notice-overdue">&#9888; Acknowledgement overdue \u2014 please acknowledge immediately.</div>';
-            } else {
-                const ackLeft = Math.ceil(48 - ackHours);
-                ackNotice = '<div class="response-notice notice-pending">&#9679; Acknowledgement required within 48 hours \u2014 ' + ackLeft + ' hour' + (ackLeft === 1 ? '' : 's') + ' remaining.</div>';
-            }
-        }
+        // V3.1.1: ackNotice removed -- acknowledgement never had a real
+        // deadline. Now matches Disputes: no timing notice on the
+        // Acknowledge step at all, just the 72-hour Initial Determination
+        // notice below, which is a genuine requirement.
 
         let responseNotice = '';
         if (!isClosed && !isOpen && !c.respondedAt && !isEscalated) {
@@ -2877,7 +2774,6 @@ TECHNICAL:
             }
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Acknowledge</div>
-                ${ackNotice}
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:10px 0;">If the acknowledgement email link has been lost, use the button below to manually acknowledge this complaint.</p>
                 <button class="btn-ack" id="ack-btn-${safeRef}" onclick="acknowledgeManual('${safeRef}')">&#10003; Acknowledge Complaint</button>
                 <span class="save-feedback" id="ack-feedback-${safeRef}"></span>
@@ -2966,101 +2862,12 @@ TECHNICAL:
             </div>`;
         }
 
-        // ── CLOSURE - PENDING: 14-day window open ────────────────────
-        if (normStatus === 'Closure - Pending') {
-            // Calculate expiry from acknowledgedAt or updatedAt as proxy --
-            // ClosedAt is not written for Closure - Pending (V3.0.27).
-            // Use the most recent activity log timestamp as the notice date.
-            // V3.0.39: c.updatedAt was never populated by the backend (rowToObject
-            // has no such field) -- expiry always showed (calculating...). Fixed to
-            // read closurePendingAt, added to rowToObject in backend V3.0.30.
-            const noticeDate  = c.closurePendingAt ? new Date(c.closurePendingAt) : null;
-            const expiryDate  = noticeDate ? new Date(noticeDate.getTime() + 14 * 24 * 60 * 60 * 1000) : null;
-            const expiryStr   = expiryDate
-                ? expiryDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
-                : '(calculating...)';
-            return `<div class="action-panel">
-                <div class="action-panel-title">Closure - Pending: 14-Day Window Open</div>
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 10px;">
-                    The Non-Resolution Notice has been sent to the resident. They have 14 days to raise this matter
-                    with an external authority. If no action is taken by <strong style="color:#fbbf24;">${expiryStr}</strong>,
-                    the complaint will be automatically closed as <em>Closed - No Further Action</em>.
-                </p>
-                <div class="response-notice notice-pending" style="margin-bottom:14px;">
-                    &#9432; No action is required from the Board during this period unless the resident contacts you to escalate.
-                </div>
-                <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:14px;margin-top:4px;">
-                    <p style="font-size:0.82rem;color:rgba(255,255,255,0.55);margin:0 0 10px;">
-                        If the resident has contacted the Board and wishes to escalate to an external body, use the button below.
-                    </p>
-                    <div id="escalate-pending-trigger-${safeRef}">
-                        <button class="btn-close-type" style="border-color:rgba(251,191,36,0.5);color:#fbbf24;"
-                            onclick="showEscalateFromPendingForm('${safeRef}')">&#8599; Escalate to External Body</button>
-                    </div>
-                    <div id="escalate-pending-form-${safeRef}" style="display:none;">
-                        <label style="display:block;font-size:0.8rem;color:rgba(255,255,255,0.6);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:7px;">Escalating Organisation</label>
-                        <select id="escalate-pending-org-${safeRef}" class="glass-select" style="width:100%;max-width:480px;font-size:0.9rem;margin-bottom:10px;" onchange="onEscalatePendingOrgChange('${safeRef}')">
-                            <option value="">(select an organisation)</option>
-                            <option value="VicAssist">VicAssist Retirement Villages</option>
-                            <option value="VCAT">Victorian Civil and Administrative Tribunal (VCAT)</option>
-                            <option value="Consumer Affairs Victoria">Consumer Affairs Victoria</option>
-                            <option value="Legal representation">Legal representation</option>
-                        </select>
-                        <div>
-                            <button class="btn-close-type" id="escalate-pending-confirm-${safeRef}" onclick="doEscalateFromPending('${safeRef}')" disabled
-                                style="opacity:0.45;cursor:not-allowed;border-color:rgba(251,191,36,0.5);color:#fbbf24;">&#10003; Confirm Escalation</button>
-                            <button onclick="hideEscalateFromPendingForm('${safeRef}')"
-                                style="background:none;border:none;color:rgba(255,255,255,0.5);font-size:0.78rem;cursor:pointer;padding:4px 10px;text-decoration:underline;">Cancel</button>
-                        </div>
-                        <span class="save-feedback" id="escalate-pending-feedback-${safeRef}"></span>
-                    </div>
-                </div>
-                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
-                <span class="save-feedback" id="feedback-${safeRef}"></span>
-            </div>`;
-        }
-
-        // ── ESCALATED: Final Note + simple close buttons ──────────────
-        if (isEscalated) {
-            const finalNote = c.finalNoteDraft || getFinalNote(c.activityLog);
-            let escalatedActionBody = '';
-            if (!finalNote) {
-                escalatedActionBody = `<div class="response-notice notice-pending">&#9432; Save an Escalation Closure note in the Escalation pane above, then return here to close the complaint.</div>`;
-            } else {
-                const escOrg = getEscalationBody(c.activityLog) || '';
-                escalatedActionBody = `
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Escalation Closure note recorded. Select the reason for closure to close this complaint.</p>
-                <div style="margin-bottom:14px;">
-                    <label style="display:block;font-size:0.8rem;color:rgba(255,255,255,0.6);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:7px;">Reason for External Closure</label>
-                    <select id="esc-closure-reason-${safeRef}" class="glass-select" style="width:100%;max-width:480px;font-size:0.9rem;" onchange="onEscClosureReasonChange('${safeRef}')">
-                        <option value="">(select a reason to enable closure)</option>
-                        <option value="resolved">Resolved via VicAssist Conciliation</option>
-                        <option value="vcat">Proceeded to VCAT</option>
-                        <option value="refused">Terminated by VicAssist — Other Party Refused to Participate</option>
-                        <option value="unsuitable">Terminated by VicAssist — Matter Unsuitable for Conciliation</option>
-                    </select>
-                </div>
-                <button class="btn-close-type" id="esc-close-btn-${safeRef}" onclick="closeEscalated('${safeRef}')" disabled style="opacity:0.45;cursor:not-allowed;">&#10003; Close Complaint</button>
-                <span class="save-feedback" id="esc-feedback-${safeRef}"></span>
-                <div id="esc-preview-${safeRef}" style="margin-top:14px;display:none;">
-                    <div class="nrn-fixed-label">Pathway notice — included automatically in the closure notice sent to the resident</div>
-                    <div class="nrn-fixed-block" id="esc-preview-text-${safeRef}"></div>
-                </div>`;
-            }
-            return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Close This Complaint</div>
-                ${escalatedActionBody}
-            </div>`;
-        }
-
-        // ── ESCALATED CLOSED: Print + Resend only (no re-escalation) ─
-        if (isEscalatedClosed) {
-            return `<div class="action-panel">
-                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
-                <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
-                <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
-            </div>`;
-        }
+        // V3.1.0: Closure - Pending panel (14-day window), Escalated panel
+        // (Final Note + closure-reason dropdown), and Escalated Closed
+        // panel all removed entirely -- none of those statuses exist any
+        // more. Closed - Unresolved is now reached directly from the
+        // Responded closure panel above (nrn-panel), one step, same as
+        // every other closure outcome -- no separate panel needed.
 
         // ── CLOSED - CONVERTED TO DISPUTE: Read-only notice ──────────
         if (normStatus === 'Closed - Converted to Dispute') {
@@ -3097,21 +2904,6 @@ TECHNICAL:
                         <button class="btn-send-resident" id="send-partial-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                     </div>
                 </div>
-                    <select id="status-${safeRef}" onchange="onStatusChange('${safeRef}', this.value)" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:7px 10px;font-size:0.85rem;color:white;cursor:pointer;">
-                        <option value="">(no action)</option>
-                        <option value="Escalated">Set to Escalated</option>
-                    </select>
-                    <div id="esc-org-row-${safeRef}" style="display:none;margin-top:10px;">
-                        <div class="detail-label" style="margin-bottom:6px;">Escalating organisation</div>
-                        <select id="esc-org-${safeRef}" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:2px;padding:7px 10px;font-size:0.85rem;color:white;cursor:pointer;width:100%;">
-                            <option value="">(select organisation)</option>
-                            <option value="VicAssist">VicAssist</option>
-                            <option value="VCAT">VCAT</option>
-                            <option value="Consumer Affairs Victoria">Consumer Affairs Victoria</option>
-                            <option value="Legal representation">Legal representation</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
                     <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)" style="margin-left:8px;margin-top:10px;">Save</button>
                     <span class="save-feedback" id="feedback-${safeRef}"></span>
             </div>`;
@@ -3258,129 +3050,10 @@ TECHNICAL:
         document.head.appendChild(script);
     }
 
-    // V3.0.33: fired when the closure reason dropdown changes.
-    // Enables/disables the close button and updates the pathway preview block.
-    function onEscClosureReasonChange(ref) {
-        const sel     = document.getElementById('esc-closure-reason-' + ref);
-        const btn     = document.getElementById('esc-close-btn-' + ref);
-        const preview = document.getElementById('esc-preview-' + ref);
-        const previewText = document.getElementById('esc-preview-text-' + ref);
-        const type    = sel ? sel.value : '';
+    // V3.1.0: onEscClosureReasonChange and closeEscalated both removed --
+    // the Escalated closure-reason panel they supported no longer exists.
+    // Confirmed genuinely orphaned before removal.
 
-        if (btn) {
-            btn.disabled = !type;
-            btn.style.opacity = type ? '1' : '0.45';
-            btn.style.cursor  = type ? 'pointer' : 'not-allowed';
-        }
-
-        // Show pathway preview for the two new failure types only;
-        // resolved and vcat use existing fixed block text.
-        const complaint = allComplaints.find(c => c.referenceNumber === ref);
-        const escOrg    = complaint ? (getEscalationBody(complaint.activityLog) || '') : '';
-
-        if (preview && previewText) {
-            if (type === 'refused') {
-                previewText.textContent =
-                    'We have been advised by VicAssist that the formal conciliation process cannot proceed ' +
-                    'due to a lack of mutual participation. Because the village\'s internal and voluntary ' +
-                    'external options have now been fully exhausted, you have the right to escalate this ' +
-                    'matter independently to VCAT. Your complaint record, including the timeline of internal ' +
-                    'and external steps taken, remains available to you via the Resident Portal as evidence ' +
-                    'of your good-faith attempts to resolve the issue internally.';
-                preview.style.display = '';
-            } else if (type === 'unsuitable') {
-                previewText.textContent =
-                    'We have been advised by VicAssist that this matter is not suitable for their conciliation ' +
-                    'process. This is not a reflection on the merit of your complaint — some matters fall outside ' +
-                    'what conciliation can address. Because the village\'s internal options have now been exhausted, ' +
-                    'you have the right to escalate this matter independently to VCAT or seek independent legal ' +
-                    'advice. Your complaint record, including the timeline of steps taken, remains available to ' +
-                    'you via the Resident Portal.';
-                preview.style.display = '';
-            } else if (type === 'resolved' || type === 'vcat') {
-                previewText.textContent = buildEscalatedFixedBlock(escOrg, type === 'resolved' ? 'resolved' : 'unresolved');
-                preview.style.display = '';
-            } else {
-                preview.style.display = 'none';
-            }
-        }
-    }
-
-    function closeEscalated(ref) {
-        const sel      = document.getElementById('esc-closure-reason-' + ref);
-        const type     = sel ? sel.value : '';
-        const btn      = document.getElementById('esc-close-btn-' + ref);
-        const feedback = document.getElementById('esc-feedback-' + ref);
-        const userName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-
-        if (!type) { setFeedback(feedback, 'Please select a closure reason.', 'error'); return; }
-
-        const reasonLabels = {
-            resolved:   'Resolved via VicAssist Conciliation',
-            vcat:       'Proceeded to VCAT',
-            refused:    'Terminated by VicAssist — Other Party Refused to Participate',
-            unsuitable: 'Terminated by VicAssist — Matter Unsuitable for Conciliation'
-        };
-
-        const confirmed = confirm(
-            'Close this complaint?\n\n' +
-            'Reason: ' + (reasonLabels[type] || type) + '\n\n' +
-            'A closure notice will be sent to the resident.\nThis cannot be undone.\n\nProceed?'
-        );
-        if (!confirmed) return;
-
-        if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; }
-        if (sel) sel.disabled = true;
-        setFeedback(feedback, 'Sending closure notice — please wait...', '');
-
-        const callbackName = 'escCloseCallback_' + Date.now();
-        const url = CONFIG.BACKEND_URL
-            + '?action=closeEscalated'
-            + '&ref='       + encodeURIComponent(ref)
-            + '&type='      + encodeURIComponent(type)
-            + '&userName='  + encodeURIComponent(userName)
-            + '&callback='  + callbackName;
-
-        const timeout = setTimeout(function() {
-            cleanup(callbackName);
-            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-            if (sel) sel.disabled = false;
-            setFeedback(feedback, 'Timed out — server may still be processing. Please refresh before retrying.', 'error');
-        }, 45000);
-
-        window[callbackName] = function(data) {
-            clearTimeout(timeout); cleanup(callbackName);
-            if (data.success) {
-                const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-                if (idx !== -1) {
-                    allComplaints[idx].status   = data.finalStatus;
-                    allComplaints[idx].closedAt = new Date().toString();
-                    if (data.finalNoteEntry) {
-                        const existing = allComplaints[idx].activityLog || '';
-                        allComplaints[idx].activityLog = data.finalNoteEntry + (existing ? '\n' + existing : '');
-                    }
-                    allComplaints[idx].finalNoteDraft = '';
-                    if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                    rebuildAndRestoreCard(ref, idx);
-                    updateSummary(allComplaints);
-                }
-            } else {
-                if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-                if (sel) sel.disabled = false;
-                setFeedback(feedback, 'Error: ' + (data.error || 'Unknown.'), 'error');
-            }
-        };
-
-        const script = document.createElement('script');
-        script.onerror = function() {
-            cleanup(callbackName);
-            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
-            if (sel) sel.disabled = false;
-            setFeedback(feedback, 'Network error.', 'error');
-        };
-        script.src = url;
-        document.head.appendChild(script);
-    }
 
     function doStatusReview(ref, path) {
         const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
@@ -3483,28 +3156,9 @@ TECHNICAL:
             ? (document.getElementById('sendfeedback-' + ref) || document.getElementById('feedback-' + ref))
             : (document.getElementById('feedback-' + ref));
 
-        // Confirmation required before setting Escalated status
-        if (status === 'Escalated') {
-            const orgEl  = document.getElementById('esc-org-' + ref);
-            const orgVal = orgEl ? orgEl.value.trim() : '';
-            if (!orgVal) {
-                setFeedback(feedback, 'Please select the escalating organisation before saving.', 'error');
-                return;
-            }
-            const confirmed = confirm(
-                'Setting status to Escalated will:\n\n' +
-                '  \u2022 Record the complaint as Escalated (' + orgVal + ')\n' +
-                '  \u2022 Notify the Board and Residents Committee\n' +
-                '  \u2022 Send the resident a notification acknowledging the escalation\n\n' +
-                'Please confirm this complaint has been escalated before proceeding.\n\n' +
-                'Proceed?'
-            );
-            if (!confirmed) {
-                const statusEl = document.getElementById('status-' + ref);
-                if (statusEl) statusEl.value = '';
-                return;
-            }
-        }
+        // V3.1.0: Escalated confirmation block removed -- status can never
+        // be 'Escalated' now, since the "Set to Escalated" dropdown that
+        // set it is gone.
 
         // ── CLOSURE NARRATIVE HANDLING ────────────────────────────────
         // Detect closure type from visible panel.
@@ -3606,8 +3260,6 @@ TECHNICAL:
         // Show contextual sending message for actions that trigger notifications
         if (andSend && closureNarrative) {
             setFeedback(feedback, 'Sending closure notice — please wait...', '');
-        } else if (effectiveStatus === 'Escalated') {
-            setFeedback(feedback, 'Saving and sending escalation notice — please wait...', '');
         } else {
             setFeedback(feedback, '', '');
         }
@@ -3619,10 +3271,8 @@ TECHNICAL:
             + '&callback=' + callbackName;
 
         if (effectiveStatus)  url += '&status='          + encodeURIComponent(effectiveStatus);
-        if (effectiveStatus === 'Escalated') {
-            const orgEl2 = document.getElementById('esc-org-' + ref);
-            if (orgEl2 && orgEl2.value) url += '&escalationOrg=' + encodeURIComponent(orgEl2.value);
-        }
+        // V3.1.0: escalationOrg param removed -- 'Escalated' can never be
+        // effectiveStatus now, since nothing in the UI sets it.
         if (boardResponse)    url += '&boardResponse='   + encodeURIComponent(boardResponse);
         if (closureNarrative) url += '&closureNarrative=' + encodeURIComponent(closureNarrative);
         if (andSend)          url += '&andSend=true';
@@ -3630,9 +3280,9 @@ TECHNICAL:
         const saveUserName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         url += '&userName=' + encodeURIComponent(saveUserName);
 
-        // 45s for any path that sends a notification: andSend, closureNarrative,
-        // or setting status to Escalated (fires resident escalation notice). 15s otherwise.
-        const timeoutMs = (andSend || closureNarrative || effectiveStatus === 'Escalated') ? 45000 : 15000;
+        // 45s for any path that sends a notification: andSend or
+        // closureNarrative. 15s otherwise.
+        const timeoutMs = (andSend || closureNarrative) ? 45000 : 15000;
         const timeout = setTimeout(function () {
             cleanup(callbackName); if (btn) { btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only'; }
             setFeedback(feedback, 'Timed out — server may still be processing. Please refresh before retrying.', 'error');
@@ -3650,17 +3300,10 @@ TECHNICAL:
                     // Closure Save & Send -- set final closed status from data.finalStatus
                     if (andSend && data.finalStatus) {
                         allComplaints[idx].status   = data.finalStatus;
-                        // V3.0.40: closedAt only applies to terminal statuses -- Closure -
-                        // Pending stays open, real ClosedAt is written later by the 14-day
-                        // trigger. Previously stamped here regardless, which was cosmetically
-                        // wrong in the local cache for Closure - Pending until next reload.
-                        // closurePendingAt now read from the backend response (V3.0.31) so
-                        // the expiry date displays correctly immediately, no reload needed.
-                        if (data.finalStatus === 'Closure - Pending') {
-                            if (data.closurePendingAt) allComplaints[idx].closurePendingAt = data.closurePendingAt;
-                        } else {
-                            allComplaints[idx].closedAt = nowTs;
-                        }
+                        // V3.1.0: every closure is now terminal, one step -- the old
+                        // Closure - Pending branch (real ClosedAt deferred to a later
+                        // 14-day trigger) is gone, ClosedAt is always set here now.
+                        allComplaints[idx].closedAt = nowTs;
                         if (closureNarrative) allComplaints[idx].closureNarrative = closureNarrative;
                         if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                         // Clear quick resolved flag on closure
@@ -3691,11 +3334,10 @@ TECHNICAL:
                         }
                         setFeedback(feedback, 'Draft saved.', 'success');
 
-                    // Standard update (status change, board response, escalation)
+                    // Standard update (status change, board response)
                     } else {
                         if (effectiveStatus) allComplaints[idx].status = effectiveStatus;
                         if (effectiveStatus === 'Acknowledged' && !allComplaints[idx].acknowledgedAt) allComplaints[idx].acknowledgedAt = nowTs;
-                        if (effectiveStatus === 'Escalated' && !allComplaints[idx].escalatedAt) allComplaints[idx].escalatedAt = nowTs;
                         if (boardResponse) allComplaints[idx].boardResponse = boardResponse;
                         if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                         setFeedback(feedback, 'Saved successfully.', 'success');
@@ -4105,18 +3747,19 @@ TECHNICAL:
 
     function statusPillClass(status) {
         const s = normaliseStatus(status);
+        // V3.1.0: 'Closure - Pending' and 'Escalated' entries removed --
+        // neither status is reachable any more. Legacy escalated-closure
+        // classes kept for any old row still carrying one.
         return {
             'Open':               'status-open',
             'Acknowledged':       'status-acknowledged',
             'Responded':          'status-responded',
-            'Closure - Pending':                               'status-closure-pending',
             'Closed - Resolved':               'status-closed-resolved',
             'Closed - Unresolved':             'status-closed-unresolved',
             'Closed - Resolved (Escalated)':                   'status-closed-resolved-escalated',
             'Closed - Unresolved (Escalated)':                 'status-closed-unresolved-escalated',
             'Closed - Unresolved (External Resolution Failed)': 'status-closed-ext-failed',
-            'Closed - No Further Action':                       'status-closed-nfa',
-            'Escalated':          'status-escalated'
+            'Closed - No Further Action':                       'status-closed-nfa'
         }[s] || 'status-closed';
     }
 
@@ -4306,15 +3949,14 @@ TECHNICAL:
 
         const normSt = normaliseStatus(c.status);
         const isEscClosed = isEscalatedClosedStatus(normSt);
+        // V3.1.0: 'Closure - Pending' and live 'Escalated' entries removed.
         const statusClass = {
             'Open':                              'badge-open',
             'Acknowledged':                      'badge-acknowledged',
             'Responded':                         'badge-responded',
-            'Closure - Pending':                 'badge-closure-pending',
             'Closed - Resolved':                 'badge-closed',
             'Closed - Partially Resolved':        'badge-closed',
             'Closed - Unresolved':               'badge-closed',
-            'Escalated':                         'badge-escalated',
             'Closed - Resolved (Escalated)':                   'badge-escalated-closed',
             'Closed - Unresolved (Escalated)':                 'badge-escalated-closed',
             'Closed - Unresolved (External Resolution Failed)': 'badge-ext-failed',
