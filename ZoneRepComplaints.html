@@ -6,12 +6,40 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepComplaints.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.8
+  Frontend Version: V1.1.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.1.0 (Aug 2026): FIX -- V1.0.9's "Not applicable -- resolved
+    directly" was itself wrong for Closed - Converted to Dispute --
+    nothing gets resolved when a complaint is reclassified into a
+    Dispute record, possibly straight from Acknowledged with no
+    investigation at all, so "resolved directly" actively misrepresents
+    what happened. Now shows "Not applicable -- converted to Dispute"
+    for that specific status, keeping "resolved directly" only for the
+    genuine quick-path Resolved/Unresolved outcomes it actually
+    describes. respStatus (the pill colour) unchanged -- both cases
+    correctly share the neutral "N/A" colour, only the label text needed
+    to differ. Caught by Tony asking specifically about this status
+    after the V1.0.9 fix.
+
+  V1.0.9 (Aug 2026): FIX -- the Timeline Compliance block's Initial
+    Determination row showed a broken "Responded " label (word plus a
+    trailing space, no date) for any complaint closed via the quick path
+    (Status Review -> closed directly, never passing through the formal
+    Responded status), since c.respondedAt is genuinely never set for
+    those records -- no Initial Determination was ever actually given.
+    isClosed alone doesn't mean a response happened; now checks
+    c.respondedAt specifically and shows "Not applicable -- resolved
+    directly" for the quick-path case, rather than a misleading
+    "Responded" for both. New timeline-na CSS class added (neutral grey,
+    distinct from timeline-pending since this is a settled state, not
+    something still awaited). Caught by Tony noticing the inconsistency
+    directly -- some records showed just "Responded", others "Responded
+    [date]".
+
   V1.0.8 (Aug 2026): Compliance rectification ripple -- ComplaintsManager
     backend and frontend both went through a substantial rectification
     pass (14-day/Escalated apparatus removed, Partially Resolved
@@ -384,6 +412,7 @@ TECHNICAL:
         .timeline-responded  { background: rgba(168,85,247,0.3);  color: #e9d5ff; }
         .timeline-overdue    { background: rgba(239,68,68,0.3);   color: #fca5a5; }
         .timeline-pending    { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+        .timeline-na         { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.4); }
 
         /* STATES */
         .loading-state, .empty-state, .error-state { text-align: center; padding: 48px 24px; color: rgba(255,255,255,0.6); }
@@ -718,11 +747,21 @@ TECHNICAL:
         const boardRespDue    = c.submittedAt ? new Date(new Date(c.submittedAt).getTime() + CONFIG.INITIAL_DETERMINATION_HOURS * 60 * 60 * 1000) : null;
         const boardRespOverdue = boardRespDue && !isClosed && new Date() > boardRespDue;
 
-        const respStatus = isClosed ? 'timeline-responded'
+        const respStatus = isClosed ? (c.respondedAt ? 'timeline-responded' : 'timeline-na')
                          : boardRespOverdue ? 'timeline-overdue'
                          : 'timeline-pending';
+        // V1.1.0: "Not applicable -- resolved directly" was itself wrong
+        // for Closed - Converted to Dispute -- nothing was resolved in
+        // that case, the complaint was reclassified into a Dispute
+        // record instead, possibly straight from Acknowledged with no
+        // investigation at all. "Resolved directly" only fits the
+        // genuine quick-path outcomes (Resolved/Unresolved without a
+        // formal Initial Determination); Converted to Dispute needed
+        // its own wording. Caught by Tony asking specifically about it.
         const respLabel  = isClosed
-                         ? 'Responded ' + (c.respondedAt ? formatDate(c.respondedAt) : '')
+                         ? (c.respondedAt ? 'Responded ' + formatDate(c.respondedAt)
+                           : normSt === 'Closed - Converted to Dispute' ? 'Not applicable \u2014 converted to Dispute'
+                           : 'Not applicable \u2014 resolved directly')
                          : boardRespOverdue ? 'OVERDUE — due ' + formatDate(boardRespDue.toISOString())
                          : 'Due ' + (boardRespDue ? formatDate(boardRespDue.toISOString()) : '—');
 
