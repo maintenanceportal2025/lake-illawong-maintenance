@@ -6,13 +6,32 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepComplaints.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.7
-  Backend:          ComplaintsManager V3.0.40
+  Frontend Version: V1.0.8
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.0.8 (Aug 2026): Compliance rectification ripple -- ComplaintsManager
+    backend and frontend both went through a substantial rectification
+    pass (14-day/Escalated apparatus removed, Partially Resolved
+    removed, acknowledgement timing corrected); this file was reading
+    the old status model and had its own complete duplicate copy of the
+    "2 business days" acknowledgement-overdue logic. Fixed to match:
+    isAckOverdue and businessDaysSince removed entirely (isOverdue now
+    reflects only the genuine 72-hour Initial Determination requirement,
+    matching ComplaintsManager.html and DisputesManager.html exactly);
+    the Timeline Compliance block's Acknowledgement row removed (the
+    plain "Acknowledged" field elsewhere on the same detail view already
+    shows this, without false deadline framing); the info notice's
+    "mandatory acknowledgement (2 business days)" claim removed; the
+    status filter dropdown corrected -- 'Closed - Unresolved' was
+    wrongly marked "(legacy)" when it's now the current live status,
+    while the genuinely legacy statuses (Closure - Pending, Escalated,
+    Partially Resolved, No Further Action, the three Escalated-outcome
+    statuses) weren't marked at all. Also removed a pinned backend
+    version number from the header, per standing practice.
+
   V1.0.7 (Aug 2026): System-wide JSONP audit fix -- the single shared
     cleanup(name) helper deleted the window callback instead of
     replacing it with a no-op, risking "zrcCallback_... is not defined"
@@ -127,7 +146,7 @@ AUTHENTICATION:
   Redirects to ZoneRepPortal.html if session absent.
 
 SYSTEM CONNECTIONS:
-  Backend: ComplaintsManager V2.2.0
+  Backend: ComplaintsManager
   Action:  getComplaintsByZone
   URL:     CONFIG.BACKEND_URL
 
@@ -410,10 +429,10 @@ TECHNICAL:
 
     <!-- Info notice -->
     <div class="info-notice" id="infoNotice" style="display:none">
-        This view shows complaints from your zone only. Timeline flags indicate whether
-        the Board has met the mandatory acknowledgement (2 business days) and Initial
-        Determination (72 hours) deadlines. If a complaint is overdue, raise it with the
-        Residents Committee Chair.
+        This view shows complaints from your zone only. The timeline flag indicates
+        whether the Board has met the Initial Determination (72 hours) requirement.
+        If a complaint is significantly overdue, raise it with the Residents
+        Committee Chair.
     </div>
 
     <!-- Filter bar -->
@@ -425,16 +444,16 @@ TECHNICAL:
             <option value="Acknowledged">Acknowledged</option>
             <option value="Status Review">Status Review</option>
             <option value="Responded">Responded</option>
-            <option value="Closure - Pending">Closure - Pending</option>
-            <option value="Escalated">Escalated</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
-            <option value="Closed - Partially Resolved">Closed - Partially Resolved</option>
-            <option value="Closed - No Further Action">Closed - No Further Action</option>
-            <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated)</option>
-            <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated)</option>
-            <option value="Closed - Unresolved (External Resolution Failed)">Closed - Unresolved (External Resolution Failed)</option>
+            <option value="Closed - Unresolved">Closed - Unresolved</option>
             <option value="Closed - Converted to Dispute">Closed - Converted to Dispute</option>
-            <option value="Closed - Unresolved">Closed - Unresolved (legacy)</option>
+            <option value="Closure - Pending">Closure - Pending (legacy)</option>
+            <option value="Escalated">Escalated (legacy)</option>
+            <option value="Closed - Partially Resolved">Closed - Partially Resolved (legacy)</option>
+            <option value="Closed - No Further Action">Closed - No Further Action (legacy)</option>
+            <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated) (legacy)</option>
+            <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated) (legacy)</option>
+            <option value="Closed - Unresolved (External Resolution Failed)">Closed - Unresolved (External Resolution Failed) (legacy)</option>
         </select>
         <label for="filterOverdue">Show:</label>
         <select id="filterOverdue" onchange="applyFilters()">
@@ -458,7 +477,6 @@ TECHNICAL:
         BACKEND_URL:       'https://script.google.com/macros/s/AKfycbwkD2K1B8hTdMHwXGNajyRr2FBR_abqhWP33rIM7LgkQzIBIPcJsDQhGOvZxXdxuQuiTA/exec',
         SESSION_KEY:       'portalZoneRepVerified',
         PORTAL_URL:        'ZoneRepPortal.html',
-        ACK_BUSINESS_DAYS: 2,
         INITIAL_DETERMINATION_HOURS: 72
     };
 
@@ -551,20 +569,22 @@ TECHNICAL:
     // =====================================================================
     // OVERDUE LOGIC
     // =====================================================================
-    function isAckOverdue(c) {
-        if (c.status !== 'Open') return false;
-        if (c.acknowledgedAt)    return false;
-        return businessDaysSince(new Date(c.submittedAt)) > CONFIG.ACK_BUSINESS_DAYS;
-    }
+    // V1.0.8: isAckOverdue and businessDaysSince removed -- acknowledgement
+    // never had a real deadline (CAV's actual standard is "as soon as
+    // practicable", no fixed figure), matching the identical removal
+    // already done in ComplaintsManager.html and DisputesManager.html.
+    // isOverdue now reflects only the 72-hour Initial Determination
+    // requirement, which is genuine and stays.
 
     function isRespOverdue(c) {
         // V1.0.6: rewritten to check the real Board-facing deadline --
         // 72 hours since submittedAt with no Initial Determination
         // recorded -- mirroring ComplaintsManager's own CN-D2 check.
         // Only meaningful while status is Acknowledged or Status Review;
-        // every other status (Open -- covered by isAckOverdue instead;
-        // Responded onward -- Initial Determination already sent, or the
-        // complaint is closed/escalated and this check no longer applies).
+        // every other status (Open -- no overdue concept applies pre-
+        // acknowledgement any more, V1.0.8; Responded onward -- Initial
+        // Determination already sent, or the complaint is closed/
+        // escalated and this check no longer applies).
         if (c.status !== 'Acknowledged' && c.status !== 'Status Review') return false;
         if (c.boardResponse) return false;
         if (!c.submittedAt) return false;
@@ -573,14 +593,10 @@ TECHNICAL:
         return new Date() > dueDate;
     }
 
-    function isOverdue(c) { return isAckOverdue(c) || isRespOverdue(c); }
+    function isOverdue(c) { return isRespOverdue(c); }
 
-    function businessDaysSince(date) {
-        const now = new Date(); let count = 0; let cursor = new Date(date);
-        cursor.setHours(0,0,0,0); now.setHours(23,59,59,999);
-        while (cursor <= now) { const day = cursor.getDay(); if (day !== 0 && day !== 6) count++; cursor.setDate(cursor.getDate() + 1); }
-        return count;
-    }
+    // V1.0.8: businessDaysSince removed -- was only ever used by
+    // isAckOverdue, now gone.
 
     // =====================================================================
     // RENDER
@@ -598,13 +614,11 @@ TECHNICAL:
     // BUILD CARD
     // =====================================================================
     function buildCard(c) {
-        const ackOverdue  = isAckOverdue(c);
         const respOverdue = isRespOverdue(c);
         const normSt      = normaliseStatus(c.status);
 
         let borderClass = '';
-        if      (ackOverdue)                           borderClass = 'overdue-ack';
-        else if (respOverdue)                          borderClass = 'overdue-resp';
+        if      (respOverdue)                          borderClass = 'overdue-resp';
         else if (normSt === 'Responded')               borderClass = 'status-responded';
         else if (normSt === 'Closure - Pending')        borderClass = 'status-closure-pending';
         else if (normSt === 'Closed - Resolved')        borderClass = 'status-closed-resolved';
@@ -623,7 +637,7 @@ TECHNICAL:
         const safeRef     = escHtml(c.referenceNumber);
 
         const badges = [];
-        if (ackOverdue)  badges.push('<span class="overdue-badge badge-ack-overdue">Ack overdue</span>');
+        // V1.0.8: ack-overdue badge removed along with isAckOverdue.
         if (respOverdue) badges.push('<span class="overdue-badge badge-resp-overdue">Initial Determination overdue</span>');
 
         const submitted = formatDate(c.submittedAt);
@@ -649,7 +663,6 @@ TECHNICAL:
     // BUILD DETAIL
     // =====================================================================
     function buildDetail(c) {
-        const ackOverdue  = isAckOverdue(c);
         const respOverdue = isRespOverdue(c);
         const normSt      = normaliseStatus(c.status);
 
@@ -681,9 +694,13 @@ TECHNICAL:
                    <div class="detail-value">${formatBoardResponse(c.boardResponse)}</div>
                </div>` : '';
 
-        // Timeline compliance block
-        const ackStatus = c.acknowledgedAt ? 'timeline-ok' : (ackOverdue ? 'timeline-overdue' : 'timeline-pending');
-        const ackLabel  = c.acknowledgedAt ? 'Acknowledged ' + formatDate(c.acknowledgedAt) : (ackOverdue ? 'OVERDUE' : 'Pending');
+        // V1.0.8: ackStatus/ackLabel and the Timeline Compliance block's
+        // Acknowledgement row both removed -- acknowledgement never had a
+        // real deadline, and the plain "Acknowledged" field above
+        // (formatDate or "Not yet acknowledged", no deadline framing)
+        // already shows whether it's happened. The timeline block now
+        // shows Initial Determination only, which is genuinely deadline-
+        // relevant and isn't duplicated elsewhere.
 
         // Initial Determination (72-hour) deadline -- derived from submittedAt.
         // V1.0.6: isClosed extended from 4 recognised statuses to the full
@@ -712,10 +729,6 @@ TECHNICAL:
         const timelineHtml = `
             <div class="timeline-block">
                 <div class="timeline-title">Timeline Compliance</div>
-                <div class="timeline-row">
-                    <span class="timeline-label">Acknowledgement (2 business days)</span>
-                    <span class="timeline-status ${ackStatus}">${ackLabel}</span>
-                </div>
                 <div class="timeline-row">
                     <span class="timeline-label">Initial Determination (72 hours)</span>
                     <span class="timeline-status ${respStatus}">${respLabel}</span>
