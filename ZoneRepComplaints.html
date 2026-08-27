@@ -6,12 +6,30 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepComplaints.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.1.0
+  Frontend Version: V1.1.1
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.1.1 (Aug 2026): Two fixes, both from Tony noticing gaps in the
+    detail view. (1) Added a "Closed" field showing c.closedAt -- a
+    genuine data gap, not just a display choice: the backend has always
+    written ClosedAt for every closure type including Closed - Converted
+    to Dispute (confirmed directly in the ComplaintsManager backend --
+    same column, same write), and getComplaintsByZone already passes it
+    through untouched, it just was never added to this file's fields
+    array. (2) "Initial Determination Due" and "Responded" no longer
+    show a placeholder ('—') once the complaint is closed -- neither
+    concept is meaningful any more at that point (quick-path resolution
+    or conversion to Dispute), so they're now blanked out and dropped by
+    the existing fields.filter(f => f.value) rather than cluttering the
+    view with fields that don't apply. Both still show normally,
+    including the '—' placeholder, while a complaint is genuinely still
+    open. Required moving the isClosed/PAST_INITIAL_DETERMINATION_STAGE
+    computation earlier in buildDetail, since the fields array now needs
+    it before it was previously calculated.
+
   V1.1.0 (Aug 2026): FIX -- V1.0.9's "Not applicable -- resolved
     directly" was itself wrong for Closed - Converted to Dispute --
     nothing gets resolved when a complaint is reclassified into a
@@ -695,14 +713,43 @@ TECHNICAL:
         const respOverdue = isRespOverdue(c);
         const normSt      = normaliseStatus(c.status);
 
+        // Moved up from below (V1.1.1) -- needed by the fields array now,
+        // not just the Timeline Compliance block further down.
+        const PAST_INITIAL_DETERMINATION_STAGE = [
+            'Responded', 'Closure - Pending', 'Escalated',
+            'Closed - Resolved', 'Closed - Partially Resolved', 'Closed - Unresolved',
+            'Closed - No Further Action', 'Closed - Resolved (Escalated)',
+            'Closed - Unresolved (Escalated)', 'Closed - Unresolved (External Resolution Failed)',
+            'Closed - Converted to Dispute', 'Closed'
+        ];
+        const isClosed = PAST_INITIAL_DETERMINATION_STAGE.indexOf(normSt) !== -1;
+
         const fields = [
             { label: 'Resident',           value: c.residentName,     full: false },
             { label: 'Unit',               value: c.unitNumber.replace(/^Unit\s*/i,''), full: false },
             { label: 'Category',           value: c.category,         full: false },
             { label: 'Submitted',          value: formatDate(c.submittedAt), full: false },
             { label: 'Acknowledged',       value: c.acknowledgedAt ? formatDate(c.acknowledgedAt) : 'Not yet acknowledged', full: false },
-            { label: 'Initial Determination Due', value: c.submittedAt ? formatDate(new Date(new Date(c.submittedAt).getTime() + CONFIG.INITIAL_DETERMINATION_HOURS * 60 * 60 * 1000).toISOString()) : '—', full: false },
-            { label: 'Responded',          value: c.respondedAt ? formatDate(c.respondedAt) : '—', full: false },
+            // V1.1.1: Initial Determination Due and Responded both blanked
+            // out (rather than shown as '—') once the complaint is closed
+            // -- neither concept is meaningful any more at that point,
+            // whether closed via the quick path or converted to a
+            // Dispute, and an unconditional placeholder was cluttering
+            // the view with fields that don't apply. .filter(f => f.value)
+            // below already drops genuinely empty fields; these two just
+            // weren't using it. Still shown normally, including the '—'
+            // placeholder, while the complaint is genuinely still open
+            // and these are real, upcoming/pending facts.
+            { label: 'Initial Determination Due', value: (!isClosed && c.submittedAt) ? formatDate(new Date(new Date(c.submittedAt).getTime() + CONFIG.INITIAL_DETERMINATION_HOURS * 60 * 60 * 1000).toISOString()) : '', full: false },
+            { label: 'Responded',          value: c.respondedAt ? formatDate(c.respondedAt) : (isClosed ? '' : '—'), full: false },
+            // V1.1.1: Closed field added -- was a genuine gap, not just a
+            // display choice. The backend has always written ClosedAt for
+            // every closure type, including Closed - Converted to Dispute
+            // (same column, confirmed directly in ComplaintsManager
+            // backend), and getComplaintsByZone already passes it through
+            // (only internalNotes/peopleInvolved are stripped) -- it was
+            // simply never added to this fields array.
+            { label: 'Closed',             value: c.closedAt ? formatDate(c.closedAt) : '', full: false },
             { label: 'Description',        value: c.description,      full: true  },
             { label: 'Desired Outcome',    value: c.desiredOutcome,   full: true  },
             { label: 'Location',           value: c.location,         full: false },
@@ -736,14 +783,8 @@ TECHNICAL:
         // current set -- previously any of the ~10 newer statuses fell
         // through and could show a live "OVERDUE" flag against a complaint
         // closed or escalated for weeks.
-        const PAST_INITIAL_DETERMINATION_STAGE = [
-            'Responded', 'Closure - Pending', 'Escalated',
-            'Closed - Resolved', 'Closed - Partially Resolved', 'Closed - Unresolved',
-            'Closed - No Further Action', 'Closed - Resolved (Escalated)',
-            'Closed - Unresolved (Escalated)', 'Closed - Unresolved (External Resolution Failed)',
-            'Closed - Converted to Dispute', 'Closed'
-        ];
-        const isClosed        = PAST_INITIAL_DETERMINATION_STAGE.indexOf(normSt) !== -1;
+        // V1.1.1: PAST_INITIAL_DETERMINATION_STAGE and isClosed moved up
+        // to the top of this function -- see there.
         const boardRespDue    = c.submittedAt ? new Date(new Date(c.submittedAt).getTime() + CONFIG.INITIAL_DETERMINATION_HOURS * 60 * 60 * 1000) : null;
         const boardRespOverdue = boardRespDue && !isClosed && new Date() > boardRespDue;
 
