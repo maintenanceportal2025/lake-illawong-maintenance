@@ -6,12 +6,28 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.1
+  Frontend Version: V3.1.2
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V3.1.2 (Aug 2026): Removed 'Closed - Partially Resolved' as a live
+    status -- Tony's call, matching backend V3.1.2. Also found during
+    this pass, worth knowing: the "Close as Partially Resolved" button
+    (in the Responded closure panel) toggled a panel element,
+    partial-panel-${ref}, that only existed in a completely different
+    status branch (isClosed) -- meaning the two could never be visible
+    at the same time, and the button most likely never actually opened
+    anything when clicked. Both removed together: the button + its
+    orphaned panel, showClosurePanel's 'partially' branch, and
+    saveUpdate's partial-panel reading logic (including the
+    [TYPE:PARTIALLY_RESOLVED] narrative construction). Filter dropdown
+    option kept but marked (legacy) for any existing test record.
+    Summary counts, isClosedStatus-type checks, and the print badge map
+    all still recognise the old status for legacy display -- consistent
+    with how every other retired status has been handled this pass.
 
   V3.1.1 (Aug 2026): Tony's explicit call -- acknowledgement timing
     should match Disputes exactly, which carries no acknowledgement-
@@ -2025,7 +2041,7 @@ TECHNICAL:
             <option value="Acknowledged">Acknowledged</option>
             <option value="Responded">Responded</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
-            <option value="Closed - Partially Resolved">Closed - Partially Resolved</option>
+            <option value="Closed - Partially Resolved">Closed - Partially Resolved (legacy)</option>
             <option value="Closed - Unresolved">Closed - Unresolved</option>
             <option value="Closed - Resolved (Escalated)">Closed - Resolved (Escalated) (legacy)</option>
             <option value="Closed - Unresolved (Escalated)">Closed - Unresolved (Escalated) (legacy)</option>
@@ -2821,8 +2837,7 @@ TECHNICAL:
                     : 'Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.'
                 }</p>
                 <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
-                ${quickPath ? '' : `<button class="btn-close-type" id="close-partial-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'partially')">&#8776; Close as Partially Resolved</button>
-                <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>`}
+                ${quickPath ? '' : `<button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>`}
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
@@ -2885,27 +2900,8 @@ TECHNICAL:
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
                 <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
-                <div id="partial-panel-${safeRef}" class="nrn-panel" style="display:none;">
-                    <div class="nrn-panel-title" style="border-left-color:#f59e0b;">Closure Statement — Partially Resolved</div>
-                    <div id="partial-saved-${safeRef}" style="display:none;margin-bottom:10px;">
-                        <div class="detail-label" style="margin-bottom:4px;">Saved draft</div>
-                        <div class="board-response-readonly" style="border-color:rgba(245,158,11,0.25);white-space:pre-wrap;" id="partial-saved-text-${safeRef}"></div>
-                    </div>
-                    <label for="partial-resolved-${safeRef}">What was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="partial-resolved-${safeRef}" style="min-height:120px;" placeholder="Which aspects of the complaint were resolved, and how?"></textarea>
-                    <label for="partial-reason-${safeRef}" style="margin-top:10px;display:block;">What remains outstanding <span style="color:#fca5a5">*</span></label>
-                    <textarea id="partial-reason-${safeRef}" style="min-height:120px;" placeholder="What remains unresolved and why could it not be resolved at this stage?"></textarea>
-                    <label for="partial-actions-${safeRef}" style="margin-top:10px;display:block;">Actions taken during the process <span style="color:#fca5a5">*</span></label>
-                    <textarea id="partial-actions-${safeRef}" style="min-height:120px;" placeholder="What steps did the Board take during this process?&#10;&#10;What further avenues are available for the unresolved aspects?"></textarea>
-                    <div class="nrn-fixed-label">Standard block \u2014 included automatically in every Closure Statement</div>
-                    <div class="nrn-fixed-block">${escHtml(NON_RESOLUTION_FIXED_BLOCK)}</div>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-partial-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-partial-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
-                    </div>
-                </div>
-                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)" style="margin-left:8px;margin-top:10px;">Save</button>
-                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)" style="margin-left:8px;margin-top:10px;">Save</button>
+                <span class="save-feedback" id="feedback-${safeRef}"></span>
             </div>`;
         }
 
@@ -3117,27 +3113,20 @@ TECHNICAL:
     function showClosurePanel(ref, type) {
         const nrnPanel     = document.getElementById('nrn-panel-' + ref);
         const crPanel      = document.getElementById('cr-panel-'  + ref);
-        const partialPanel = document.getElementById('partial-panel-' + ref);
         const btnRes       = document.getElementById('close-resolved-btn-'   + ref);
-        const btnPartial   = document.getElementById('close-partial-btn-'    + ref);
         const btnUnres     = document.getElementById('close-unresolved-btn-' + ref);
 
         // Hide all panels first
         if (nrnPanel)     nrnPanel.style.display     = 'none';
         if (crPanel)      crPanel.style.display      = 'none';
-        if (partialPanel) partialPanel.style.display = 'none';
 
         // Reset button styles
         if (btnRes)     btnRes.className     = 'btn-close-type';
-        if (btnPartial) btnPartial.className = 'btn-close-type';
         if (btnUnres)   btnUnres.className   = 'btn-close-type';
 
         if (type === 'resolved') {
             if (crPanel)  crPanel.style.display  = 'block';
             if (btnRes)   btnRes.className        = 'btn-close-type active-resolved';
-        } else if (type === 'partially') {
-            if (partialPanel) partialPanel.style.display = 'block';
-            if (btnPartial)   btnPartial.className       = 'btn-close-type active-partial';
         } else {
             if (nrnPanel) nrnPanel.style.display = 'block';
             if (btnUnres) btnUnres.className      = 'btn-close-type active-unresolved';
@@ -3173,34 +3162,9 @@ TECHNICAL:
         const crVisible  = crPanelEl  && crPanelEl.style.display  !== 'none';
         const nrnVisible = nrnPanelEl && nrnPanelEl.style.display !== 'none';
 
-        // Partially resolved path
-        const partialPanelEl = document.getElementById('partial-panel-' + ref);
-        const partialVisible = partialPanelEl && partialPanelEl.style.display !== 'none';
-
-        if (partialVisible) {
-            const resolvedEl = document.getElementById('partial-resolved-' + ref);
-            const reasonEl2  = document.getElementById('partial-reason-'   + ref);
-            const actionsEl2 = document.getElementById('partial-actions-'  + ref);
-            const resolved2  = resolvedEl ? resolvedEl.value.trim() : '';
-            const reason2    = reasonEl2  ? reasonEl2.value.trim()  : '';
-            const actions2   = actionsEl2 ? actionsEl2.value.trim() : '';
-            if (resolved2 || reason2 || actions2) {
-                if (andSend && (!resolved2 || !reason2 || !actions2)) {
-                    setFeedback(feedback, 'All three fields are required before sending.', 'error'); return;
-                }
-                if (andSend) {
-                    const confirmed = confirm(
-                        'You are about to close this complaint as Partially Resolved.\n\n' +
-                        'A Closure Statement will be issued to the resident.\n' +
-                        'This action cannot be undone.\n\nProceed?'
-                    );
-                    if (!confirmed) return;
-                }
-                closureNarrative = '[TYPE:PARTIALLY_RESOLVED]\n[SUMMARY]\n' + (resolved2 || '') + '\n[/SUMMARY]\n[REASON]\n' + (reason2 || '') + '\n[/REASON]\n[ACTIONS]\n' + (actions2 || '') + '\n[/ACTIONS]';
-            } else if (andSend) {
-                setFeedback(feedback, 'All three fields are required before sending.', 'error'); return;
-            }
-        }
+        // V3.1.2: partially-resolved path removed -- 'Closed - Partially
+        // Resolved' no longer exists as a status. See ComplaintsManager
+        // backend V3.1.2 changelog for the reasoning.
 
         // Resolved path
         if (crVisible) {
