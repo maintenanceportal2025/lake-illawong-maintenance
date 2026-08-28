@@ -6,13 +6,30 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintStatus.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.3.3
+  Frontend Version: V1.3.4
   Backend:          ComplaintsManager V2.3.35 / DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.3.4 (Aug 2026): Two small requests. (1) Back button moved from
+    centred to left-aligned (margin: 0 auto 20px auto -> plain flex-row
+    placement), matching the same fix already applied to
+    ComplaintsManager's portal-back-btn this session. (2) Added a
+    Refresh button (.btn-refresh, matching the class/icon/wording
+    already established in ComplaintsManager) next to Back, wrapped in
+    a new .top-btn-row flex container so both sit on the same line and
+    wrap together at narrow widths -- same .btn-row pattern used
+    throughout ComplaintsManager this session, applied here under its
+    own name since this file doesn't otherwise use that utility class.
+    refreshAll() calls the existing loadComplaints()/loadDisputes()
+    directly (both already fully replace their own list containers on
+    every call, confirmed safe to re-invoke) -- fire-and-forget with a
+    1.2s button-label restore, matching the simple pattern
+    ComplaintsManager's own Refresh button already uses, not gated on
+    either JSONP call actually completing.
+
   V1.3.3 (Aug 2026): CORRECTION -- V1.3.2 was built against project
     knowledge's DisputesManager V3.1.3, which turned out to be stale
     itself (Tony supplied the real current file, V3.2.4). DisputesManager
@@ -207,9 +224,27 @@ TECHNICAL:
             border: 1px solid rgba(255,255,255,0.3);
             color: white; padding: 8px 18px; border-radius: 2px;
             font-size: 0.88rem; font-weight: 600; cursor: pointer;
-            display: block; margin: 0 auto 20px auto; transition: background 0.2s;
+            transition: background 0.2s;
         }
         .portal-back-btn:hover { background: rgba(255,255,255,0.25); }
+
+        .btn-refresh {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white; padding: 8px 18px; border-radius: 2px;
+            font-size: 0.88rem; font-weight: 600; cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-refresh:hover { background: rgba(255,255,255,0.25); }
+        .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .top-btn-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 0 0 20px 0;
+        }
 
         /* ── SECTION HEADING ─────────────────────────────────────── */
         .section-heading {
@@ -407,10 +442,13 @@ TECHNICAL:
         <div class="header-divider"></div>
     </div>
 
-    <!-- Back button -->
-    <button class="portal-back-btn" onclick="window.location.href='ResidentPortal.html'">
-        &#8592; Back to Resident Portal
-    </button>
+    <!-- Back button + Refresh -->
+    <div class="top-btn-row">
+        <button class="portal-back-btn" onclick="window.location.href='ResidentPortal.html'">
+            &#8592; Back to Resident Portal
+        </button>
+        <button class="btn-refresh" id="btnRefresh" onclick="refreshAll()">&#8635; Refresh</button>
+    </div>
 
     <!-- Complaints section -->
     <div class="section-heading">My Complaints</div>
@@ -463,6 +501,21 @@ TECHNICAL:
         }
         loadComplaints();
         loadDisputes();
+    }
+
+    function refreshAll() {
+        const btn = document.getElementById('btnRefresh');
+        if (btn) { btn.disabled = true; btn.textContent = '\u21bb Refreshing...'; }
+        loadComplaints();
+        loadDisputes();
+        // Both loads run independently and re-render their own lists;
+        // this timeout just restores the button label -- it doesn't
+        // gate on either load actually finishing, matching the simple
+        // fire-and-forget btn-refresh pattern used elsewhere in the
+        // system (e.g. ComplaintsManager's Refresh button).
+        setTimeout(function () {
+            if (btn) { btn.disabled = false; btn.textContent = '\u21bb Refresh'; }
+        }, 1200);
     }
 
     // ── JSONP HELPER ──────────────────────────────────────────────────────
