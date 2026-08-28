@@ -6,13 +6,82 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintStatus.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.3.1
+  Frontend Version: V1.3.3
   Backend:          ComplaintsManager V2.3.35 / DisputesManager V3.0.0
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.3.3 (Aug 2026): CORRECTION -- V1.3.2 was built against project
+    knowledge's DisputesManager V3.1.3, which turned out to be stale
+    itself (Tony supplied the real current file, V3.2.4). DisputesManager
+    simplified further since V3.1.3: the whole "Referred to External
+    Body" live status and formal referral pathway was removed in its
+    own V3.2.0, in favour of the same two-terminal-status model
+    Complaints now uses (Closed - Resolved / Closed - Unresolved).
+    'Referred to External Body' can no longer be produced at all --
+    DisputesManager's own current statusCardClass/statusPillClass maps
+    don't carry an entry for it either, so V1.3.2's addition of it here
+    was itself already wrong the moment it shipped. Corrected: dropped
+    'Referred to External Body' from both maps to match DisputesManager
+    V3.2.4 exactly; added 'Closed - Unresolved' as its own current
+    terminal entry (previously only implied via the 'Closed - Referred'
+    legacy fallback). referralNarrative display rebuilt to mirror
+    DisputesManager's own current dual-purpose handling exactly
+    (buildActivityLogPane, V3.2.0): on legacy rows -- identified by
+    referralOrganisation being present, the same test DisputesManager
+    itself uses -- shown as "Referring Organisation (legacy)" /
+    "Reasons for Referral (legacy)" / "Closure Outcome (legacy)"; on
+    current rows, shown simply as "Closure Notes", matching
+    DisputesManager's own current label exactly rather than a label I
+    invented. Explanatory note reworded again to match DisputesManager's
+    actual current Close-as-Unresolved wording (VicAssist offered
+    automatically to both parties as "a suggested, not required, first
+    step") rather than the more general resident-initiated phrasing
+    V1.3.2 used, which -- while not incorrect -- didn't reflect what the
+    system actually now does automatically. Net effect of V1.3.2+V1.3.3
+    together: no false Board obligation (the original bug), correctly
+    reflecting the CURRENT two-status model rather than the
+    intermediate V3.1.3 one this file was mistakenly built against
+    first. .status-referred/.dpill-referred CSS rules now genuinely
+    unused (left in place, harmless, not worth a special-case removal).
+
+  V1.3.2 (Aug 2026): Ripple fix -- this file predated the Complaints/
+    Disputes compliance rectification pass and hadn't been touched
+    since. Real problems found, not just wording: (1) disputeCardClass/
+    disputePillClass were missing 'Acknowledged', 'Closed - Resolved',
+    and 'Closed - Referred' entirely -- any dispute in one of those
+    statuses fell through to the default 'status-open'/'dpill-open'
+    class, so a resident could see a CLOSED dispute displayed with Open
+    styling. Rebuilt both maps to match DisputesManager V3.1.3's actual
+    current status set exactly. Added the missing .status-acknowledged/
+    .dpill-acknowledged CSS (sky blue, matching DisputesManager's own
+    Acknowledged colour) -- didn't exist in this file at all before.
+    (2) 'Referred to VicAssist' status key renamed to 'Referred to
+    External Body' -- DisputesManager renamed the underlying status
+    value itself back in V3.0.18; this file was still keyed to the old
+    string, so it silently never matched any current referred dispute.
+    (3) d.vicAssistOutcome field read renamed to d.externalReferralOutcome
+    (matching DisputesManager V3.0.18's field rename), with a fallback
+    to the old field name kept for safety in case any legacy record
+    still carries it. Label updated 'VicAssist Outcome' -> 'Closure
+    Outcome' and 'VicAssist Referral -- Board Statement' -> 'Reasons for
+    Referral', both matching DisputesManager's current field labels
+    exactly. 'Referred to VicAssist' date field label -> 'Referred'.
+    (4) Explanatory note previously told residents "the Board is
+    obliged to refer [the dispute] to VicAssist" after 28 days -- this
+    is the same incorrect mandatory-referral assumption corrected
+    elsewhere this session (VicAssist conciliation is resident-
+    initiated and voluntary, not an Operator obligation, and 28 days is
+    a Board-adopted target, not a deadline that triggers automatic
+    referral). Reworded to state either party may contact VicAssist
+    directly at any time, with no false obligation or deadline framing.
+    Complaint-side status maps and terminology checked against current
+    ComplaintsManager and found already correct/harmless (legacy
+    Escalated entries kept intentionally, same as ComplaintsManager's
+    own legacy-record handling) -- no change needed there.
+
   V1.3.1 (Aug 2026): System-wide JSONP audit fix -- jsonp() deleted its
     callback on timeout/success/onerror instead of replacing it with a
     no-op, and had no settled-guard at all, so a late cold-start response
@@ -108,7 +177,7 @@ TECHNICAL:
         }
 
         .logo-image {
-            width: 90px; height: 90px;
+            width: 110px; height: 110px;
             border-radius: 50%; object-fit: cover; flex-shrink: 0;
         }
 
@@ -180,6 +249,7 @@ TECHNICAL:
         }
 
         .dispute-card.status-open          { border-left: 4px solid #2dd4bf; }
+        .dispute-card.status-acknowledged  { border-left: 4px solid #38bdf8; background: rgba(56,189,248,0.06); }
         .dispute-card.status-under-review  { border-left: 4px solid #fbbf24; background: rgba(251,191,36,0.08); }
         .dispute-card.status-resolved      { border-left: 4px solid #94a3b8; background: rgba(148,163,184,0.15); }
         .dispute-card.status-referred      { border-left: 4px solid #f97316; background: rgba(249,115,22,0.08); }
@@ -232,6 +302,7 @@ TECHNICAL:
 
         /* Dispute pills (teal context) */
         .dpill-open         { background: rgba(20,184,166,0.35);  color: #99f6e4; border: 1px solid rgba(45,212,191,0.6); }
+        .dpill-acknowledged { background: rgba(56,189,248,0.3);   color: #bae6fd; border: 1px solid rgba(56,189,248,0.6); }
         .dpill-under-review { background: rgba(234,179,8,0.3);    color: #fef08a; border: 1px solid rgba(234,179,8,0.6); }
         .dpill-resolved     { background: rgba(148,163,184,0.25); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
         .dpill-referred     { background: rgba(249,115,22,0.3);   color: #fed7aa; border: 1px solid rgba(249,115,22,0.6); }
@@ -581,7 +652,7 @@ TECHNICAL:
         html += detailField('Review by',   d.reviewDue ? fmtDateLong(new Date(d.reviewDue)) : '—');
         if (d.acknowledgedAt) html += detailField('Acknowledged', fmtDate(new Date(d.acknowledgedAt)));
         if (d.resolvedAt)     html += detailField('Resolved',     fmtDate(new Date(d.resolvedAt)));
-        if (d.referredAt)     html += detailField('Referred to VicAssist', fmtDate(new Date(d.referredAt)));
+        if (d.referredAt)     html += detailField('Referred', fmtDate(new Date(d.referredAt)));
         if (d.closedAt)       html += detailField('Closed',       fmtDate(new Date(d.closedAt)));
         html += '</div>';
 
@@ -601,28 +672,46 @@ TECHNICAL:
             '</div>';
         }
 
-        // Referral narrative (if referred to VicAssist)
-        if (d.referralNarrative) {
+        // V3.2.0 (DisputesManager): referralNarrative is dual-purpose --
+        // on legacy rows (identifiable by referralOrganisation being
+        // present) it's the old referral statement; on rows closed under
+        // the current model it's the optional closure notes attached to
+        // Closed - Unresolved. Mirrors DisputesManager's own
+        // buildActivityLogPane branching exactly, so residents see the
+        // same framing the Board sees.
+        if (d.referralNarrative && d.referralOrganisation) {
+            // Legacy pre-simplification referral record.
             html += '<div class="dispute-info-block">' +
-                '<div class="detail-label">VicAssist Referral — Board Statement</div>' +
+                '<div class="detail-label">Referring Organisation (legacy)</div>' +
+                '<div class="detail-value">' + escHtml(d.referralOrganisation === 'VicAssist' ? 'VicAssist Retirement Villages' : d.referralOrganisation) + '</div>' +
+            '</div>';
+            html += '<div class="dispute-info-block">' +
+                '<div class="detail-label">Reasons for Referral (legacy)</div>' +
+                '<div class="detail-value">' + escHtml(d.referralNarrative) + '</div>' +
+            '</div>';
+            if (d.externalReferralOutcome || d.vicAssistOutcome) {
+                html += '<div class="dispute-info-block">' +
+                    '<div class="detail-label">Closure Outcome (legacy)</div>' +
+                    '<div class="detail-value">' + escHtml(d.externalReferralOutcome || d.vicAssistOutcome) + '</div>' +
+                '</div>';
+            }
+        } else if (d.referralNarrative) {
+            html += '<div class="dispute-info-block">' +
+                '<div class="detail-label">Closure Notes</div>' +
                 '<div class="detail-value">' + escHtml(d.referralNarrative) + '</div>' +
             '</div>';
         }
 
-        // VicAssist outcome (if closed)
-        if (d.vicAssistOutcome) {
-            html += '<div class="dispute-info-block">' +
-                '<div class="detail-label">VicAssist Outcome</div>' +
-                '<div class="detail-value">' + escHtml(d.vicAssistOutcome) + '</div>' +
-            '</div>';
-        }
-
-        // Explanatory note
+        // Explanatory note -- matches DisputesManager's own current
+        // Close as Unresolved wording: VicAssist offered as a suggested
+        // first step, not a direction, sent automatically to both parties
+        // if the Board closes the matter as unresolved.
         html += '<div style="margin-top:12px;font-size:0.78rem;color:rgba(255,255,255,0.4);line-height:1.5;">' +
-            'The Board of Management manages this dispute on behalf of all parties. ' +
+            'The Board of Management manages this dispute on behalf of both parties. ' +
             'If you have questions, please contact the Board directly. ' +
-            'If the matter remains unresolved after 28 days, the Board is obliged to refer it to ' +
-            'VicAssist Retirement Villages for independent conciliation.' +
+            'If the Board is unable to resolve the matter internally, both parties receive ' +
+            'advice on their options, including VicAssist Retirement Villages as a suggested ' +
+            '(not required) first step for independent conciliation.' +
         '</div>';
 
         return html;
@@ -670,22 +759,28 @@ TECHNICAL:
 
     function disputeCardClass(status) {
         const map = {
-            'Open':                  'status-open',
-            'Under Review':          'status-under-review',
-            'Resolved':              'status-resolved',
-            'Referred to VicAssist': 'status-referred',
-            'Closed':                'status-closed'
+            'Open':                'status-open',
+            'Acknowledged':        'status-acknowledged',
+            'Under Review':        'status-under-review',
+            'Resolved':            'status-resolved',
+            'Closed - Resolved':   'status-closed',
+            'Closed - Unresolved': 'status-closed',
+            'Closed - Referred':   'status-closed',
+            'Closed':              'status-closed'
         };
         return map[status] || 'status-open';
     }
 
     function disputePillClass(status) {
         const map = {
-            'Open':                  'dpill-open',
-            'Under Review':          'dpill-under-review',
-            'Resolved':              'dpill-resolved',
-            'Referred to VicAssist': 'dpill-referred',
-            'Closed':                'dpill-closed'
+            'Open':                'dpill-open',
+            'Acknowledged':        'dpill-acknowledged',
+            'Under Review':        'dpill-under-review',
+            'Resolved':            'dpill-resolved',
+            'Closed - Resolved':   'dpill-closed',
+            'Closed - Unresolved': 'dpill-closed',
+            'Closed - Referred':   'dpill-closed',
+            'Closed':              'dpill-closed'
         };
         return map[status] || 'dpill-open';
     }
