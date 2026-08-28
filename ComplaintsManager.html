@@ -6,12 +6,38 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.4
+  Frontend Version: V3.1.6
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V3.1.6 (Aug 2026): FIX -- rebuilt the Acknowledged/Status Review/
+    Responded flow to fix a real, confusing bug Tony hit through his own
+    live testing: 'Status Review' was a persisted backend status that
+    only got set *after* deciding "not resolved," the reverse of what
+    the name suggested. Matches backend V3.1.6 exactly, mirroring
+    DisputesManager's Acknowledged branch precisely: doStatusReview (a
+    real, wrongly-timed backend call) replaced with
+    setComplaintPathChoice, purely local session state
+    (complaintPathChoice{}), never touching the backend by itself.
+    Neither "Resolved" nor "Not Resolved" persists anything any more --
+    only an actual save does. Legacy branch kept for any complaint
+    already sitting in the real Status Review status right now. Two
+    regressions caught and fixed before shipping, not after: (1) the
+    quick-path resolutionPathway tracking would have silently broken,
+    since it read a flag (c._quickResolved) that no local code sets any
+    more -- fixed to key off complaintPathChoice instead; (2) the
+    Initial Determination detail pane's visibility also depended on that
+    same now-always-false flag, meaning it would have shown
+    unconditionally even for genuinely quick-resolved, closed
+    complaints -- same class of bug already fixed twice elsewhere today,
+    caught here too, fixed to key off real persisted data (isClosed +
+    boardResponse) instead. Responded branch simplified -- quickPath
+    conditional hiding of "Close as Unresolved" removed, since Responded
+    is now only ever reached via a genuinely saved Initial Determination,
+    never the quick path.
 
   V3.1.4 (Aug 2026): Removed the 5 legacy statuses from the status
     filter dropdown entirely, per Tony's call -- keeping them, even
@@ -2103,6 +2129,12 @@ TECHNICAL:
 
     let allComplaints = [];
     const _eventCache = {};  // keyed by referenceNumber, stores loaded events array
+    // V3.1.6: local session state only, mirrors DisputesManager's
+    // disputePathChoice exactly -- never persisted, never touches the
+    // backend by itself. Tracks which sub-panel to show while status is
+    // genuinely still Acknowledged. See buildActionPanel's Acknowledged
+    // branch.
+    let complaintPathChoice = {};
 
     // V3.1.3: NON_RESOLUTION_FIXED_BLOCK and CLOSURE_RESOLVED_FIXED_BLOCK
     // duplicate constants removed -- Tony's call: the Board doesn't need
@@ -2562,10 +2594,18 @@ TECHNICAL:
         }
 
         // ── PANE 3: INITIAL DETERMINATION ────────────────────────────────
-        // Shown as soon as complaint is acknowledged, hidden on quick path.
-        // Reverted in V3.0.35 -- V3.0.28 had deferred this to Status Review
-        // but in practice left no time to compose when 72h deadline fired.
-        const showDetermPane = !c._quickResolved && !!c.acknowledgedAt;
+        // Shown as soon as complaint is acknowledged, hidden once a
+        // complaint has closed via the quick-resolve path with no
+        // Initial Determination ever written -- V3.1.6: previously keyed
+        // on c._quickResolved, a flag that only ever existed as transient
+        // per-session UI state (never persisted) and is gone entirely now
+        // that the quick path no longer fakes a local status. Using
+        // isClosed + boardResponse instead reflects the real, persisted
+        // outcome, correctly even after a page reload: still open (or
+        // about to write one) -> always show; closed with no
+        // determination ever written (genuine quick resolution) -> hide;
+        // closed with one written (standard path) -> show.
+        const showDetermPane = !(isClosed && !c.boardResponse);
         if (c.acknowledgedAt && showDetermPane) {
             let respBody = '';
             if (c.boardResponse) {
@@ -2794,24 +2834,89 @@ TECHNICAL:
             </div>`;
         }
 
-        // ── ACKNOWLEDGED: Status Review ───────────────────────────────
+        // ── ACKNOWLEDGED: Status Review decision point ─────────────────
+        // V3.1.6: rewritten to fix a real, confusing bug -- Status Review
+        // used to be a persisted backend status set only *after* deciding
+        // "not resolved", the reverse of what the name suggested. Now
+        // mirrors DisputesManager's Acknowledged branch exactly: purely
+        // local session state (complaintPathChoice{}) decides which panel
+        // to show; the real backend status stays Acknowledged throughout
+        // this whole window, and only changes once an actual action
+        // completes -- Responded once an Initial Determination is
+        // genuinely saved, or Closed - Resolved directly for the quick
+        // path. No fake intermediate status either way.
         if (normStatus === 'Acknowledged') {
+            const choice = complaintPathChoice[safeRef];
+
+            if (!choice) {
+                return `<div class="action-panel">
+                    <div class="action-panel-title">Next Step — Status Review</div>
+                    ${responseNotice}
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:10px 0 14px;">Review the current status of this complaint. If resolved within 72 hours, proceed directly to closure. If not yet resolved, open the Initial Determination panel.</p>
+                    <button class="btn-ack" onclick="setComplaintPathChoice('${safeRef}', 'resolved')">&#10003; Resolved — Proceed to Closure</button>
+                    <button class="btn-close-type" style="margin-left:8px;" onclick="setComplaintPathChoice('${safeRef}', 'not_resolved')">&#8594; Not Resolved — Open Initial Determination</button>
+                    <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;margin-top:10px;" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                </div>`;
+            }
+
+            // ── RESOLVED (quick path): single-step Resolve & Close ──────
+            // Mirrors DisputesManager's doResolveClose exactly -- one
+            // action, one notification, straight to Closed - Resolved.
+            // No separate confirm-closure step, no fake local status.
+            if (choice === 'resolved') {
+                return `<div class="action-panel">
+                    <div class="action-panel-title">Resolve &amp; Close Complaint</div>
+                    <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">This complaint was resolved within 72 hours. Complete the Closure Statement and click Save &amp; Send to close.</p>
+                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
+                    <textarea id="cr-summary-${safeRef}" style="min-height:150px;" placeholder="What was the complaint and what investigation was carried out?&#10;&#10;What findings were made?&#10;&#10;What actions were taken to resolve the matter?"></textarea>
+                    <div style="margin-top:12px;">
+                        <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                        <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Resolve &amp; Close &amp; Send to Resident</button>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="setComplaintPathChoice('${safeRef}', null); return false;">&larr; Back to Status Review</a>
+                    </div>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                    <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
+                </div>`;
+            }
+
+            // ── NOT RESOLVED: Initial Determination (still Acknowledged
+            // in the backend -- only changes to Responded once this is
+            // actually saved via sendInitialDetermination) ──────────────
             return `<div class="action-panel">
-                <div class="action-panel-title">Next Step — Status Review</div>
+                <div class="action-panel-title">Next Step — Initial Determination</div>
                 ${responseNotice}
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:10px 0 14px;">Review the current status of this complaint. If resolved within 72 hours, proceed directly to closure. If not yet resolved, open the Initial Determination panel.</p>
-                <button class="btn-ack" onclick="doStatusReview('${safeRef}', 'resolved')">&#10003; Resolved — Proceed to Closure</button>
-                <button class="btn-close-type" style="margin-left:8px;" onclick="doStatusReview('${safeRef}', 'not_resolved')">&#8594; Not Resolved — Open Initial Determination</button>
+                <div class="update-field" style="width:100%;margin-bottom:12px;">
+                    <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Initial Determination</label>
+                    <textarea id="response-${safeRef}" style="width:100%;min-height:150px;" placeholder="Why is this matter unresolved at this point?&#10;&#10;What actions are proposed or underway to resolve it?&#10;&#10;What is the expected timeframe for a further response?">${escHtml(c.boardResponse || '')}</textarea>
+                    <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; The Initial Determination must be issued within 72 hours of the complaint being lodged. Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to draft and revise. When ready, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> — this locks the Initial Determination permanently.</div>
+                </div>
+                <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;margin-top:10px;" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
+                <div style="margin-top:10px;">
+                    <a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="setComplaintPathChoice('${safeRef}', null); return false;">&larr; Back to Status Review</a>
+                </div>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
+                <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
             </div>`;
         }
 
-        // ── STATUS REVIEW (NOT RESOLVED): Initial Determination ─────────
+        // ── STATUS REVIEW: legacy only ──────────────────────────────────
+        // V3.1.6: no complaint can reach this status any more (see the
+        // backend's V3.1.6 transition-map note), but one may already be
+        // sitting here right now -- same Initial Determination panel as
+        // the 'not_resolved' choice above, just reached via the real
+        // persisted status instead of local choice. No "Back" link, since
+        // there's no local choice state to clear for a genuinely legacy
+        // record.
         if (normStatus === 'Status Review') {
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Initial Determination</div>
                 ${responseNotice}
+                <div class="response-notice notice-pending">&#9432; This complaint predates the Status Review simplification and is still sitting in that status. Completing the Initial Determination below will move it to Responded as normal.</div>
                 <div class="update-field" style="width:100%;margin-bottom:12px;">
                     <label for="response-${safeRef}" style="margin-bottom:6px;display:block;">Initial Determination</label>
                     <textarea id="response-${safeRef}" style="width:100%;min-height:150px;" placeholder="Why is this matter unresolved at this point?&#10;&#10;What actions are proposed or underway to resolve it?&#10;&#10;What is the expected timeframe for a further response?">${escHtml(c.boardResponse || '')}</textarea>
@@ -2826,16 +2931,17 @@ TECHNICAL:
         }
 
         // ── RESPONDED: Close This Complaint ───────────────────────────
+        // V3.1.6: quickPath flag removed -- Responded is now only ever
+        // reached via a genuinely saved Initial Determination (the quick-
+        // resolve path closes directly from Acknowledged and never
+        // touches Responded at all any more), so both closure options are
+        // always genuinely available here, unconditionally.
         if (normStatus === 'Responded') {
-            const quickPath = c._quickResolved || !c.boardResponse; // quick resolution = resolved within 72hrs
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
-                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">${quickPath
-                    ? 'This complaint was resolved within 72 hours. Complete the Closure Statement and click Save &amp; Send to close.'
-                    : 'Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.'
-                }</p>
+                <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.</p>
                 <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
-                ${quickPath ? '' : `<button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>`}
+                <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
@@ -3046,63 +3152,19 @@ TECHNICAL:
     // Confirmed genuinely orphaned before removal.
 
 
-    function doStatusReview(ref, path) {
+    // V3.1.6: doStatusReview replaced entirely -- both paths ('resolved'
+    // and 'not_resolved') are now purely local session state, matching
+    // DisputesManager's setDisputePathChoice-equivalent exactly. Neither
+    // choice touches the backend by itself any more; only an actual save
+    // (Save Only / Save & Send) does. This is what fixes the real
+    // confusion Tony hit: previously 'not_resolved' made a real backend
+    // call setting status to 'Status Review' -- after deciding, not
+    // before, the reverse of what the name implied. Now nothing is
+    // persisted until a genuine action completes.
+    function setComplaintPathChoice(ref, choice) {
+        complaintPathChoice[ref] = choice;
         const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
-        if (idx === -1) return;
-
-        if (path === 'resolved') {
-            // Quick resolution -- no backend call.
-            // Temporarily set status to Responded in local cache so the
-            // Responded action panel renders with closure buttons.
-            // The actual status in the sheet stays Acknowledged until
-            // Save & Send fires the closure (Acknowledged -> Closed - Resolved
-            // is handled directly by the closure path in updateComplaint).
-            if (!confirm('Proceed to closure?\n\nComplete the Closure Statement to close this complaint.')) return;
-            allComplaints[idx]._quickResolved = true;
-            allComplaints[idx].status = 'Responded';
-            rebuildAndRestoreCard(ref, idx);
-            setTimeout(function() { showClosurePanel(ref, 'resolved'); }, 100);
-            updateSummary(allComplaints);
-            return;
-        }
-
-        // Not Resolved -- set Status Review in backend
-        const userName   = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
-        const feedbackEl = document.getElementById('feedback-' + ref);
-        if (feedbackEl) { feedbackEl.textContent = 'Updating…'; feedbackEl.className = 'save-feedback'; }
-
-        const callbackName = 'statusReviewCallback_' + Date.now();
-        const url = CONFIG.BACKEND_URL
-            + '?action=updateComplaint'
-            + '&ref='      + encodeURIComponent(ref)
-            + '&status=Status%20Review'
-            + '&userName=' + encodeURIComponent(userName)
-            + '&callback=' + callbackName;
-
-        const timeout = setTimeout(function() {
-            cleanup(callbackName);
-            if (feedbackEl) { feedbackEl.textContent = 'Timed out.'; feedbackEl.className = 'save-feedback error'; }
-        }, 15000);
-
-        window[callbackName] = function(data) {
-            clearTimeout(timeout); cleanup(callbackName);
-            if (data.success) {
-                allComplaints[idx].status = 'Status Review';
-                if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
-                rebuildAndRestoreCard(ref, idx);
-                updateSummary(allComplaints);
-            } else {
-                if (feedbackEl) { feedbackEl.textContent = 'Error: ' + (data.error || 'Unknown.'); feedbackEl.className = 'save-feedback error'; }
-            }
-        };
-
-        const script = document.createElement('script');
-        script.onerror = function() {
-            cleanup(callbackName);
-            if (feedbackEl) { feedbackEl.textContent = 'Network error.'; feedbackEl.className = 'save-feedback error'; }
-        };
-        script.src = url;
-        document.head.appendChild(script);
+        if (idx !== -1) rebuildAndRestoreCard(ref, idx);
     }
 
     function showClosurePanel(ref, type) {
@@ -3235,7 +3297,14 @@ TECHNICAL:
         if (boardResponse)    url += '&boardResponse='   + encodeURIComponent(boardResponse);
         if (closureNarrative) url += '&closureNarrative=' + encodeURIComponent(closureNarrative);
         if (andSend)          url += '&andSend=true';
-        if (andSend && closureNarrative && current && current._quickResolved) url += '&quickResolved=true';
+        // V1.6: replaces the old current._quickResolved check, which
+        // relied on a flag doStatusReview used to set locally -- that
+        // function no longer exists (see its V3.1.6 replacement,
+        // setComplaintPathChoice). The quick path is now identified the
+        // same way the panel itself is chosen: complaintPathChoice[ref]
+        // === 'resolved' means the Board took the quick-resolve route
+        // from Status Review, straight from Acknowledged.
+        if (andSend && closureNarrative && complaintPathChoice[ref] === 'resolved') url += '&quickResolved=true';
         const saveUserName = (window._sessionUser && window._sessionUser.name) ? window._sessionUser.name : 'Admin';
         url += '&userName=' + encodeURIComponent(saveUserName);
 
