@@ -6,12 +6,32 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.7
+  Frontend Version: V3.1.8
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V3.1.8 (Aug 2026): FIX -- Close This Complaint panel gave no visible
+    feedback during Save & Send, tempting a re-click. Root cause: the
+    save-feedback/send-feedback spans sat at the TOP of the action panel
+    (right after Close as Resolved / Close as Unresolved / Print Record),
+    ABOVE the cr-panel/nrn-panel closure statement box that only opens
+    once a type is chosen. saveUpdate() was setting the "Saving..."
+    button state and the "Sending closure notice -- please wait..."
+    message correctly the whole time, but into an element scrolled out
+    of view above the textarea and Save & Send button the manager was
+    actually looking at -- easy to miss, especially since closure sends
+    can take up to 45s. Moved the feedback spans to sit immediately
+    after each panel's own Save Only / Save & Send buttons, split into
+    feedback-cr-/sendfeedback-cr- and feedback-nrn-/sendfeedback-nrn-
+    (cr-panel and nrn-panel both exist in the DOM at once -- only one
+    hidden -- so they can't share one id). saveUpdate()'s feedback
+    lookup extended with the same cr-/nrn- fallback chain the button
+    lookup already used. Matches the pattern the Initial Determination
+    panel already used correctly (feedback spans directly after its
+    Save/Send buttons) -- this panel was the outlier, not the standard.
 
   V3.1.7 (Aug 2026): Two real fixes from Tony's own screenshots, both
     genuine bugs, not cosmetic. (1) buildDetail's Response Due, Responded,
@@ -2995,8 +3015,6 @@ TECHNICAL:
                 <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
-                <span class="save-feedback" id="feedback-${safeRef}"></span>
-                <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
                 <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
                     <div class="nrn-panel-title" style="border-left-color:#10b981;">Closure Statement</div>
                     <div id="cr-saved-${safeRef}" style="display:none;margin-bottom:10px;">
@@ -3008,6 +3026,8 @@ TECHNICAL:
                     <div style="margin-top:12px;">
                         <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                         <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                        <span class="save-feedback" id="feedback-cr-${safeRef}"></span>
+                        <span class="send-feedback" id="sendfeedback-cr-${safeRef}"></span>
                     </div>
                 </div>
                 <div id="nrn-panel-${safeRef}" class="nrn-panel" style="display:none;">
@@ -3024,6 +3044,8 @@ TECHNICAL:
                     <div style="margin-top:12px;">
                         <button class="btn-save" id="save-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                         <button class="btn-send-resident" id="send-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                        <span class="save-feedback" id="feedback-nrn-${safeRef}"></span>
+                        <span class="send-feedback" id="sendfeedback-nrn-${safeRef}"></span>
                     </div>
                 </div>
             </div>`;
@@ -3250,8 +3272,8 @@ TECHNICAL:
             ? (document.getElementById('send-' + ref)    || document.getElementById('send-cr-' + ref)  || document.getElementById('send-nrn-' + ref))
             : (document.getElementById('save-' + ref)    || document.getElementById('save-cr-' + ref)  || document.getElementById('save-nrn-' + ref));
         const feedback = andSend
-            ? (document.getElementById('sendfeedback-' + ref) || document.getElementById('feedback-' + ref))
-            : (document.getElementById('feedback-' + ref));
+            ? (document.getElementById('sendfeedback-' + ref) || document.getElementById('sendfeedback-cr-' + ref) || document.getElementById('sendfeedback-nrn-' + ref) || document.getElementById('feedback-' + ref))
+            : (document.getElementById('feedback-' + ref) || document.getElementById('feedback-cr-' + ref) || document.getElementById('feedback-nrn-' + ref));
 
         // V3.1.0: Escalated confirmation block removed -- status can never
         // be 'Escalated' now, since the "Set to Escalated" dropdown that
