@@ -6,12 +6,38 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.12
+  Frontend Version: V3.1.13
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V3.1.13 (Aug 2026): FIX -- V3.1.12's single-button vertical-align
+    patch didn't hold (Tony confirmed deployed, still misaligned), and
+    Tony's follow-up screenshots showed the same pattern recurring in a
+    second, unrelated panel (Save Only / Save & Send to Resident) --
+    confirming this was never a one-button bug. Root cause: rows mixing
+    icon-glyph buttons (&#9993; &#8634; &#9878; &#128438;) against
+    plain-text buttons rely on each glyph's own font metrics for
+    baseline alignment, so per-button vertical-align/margin patches are
+    inherently fragile and keep reappearing wherever a new such row
+    exists. Replaced with a proper .btn-row utility class (flex,
+    align-items:center, flex-wrap:wrap, gap:8px) applied to all 7 rows
+    of this shape in the file: the quick-resolve panel, both Initial
+    Determination panels (live + legacy Status Review), the Close This
+    Complaint type-selector row (Close as Resolved / Unresolved /
+    Convert to Dispute / Print Record), and both closure statement
+    Save rows (cr-panel, nrn-panel), plus the Closed-status read-only
+    row (Print Record / Resend Closure Notice / Save). .btn-print-record's
+    own margin-top:12px (needed for its OTHER, standalone uses elsewhere
+    in the file) is overridden to 0 inline wherever it now sits inside a
+    .btn-row, since flex align-items:center considers each item's full
+    margin box -- an uncleared top margin would still throw off
+    centering even inside the flex row. V3.1.12's single-button
+    vertical-align/margin-left inline fix on the Closed panel's Save
+    button superseded by this -- removed, .btn-row's gap handles
+    spacing now.
 
   V3.1.12 (Aug 2026): FIX -- Closed-status panel's Save button sat
     visibly lower than Print Record and Resend Closure Notice
@@ -1770,6 +1796,20 @@ TECHNICAL:
         .btn-save:hover    { background: rgba(255,255,255,0.25); }
         .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
 
+        /* V3.1.13: robust vertical alignment for any row mixing buttons
+           with icon glyphs (✉, ↺, ⚖) against plain-text buttons. Icon
+           glyphs render with different font metrics than text, so
+           per-button vertical-align/margin patches are fragile and keep
+           reappearing (Tony flagged the same misalignment pattern in two
+           separate panels). flex + align-items:center sidesteps glyph
+           metrics entirely -- centers by actual box height, not baseline. */
+        .btn-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
         .save-feedback {
             display: inline-block;
             margin-left: 12px;
@@ -3016,7 +3056,7 @@ TECHNICAL:
                         <div class="nrn-panel-title" style="border-left-color:#10b981;">Closure Statement</div>
                         <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
                         <textarea id="cr-summary-${safeRef}" style="min-height:150px;" placeholder="What was the complaint and what investigation was carried out?&#10;&#10;What findings were made?&#10;&#10;What actions were taken to resolve the matter?"></textarea>
-                        <div style="margin-top:12px;">
+                        <div class="btn-row" style="margin-top:12px;">
                             <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                             <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Resolve &amp; Close &amp; Send to Resident</button>
                         </div>
@@ -3040,8 +3080,10 @@ TECHNICAL:
                     <textarea id="response-${safeRef}" style="width:100%;min-height:150px;" placeholder="Why is this matter unresolved at this point?&#10;&#10;What actions are proposed or underway to resolve it?&#10;&#10;What is the expected timeframe for a further response?">${escHtml(c.boardResponse || '')}</textarea>
                     <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; The Initial Determination must be issued within 72 hours of the complaint being lodged. Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to draft and revise. When ready, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> — this locks the Initial Determination permanently.</div>
                 </div>
-                <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                <div class="btn-row">
+                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                    <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                </div>
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;margin-top:10px;" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <div style="margin-top:10px;">
                     <a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="setComplaintPathChoice('${safeRef}', null); return false;">&larr; Back to Status Review</a>
@@ -3069,8 +3111,10 @@ TECHNICAL:
                     <textarea id="response-${safeRef}" style="width:100%;min-height:150px;" placeholder="Why is this matter unresolved at this point?&#10;&#10;What actions are proposed or underway to resolve it?&#10;&#10;What is the expected timeframe for a further response?">${escHtml(c.boardResponse || '')}</textarea>
                     <div style="font-size:0.78rem;color:rgba(255,255,255,0.5);font-style:italic;margin-top:6px;">&#9432; The Initial Determination must be issued within 72 hours of the complaint being lodged. Use <strong style="color:rgba(255,255,255,0.7);">Save Only</strong> to draft and revise. When ready, click <strong style="color:rgba(255,255,255,0.7);">Save &amp; Send to Resident</strong> — this locks the Initial Determination permanently.</div>
                 </div>
-                <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                <div class="btn-row">
+                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                    <button class="btn-send-resident" id="send-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
+                </div>
                 <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;margin-top:10px;" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
                 <span class="save-feedback" id="feedback-${safeRef}"></span>
                 <span class="send-feedback" id="sendfeedback-${safeRef}"></span>
@@ -3087,10 +3131,12 @@ TECHNICAL:
             return `<div class="action-panel">
                 <div class="action-panel-title">Next Step — Close This Complaint</div>
                 <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">Select the closure type, complete the narrative, then click Save &amp; Send to issue the closure notice to the resident and close the complaint.</p>
-                <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
-                <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
-                <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
-                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                <div class="btn-row">
+                    <button class="btn-close-type" id="close-resolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'resolved')">&#10003; Close as Resolved</button>
+                    <button class="btn-close-type" id="close-unresolved-btn-${safeRef}" onclick="showClosurePanel('${safeRef}', 'unresolved')">&#10005; Close as Unresolved</button>
+                    <button class="btn-close-type" style="border-color:rgba(13,148,136,0.6);color:#5eead4;" id="close-dispute-btn-${safeRef}" onclick="doConvertToDispute('${safeRef}')">&#9878; Convert to Dispute</button>
+                    <button class="btn-print-record" style="margin-top:0;" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                </div>
                 <div id="cr-panel-${safeRef}" class="nrn-panel" style="display:none;">
                     <div class="nrn-panel-title" style="border-left-color:#10b981;">Closure Statement</div>
                     <div id="cr-saved-${safeRef}" style="display:none;margin-bottom:10px;">
@@ -3099,7 +3145,7 @@ TECHNICAL:
                     </div>
                     <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
                     <textarea id="cr-summary-${safeRef}" style="min-height:150px;" placeholder="What was the complaint and what investigation was carried out?&#10;&#10;What findings were made?&#10;&#10;What actions were taken to resolve the matter?"></textarea>
-                    <div style="margin-top:12px;">
+                    <div class="btn-row" style="margin-top:12px;">
                         <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                         <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                         <span class="save-feedback" id="feedback-cr-${safeRef}"></span>
@@ -3117,7 +3163,7 @@ TECHNICAL:
                     <label for="nrn-actions-${safeRef}">What actions were taken during the process? <span style="color:#fca5a5">*</span></label>
                     <textarea id="nrn-actions-${safeRef}" style="min-height:120px;" placeholder="What steps did the Board take during this process?&#10;&#10;What further avenues are available to the resident?"></textarea>
                     <p style="font-size:0.82rem;color:rgba(255,255,255,0.55);margin:10px 0 0;">Standard advice on external options (VicAssist, CAV, legal advice) is included automatically.</p>
-                    <div style="margin-top:12px;">
+                    <div class="btn-row" style="margin-top:12px;">
                         <button class="btn-save" id="save-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
                         <button class="btn-send-resident" id="send-nrn-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Save &amp; Send to Resident</button>
                         <span class="save-feedback" id="feedback-nrn-${safeRef}"></span>
@@ -3147,11 +3193,13 @@ TECHNICAL:
         // ── CLOSED: Print + Resend + Escalate option ──────────────────
         if (isClosed) {
             return `<div class="action-panel">
-                <button class="btn-print-record" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
-                <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
-                <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
-                <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)" style="margin-left:8px;vertical-align:middle;">Save</button>
-                <span class="save-feedback" id="feedback-${safeRef}"></span>
+                <div class="btn-row">
+                    <button class="btn-print-record" style="margin-top:0;" onclick="showPrintDialog('${safeRef}')">&#128438; Print Record</button>
+                    <button class="btn-resend" id="resend-${safeRef}" onclick="resendNotice('${safeRef}')">&#8634; Resend Closure Notice</button>
+                    <span class="comment-feedback" id="resendfeedback-${safeRef}"></span>
+                    <button class="btn-save" id="save-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save</button>
+                    <span class="save-feedback" id="feedback-${safeRef}"></span>
+                </div>
             </div>`;
         }
 
