@@ -6,12 +6,29 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.10
+  Frontend Version: V3.1.11
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V3.1.11 (Aug 2026): Two unrelated small fixes. (1) Removed the
+    "Closed (Escalated) (legacy)" summary strip tile and its
+    countClosedEscalated counter entirely -- Tony confirmed the
+    escalated closure statuses are no longer valid at all after a
+    separate simplification pass (only Closed - Resolved and
+    Closed - Unresolved remain), not just unreachable going forward as
+    previously documented. isEscalatedClosedStatus()/
+    buildEscalatedFixedBlock() and the individual-record legacy display
+    left untouched -- still correct for viewing any old record that
+    happens to carry a legacy status, a separate concern from the
+    summary count tile. (2) "Back to Admin Portal" button (.portal-back-btn)
+    changed from centred (margin: 0 auto 20px auto) to left-aligned
+    (margin: 0 0 20px 0) per Tony's request. Note: this button still
+    uses the superseded .portal-back-btn class rather than the
+    standard .btn-back-glass (Design System V2.4, standardised V5.8) --
+    flagged, not changed, since only alignment was requested.
 
   V3.1.10 (Aug 2026): FIX -- the actual root cause of "Close as
     Unresolved gives no feedback," found via Tony's report that Close as
@@ -1340,7 +1357,7 @@ TECHNICAL:
             font-weight: 600;
             cursor: pointer;
             display: block;
-            margin: 0 auto 20px auto;
+            margin: 0 0 20px 0;
             transition: background 0.2s;
         }
 
@@ -2164,7 +2181,6 @@ TECHNICAL:
         <div class="summary-tile"><div class="tile-count" id="countAcknowledged">—</div><div class="tile-label">Acknowledged</div></div>
         <div class="summary-tile"><div class="tile-count" id="countResponded">—</div><div class="tile-label">Responded</div></div>
         <div class="summary-tile"><div class="tile-count" id="countClosed">—</div><div class="tile-label">Closed</div></div>
-        <div class="summary-tile"><div class="tile-count" id="countClosedEscalated">—</div><div class="tile-label">Closed (Escalated) (legacy)</div></div>
         <div class="summary-tile"><div class="tile-count overdue" id="countOverdue">—</div><div class="tile-label">Overdue</div></div>
     </div>
 
@@ -2375,21 +2391,27 @@ TECHNICAL:
         // read 0. counts.ClosurePending and counts.ClosedUnresolved were
         // already dead code before this pass (computed, never displayed
         // -- no matching tile in the HTML) -- removed rather than kept as
-        // unused weight. ClosedEscalated kept -- genuine legacy-data tile.
-        const counts = { Open: 0, Acknowledged: 0, Responded: 0, Closed: 0, ClosedEscalated: 0, overdue: 0 };
+        // unused weight.
+        // V3.1.10: countClosedEscalated tile removed too -- Tony confirmed
+        // escalated closure statuses are no longer valid at all following
+        // a significant simplification pass (only Closed - Resolved and
+        // Closed - Unresolved remain), not just unreachable going forward.
+        // isEscalatedClosedStatus()/buildEscalatedFixedBlock() left intact
+        // below -- still used to correctly DISPLAY any old individual
+        // record that happens to carry a legacy escalated status, which is
+        // a separate concern from whether the summary strip should show a
+        // dedicated count tile for them.
+        const counts = { Open: 0, Acknowledged: 0, Responded: 0, Closed: 0, overdue: 0 };
         complaints.forEach(function (c) {
             const s = normaliseStatus(c.status);
             if (s === 'Open' || s === 'Acknowledged' || s === 'Responded') counts[s]++;
             if (s === 'Closed - Resolved' || s === 'Closed - Partially Resolved' || s === 'Closed - Unresolved' || s === 'Closed - Converted to Dispute' || s === 'Closed') counts.Closed++;
-            if (s === 'Closed - Resolved (Escalated)' || s === 'Closed - Unresolved (Escalated)'
-                || s === 'Closed - Unresolved (External Resolution Failed)') counts.ClosedEscalated++;
             if (isOverdue(c)) counts.overdue++;
         });
         document.getElementById('countOpen').textContent            = counts.Open;
         document.getElementById('countAcknowledged').textContent    = counts.Acknowledged;
         document.getElementById('countResponded').textContent       = counts.Responded;
         document.getElementById('countClosed').textContent          = counts.Closed;
-        document.getElementById('countClosedEscalated').textContent = counts.ClosedEscalated;
         document.getElementById('countOverdue').textContent         = counts.overdue;
         document.getElementById('summaryStrip').style.display       = 'flex';
     }
