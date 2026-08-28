@@ -6,12 +6,35 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.6
+  Frontend Version: V3.1.7
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+
+  V3.1.7 (Aug 2026): Two real fixes from Tony's own screenshots, both
+    genuine bugs, not cosmetic. (1) buildDetail's Response Due, Responded,
+    Escalated, and Closed fields were all given truthy '—' fallbacks that
+    fields.filter(f => f.value) could never drop -- they showed
+    unconditionally, even for a brand-new Open complaint. Exactly Tony's
+    original report ("noticed in Complaint Detail Escalated which is now
+    invalid. Also Closed shouldn't be showing at this stage"), which I
+    should have caught during the ZoneRepComplaints.html fix for the
+    identical bug pattern earlier today, not missed until now. Fixed the
+    same way: Response Due and Responded blank once genuinely closed
+    (still show '—' while pending), Escalated and Closed have no
+    fallback at all any more -- legacy-only fields, only shown for a
+    genuine old record. Also fixed the Resolution Pathway label, which
+    still referenced "Status Review" after that status was removed in
+    V3.1.6. (2) The new "Resolve & Close Complaint" panel (V3.1.6) had a
+    real layout bug: its label and textarea were bare, not wrapped in
+    either .nrn-panel or .update-field, both of which carry the CSS
+    (display: block / flex-direction: column) that correctly stacks
+    label above textarea -- without one, the label fell back to
+    unstyled default positioning. Wrapped in .nrn-panel, matching the
+    exact proven structure the original "Close as Resolved" panel
+    (still used from Responded) has always used.
 
   V3.1.6 (Aug 2026): FIX -- rebuilt the Acknowledged/Status Review/
     Responded flow to fix a real, confusing bug Tony hit through his own
@@ -2429,6 +2452,11 @@ TECHNICAL:
     }
 
     function buildDetail(c) {
+        // V3.1.7: recomputed locally -- buildDetail is a standalone
+        // function, doesn't share buildAccordion's isClosed variable.
+        const normSt   = normaliseStatus(c.status);
+        const isClosed = isClosedStatus(normSt);
+
         const fields = [
             { label: 'Resident',           value: c.residentName,     full: false },
             { label: 'Unit',               value: c.unitNumber,       full: false },
@@ -2437,11 +2465,31 @@ TECHNICAL:
             { label: 'Category',           value: c.category,         full: false },
             { label: 'Submitted',          value: formatDate(c.submittedAt), full: false },
             { label: 'Acknowledged',       value: c.acknowledgedAt ? formatDate(c.acknowledgedAt) : 'Not yet acknowledged', full: false },
-            { label: 'Response Due',       value: c.responseDue ? formatDate(c.responseDue) : '—', full: false },
-            { label: 'Responded',          value: c.respondedAt  ? formatDate(c.respondedAt)  : '—', full: false },
-            { label: 'Escalated',          value: c.escalatedAt  ? formatDate(c.escalatedAt)  : '—', full: false },
-            { label: 'Closed',             value: c.closedAt     ? formatDate(c.closedAt)     : '—', full: false },
-            { label: 'Resolution Pathway', value: c.resolutionPathway === 'quick' ? 'Resolved within 72 hours' : c.resolutionPathway === 'standard' ? 'Not resolved at Status Review — Initial Determination issued' : '', full: true },
+            // V3.1.7: genuine bug, confirmed by Tony's own testing --
+            // Response Due, Responded, Escalated, and Closed were all
+            // given truthy '—' fallbacks that fields.filter(f => f.value)
+            // below could never drop, so they showed unconditionally even
+            // for a brand-new Open complaint. Same class of bug already
+            // fixed in ZoneRepComplaints.html -- should have been checked
+            // here at the same time, missed until Tony's screenshot.
+            // Response Due: meaningful only while genuinely pending;
+            // hidden once closed, same treatment as the equivalent field
+            // in ZoneRepComplaints.
+            { label: 'Response Due',       value: isClosed ? '' : (c.responseDue ? formatDate(c.responseDue) : '—'), full: false },
+            // Responded: shows the real date if an Initial Determination
+            // was genuinely saved; blank (not '—') once closed without
+            // one (quick-resolve path); '—' while still genuinely pending.
+            { label: 'Responded',          value: c.respondedAt ? formatDate(c.respondedAt) : (isClosed ? '' : '—'), full: false },
+            // Escalated: legacy-only field now -- 'Escalated' status was
+            // removed entirely (V3.1.0). No fallback at all; only shows
+            // for a genuine old record that actually has escalatedAt set.
+            { label: 'Escalated',          value: c.escalatedAt ? formatDate(c.escalatedAt) : '', full: false },
+            // Closed: same fix -- no fallback, only shows once genuinely
+            // closed.
+            { label: 'Closed',             value: c.closedAt ? formatDate(c.closedAt) : '', full: false },
+            // V3.1.7: "at Status Review" removed -- that status no longer
+            // exists (V3.1.6); this label predated that fix.
+            { label: 'Resolution Pathway', value: c.resolutionPathway === 'quick' ? 'Resolved within 72 hours' : c.resolutionPathway === 'standard' ? 'Not resolved within 72 hours — Initial Determination issued' : '', full: true },
             { label: 'Description',        value: c.description,      full: true },
             { label: 'Desired Outcome',    value: c.desiredOutcome,   full: true },
             { label: 'Location',           value: c.location,         full: false },
@@ -2868,11 +2916,14 @@ TECHNICAL:
                 return `<div class="action-panel">
                     <div class="action-panel-title">Resolve &amp; Close Complaint</div>
                     <p style="font-size:0.85rem;color:rgba(255,255,255,0.7);margin:0 0 14px;">This complaint was resolved within 72 hours. Complete the Closure Statement and click Save &amp; Send to close.</p>
-                    <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
-                    <textarea id="cr-summary-${safeRef}" style="min-height:150px;" placeholder="What was the complaint and what investigation was carried out?&#10;&#10;What findings were made?&#10;&#10;What actions were taken to resolve the matter?"></textarea>
-                    <div style="margin-top:12px;">
-                        <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
-                        <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Resolve &amp; Close &amp; Send to Resident</button>
+                    <div class="nrn-panel">
+                        <div class="nrn-panel-title" style="border-left-color:#10b981;">Closure Statement</div>
+                        <label for="cr-summary-${safeRef}">Summary of how this matter was resolved <span style="color:#fca5a5">*</span></label>
+                        <textarea id="cr-summary-${safeRef}" style="min-height:150px;" placeholder="What was the complaint and what investigation was carried out?&#10;&#10;What findings were made?&#10;&#10;What actions were taken to resolve the matter?"></textarea>
+                        <div style="margin-top:12px;">
+                            <button class="btn-save" id="save-cr-${safeRef}" onclick="saveUpdate('${safeRef}', false)">Save Only</button>
+                            <button class="btn-send-resident" id="send-cr-${safeRef}" onclick="saveUpdate('${safeRef}', true)">&#9993; Resolve &amp; Close &amp; Send to Resident</button>
+                        </div>
                     </div>
                     <div style="margin-top:10px;">
                         <a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="setComplaintPathChoice('${safeRef}', null); return false;">&larr; Back to Status Review</a>
