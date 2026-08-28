@@ -6,32 +6,70 @@ DOCUMENT INFORMATION:
   File Name:        ComplaintsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V3.1.8
+  Frontend Version: V3.1.10
   Status:           PRODUCTION
   Created:          May 2026
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
 
-  V3.1.8 (Aug 2026): FIX -- Close This Complaint panel gave no visible
-    feedback during Save & Send, tempting a re-click. Root cause: the
-    save-feedback/send-feedback spans sat at the TOP of the action panel
-    (right after Close as Resolved / Close as Unresolved / Print Record),
-    ABOVE the cr-panel/nrn-panel closure statement box that only opens
-    once a type is chosen. saveUpdate() was setting the "Saving..."
-    button state and the "Sending closure notice -- please wait..."
-    message correctly the whole time, but into an element scrolled out
-    of view above the textarea and Save & Send button the manager was
-    actually looking at -- easy to miss, especially since closure sends
-    can take up to 45s. Moved the feedback spans to sit immediately
-    after each panel's own Save Only / Save & Send buttons, split into
-    feedback-cr-/sendfeedback-cr- and feedback-nrn-/sendfeedback-nrn-
-    (cr-panel and nrn-panel both exist in the DOM at once -- only one
-    hidden -- so they can't share one id). saveUpdate()'s feedback
-    lookup extended with the same cr-/nrn- fallback chain the button
-    lookup already used. Matches the pattern the Initial Determination
-    panel already used correctly (feedback spans directly after its
-    Save/Send buttons) -- this panel was the outlier, not the standard.
+  V3.1.10 (Aug 2026): FIX -- the actual root cause of "Close as
+    Unresolved gives no feedback," found via Tony's report that Close as
+    Resolved worked perfectly fine while Unresolved never did. cr-panel
+    and nrn-panel both always exist in the DOM at once (only one hidden
+    via style.display), but saveUpdate()'s btn/feedback lookups were a
+    blind OR-chain checking the cr-suffixed id before the nrn-suffixed
+    one, unconditionally -- document.getElementById doesn't care about
+    visibility, so on the Unresolved path it silently found and updated
+    the HIDDEN Resolved panel's button/feedback span every time, while
+    the real, visible Unresolved button the manager had just clicked sat
+    there looking completely untouched. This is why Resolved "just
+    worked" (the priority order happened to match) and Unresolved never
+    stood a chance (it never matched, regardless of the V3.1.8/V3.1.9
+    positioning and timing work, which were both real improvements but
+    not the actual cause). This bug predates V3.1.8 -- the button-lookup
+    version of this pattern already existed in earlier versions; V3.1.8
+    only extended the same flawed pattern to the new feedback spans.
+    Fixed by computing crVisible/nrnVisible BEFORE resolving btn/
+    feedback (moved up from further down the function) and branching
+    the lookup priority on which panel is actually visible, rather than
+    a fixed cr-first order. Confirmed via a temporary debug alert()
+    reporting btn/feedback null-ness directly -- removed again once the
+    real cause was found; not part of this file.
+
+  V3.1.9 (Aug 2026): FIX -- Closure Save & Send genuinely gave no
+    perceptible feedback, confirmed by Tony via a temporary debug alert()
+    that DID fire, proving the button-disable/feedback-set code was
+    running correctly the whole time (V3.1.8's positioning fix wasn't
+    wrong, just not the actual cause). Real cause: on success, the
+    callback set the "Closure notice sent" message on the CURRENT
+    panel, then in the same synchronous tick called
+    rebuildAndRestoreCard(), which replaces the whole card's outerHTML
+    and destroys that panel -- the browser never gets a chance to paint
+    the message before it's gone, even though a copy of the text is
+    (correctly) carried into the new read-only Closed panel afterward.
+    Net effect: an instant jump from "just clicked" to "already Closed",
+    with no confirmation moment in between, regardless of how fast or
+    slow the actual server round trip is. Fixed by holding the rebuild
+    back 1.4s for the closure-success path specifically: button now
+    shows a persistent disabled '\u2713 Closure notice sent' state and the
+    feedback span shows '\u2713 Closure notice sent — complaint closed.' in
+    place, on the panel the manager is actually looking at, before the
+    swap to the read-only Closed view happens. All other save paths
+    (drafts, Initial Determination, standard updates) untouched --
+    rebuild still fires immediately for those, unchanged from V3.1.8.
+
+  V3.1.8 (Aug 2026): FIX -- Close This Complaint panel's save-feedback/
+    send-feedback spans sat at the TOP of the action panel, above the
+    cr-panel/nrn-panel closure statement box that only opens once a
+    type is chosen -- moved to sit immediately after each panel's own
+    Save Only / Save & Send buttons instead, split into feedback-cr-/
+    sendfeedback-cr- and feedback-nrn-/sendfeedback-nrn- IDs since both
+    panels exist in the DOM at once (only one hidden). saveUpdate()'s
+    feedback lookup extended with the same cr-/nrn- fallback chain the
+    button lookup already used. This was a genuine positioning issue
+    and remains fixed, but testing (V3.1.9 above) showed it wasn't the
+    actual cause of "no feedback" for closures -- see V3.1.9.
 
   V3.1.7 (Aug 2026): Two real fixes from Tony's own screenshots, both
     genuine bugs, not cosmetic. (1) buildDetail's Response Due, Responded,
@@ -3268,12 +3306,36 @@ TECHNICAL:
         const current        = allComplaints.find(c => c.referenceNumber === ref);
         const rawResponse    = document.getElementById('response-' + ref) ? document.getElementById('response-' + ref).value.trim() : '';
         const boardResponse  = rawResponse;
-        const btn      = andSend
-            ? (document.getElementById('send-' + ref)    || document.getElementById('send-cr-' + ref)  || document.getElementById('send-nrn-' + ref))
-            : (document.getElementById('save-' + ref)    || document.getElementById('save-cr-' + ref)  || document.getElementById('save-nrn-' + ref));
+
+        // V3.1.10: cr-panel and nrn-panel both always exist in the DOM at
+        // once (only one hidden via style.display) -- so this MUST be
+        // checked before resolving btn/feedback below. A blind OR-chain
+        // (send-cr- before send-nrn-) always finds the cr button/feedback
+        // first regardless of which panel is actually visible, silently
+        // updating a hidden element on the Unresolved path while the
+        // manager watches the real, visible button do nothing. This is
+        // why Close as Resolved always "worked" and Close as Unresolved
+        // never did -- not a coincidence, the lookup order itself favoured
+        // cr every time.
+        const crPanelEl  = document.getElementById('cr-panel-'  + ref);
+        const nrnPanelEl = document.getElementById('nrn-panel-' + ref);
+        const crVisible  = crPanelEl  && crPanelEl.style.display  !== 'none';
+        const nrnVisible = nrnPanelEl && nrnPanelEl.style.display !== 'none';
+
+        const btn = andSend
+            ? (nrnVisible
+                ? (document.getElementById('send-nrn-' + ref) || document.getElementById('send-' + ref) || document.getElementById('send-cr-' + ref))
+                : (document.getElementById('send-' + ref)     || document.getElementById('send-cr-' + ref) || document.getElementById('send-nrn-' + ref)))
+            : (nrnVisible
+                ? (document.getElementById('save-nrn-' + ref) || document.getElementById('save-' + ref) || document.getElementById('save-cr-' + ref))
+                : (document.getElementById('save-' + ref)     || document.getElementById('save-cr-' + ref) || document.getElementById('save-nrn-' + ref)));
         const feedback = andSend
-            ? (document.getElementById('sendfeedback-' + ref) || document.getElementById('sendfeedback-cr-' + ref) || document.getElementById('sendfeedback-nrn-' + ref) || document.getElementById('feedback-' + ref))
-            : (document.getElementById('feedback-' + ref) || document.getElementById('feedback-cr-' + ref) || document.getElementById('feedback-nrn-' + ref));
+            ? (nrnVisible
+                ? (document.getElementById('sendfeedback-nrn-' + ref) || document.getElementById('sendfeedback-' + ref) || document.getElementById('sendfeedback-cr-' + ref) || document.getElementById('feedback-' + ref))
+                : (document.getElementById('sendfeedback-' + ref)     || document.getElementById('sendfeedback-cr-' + ref) || document.getElementById('sendfeedback-nrn-' + ref) || document.getElementById('feedback-' + ref)))
+            : (nrnVisible
+                ? (document.getElementById('feedback-nrn-' + ref) || document.getElementById('feedback-' + ref) || document.getElementById('feedback-cr-' + ref))
+                : (document.getElementById('feedback-' + ref)     || document.getElementById('feedback-cr-' + ref) || document.getElementById('feedback-nrn-' + ref)));
 
         // V3.1.0: Escalated confirmation block removed -- status can never
         // be 'Escalated' now, since the "Set to Escalated" dropdown that
@@ -3286,11 +3348,7 @@ TECHNICAL:
 
         var closureNarrative = '';
 
-        // Detect which panel is visible
-        const crPanelEl  = document.getElementById('cr-panel-'  + ref);
-        const nrnPanelEl = document.getElementById('nrn-panel-' + ref);
-        const crVisible  = crPanelEl  && crPanelEl.style.display  !== 'none';
-        const nrnVisible = nrnPanelEl && nrnPanelEl.style.display !== 'none';
+        // crVisible/nrnVisible computed above, before btn/feedback lookup.
 
         // V3.1.2: partially-resolved path removed -- 'Closed - Partially
         // Resolved' no longer exists as a status. See ComplaintsManager
@@ -3351,7 +3409,6 @@ TECHNICAL:
         }
 
         if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-        alert('DEBUG: reached the point where Saving/Sending feedback should show. If you see this, the code IS running normally.');
         // Show contextual sending message for actions that trigger notifications
         if (andSend && closureNarrative) {
             setFeedback(feedback, 'Sending closure notice — please wait...', '');
@@ -3392,7 +3449,12 @@ TECHNICAL:
 
         window[callbackName] = function (data) {
             clearTimeout(timeout); cleanup(callbackName);
-            if (btn) { btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only'; }
+            // Closure success gets its own held confirmation state below --
+            // don't immediately flip the button back to its normal label,
+            // or the "please wait" -> normal transition happens too fast to
+            // register, same problem this whole fix addresses.
+            const isClosureCallback = andSend && data.success && data.finalStatus;
+            if (btn && !isClosureCallback) { btn.disabled = false; btn.textContent = andSend ? '\u2709 Save & Send to Resident' : 'Save Only'; }
 
             if (data.success) {
                 const idx = allComplaints.findIndex(c => c.referenceNumber === ref);
@@ -3410,7 +3472,8 @@ TECHNICAL:
                         if (data.activityLog) allComplaints[idx].activityLog = data.activityLog;
                         // Clear quick resolved flag on closure
                         if (window._quickResolved) delete window._quickResolved[ref];
-                        setFeedback(feedback, 'Closure notice sent — complaint closed.', 'success');
+                        if (btn) { btn.textContent = '\u2713 Closure notice sent'; }
+                        setFeedback(feedback, '\u2713 Closure notice sent — complaint closed.', 'success');
 
                     // Closure narrative Save Only -- update saved div in-place, no card re-render
                     } else if (!andSend && closureNarrative) {
@@ -3449,12 +3512,28 @@ TECHNICAL:
                         const cardEl = document.getElementById('card-' + ref);
                         // Skip rebuild here if doSendToResident is about to fire -- it owns the rebuild
                         const sendToResidentFiring = andSend && boardResponse && !closureNarrative;
+                        // Closure Save & Send: hold the success message on THIS panel,
+                        // where the manager is actually looking, for a beat before the
+                        // panel transforms into the read-only Closed state. Without this,
+                        // the feedback text and the outerHTML swap happen in the same
+                        // synchronous tick, so nothing is ever perceived between clicking
+                        // Save & Send and the status pill already reading Closed -- even
+                        // though the message technically does get carried into the new
+                        // panel afterward.
+                        const isClosureSuccess = andSend && data.finalStatus;
                         if (cardEl && !sendToResidentFiring) {
-                            rebuildAndRestoreCard(ref, idx);
-                            const newFeedback = document.getElementById('feedback-' + ref);
-                            const newStatusEl = document.getElementById('status-'   + ref);
-                            if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
-                            if (newStatusEl) newStatusEl.value = '';
+                            const doRebuild = function () {
+                                rebuildAndRestoreCard(ref, idx);
+                                const newFeedback = document.getElementById('feedback-' + ref);
+                                const newStatusEl = document.getElementById('status-'   + ref);
+                                if (newFeedback) setFeedback(newFeedback, feedback.textContent, feedback.className.includes('success') ? 'success' : 'error');
+                                if (newStatusEl) newStatusEl.value = '';
+                            };
+                            if (isClosureSuccess) {
+                                setTimeout(doRebuild, 1400);
+                            } else {
+                                doRebuild();
+                            }
                         }
                     }
                     // If Board Response Save & Send -- trigger send
