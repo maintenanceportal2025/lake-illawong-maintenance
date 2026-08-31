@@ -7,13 +7,27 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.4
+  Frontend Version: V1.2.5
   Backend:          MaintenancePortal V1.5.js
   Status:           PRODUCTION
   Created:          September 2025
   Last Modified:    Aug 2026
 
 VERSION HISTORY:
+  V1.2.5 (Aug 2026): Persistent session, matching FieldOperationsPortal
+                     V2.1.2 -- this file previously read/wrote the
+                     portalFieldOpsVerified session keys directly against
+                     sessionStorage (session guard, loggedInUser lookups,
+                     logout), bypassing VerificationModal entirely. Now
+                     includes VerificationModal_V1_0.js and calls
+                     VerificationModal.init() with the same storageType:
+                     'local', expiryDays: 30 config as the portal, so the
+                     session (and its 30-day expiry) is honoured
+                     consistently whether this module is opened via the
+                     portal or a direct bookmark. Session guard, both
+                     loggedInUser lookups, and logout() updated to go via
+                     VerificationModal's API instead of raw sessionStorage
+                     calls. No other functional change.
   V1.2.4 (Aug 2026): System-wide JSONP audit fix -- makeRequest() deleted
                      its callback on success/timeout/onerror instead of
                      replacing it with a no-op, with no settled-guard, so
@@ -50,9 +64,11 @@ V1.2.2 (Mar 2026): User accountability — logged-in user name now written
                      sessionStorage key set by VerificationModal on login
 
 AUTHENTICATION:
-  Session guard checks sessionStorage for portalFieldOpsVerified key.
-  Set by VerificationModal_V1_0.js on FieldOperationsPortal.html.
-  Direct URL access redirects to FieldOperationsPortal.html.
+  Session guard via VerificationModal.init() (portalFieldOpsVerified key,
+  storageType 'local', 30-day expiry -- V1.2.5). Session set on login at
+  FieldOperationsPortal.html or, since V1.2.5, this module directly.
+  Direct URL access without a valid session redirects to
+  FieldOperationsPortal.html.
 
 SYSTEM CONNECTIONS:
   Backend API:      MaintenancePortal V1.5.js
@@ -1258,6 +1274,7 @@ Padding: 10px;
 }
         
     </style>
+    <script src="VerificationModal_V1_0.js"></script>
 </head>
 <body style="display:none">
    
@@ -1569,11 +1586,21 @@ Padding: 10px;
 
     <script>
 
- // SESSION GUARD
-            if (!sessionStorage.getItem('portalFieldOpsVerified')) {
+ // SESSION GUARD -- via VerificationModal (V1.2.5): matches
+ // FieldOperationsPortal's storageType:'local', expiryDays:30 config so
+ // this module honours the same persistent, 30-day-expiring session
+ // whether reached via the portal or a direct bookmark.
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'Maintenance Module',
+                sessionKey: 'portalFieldOpsVerified',
+                storageType: 'local',
+                expiryDays: 30,
+                onSuccess: function() {
+                    document.body.style.display = '';
+                }
+            });
+            if (!alreadyVerified) {
                 window.location.href = 'FieldOperationsPortal.html';
-				} else {
-            document.body.style.display = '';
             }
 		
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxtdMfxB5b1F5K401X0lJxnK2-DGkiG2zYZNukJvAHx0K1AqgPTMIdiunwS3etm0FOL/exec';
@@ -2850,7 +2877,7 @@ async function saveDetailsFromPage(e) {
         const statusValue = document.getElementById('detailStatus').value;
         
         // Build base update data (without completion date)
-        const loggedInUser = sessionStorage.getItem('portalFieldOpsVerified_name') || 'SYSTEM';
+        const loggedInUser = (VerificationModal.getUserData() && VerificationModal.getUserData().name) || 'SYSTEM';
 		const updateData = {
             internalId: currentProblem.internalId,
             unitNumber: document.getElementById('detailUnitNumber').value,
@@ -2998,7 +3025,7 @@ async function reopenProblem() {
     
     try {
         // Prepare update data
-        const loggedInUser = sessionStorage.getItem('portalFieldOpsVerified_name') || 'SYSTEM';
+        const loggedInUser = (VerificationModal.getUserData() && VerificationModal.getUserData().name) || 'SYSTEM';
 		const updateData = {
             internalId: currentProblem.internalId,
             unitNumber: currentProblem.unitNumber,
@@ -3177,10 +3204,7 @@ function showRetryNotification(attempt, maxAttempts) {
         
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
-                sessionStorage.removeItem('portalFieldOpsVerified');
-                sessionStorage.removeItem('portalFieldOpsVerified_name');
-                sessionStorage.removeItem('portalFieldOpsVerified_unit');
-                sessionStorage.removeItem('portalFieldOpsVerified_roles');
+                VerificationModal.clearVerification();
                 window.location.href = 'FieldOperationsPortal.html';
             }
         }
