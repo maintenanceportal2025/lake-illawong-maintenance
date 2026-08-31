@@ -12,6 +12,17 @@
  * file is shared across ~15+ modules by filename, so version-in-filename
  * doesn't apply here the way it does elsewhere. Track what changed by
  * date instead.):
+ * - Aug 2026: Optional persistent session support added -- new config
+ *   options storageType ('session' [default, unchanged] or 'local') and
+ *   expiryDays (only meaningful when storageType is 'local'; omit/null
+ *   for no expiry). When storageType is 'local', the verified session
+ *   survives sessionStorage being cleared by iOS backgrounding a tab
+ *   (root cause of Field Ops staff being repeatedly dropped back to the
+ *   OTP prompt during the working day). Every existing caller is
+ *   unaffected -- default storageType remains 'session', identical
+ *   behaviour to before this change. First (only, at introduction)
+ *   consumer: FieldOperationsPortal.html / MaintenanceModule.html,
+ *   storageType 'local', expiryDays 30.
  * - Aug 2026: System-wide JSONP audit fix -- _callAPI() had the same
  *   compounding bug found across most of the system: weak
  *   `if (window[cb])` timeout check (not a true settled-guard), so
@@ -61,6 +72,8 @@ const VerificationModal = (function() {
         moduleIcon: '🔐',
         sessionKey: 'verified',
         useSessionStorage: true,
+        storageType: 'session', // 'session' (default, unchanged) or 'local' for a persistent session
+        expiryDays: null,       // only used when storageType is 'local'; null/omitted = no expiry
         smsOnly: false,
         onSuccess: null
     };
@@ -74,6 +87,13 @@ const VerificationModal = (function() {
     let modalInjected = false;
     let expiryTimerInterval = null;
     let resendTimerInterval = null;
+
+    // Which Web Storage object backs this session -- 'local' persists across
+    // sessionStorage being cleared (e.g. iOS reclaiming a backgrounded tab);
+    // 'session' (default) is the original, unchanged behaviour.
+    function _getStore() {
+        return config.storageType === 'local' ? localStorage : sessionStorage;
+    }
     
     // Initialize
     function init(options) {
@@ -126,18 +146,32 @@ const VerificationModal = (function() {
     // Check if verified
     function isVerified() {
         if (!config.useSessionStorage) return false;
-        return sessionStorage.getItem(config.sessionKey) === 'true';
+        const store = _getStore();
+
+        if (store.getItem(config.sessionKey) !== 'true') return false;
+
+        // Persistent sessions with an expiry: check it, and clear+fail if past.
+        if (config.storageType === 'local' && config.expiryDays) {
+            const expiresAt = parseInt(store.getItem(config.sessionKey + '_expires'), 10);
+            if (!expiresAt || Date.now() > expiresAt) {
+                clearVerification();
+                return false;
+            }
+        }
+
+        return true;
     }
     
     // Get stored user data
     function getStoredUserData() {
         if (!config.useSessionStorage) return null;
-        
-        const name = sessionStorage.getItem(config.sessionKey + '_name');
-        const unit = sessionStorage.getItem(config.sessionKey + '_unit');
-        const roles = sessionStorage.getItem(config.sessionKey + '_roles');
-        const email = sessionStorage.getItem(config.sessionKey + '_email');
-        const phone = sessionStorage.getItem(config.sessionKey + '_phone');
+        const store = _getStore();
+
+        const name = store.getItem(config.sessionKey + '_name');
+        const unit = store.getItem(config.sessionKey + '_unit');
+        const roles = store.getItem(config.sessionKey + '_roles');
+        const email = store.getItem(config.sessionKey + '_email');
+        const phone = store.getItem(config.sessionKey + '_phone');
         
         if (!roles) return null;
         
@@ -153,26 +187,34 @@ const VerificationModal = (function() {
     // Store user data
     function storeUserData(userData) {
         if (!config.useSessionStorage) return;
+        const store = _getStore();
         
-        sessionStorage.setItem(config.sessionKey, 'true');
-        sessionStorage.setItem(config.sessionKey + '_name', userData.name);
-        sessionStorage.setItem(config.sessionKey + '_unit', userData.unit);
-        sessionStorage.setItem(config.sessionKey + '_roles', JSON.stringify(userData.roleTags));
-        sessionStorage.setItem(config.sessionKey + '_identifier', verificationData.identifier);
-        sessionStorage.setItem(config.sessionKey + '_email', userData.email || '');
-        sessionStorage.setItem(config.sessionKey + '_phone', userData.phone || '');
+        store.setItem(config.sessionKey, 'true');
+        store.setItem(config.sessionKey + '_name', userData.name);
+        store.setItem(config.sessionKey + '_unit', userData.unit);
+        store.setItem(config.sessionKey + '_roles', JSON.stringify(userData.roleTags));
+        store.setItem(config.sessionKey + '_identifier', verificationData.identifier);
+        store.setItem(config.sessionKey + '_email', userData.email || '');
+        store.setItem(config.sessionKey + '_phone', userData.phone || '');
+
+        if (config.storageType === 'local' && config.expiryDays) {
+            const expiresAt = Date.now() + (config.expiryDays * 24 * 60 * 60 * 1000);
+            store.setItem(config.sessionKey + '_expires', String(expiresAt));
+        }
     }
     
     // Clear verification
     function clearVerification() {
         if (config.useSessionStorage) {
-            sessionStorage.removeItem(config.sessionKey);
-            sessionStorage.removeItem(config.sessionKey + '_name');
-            sessionStorage.removeItem(config.sessionKey + '_unit');
-            sessionStorage.removeItem(config.sessionKey + '_roles');
-            sessionStorage.removeItem(config.sessionKey + '_identifier');
-            sessionStorage.removeItem(config.sessionKey + '_email');
-            sessionStorage.removeItem(config.sessionKey + '_phone');
+            const store = _getStore();
+            store.removeItem(config.sessionKey);
+            store.removeItem(config.sessionKey + '_name');
+            store.removeItem(config.sessionKey + '_unit');
+            store.removeItem(config.sessionKey + '_roles');
+            store.removeItem(config.sessionKey + '_identifier');
+            store.removeItem(config.sessionKey + '_email');
+            store.removeItem(config.sessionKey + '_phone');
+            store.removeItem(config.sessionKey + '_expires');
         }
         verificationData = { method: null, identifier: null, verificationId: null };
     }
