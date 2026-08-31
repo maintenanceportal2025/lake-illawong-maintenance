@@ -10,16 +10,26 @@
     =====================================================================
     PURPOSE: Activity history and problem tracking for Field Ops
     PORTAL: Field Operations Portal
-    VERSION: V1.1.1
+    VERSION: V1.1.2
     LAST UPDATED: August 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from white card design)
     - CSS variables remapped to glass equivalents so JS-generated
       HTML using var() automatically inherits correct glass styling
-    AUTHENTICATION: Session guard — portalFieldOpsVerified
+    AUTHENTICATION: Session guard via VerificationModal (portalFieldOpsVerified,
+      storageType 'local', 30-day expiry -- V1.1.2)
     BACKEND: Explorer V1.2.1 (getFaultLogData)
 
     CHANGE LOG
+    - V1.1.2 (Aug 2026): Persistent session, matching FieldOperationsPortal
+                         V2.1.2 and MaintenanceModule V1.2.5 -- this file
+                         previously read the portalFieldOpsVerified session
+                         guard directly against sessionStorage, bypassing
+                         VerificationModal entirely. Now includes
+                         VerificationModal_V1_0.js and calls
+                         VerificationModal.init() with the same
+                         storageType:'local', expiryDays:30 config as its
+                         siblings. No other functional change.
     - V1.1.1 (Aug 2026): System-wide JSONP audit fix -- makeAPICall()
                          (same compounding pattern as DesktopExplorer:
                          weak `if (window[callbackName])` timeout check,
@@ -232,6 +242,7 @@
             .filters-grid { grid-template-columns: 1fr; }
         }
     </style>
+    <script src="VerificationModal_V1_0.js"></script>
 </head>
 <body style="display:none">
     <div class="container">
@@ -318,11 +329,22 @@
     </div>
 
     <script>
-        // SESSION GUARD
-        if (!sessionStorage.getItem('portalFieldOpsVerified')) {
+        // SESSION GUARD -- via VerificationModal (V1.1.2): matches
+        // FieldOperationsPortal / MaintenanceModule's storageType:'local',
+        // expiryDays:30 config, so this module honours the same
+        // persistent, 30-day-expiring session as its siblings, whether
+        // reached via the portal or a direct bookmark.
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Timeline Viewer',
+            sessionKey: 'portalFieldOpsVerified',
+            storageType: 'local',
+            expiryDays: 30,
+            onSuccess: function() {
+                document.body.style.display = '';
+            }
+        });
+        if (!alreadyVerified) {
             window.location.href = 'FieldOperationsPortal.html';
-        } else {
-            document.body.style.display = '';
         }
 
         const API_URL = 'https://script.google.com/macros/s/AKfycbxtdMfxB5b1F5K401X0lJxnK2-DGkiG2zYZNukJvAHx0K1AqgPTMIdiunwS3etm0FOL/exec';
