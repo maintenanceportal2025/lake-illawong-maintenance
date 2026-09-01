@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.6
+  Frontend Version: V1.0.7
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,30 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.7 (Aug 2026): Party B entry at triage overhauled -- three
+    related fixes from Tony's testing, addressed together since they're
+    the same underlying gap:
+    (1) Party B is now a type-ahead resident search (same
+    getUnitListData pattern already proven in RelationsForm.html's
+    Board-mode search and DisputesManager.html's original searchParty)
+    instead of four manual free-text fields -- selecting a result
+    auto-fills name/unit/email/mobile, no re-typing.
+    (2) Triage could previously submit for a Resident-to-Resident
+    matter with Party B completely blank. Now enforced two ways: the
+    "Confirm Triage & Notify" button is disabled until a genuine
+    selection exists (triagePartyBSelected[ref] populated via the
+    lookup, not just any typed text), and doTriage() itself still
+    validates server-request-side as a backstop, consistent with the
+    defense-in-depth pattern already used elsewhere (e.g. Early
+    Resolution's 72-hour gate).
+    (3) Required asterisk added to the Party B search label, matching
+    the existing convention (Issue Detail, Process Statement, etc.).
+    New globals: allResidents (loaded once via loadResidentList() after
+    auth success), triagePartyBSelected (keyed by ref, holds the
+    normalised name/unit/email/mobile once chosen). New CSS
+    (.lookup-results/.lookup-result-item/.unit-tag/.prefilled-note)
+    ported from RelationsForm.html's own definitions, didn't exist in
+    this file before since it had no resident search until now.
   V1.0.6 (Aug 2026): Early Resolution positioning corrected. V1.0.3's
     "prominent button" fix restyled it correctly but moved it into the
     same button row as "Resolved -- Proceed to Closure", losing the
@@ -381,6 +405,18 @@ VERSION HISTORY:
     }
     .description-reference-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: rgba(255,255,255,0.45); margin-bottom: 6px; }
 
+    /* ── PARTY B LOOKUP (triage) — same pattern as RelationsForm.html's
+       resident search ───────────────────────────────────────────── */
+    .lookup-results {
+        display: none; margin-top: 4px; border-radius: 4px; overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25); background: white; max-height: 220px; overflow-y: auto;
+    }
+    .lookup-result-item { padding: 10px 14px; color: #1e293b; font-size: 0.9rem; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: background 0.15s; }
+    .lookup-result-item:last-child { border-bottom: none; }
+    .lookup-result-item:hover { background: #f0fdfa; }
+    .lookup-result-item .unit-tag { color: #6b7280; font-size: 0.8rem; margin-left: 8px; }
+    .prefilled-note { font-size: 0.8rem; color: #5eead4; margin-top: 4px; }
+
     /* ── PRINT BUTTONS ──────────────────────────────────────── */
     .btn-print { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); color: rgba(255,255,255,0.85); padding: 7px 16px; border-radius: 2px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
     .btn-print:hover { background: rgba(255,255,255,0.22); color: white; }
@@ -503,6 +539,7 @@ VERSION HISTORY:
 <script>
     const CONFIG = {
         BACKEND_URL:   'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
+        MGMT_URL:      'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
         SESSION_KEY:   'portalAdminVerified',
         PORTAL_URL:    'AdminPortal.html',
         ALLOWED_ROLES: ['Relations-Manager', 'Developer'],
@@ -512,6 +549,7 @@ VERSION HISTORY:
     };
 
     let allRelations = [];
+    let allResidents = [];  // for the Party B lookup at triage -- loaded once after auth
 
     // Tracks the Status Review decision (Resolved / Not Resolved) per
     // matter reference, local to this page load only -- same session-
@@ -521,6 +559,12 @@ VERSION HISTORY:
     // Tracks the in-progress Triage selection (Management / Resident)
     // per matter reference, local only, cleared once triage submits.
     let triagePathChoice = {};
+
+    // Tracks the selected Party B resident (name/unit/email/mobile,
+    // normalised) per matter reference, once chosen from the triage
+    // lookup. Required -- triage cannot submit for a Resident-to-
+    // Resident matter without a genuine selection here.
+    let triagePartyBSelected = {};
 
     // ── AUTH ──────────────────────────────────────────────────────────────
 
@@ -547,6 +591,7 @@ VERSION HISTORY:
         document.getElementById('mainContent').classList.remove('hidden');
         loadRelationsCategories();
         loadRelations();
+        loadResidentList();
     }
 
     function reVerify() {
@@ -984,22 +1029,28 @@ VERSION HISTORY:
         '</div>';
 
         if (choice === 'Resident') {
+            const selected = triagePartyBSelected[ref];
             html += '<div class="action-row">' +
-                '<div class="action-field"><label>Party B Name</label><input type="text" id="triage-partyBName-' + ref + '" placeholder="Full name"></div>' +
-                '<div class="action-field"><label>Party B Unit</label><input type="text" id="triage-partyBUnit-' + ref + '" placeholder="e.g. Unit 14"></div>' +
+                '<div class="action-field" style="flex:2;">' +
+                    '<label>Search Party B by name <span style="color:#fca5a5">*</span></label>' +
+                    '<input type="text" id="triage-partyBSearch-' + ref + '" placeholder="Type name to search…" autocomplete="off" value="' + escHtml(selected ? selected.name : '') + '"' +
+                        ' oninput="searchTriagePartyB(\'' + ref + '\')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();}">' +
+                '</div>' +
             '</div>' +
-            '<div class="action-row">' +
-                '<div class="action-field"><label>Party B Email</label><input type="text" id="triage-partyBEmail-' + ref + '" placeholder="resident@email.com"></div>' +
-                '<div class="action-field"><label>Party B Mobile</label><input type="text" id="triage-partyBMobile-' + ref + '" placeholder="04xx xxx xxx"></div>' +
-            '</div>' +
-            '<div class="action-row"><div class="action-field">' +
+            '<div id="triage-partyBResults-' + ref + '" class="lookup-results"></div>' +
+            (selected
+                ? '<div class="prefilled-note">&#10003; ' + escHtml(selected.name) + (selected.unit ? ' (' + escHtml(selected.unit) + ')' : '') + ' selected as Party B.</div>'
+                : '') +
+            '<div class="action-row" style="margin-top:10px;"><div class="action-field">' +
                 '<label>Issue Detail — Board\'s tactful, blame-neutral summary <span style="color:#fca5a5">*</span></label>' +
                 '<textarea id="triage-issueDetail-' + ref + '" placeholder="Write a neutral, factual, tactful summary of the matter, drawing on the Description above. This is sent verbatim to both parties -- do not attribute blame."></textarea>' +
             '</div></div>';
         }
 
         if (choice) {
-            html += '<button class="btn-action" onclick="doTriage(\'' + ref + '\')">Confirm Triage &amp; Notify</button>' +
+            const partyBReady = choice !== 'Resident' || !!triagePartyBSelected[ref];
+            html += '<button class="btn-action" onclick="doTriage(\'' + ref + '\')"' + (partyBReady ? '' : ' disabled title="Search and select Party B before confirming triage"') + '>Confirm Triage &amp; Notify</button>' +
+                (partyBReady ? '' : '<span class="action-note" style="margin-left:8px;">Select Party B above to enable.</span>') +
                 '<span id="fb-triage-' + ref + '" class="save-feedback"></span>';
         }
 
@@ -1104,6 +1155,75 @@ VERSION HISTORY:
         pane.classList.toggle('open');
     }
 
+    // ── PARTY B LOOKUP (triage) ──────────────────────────────────────────
+    // Same getUnitListData pattern as RelationsForm.html's Board-mode
+    // resident search -- field names (residentName/unitNumber/email/
+    // phone) confirmed against DisputesManager.html's own working
+    // searchParty(), not assumed (see "assume nothing" working
+    // principle in the Build Log).
+
+    function loadResidentList() {
+        var callbackName = 'rm_mgmt_' + Date.now();
+        var url = CONFIG.MGMT_URL + '?action=getUnitListData&callback=' + callbackName;
+        var s = document.createElement('script');
+        var settled = false;
+        function cleanup() { window[callbackName] = function() {}; try { document.head.removeChild(s); } catch (e) {} }
+        var timer = setTimeout(function() {
+            if (settled) return;
+            settled = true; cleanup();
+            console.warn('loadResidentList timed out');
+        }, 15000);
+        window[callbackName] = function(data) {
+            if (settled) return;
+            settled = true; clearTimeout(timer); cleanup();
+            if (data.success && data.residents) {
+                allResidents = data.residents.filter(function(r) { return r.stage === 'Stage 1' || r.stage === 1; });
+            }
+        };
+        s.src = url;
+        document.head.appendChild(s);
+    }
+
+    function searchTriagePartyB(ref) {
+        var query = (document.getElementById('triage-partyBSearch-' + ref).value || '').trim().toLowerCase();
+        var resultsEl = document.getElementById('triage-partyBResults-' + ref);
+        if (!query) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; return; }
+
+        if (allResidents.length === 0) {
+            resultsEl.innerHTML = '<div class="lookup-result-item" style="color:#9ca3af;cursor:default;">Resident list still loading — please try again in a moment.</div>';
+            resultsEl.style.display = 'block';
+            return;
+        }
+
+        var matches = allResidents.filter(function(r) {
+            return (r.residentName || '').toLowerCase().indexOf(query) !== -1;
+        }).slice(0, 8);
+
+        if (matches.length === 0) {
+            resultsEl.innerHTML = '<div class="lookup-result-item" style="color:#9ca3af;cursor:default;">No matching residents</div>';
+            resultsEl.style.display = 'block';
+            return;
+        }
+
+        resultsEl.innerHTML = matches.map(function(r, i) {
+            return '<div class="lookup-result-item" onclick="selectTriagePartyB(\'' + ref + '\', ' + i + ')">' + escHtml(r.residentName) +
+                '<span class="unit-tag">' + escHtml(r.unitNumber || '') + '</span></div>';
+        }).join('');
+        resultsEl.style.display = 'block';
+        window['_triagePartyBMatches_' + ref] = matches;
+    }
+
+    function selectTriagePartyB(ref, i) {
+        var r = window['_triagePartyBMatches_' + ref][i];
+        triagePartyBSelected[ref] = {
+            name:   r.residentName || '',
+            unit:   r.unitNumber   || '',
+            email:  r.email        || '',
+            mobile: r.phone || r.mobile || ''
+        };
+        renderCard(ref);
+    }
+
     // ── TRIAGE ────────────────────────────────────────────────────────────
 
     function selectTriageChoice(ref, choice) {
@@ -1120,13 +1240,15 @@ VERSION HISTORY:
         var payload = { action: 'triageMatter', ref: ref, userName: userName, matterType: choice };
 
         if (choice === 'Resident') {
+            const partyB = triagePartyBSelected[ref];
+            if (!partyB || !partyB.name) { feedback(fbId, 'Party B is required for a Resident-to-Resident matter -- search and select the other resident before triaging.', false); return; }
             const issueDetail = val('triage-issueDetail-' + ref);
             if (!issueDetail) { feedback(fbId, 'Issue Detail is required for a Resident-to-Resident matter.', false); return; }
             payload.issueDetail   = issueDetail;
-            payload.partyBName    = val('triage-partyBName-'   + ref);
-            payload.partyBUnit    = val('triage-partyBUnit-'   + ref);
-            payload.partyBEmail   = val('triage-partyBEmail-'  + ref);
-            payload.partyBMobile  = val('triage-partyBMobile-' + ref);
+            payload.partyBName    = partyB.name;
+            payload.partyBUnit    = partyB.unit;
+            payload.partyBEmail   = partyB.email;
+            payload.partyBMobile  = partyB.mobile;
         }
 
         if (!confirm('Confirm triage as ' + (choice === 'Management' ? 'Resident-to-Management' : 'Resident-to-Resident') + '? This sends the first resident/party-facing notification and cannot be undone.')) return;
@@ -1135,6 +1257,7 @@ VERSION HISTORY:
         jsonp(payload, function(data) {
             if (data.success) {
                 delete triagePathChoice[ref];
+                delete triagePartyBSelected[ref];
                 refreshCard(ref);
             } else {
                 feedback(fbId, '✗ ' + (data.error || 'Triage failed.'), false);
