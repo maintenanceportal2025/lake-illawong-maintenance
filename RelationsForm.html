@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident/Admin Shared Module
-  Frontend Version: V1.0.3
+  Frontend Version: V1.0.4
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -66,6 +66,23 @@ SUCCESS SCREEN:
   explanation only ever reaches the submitter at triage.
 
 VERSION HISTORY:
+  V1.0.4 (Aug 2026): FIX -- resident search returned zero matches
+    regardless of input, in both the type-ahead (typing) and the
+    click-Search paths. Root cause: searchResident()/selectResident()
+    were written assuming generic field names (name/unit/mobile) on
+    ManagementCentral's getUnitListData response, never verified
+    against the actual response shape. Confirmed against
+    DisputesManager.html's own working searchParty() -- the real field
+    names are residentName/unitNumber/email/phone. Both functions now
+    read the correct fields; selectResident() normalises onto
+    selectedResident (name/unit/email/mobile) so the rest of the form
+    doesn't need to know the raw field names. Also added a "Resident
+    list still loading" message (matching DisputesManager's own
+    pattern) for the case where a search happens before the
+    ManagementCentral call has completed. Caught by Tony testing V1.0.3
+    directly -- type-ahead and full-name-plus-click-Search both failed
+    identically, which was the tell that pointed at the shared
+    underlying filter rather than two separate bugs.
   V1.0.3 (Aug 2026): Description field placeholder softened -- no
     longer presumes another resident is involved ("write a separate
     tactful summary for anyone else involved" implied a two-party
@@ -440,8 +457,18 @@ VERSION HISTORY:
         var resultsEl = document.getElementById('partyAResults');
         if (!query) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; return; }
 
+        if (allResidents.length === 0) {
+            resultsEl.innerHTML = '<div class="lookup-result-item" style="color:#9ca3af;cursor:default;">Resident list still loading — please try again in a moment.</div>';
+            resultsEl.style.display = 'block';
+            return;
+        }
+
+        // Field names match ManagementCentral's getUnitListData response
+        // exactly (residentName/unitNumber/email/phone) -- confirmed
+        // against DisputesManager.html's own working searchParty(), not
+        // assumed.
         var matches = allResidents.filter(function(r) {
-            return (r.name || '').toLowerCase().indexOf(query) !== -1;
+            return (r.residentName || '').toLowerCase().indexOf(query) !== -1;
         }).slice(0, 8);
 
         if (matches.length === 0) {
@@ -451,8 +478,8 @@ VERSION HISTORY:
         }
 
         resultsEl.innerHTML = matches.map(function(r, i) {
-            return '<div class="lookup-result-item" onclick="selectResident(' + i + ')">' + escHtml(r.name) +
-                '<span class="unit-tag">' + escHtml(r.unit || '') + '</span></div>';
+            return '<div class="lookup-result-item" onclick="selectResident(' + i + ')">' + escHtml(r.residentName) +
+                '<span class="unit-tag">' + escHtml(r.unitNumber || '') + '</span></div>';
         }).join('');
         resultsEl.style.display = 'block';
         window._searchMatches = matches;
@@ -460,10 +487,18 @@ VERSION HISTORY:
 
     function selectResident(i) {
         var r = window._searchMatches[i];
-        selectedResident = r;
-        document.getElementById('partyAName').value = r.name || '';
-        document.getElementById('partyAUnit').value = r.unit || '';
-        document.getElementById('partyASearch').value = r.name || '';
+        // Normalised onto selectedResident (name/unit/email/mobile) so
+        // the rest of the form (display fields, submit handler) doesn't
+        // need to know the raw ManagementCentral field names.
+        selectedResident = {
+            name:   r.residentName || '',
+            unit:   r.unitNumber   || '',
+            email:  r.email        || '',
+            mobile: r.phone || r.mobile || ''
+        };
+        document.getElementById('partyAName').value = selectedResident.name;
+        document.getElementById('partyAUnit').value = selectedResident.unit;
+        document.getElementById('partyASearch').value = selectedResident.name;
         document.getElementById('partyAResults').style.display = 'none';
         document.getElementById('partyAPrefilledNote').classList.remove('hidden');
     }
