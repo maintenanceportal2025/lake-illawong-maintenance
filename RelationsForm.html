@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident/Admin Shared Module
-  Frontend Version: V1.0.4
+  Frontend Version: V1.0.5
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -66,6 +66,15 @@ SUCCESS SCREEN:
   explanation only ever reaches the submitter at triage.
 
 VERSION HISTORY:
+  V1.0.5 (Aug 2026): Diagnostic console logging added to
+    loadResidentList()/searchResident() -- Tony reports search still
+    not returning matches after V1.0.4's field-name fix. Rather than
+    guess a second time (see "assume nothing" working principle),
+    logging the raw getUnitListData response, the first raw resident
+    object, the post-filter allResidents count and its first entry, and
+    the query/match counts inside searchResident() -- gives real data
+    to diagnose the actual remaining cause, whatever it turns out to
+    be, instead of another unverified guess.
   V1.0.4 (Aug 2026): FIX -- resident search returned zero matches
     regardless of input, in both the type-ahead (typing) and the
     click-Search paths. Root cause: searchResident()/selectResident()
@@ -444,8 +453,17 @@ VERSION HISTORY:
         window[callbackName] = function(data) {
             if (settled) return;
             settled = true; clearTimeout(timer); cleanup();
+            console.log('loadResidentList: raw response', data);
+            console.log('loadResidentList: success=' + data.success + ', residents count=' + (data.residents ? data.residents.length : 'none'));
+            if (data.residents && data.residents.length > 0) {
+                console.log('loadResidentList: first raw resident object', data.residents[0]);
+            }
             if (data.success && data.residents) {
                 allResidents = data.residents.filter(function(r) { return r.stage === 'Stage 1' || r.stage === 1; });
+            }
+            console.log('loadResidentList: allResidents populated, count=' + allResidents.length);
+            if (allResidents.length > 0) {
+                console.log('loadResidentList: first filtered resident', allResidents[0]);
             }
         };
         s.src = url;
@@ -456,6 +474,7 @@ VERSION HISTORY:
         var query = (document.getElementById('partyASearch').value || '').trim().toLowerCase();
         var resultsEl = document.getElementById('partyAResults');
         if (!query) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; return; }
+        console.log('searchResident: query="' + query + '", allResidents.length=' + allResidents.length);
 
         if (allResidents.length === 0) {
             resultsEl.innerHTML = '<div class="lookup-result-item" style="color:#9ca3af;cursor:default;">Resident list still loading — please try again in a moment.</div>';
@@ -470,6 +489,7 @@ VERSION HISTORY:
         var matches = allResidents.filter(function(r) {
             return (r.residentName || '').toLowerCase().indexOf(query) !== -1;
         }).slice(0, 8);
+        console.log('searchResident: matches found=' + matches.length);
 
         if (matches.length === 0) {
             resultsEl.innerHTML = '<div class="lookup-result-item" style="color:#9ca3af;cursor:default;">No matching residents</div>';
