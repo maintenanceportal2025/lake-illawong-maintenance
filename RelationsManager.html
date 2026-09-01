@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.0
+  Frontend Version: V1.0.2
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -38,10 +38,11 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     / Closed - Unresolved. No Referred/Closed - Referred (Disputes'
     external-referral machinery never applied to Relations -- it was
     already removed from Disputes itself before this build started).
-  - Early Resolution: manual checkbox on the Resolve action, honoured
-    only within 72 hours of LoggedAt (computed client-side to show/
-    hide the control; enforced again server-side as the source of
-    truth). Resolved-only, matches the schema's EarlyResolution column.
+  - Early Resolution: standalone action (not nested inside the Resolve
+    flow -- see V1.0.2), honoured only within 72 hours of LoggedAt
+    (computed client-side to show/lock the control; enforced again
+    server-side as the source of truth). Resolved-only, matches the
+    schema's EarlyResolution column.
   - Detail grid gains the Complaints-sourced fields (Description,
     Desired Outcome, Previous Actions, Location, People Involved),
     always shown when present, alongside the schema's MatterType-
@@ -60,6 +61,26 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.2 (Aug 2026): Early Resolution corrected to a standalone action.
+    Was nested inside the "Resolve & Close" panel, only reachable after
+    first clicking "Resolved -- Proceed to Closure" on the Status
+    Review screen -- contradicted the locked design ("Ticking it opens
+    a lightweight Resolved panel", i.e. the checkbox itself is the
+    entry point). Caught by Tony testing directly. Now rendered via a
+    new buildEarlyResolutionSection(), shown immediately on the
+    Acknowledged pane before any Status Review choice, and on Under
+    Review above the standard Resolve & Close section. Ticking it
+    reveals its own lightweight panel (short Resolution Summary + one
+    confirm button, doEarlyResolutionClose()) -- no detour through the
+    standard flow. Still locked (disabled, not hidden) once 72 hours
+    from LoggedAt has passed, reason stated on the control itself. The
+    standard Resolve & Close path (doResolveClose()) no longer carries
+    its own early-resolution checkbox.
+  V1.0.1 (Aug 2026): "+ Log Matter" link's ?portal=admin query param
+    dropped -- vestigial after RelationsForm.html V1.0.1's mode-
+    detection correction, which reads roleTags rather than the URL.
+    Found and fixed in passing while adding the AdminPortal.html
+    Relations Manager card.
   V1.0.0 (Aug 2026): Initial build.
 
 =====================================================================
@@ -804,27 +825,46 @@ VERSION HISTORY:
 
     function buildResolveSection(r, headerLabel) {
         const ref = r.referenceNumber;
-        const hoursElapsed = r.loggedAt ? (Date.now() - new Date(r.loggedAt).getTime()) / 3600000 : 999;
-        const earlyAvailable = hoursElapsed <= CONFIG.EARLY_RESOLUTION_HOURS;
-
         return '<div class="action-title" style="color:#6ee7b7;">&#10003; ' + headerLabel + '</div>' +
         '<div class="action-row"><div class="action-field">' +
             '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
             '<textarea id="res-' + ref + '" placeholder="Summarise how the matter was resolved and what was agreed.">' + escHtml(r.resolutionSummary || '') + '</textarea>' +
         '</div></div>' +
-        '<div class="action-checkbox-row' + (earlyAvailable ? '' : ' disabled') + '">' +
-            '<input type="checkbox" id="early-' + ref + '"' + (earlyAvailable ? '' : ' disabled') + '>' +
-            '<label for="early-' + ref + '">Flag as Early Resolution' +
-                (earlyAvailable
-                    ? ' (still within 72 hours of lodgement)'
-                    : ' — no longer available, the 72-hour window from lodgement has passed') +
-            '</label>' +
-        '</div>' +
         '<div class="action-note" style="margin-bottom:8px;"><i>Use <strong>Save Draft</strong> to save your text without notifying parties. When ready, click <strong>Resolve &amp; Close &amp; Notify</strong> to finalise.</i></div>' +
         '<button class="btn-save" onclick="saveRelationsDraft(\'' + ref + '\', \'resolution\')">Save Draft</button>' +
         '<button class="btn-action" style="margin-left:8px;" onclick="doResolveClose(\'' + ref + '\')">Resolve &amp; Close &amp; Notify</button>' +
         '<span id="fb-res-' + ref + '" class="save-feedback"></span>';
     }
+
+    // ── EARLY RESOLUTION ──────────────────────────────────────────────────
+    // Standalone action, not nested behind any other choice -- ticking the
+    // checkbox itself opens the lightweight confirm panel, matching the
+    // locked design ("Ticking it opens a lightweight Resolved panel").
+    // Locked (disabled, not hidden) once 72 hours from LoggedAt has
+    // passed, so the option stays visible even when unavailable, with
+    // the reason stated on the control itself.
+    function buildEarlyResolutionSection(r) {
+        const ref = r.referenceNumber;
+        const hoursElapsed = r.loggedAt ? (Date.now() - new Date(r.loggedAt).getTime()) / 3600000 : 999;
+        const earlyAvailable = hoursElapsed <= CONFIG.EARLY_RESOLUTION_HOURS;
+
+        return '<div class="action-checkbox-row' + (earlyAvailable ? '' : ' disabled') + '">' +
+            '<input type="checkbox" id="earlytoggle-' + ref + '"' + (earlyAvailable ? ' onchange="toggleEarlyPanel(\'' + ref + '\')"' : ' disabled') + '>' +
+            '<label for="earlytoggle-' + ref + '">&#9889; Resolved within 72 hours of lodgement — Early Resolution' +
+                (earlyAvailable ? '' : ' <em>(window closed — 72 hours from lodgement have passed)</em>') +
+            '</label>' +
+        '</div>' +
+        '<div id="earlypanel-' + ref + '" class="hidden" style="margin-top:8px;margin-bottom:6px;">' +
+            '<div class="action-row"><div class="action-field">' +
+                '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
+                '<textarea id="earlyres-' + ref + '" placeholder="Briefly summarise how the matter was resolved."></textarea>' +
+            '</div></div>' +
+            '<button class="btn-action" onclick="doEarlyResolutionClose(\'' + ref + '\')">Confirm Early Resolution &amp; Close</button>' +
+            '<span id="fb-early-' + ref + '" class="save-feedback"></span>' +
+        '</div>' +
+        '<hr class="action-separator">';
+    }
+
 
     function buildTriageSection(r) {
         const ref = r.referenceNumber;
@@ -890,6 +930,7 @@ VERSION HISTORY:
             const choice = relationsPathChoice[ref];
 
             if (!choice) {
+                html += buildEarlyResolutionSection(r);
                 html += '<div class="action-title">Status Review</div>' +
                 '<div class="action-note" style="margin-bottom:12px;">Review the current status of this matter. If already resolved, proceed directly to closure. If not yet resolved, open the Process Statement panel.</div>' +
                 '<button class="btn-action" onclick="doStatusReview(\'' + ref + '\', \'resolved\')">&#10003; Resolved — Proceed to Closure</button>' +
@@ -929,6 +970,7 @@ VERSION HISTORY:
         }
 
         else if (status === 'Under Review') {
+            html += buildEarlyResolutionSection(r);
             html += buildResolveSection(r, 'Resolve & Close') +
             '<hr class="action-separator">' +
             buildCloseUnresolvedSection(r);
@@ -1023,16 +1065,36 @@ VERSION HISTORY:
         if (!res) { feedback('fb-res-' + ref, 'Resolution summary is required.', false); return; }
         if (!confirm('Resolve and close this matter, and notify all parties? This cannot be undone.')) return;
         const userName = currentUserName();
-        const earlyChk = document.getElementById('early-' + ref);
-        const earlyResolution = (earlyChk && !earlyChk.disabled && earlyChk.checked) ? 'true' : 'false';
         const fbIdRes = 'fb-res-' + ref;
         const btnElRes = getSendBtn(fbIdRes);
         btnSending(fbIdRes, btnElRes);
-        jsonp({ action: 'updateRelation', ref: ref, status: 'Closed - Resolved', resolutionSummary: res, earlyResolution: earlyResolution, userName: userName, andSend: 'true' },
+        jsonp({ action: 'updateRelation', ref: ref, status: 'Closed - Resolved', resolutionSummary: res, earlyResolution: 'false', userName: userName, andSend: 'true' },
             function(data) {
                 if (data.success) { btnDone(fbIdRes, btnElRes, true, ''); refreshCard(ref, data.activityLog); }
                 else { btnDone(fbIdRes, btnElRes, false, data.error || 'Update failed.'); }
             }, function(err) { btnDone(fbIdRes, btnElRes, false, err); });
+    }
+
+    function toggleEarlyPanel(ref) {
+        var chk = document.getElementById('earlytoggle-' + ref);
+        var panel = document.getElementById('earlypanel-' + ref);
+        if (!chk || !panel) return;
+        panel.classList.toggle('hidden', !chk.checked);
+    }
+
+    function doEarlyResolutionClose(ref) {
+        const res = val('earlyres-' + ref);
+        if (!res) { feedback('fb-early-' + ref, 'Resolution summary is required.', false); return; }
+        if (!confirm('Confirm Early Resolution and close this matter, notifying all parties? This cannot be undone.')) return;
+        const userName = currentUserName();
+        const fbId = 'fb-early-' + ref;
+        const btnEl = getSendBtn(fbId);
+        btnSending(fbId, btnEl);
+        jsonp({ action: 'updateRelation', ref: ref, status: 'Closed - Resolved', resolutionSummary: res, earlyResolution: 'true', userName: userName, andSend: 'true' },
+            function(data) {
+                if (data.success) { btnDone(fbId, btnEl, true, ''); refreshCard(ref, data.activityLog); }
+                else { btnDone(fbId, btnEl, false, data.error || 'Update failed.'); }
+            }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
 
     function saveRelationsDraft(ref, type) {
