@@ -11,6 +11,21 @@
  *   backend (addEvent action).
  *
  * VERSION HISTORY:
+ *   Aug 2026 (V1.4.1): Relations Manager integration -- added
+ *     'Relations-Resident' as a second recognised value alongside the
+ *     existing 'Dispute' check for the Party A/Party B/Board visibility
+ *     checkbox set (previously Dispute-only; everything else, including
+ *     'Complaint' and 'Relations', fell to the Resident/Board set).
+ *     Additive only -- ComplaintsManager and DisputesManager (the only
+ *     two modules that actually call EventEntryModal.open(); Correspon-
+ *     denceChronicle references the resulting Events data but never
+ *     invokes open() itself) are unaffected, since neither passes
+ *     'Relations-Resident'. RelationsManager.html now passes
+ *     'Relations-Resident' for triaged Resident-to-Resident matters and
+ *     'Relations' (unchanged) for Management matters -- see that file's
+ *     own version history for the corresponding openEventEntry() and
+ *     Events-pane-filtering changes this pairs with.
+ *
  *   Aug 2026: System-wide JSONP audit fix -- the shared _cleanup() helper
  *     deleted the window callback instead of replacing it with a no-op,
  *     risking "eemSaveCallback_... is not defined" in console on a
@@ -168,7 +183,7 @@ const EventEntryModal = (function () {
     var visGroup = document.getElementById('eem-visibility-group');
     if (visGroup) {
       visGroup.innerHTML = '';
-      var opts = _config && _config.matterType === 'Dispute'
+      var opts = _config && (_config.matterType === 'Dispute' || _config.matterType === 'Relations-Resident')
         ? ['Party A', 'Party B', 'Board']
         : ['Resident', 'Board'];
       opts.forEach(function (o, idx) {
