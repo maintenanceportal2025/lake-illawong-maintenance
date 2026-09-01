@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.2
+  Frontend Version: V1.0.5
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,73 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.5 (Aug 2026): Party label made conditional on matter type,
+    correcting V1.0.3's universal rename. Tony's pushback: "Resident"/
+    "Other Resident" wrongly implies one party is more central than the
+    other for a Resident-to-Resident matter -- both are equally
+    residents, and neutral, symmetric labels are the correct call there.
+    "Resident" only made sense for Management matters, which genuinely
+    have one party and no ambiguity. New partyALabel() helper: 'Party A'
+    for Resident-to-Resident matters, 'Resident' for Management
+    (untriaged defaults to 'Resident', the safer generic term pending
+    triage). Applied throughout -- detail grid, Events pane titles
+    (incl. the empty-state text in loadMatterHistory(), which needed an
+    allRelations lookup since that function only has the ref), triage-
+    time Party B field labels (reverted to plain "Party B" -- always
+    Resident-to-Resident context there, no ambiguity to resolve), print
+    dialog button labels, print output section titles/printTitle/
+    banner, and the register table headers (kept as fixed "Party A"/
+    "Party B" columns there, since the register mixes matter types in
+    one list and per-row conditional headers aren't meaningfully
+    possible in a single HTML table header row).
+  V1.0.4 (Aug 2026): "+ Log Matter" button and its .btn-log-matter CSS
+    restored -- reasoned reversal of V1.0.3's removal, not a revert of
+    that decision's logic. Removed at V1.0.3 on the grounds it was
+    redundant now that AdminPortal.html has its own "Log a Matter"
+    card, and out of caution given an unexplained re-verification
+    prompt seen while it existed. Tony clarified the actual goal was
+    one-stop-shop convenience -- being able to log a matter without
+    leaving the Manager -- not eliminating a duplicate path, and
+    separately confirmed via testing the AdminPortal card path that
+    the shared portalAdminVerified session genuinely works with no
+    re-prompt on either route. With the re-prompt concern resolved as
+    unrelated to the shared-session design (see Build Log), safe to
+    restore. Link unchanged: plain href to RelationsForm.html, no
+    query param, same as before removal.
+  V1.0.3 (Aug 2026): Four fixes from Tony's first end-to-end test round.
+    (1) Early Resolution restyled from a small checkbox nested inside
+    the "Resolve & Close" panel to a standalone, prominently-styled
+    button (matching "Resolved -- Proceed to Closure") in the same
+    button row on Acknowledged, and above the Resolve section on Under
+    Review -- clicking it opens the lightweight confirm panel directly,
+    no detour through the standard flow. Still locked (disabled, not
+    hidden) once 72 hours from LoggedAt has passed. (2) Redundant "+
+    Log Matter" button and its now-dead .btn-log-matter CSS removed --
+    superseded by AdminPortal.html's own "Log a Matter" card (V2.2.9).
+    (3) "Party A"/"Party B" display labels renamed to "Resident"/
+    "Other Resident" throughout (detail grid, Events pane titles, print
+    dialog/output, register table) -- display text only; internal
+    visibility-tag matching (visMatch against 'Party A'/'Party B',
+    matching what EventEntryModal actually writes) left unchanged,
+    pending the EventEntryModal.js coordination noted below. (4) Board
+    triage-completion email now includes Description (Management
+    matters) or Issue Detail (Resident matters) content, not just
+    metadata -- RC and Zone Rep notifications deliberately left
+    minimal, per the locked privacy decision, pending Tony confirming
+    whether that should also change.
+    KNOWN ISSUE, not yet fixed: the Resident/Other Resident Events
+    panes filter on visMatch(e.visibility, 'Party A'/'Party B') --
+    EventEntryModal.js currently only ever writes that tag scheme when
+    matterType === 'Dispute' exactly; since this file always passes
+    matterType: 'Relations', EventEntryModal falls into its else-branch
+    (tags 'Resident'/'Board') for every Relations matter regardless of
+    type, so these panes currently never match newly-added events
+    correctly for either matter type. Real fix requires a coordinated
+    change across EventEntryModal.js (add a recognised
+    'Relations-Resident' branch), this file (matterType passed to
+    EventEntryModal.open() and the visMatch tag each pane filters on,
+    both conditional on r.matterType), and possibly the backend --
+    pending Tony uploading the current EventEntryModal.js.
   V1.0.2 (Aug 2026): Early Resolution corrected to a standalone action.
     Was nested inside the "Resolve & Close" panel, only reachable after
     first clicking "Resolved -- Proceed to Closure" on the Status
@@ -174,6 +241,7 @@ VERSION HISTORY:
         text-decoration: none; display: inline-block;
     }
     .btn-log-matter:hover { background: rgba(13,148,136,0.75); }
+
 
     /* ── RELATIONS CARDS ─────────────────────────────────────── */
     /* Card/pill class names and colour values match the Relations
@@ -639,6 +707,13 @@ VERSION HISTORY:
         if (r.matterType === 'Resident')   return 'mt-resident';
         return 'mt-untriaged';
     }
+    // Party label: 'Party A'/'Party B' for Resident-to-Resident matters
+    // (neither party is more "the resident" than the other -- neutral,
+    // symmetric labels are correct there). 'Resident' for Management
+    // matters, where there's only one party and no ambiguity at all.
+    // Untriaged (matterType blank) defaults to 'Resident' -- the safer
+    // generic term until triage confirms which framing applies.
+    function partyALabel(r) { return r.matterType === 'Resident' ? 'Party A' : 'Resident'; }
 
     function buildCard(r) {
         const ref      = r.referenceNumber;
@@ -686,7 +761,7 @@ VERSION HISTORY:
         // ── PARTY BLOCKS ──
         html += '<div class="detail-section-title">Parties</div>';
         html += '<div class="party-block">' +
-            '<div class="detail-label">Party A</div>' +
+            '<div class="detail-label">' + escHtml(partyALabel(r)) + '</div>' +
             '<div class="detail-value">' + escHtml(r.partyAName || '—') + (r.partyAUnit ? ' &bull; ' + escHtml(r.partyAUnit) : '') + '</div>' +
             (r.partyAEmail ? '<div class="detail-value" style="font-size:0.82rem;color:rgba(255,255,255,0.6)">' + escHtml(r.partyAEmail) + (r.partyAMobile ? ' &bull; ' + escHtml(r.partyAMobile) : '') + '</div>' : '') +
         '</div>';
@@ -730,7 +805,7 @@ VERSION HISTORY:
 
         // ── FILTERED EVENT PANES (from Events tab) ──
         html += buildFilteredPane(r, 'all',    'Matter History', 'All board-recorded events');
-        html += buildFilteredPane(r, 'partyA', 'Party A Events',  'Visibility: Party A, Shared, or All');
+        html += buildFilteredPane(r, 'partyA', partyALabel(r) + ' Events',  'Visibility: Party A, Shared, or All');
         if (isResident) html += buildFilteredPane(r, 'partyB', 'Party B Events', 'Visibility: Party B, Shared, or All');
         html += buildFilteredPane(r, 'board',  'Board Notes',     'Visibility: Board or All');
 
@@ -837,32 +912,42 @@ VERSION HISTORY:
     }
 
     // ── EARLY RESOLUTION ──────────────────────────────────────────────────
-    // Standalone action, not nested behind any other choice -- ticking the
-    // checkbox itself opens the lightweight confirm panel, matching the
+    // Standalone action, styled and positioned with the same prominence
+    // as "Resolved -- Proceed to Closure" (same button row on
+    // Acknowledged), not nested behind any other choice. Clicking it
+    // reveals the lightweight confirm panel directly -- matches the
     // locked design ("Ticking it opens a lightweight Resolved panel").
     // Locked (disabled, not hidden) once 72 hours from LoggedAt has
-    // passed, so the option stays visible even when unavailable, with
-    // the reason stated on the control itself.
-    function buildEarlyResolutionSection(r) {
+    // passed, reason stated on the control itself.
+    function buildEarlyResolutionButton(r) {
+        const ref = r.referenceNumber;
+        const hoursElapsed = r.loggedAt ? (Date.now() - new Date(r.loggedAt).getTime()) / 3600000 : 999;
+        const earlyAvailable = hoursElapsed <= CONFIG.EARLY_RESOLUTION_HOURS;
+        return '<button class="btn-action" style="background:rgba(217,119,6,0.35);border-color:rgba(217,119,6,0.65);margin-right:8px;"' +
+            (earlyAvailable
+                ? ' onclick="toggleEarlyPanel(\'' + ref + '\')"'
+                : ' disabled title="72-hour window from lodgement has passed"') +
+            '>&#9889; Resolved within 72 Hours — Early Resolution</button>';
+    }
+
+    function buildEarlyResolutionPanel(r) {
         const ref = r.referenceNumber;
         const hoursElapsed = r.loggedAt ? (Date.now() - new Date(r.loggedAt).getTime()) / 3600000 : 999;
         const earlyAvailable = hoursElapsed <= CONFIG.EARLY_RESOLUTION_HOURS;
 
-        return '<div class="action-checkbox-row' + (earlyAvailable ? '' : ' disabled') + '">' +
-            '<input type="checkbox" id="earlytoggle-' + ref + '"' + (earlyAvailable ? ' onchange="toggleEarlyPanel(\'' + ref + '\')"' : ' disabled') + '>' +
-            '<label for="earlytoggle-' + ref + '">&#9889; Resolved within 72 hours of lodgement — Early Resolution' +
-                (earlyAvailable ? '' : ' <em>(window closed — 72 hours from lodgement have passed)</em>') +
-            '</label>' +
-        '</div>' +
-        '<div id="earlypanel-' + ref + '" class="hidden" style="margin-top:8px;margin-bottom:6px;">' +
+        var html = !earlyAvailable
+            ? '<div class="action-note" style="margin-top:6px;">Early Resolution is no longer available — the 72-hour window from lodgement has passed.</div>'
+            : '';
+
+        html += '<div id="earlypanel-' + ref + '" class="hidden" style="margin-top:10px;">' +
             '<div class="action-row"><div class="action-field">' +
                 '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
                 '<textarea id="earlyres-' + ref + '" placeholder="Briefly summarise how the matter was resolved."></textarea>' +
             '</div></div>' +
             '<button class="btn-action" onclick="doEarlyResolutionClose(\'' + ref + '\')">Confirm Early Resolution &amp; Close</button>' +
             '<span id="fb-early-' + ref + '" class="save-feedback"></span>' +
-        '</div>' +
-        '<hr class="action-separator">';
+        '</div>';
+        return html;
     }
 
 
@@ -930,11 +1015,12 @@ VERSION HISTORY:
             const choice = relationsPathChoice[ref];
 
             if (!choice) {
-                html += buildEarlyResolutionSection(r);
                 html += '<div class="action-title">Status Review</div>' +
                 '<div class="action-note" style="margin-bottom:12px;">Review the current status of this matter. If already resolved, proceed directly to closure. If not yet resolved, open the Process Statement panel.</div>' +
+                buildEarlyResolutionButton(r) +
                 '<button class="btn-action" onclick="doStatusReview(\'' + ref + '\', \'resolved\')">&#10003; Resolved — Proceed to Closure</button>' +
-                '<button class="btn-secondary-action" style="margin-left:8px;" onclick="doStatusReview(\'' + ref + '\', \'not_resolved\')">&#8594; Not Resolved — Open Process Statement</button>';
+                '<button class="btn-secondary-action" style="margin-left:8px;" onclick="doStatusReview(\'' + ref + '\', \'not_resolved\')">&#8594; Not Resolved — Open Process Statement</button>' +
+                buildEarlyResolutionPanel(r);
                 html += '<hr class="action-separator">';
                 html += '<button class="btn-print-record" onclick="showRelationsPrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
                 return html + '</div>';
@@ -970,7 +1056,10 @@ VERSION HISTORY:
         }
 
         else if (status === 'Under Review') {
-            html += buildEarlyResolutionSection(r);
+            html += '<div class="action-title">Early Resolution</div>' +
+                buildEarlyResolutionButton(r) +
+                buildEarlyResolutionPanel(r) +
+                '<hr class="action-separator">';
             html += buildResolveSection(r, 'Resolve & Close') +
             '<hr class="action-separator">' +
             buildCloseUnresolvedSection(r);
@@ -1076,10 +1165,9 @@ VERSION HISTORY:
     }
 
     function toggleEarlyPanel(ref) {
-        var chk = document.getElementById('earlytoggle-' + ref);
         var panel = document.getElementById('earlypanel-' + ref);
-        if (!chk || !panel) return;
-        panel.classList.toggle('hidden', !chk.checked);
+        if (!panel) return;
+        panel.classList.toggle('hidden');
     }
 
     function doEarlyResolutionClose(ref) {
@@ -1148,6 +1236,8 @@ VERSION HISTORY:
             partyB: document.getElementById('events-partyB-' + ref),
             board:  document.getElementById('events-board-'  + ref)
         };
+        const relForLabel = allRelations.find(function(x) { return x.referenceNumber === ref; });
+        const aLabel = relForLabel ? partyALabel(relForLabel) : 'Resident';
 
         jsonp({ action: 'getEvents', matterRef: ref },
             function(data) {
@@ -1163,7 +1253,7 @@ VERSION HISTORY:
                 if (panes.partyA) {
                     panes.partyA.innerHTML = partyAEvents.length
                         ? partyAEvents.map(renderEventEntry).join('')
-                        : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No Party A events recorded yet.</div>';
+                        : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No ' + aLabel + ' events recorded yet.</div>';
                 }
                 const partyBEvents = events.filter(function(e) { return visMatch(e.visibility, 'Party B'); });
                 if (panes.partyB) {
@@ -1492,7 +1582,7 @@ VERSION HISTORY:
             + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">All sections — Board only.</div>'
             + '</button>'
             + '<button id="rpb-partyA" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
-            + '&#128196; Print Party A Copy'
+            + '&#128196; Print ' + escHtml(partyALabel(r)) + ' Copy'
             + '</button>'
             + (isResident ? '<button id="rpb-partyB" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
             + '&#128196; Print Party B Copy'
@@ -1533,7 +1623,7 @@ VERSION HISTORY:
             return isNaN(dt) ? dateStr : dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
         };
 
-        var partyABlock = '<div class="section-title">Party A</div>'
+        var partyABlock = '<div class="section-title">' + escHtml(partyALabel(r)) + '</div>'
             + '<div class="party-block"><div class="field-grid">'
             + relationsFieldRow('Name', r.partyAName, false)
             + relationsFieldRow('Unit', r.partyAUnit, false)
@@ -1626,7 +1716,7 @@ VERSION HISTORY:
 
         var partyAEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Party A'); });
         var partyAEventsBlock = (isFull || isPartyA) && partyAEvents.length
-            ? '<div class="section-title">Party A Events</div><div class="activity-log-print">' + partyAEvents.map(renderPrintEvent).join('') + '</div>'
+            ? '<div class="section-title">' + escHtml(partyALabel(r)) + ' Events</div><div class="activity-log-print">' + partyAEvents.map(renderPrintEvent).join('') + '</div>'
             : '';
         var partyBEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Party B'); });
         var partyBEventsBlock = isResident && (isFull || isPartyB) && partyBEvents.length
@@ -1642,10 +1732,10 @@ VERSION HISTORY:
             ? '<div class="section-title">Board Notes</div><div class="activity-log-print">' + boardEvents.map(renderPrintEvent).join('') + '</div>'
             : '';
 
-        var printTitle = isFull ? 'Relations Record' : (isPartyA ? 'Party A Copy' : 'Party B Copy');
+        var printTitle = isFull ? 'Relations Record' : (isPartyA ? partyALabel(r) + ' Copy' : 'Party B Copy');
         var partyCopyBanner = !isFull
             ? '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#0f766e;font-weight:600;">'
-              + (isPartyA ? 'PARTY A COPY' : 'PARTY B COPY')
+              + (isPartyA ? partyALabel(r).toUpperCase() + ' COPY' : 'PARTY B COPY')
               + ' — Internal Description, contact details for the other party, Board Notes, Matter History and System Events are not included in this copy.</div>'
             : '';
 
