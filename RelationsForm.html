@@ -1,0 +1,598 @@
+<!--
+=====================================================================
+RelationsForm.html - RELATIONS MATTER INTAKE FORM
+=====================================================================
+DOCUMENT INFORMATION:
+  File Name:        RelationsForm.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Resident/Admin Shared Module
+  Frontend Version: V1.0.0
+  Status:           DEVELOPMENT
+  Created:          Aug 2026
+
+PURPOSE:
+  Single shared intake form serving BOTH OTP-verified resident self-
+  service AND Board (Relations-Manager roleTag) direct-entry -- per
+  Build Log decision, this supersedes the earlier considered pattern
+  of a separate standalone proxy form (ComplaintProxyForm.html) or an
+  inline Board modal inside RelationsManager.html. One field set, zero
+  duplication risk.
+
+  Captures the full field set regardless of eventual matter type --
+  triage (Management vs Resident, and if Resident, Party B + Issue
+  Detail) happens later, inside RelationsManager.html, not here. This
+  form never asks who the "other party" is.
+
+MODE DETECTION (the "first time these two mechanisms need to coexist"
+question the Build Log flagged as open, resolved here):
+  VerificationModal is a singleton -- it cannot run two independent
+  sessions at once. Resolved by checking sessionStorage directly,
+  BEFORE initialising VerificationModal at all:
+    1. If 'portalAdminVerified' is already 'true' in sessionStorage AND
+       the stored roleTags include Relations-Manager or Developer, this
+       is a Board member arriving already-authenticated from
+       RelationsManager.html's "+ Log Matter" link -- Board mode,
+       userData read directly from sessionStorage, VerificationModal
+       never invoked for this page load.
+    2. Otherwise, falls through to ordinary resident OTP verification
+       via VerificationModal, SESSION_KEY 'lakeIllawongVerified' --
+       matches ComplaintForm.html's resident-facing convention exactly.
+  This means the two mechanisms never truly run concurrently in one
+  page load -- only one path is ever active, decided once at the top,
+  which is what makes them safe to coexist in the same file.
+
+FIELDS:
+  Name/Unit/Email/Mobile  -- read-only, auto-filled either way (OTP
+                             session data for residents; ManagementCentral
+                             name-search lookup, same pattern
+                             DisputesManager's old Log Dispute modal used,
+                             for Board direct-entry)
+  Description             -- required. Submitter's own raw, unfiltered
+                             account. Internal only, never sent to
+                             anyone -- this is NOT sent back to the
+                             submitter even in the success message.
+  Desired Outcome, Previous Actions, Location, People Involved -- all
+                             optional, ported from Complaints' intake.
+  Category                 -- optional dropdown, getRelationsCategories.
+  Incident Date/Time        -- optional.
+  Submission Method          -- hidden, auto 'Digital' for residents;
+                             required dropdown for Board direct-entry
+                             (Verbal/Email/Written Form/Digital).
+
+SUCCESS SCREEN:
+  Deliberately minimal per Build Log -- reference number plus a short,
+  type-agnostic acknowledgement. No timeframe, no VicAssist/CAV detail,
+  nothing assuming a matter type, since triage hasn't happened yet and
+  nobody knows which applies. That fuller, correct-for-the-type
+  explanation only ever reaches the submitter at triage.
+
+VERSION HISTORY:
+  V1.0.0 (Aug 2026): Initial build.
+
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log a Matter - Lake Illawong</title>
+<script src="VerificationModal_V1_0.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+        min-height: 100vh;
+        padding: 20px;
+    }
+
+    .container { max-width: 800px; margin: 0 auto; }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+    .header { text-align: center; margin-bottom: 30px; color: white; }
+    .logo-section { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+    .logo { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; }
+    .header h1 { color: white; font-size: 2rem; font-weight: 700; margin: 0 0 5px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+    .header-subtitle { font-size: 1rem; color: rgba(255,255,255,0.9); font-weight: 500; }
+
+    .content-card {
+        background: rgba(255,255,255,0.08); backdrop-filter: blur(15px);
+        border: 1px solid rgba(255,255,255,0.15); border-radius: 2px;
+        padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .back-btn {
+        display: inline-block; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+        color: white; padding: 10px 20px; border-radius: 2px; text-decoration: none;
+        margin-bottom: 20px; transition: all 0.2s; backdrop-filter: blur(10px);
+    }
+    .back-btn:hover { background: rgba(255,255,255,0.15); }
+
+    .form-header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+    .form-title { color: white; font-size: 1.5rem; font-weight: 600; margin-bottom: 10px; }
+    .form-description { color: rgba(255,255,255,0.8); font-size: 0.9rem; line-height: 1.5; }
+
+    .board-mode-badge {
+        display: inline-block; background: rgba(13,148,136,0.25); border: 1px solid rgba(13,148,136,0.6);
+        color: #99f6e4; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+        padding: 4px 12px; border-radius: 20px; margin-bottom: 14px;
+    }
+
+    .info-box {
+        background: rgba(14,165,233,0.15); border-left: 3px solid rgba(14,165,233,0.6);
+        color: rgba(255,255,255,0.9); padding: 12px 16px; margin-bottom: 25px;
+        font-size: 0.9rem; border-radius: 2px; line-height: 1.5;
+    }
+
+    .form-group { margin-bottom: 20px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-label { display: block; color: rgba(255,255,255,0.9); font-weight: 500; margin-bottom: 6px; font-size: 0.9rem; }
+    .required { color: rgba(239,68,68,0.8); }
+    .field-hint { font-size: 0.78rem; color: rgba(255,255,255,0.55); margin-top: 5px; line-height: 1.4; }
+
+    .form-input, .form-select, .form-textarea {
+        width: 100%; padding: 12px 14px; background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2); border-radius: 2px; color: white;
+        font-size: 0.95rem; backdrop-filter: blur(10px); transition: all 0.2s;
+    }
+    .form-input::placeholder, .form-textarea::placeholder { color: rgba(255,255,255,0.6); }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.5); }
+    .form-select { cursor: pointer; }
+    .form-select option { background: #1e3a8a; }
+    .form-textarea { min-height: 120px; resize: vertical; font-family: inherit; }
+    .form-input[readonly] { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.75); cursor: not-allowed; }
+
+    /* ── PARTY LOOKUP (Board mode only) ─────────────────────── */
+    .lookup-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; }
+    .lookup-row .form-group { flex: 1; margin-bottom: 0; }
+    .lookup-btn {
+        padding: 12px 18px; background: rgba(13,148,136,0.3); border: 1px solid rgba(13,148,136,0.6);
+        border-radius: 2px; color: white; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+        white-space: nowrap; transition: all 0.2s; height: 46px;
+    }
+    .lookup-btn:hover { background: rgba(13,148,136,0.5); }
+    .lookup-results {
+        display: none; margin-top: 4px; border-radius: 4px; overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25); background: white; max-height: 240px; overflow-y: auto;
+    }
+    .lookup-result-item { padding: 10px 14px; color: #1e293b; font-size: 0.9rem; cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: background 0.15s; }
+    .lookup-result-item:last-child { border-bottom: none; }
+    .lookup-result-item:hover { background: #f0fdfa; }
+    .lookup-result-item .unit-tag { color: #6b7280; font-size: 0.8rem; margin-left: 8px; }
+    .prefilled-note { font-size: 0.8rem; color: #5eead4; margin-top: 4px; }
+
+    .form-actions { display: flex; gap: 15px; margin-top: 30px; }
+    .btn { flex: 1; padding: 14px 24px; border: none; border-radius: 2px; font-weight: 600; cursor: pointer; font-size: 0.95rem; transition: all 0.2s; backdrop-filter: blur(10px); }
+    .btn-primary { background: rgba(13,148,136,0.4); color: white; border: 1px solid rgba(13,148,136,0.7); }
+    .btn-primary:hover:not(:disabled) { background: rgba(13,148,136,0.6); }
+    .btn-primary:disabled { background: rgba(255,255,255,0.1); cursor: not-allowed; opacity: 0.5; }
+    .btn-secondary { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.15); }
+
+    /* ── SUCCESS VIEW ────────────────────────────────────────── */
+    .success-message { background: rgba(34,197,94,0.15); border-left: 3px solid rgba(34,197,94,0.6); color: rgba(255,255,255,0.9); padding: 24px; border-radius: 2px; text-align: center; }
+    .success-icon { font-size: 3rem; margin-bottom: 15px; }
+    .success-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 10px; }
+    .success-text { font-size: 0.92rem; line-height: 1.6; margin-bottom: 16px; }
+    .ref-display {
+        display: inline-block; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25);
+        padding: 10px 20px; border-radius: 4px; font-family: monospace; font-size: 1.15rem;
+        font-weight: 700; letter-spacing: 0.5px; margin-bottom: 16px;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 600px) {
+        .form-row { grid-template-columns: 1fr; }
+        .lookup-row { flex-direction: column; align-items: stretch; }
+    }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <div class="header">
+        <div class="logo-section">
+            <img src="logo.png" alt="Lake Illawong Logo" class="logo">
+        </div>
+        <h1>Relations</h1>
+        <p class="header-subtitle">Lake Illawong Retirement Village</p>
+    </div>
+
+    <a href="#" class="back-btn" id="backBtn">&#8592; Back</a>
+
+    <div class="content-card">
+
+        <div id="formView">
+            <div class="form-header">
+                <div id="boardModeBadge" class="board-mode-badge hidden">Board Direct-Entry</div>
+                <div class="form-title">Log a Matter</div>
+                <p class="form-description" id="formDescription">
+                    Use this form to raise a concern with the Board, or to let the Board know
+                    about a matter involving another resident. The Board will review what you've
+                    submitted and be in touch.
+                </p>
+            </div>
+
+            <div class="info-box" id="infoBox">
+                Your submission is reviewed by the Board, who will determine the appropriate
+                next steps and keep you informed.
+            </div>
+
+            <form id="relationsForm">
+
+                <!-- ── PARTY A (self, or lookup in Board mode) ── -->
+                <div id="lookupSection" class="hidden">
+                    <div class="lookup-row">
+                        <div class="form-group">
+                            <label class="form-label">Search resident name <span class="required">*</span></label>
+                            <input type="text" class="form-input" id="partyASearch" placeholder="Type name to search…" autocomplete="off"
+                                oninput="searchResident()" onkeydown="if(event.key==='Enter'){event.preventDefault();searchResident();}">
+                        </div>
+                        <button type="button" class="lookup-btn" onclick="searchResident()">Search</button>
+                    </div>
+                    <div id="partyAResults" class="lookup-results"></div>
+                    <div id="partyAPrefilledNote" class="prefilled-note hidden">&#10003; Resident selected — details below.</div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-input" id="partyAName" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Unit</label>
+                        <input type="text" class="form-input" id="partyAUnit" readonly>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Description <span class="required">*</span></label>
+                    <textarea class="form-textarea" id="description" placeholder="Describe what happened, in your own words. This is kept internal and is never sent to anyone else — the Board uses it to understand the matter and, if appropriate, write a separate tactful summary for anyone else involved."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">What outcome are you hoping for?</label>
+                    <textarea class="form-textarea" id="desiredOutcome" style="min-height:80px;" placeholder="Optional — what would a good resolution look like to you?"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">What's already been tried?</label>
+                    <textarea class="form-textarea" id="previousActions" style="min-height:80px;" placeholder="Optional — have you already tried to resolve this yourself, or raised it before?"></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Category</label>
+                        <select class="form-select" id="category" disabled>
+                            <option value="">Loading categories…</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Incident Date/Time</label>
+                        <input type="datetime-local" class="form-input" id="incidentDateTime">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Location</label>
+                        <input type="text" class="form-input" id="location" placeholder="Optional — where did this happen?">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">People involved</label>
+                        <input type="text" class="form-input" id="peopleInvolved" placeholder="Optional — names or unit numbers, if known">
+                        <div class="field-hint">An informal hint only — if this matter turns out to involve another resident directly, the Board will follow up with you separately.</div>
+                    </div>
+                </div>
+
+                <!-- Board direct-entry only -->
+                <div class="form-group hidden" id="submissionMethodGroup">
+                    <label class="form-label">How was this submitted? <span class="required">*</span></label>
+                    <select class="form-select" id="submissionMethod">
+                        <option value="">— Select —</option>
+                        <option value="Verbal">Verbal</option>
+                        <option value="Email">Email</option>
+                        <option value="Written Form">Written Form</option>
+                        <option value="Digital">Digital</option>
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="resetForm()">Clear</button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Log Matter</button>
+                </div>
+            </form>
+        </div>
+
+        <div id="successView" class="hidden">
+            <div class="success-message">
+                <div class="success-icon">&#9989;</div>
+                <div class="success-title">Matter logged</div>
+                <div class="ref-display" id="referenceNumber"></div>
+                <div class="success-text" id="successText">
+                    The Board will review your matter and be in touch.
+                </div>
+                <button type="button" class="btn btn-secondary" id="successBackBtn" style="max-width:220px;margin:0 auto;">Done</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const CONFIG = {
+        BACKEND_URL:      'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
+        MGMT_URL:         'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
+        RESIDENT_SESSION_KEY: 'lakeIllawongVerified',
+        ADMIN_SESSION_KEY:    'portalAdminVerified',
+        ADMIN_ROLES:      ['Relations-Manager', 'Developer'],
+        RESIDENT_PORTAL:  'ResidentPortal.html',
+        ADMIN_MANAGER:    'RelationsManager.html'
+    };
+
+    let isBoardMode   = false;
+    let currentUserData = null;
+    let selectedResident = null;  // Board mode only -- set once a lookup result is chosen
+    let allResidents = [];
+
+    // ── MODE DETECTION ───────────────────────────────────────────────────
+    // Checked BEFORE VerificationModal is ever touched -- see file header
+    // for why this resolves the "two mechanisms in one file" question.
+    document.addEventListener('DOMContentLoaded', function () {
+        const params = new URLSearchParams(window.location.search);
+        const adminVerified = sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY) === 'true';
+
+        if (adminVerified) {
+            var roles = [];
+            try { roles = JSON.parse(sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY + '_roles') || '[]'); } catch (e) {}
+            var hasRelationsAccess = CONFIG.ADMIN_ROLES.some(function(r) { return roles.indexOf(r) !== -1; });
+
+            if (hasRelationsAccess) {
+                isBoardMode = true;
+                currentUserData = {
+                    name:  sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY + '_name') || 'Admin',
+                    email: sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY + '_email') || '',
+                    phone: sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY + '_phone') || ''
+                };
+                enterBoardMode();
+                return;
+            }
+        }
+
+        // Fall through -- resident OTP flow.
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Relations',
+            moduleIcon: '🤝',
+            sessionKey: CONFIG.RESIDENT_SESSION_KEY,
+            onSuccess:  handleResidentVerified
+        });
+        if (!alreadyVerified) { VerificationModal.show(); }
+    });
+
+    function enterBoardMode() {
+        document.getElementById('boardModeBadge').classList.remove('hidden');
+        document.getElementById('formDescription').textContent =
+            'Log a matter on behalf of a resident — for phone, verbal, written, or email lodgements.';
+        document.getElementById('infoBox').textContent =
+            'Capture the full field set here regardless of eventual matter type. Triage (Resident-to-Management vs Resident-to-Resident) happens afterwards in Relations Manager.';
+        document.getElementById('lookupSection').classList.remove('hidden');
+        document.getElementById('submissionMethodGroup').classList.remove('hidden');
+        document.getElementById('backBtn').href = CONFIG.ADMIN_MANAGER;
+        document.getElementById('backBtn').textContent = '\u2190 Back to Relations Manager';
+        loadResidentList();
+        loadRelationsCategories();
+    }
+
+    function handleResidentVerified(userData) {
+        currentUserData = userData;
+        document.getElementById('partyAName').value = userData.name;
+        document.getElementById('partyAUnit').value = userData.unit;
+        document.getElementById('backBtn').href = CONFIG.RESIDENT_PORTAL;
+        document.getElementById('backBtn').textContent = '\u2190 Back to Portal';
+        loadRelationsCategories();
+    }
+
+    // ── RESIDENT LOOKUP (Board mode only) ───────────────────────────────
+    // Same ManagementCentral getUnitListData pattern DisputesManager's
+    // old Log Dispute modal used for its party search.
+
+    function loadResidentList() {
+        var callbackName = 'rf_mgmt_' + Date.now();
+        var url = CONFIG.MGMT_URL + '?action=getUnitListData&callback=' + callbackName;
+        var s = document.createElement('script');
+        var settled = false;
+        function cleanup() { window[callbackName] = function() {}; try { document.head.removeChild(s); } catch (e) {} }
+        var timer = setTimeout(function() {
+            if (settled) return;
+            settled = true; cleanup();
+            console.warn('loadResidentList timed out');
+        }, 15000);
+        window[callbackName] = function(data) {
+            if (settled) return;
+            settled = true; clearTimeout(timer); cleanup();
+            if (data.success && data.residents) {
+                allResidents = data.residents.filter(function(r) { return r.stage === 'Stage 1' || r.stage === 1; });
+            }
+        };
+        s.src = url;
+        document.head.appendChild(s);
+    }
+
+    function searchResident() {
+        var query = (document.getElementById('partyASearch').value || '').trim().toLowerCase();
+        var resultsEl = document.getElementById('partyAResults');
+        if (!query) { resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; return; }
+
+        var matches = allResidents.filter(function(r) {
+            return (r.name || '').toLowerCase().indexOf(query) !== -1;
+        }).slice(0, 8);
+
+        if (matches.length === 0) {
+            resultsEl.innerHTML = '<div class="lookup-result-item" style="color:#9ca3af;cursor:default;">No matching residents</div>';
+            resultsEl.style.display = 'block';
+            return;
+        }
+
+        resultsEl.innerHTML = matches.map(function(r, i) {
+            return '<div class="lookup-result-item" onclick="selectResident(' + i + ')">' + escHtml(r.name) +
+                '<span class="unit-tag">' + escHtml(r.unit || '') + '</span></div>';
+        }).join('');
+        resultsEl.style.display = 'block';
+        window._searchMatches = matches;
+    }
+
+    function selectResident(i) {
+        var r = window._searchMatches[i];
+        selectedResident = r;
+        document.getElementById('partyAName').value = r.name || '';
+        document.getElementById('partyAUnit').value = r.unit || '';
+        document.getElementById('partyASearch').value = r.name || '';
+        document.getElementById('partyAResults').style.display = 'none';
+        document.getElementById('partyAPrefilledNote').classList.remove('hidden');
+    }
+
+    // ── CATEGORIES ────────────────────────────────────────────────────────
+
+    function loadRelationsCategories() {
+        var select = document.getElementById('category');
+        jsonpCall({ action: 'getRelationsCategories' }).then(function(data) {
+            select.innerHTML = '<option value="">Select a category…</option>';
+            select.disabled = false;
+            var cats = (data.success && data.categories && data.categories.length)
+                ? data.categories
+                : ['Noise', 'Pets / Animals', 'Parking', 'Behaviour / Harassment', 'Common Property Use',
+                   'Boundary / Encroachment', 'Visitors', 'Smoking', 'Maintenance / Facilities', 'Communication', 'Other'];
+            cats.forEach(function(cat) {
+                var opt = document.createElement('option');
+                opt.value = cat; opt.textContent = cat;
+                select.appendChild(opt);
+            });
+        }).catch(function() {
+            select.innerHTML = '<option value="">Select a category…</option>';
+            select.disabled = false;
+        });
+    }
+
+    // ── SUBMIT ────────────────────────────────────────────────────────────
+
+    document.getElementById('relationsForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const submitBtn = document.getElementById('submitBtn');
+
+        var partyAName  = document.getElementById('partyAName').value;
+        var partyAUnit  = document.getElementById('partyAUnit').value;
+        var description = document.getElementById('description').value.trim();
+
+        if (!description) { alert('Please describe the matter before submitting.'); return; }
+        if (isBoardMode && !partyAName) { alert('Please search for and select the resident before submitting.'); return; }
+        if (isBoardMode && !document.getElementById('submissionMethod').value) { alert('Please select how this was submitted.'); return; }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting…';
+
+        var partyAEmail  = isBoardMode ? (selectedResident ? (selectedResident.email  || '') : '') : (currentUserData.email || '');
+        var partyAMobile = isBoardMode ? (selectedResident ? (selectedResident.mobile || '') : '') : (currentUserData.phone || currentUserData.mobile || '');
+
+        var formData = {
+            action:            'submitMatter',
+            loggedBy:          isBoardMode ? currentUserData.name : partyAName,
+            partyAName:        partyAName,
+            partyAUnit:        partyAUnit,
+            partyAEmail:       partyAEmail,
+            partyAMobile:      partyAMobile,
+            description:       description,
+            desiredOutcome:    document.getElementById('desiredOutcome').value,
+            previousActions:   document.getElementById('previousActions').value,
+            location:          document.getElementById('location').value,
+            peopleInvolved:    document.getElementById('peopleInvolved').value,
+            category:          document.getElementById('category').value,
+            incidentDateTime:  document.getElementById('incidentDateTime').value,
+            submissionMethod:  isBoardMode ? document.getElementById('submissionMethod').value : 'Digital'
+        };
+
+        jsonpCall(formData).then(function(response) {
+            if (response.success) {
+                document.getElementById('referenceNumber').textContent = response.referenceNumber;
+                document.getElementById('successText').textContent = isBoardMode
+                    ? 'Matter logged. Reference number above for your records.'
+                    : 'The Board will review your matter and be in touch.';
+                document.getElementById('successBackBtn').onclick = function() {
+                    window.location.href = isBoardMode ? CONFIG.ADMIN_MANAGER : CONFIG.RESIDENT_PORTAL;
+                };
+                document.getElementById('formView').classList.add('hidden');
+                document.getElementById('successView').classList.remove('hidden');
+            } else {
+                alert('Submission failed: ' + (response.error || 'Please try again or contact management.'));
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Log Matter';
+            }
+        }).catch(function() {
+            alert('A network error occurred. Please check your connection and try again.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Log Matter';
+        });
+    });
+
+    function resetForm() {
+        if (!confirm('Are you sure you want to clear all fields?')) return;
+        document.getElementById('relationsForm').reset();
+        if (!isBoardMode) {
+            document.getElementById('partyAName').value = currentUserData.name;
+            document.getElementById('partyAUnit').value = currentUserData.unit;
+        } else {
+            document.getElementById('partyAName').value = '';
+            document.getElementById('partyAUnit').value = '';
+            selectedResident = null;
+            document.getElementById('partyAPrefilledNote').classList.add('hidden');
+        }
+    }
+
+    // ── JSONP HELPER ──────────────────────────────────────────────────────
+
+    function jsonpCall(params, baseUrl) {
+        return new Promise(function(resolve, reject) {
+            const callbackName = 'rf_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            const script = document.createElement('script');
+            const urlParams = new URLSearchParams(params);
+            urlParams.append('callback', callbackName);
+            var completed = false;
+
+            script.src = (baseUrl || CONFIG.BACKEND_URL) + '?' + urlParams.toString();
+
+            var timer = setTimeout(function() {
+                if (completed) return;
+                completed = true; cleanup();
+                reject(new Error('Request timed out'));
+            }, 25000);
+
+            window[callbackName] = function(response) {
+                if (completed) return;
+                completed = true; clearTimeout(timer); cleanup();
+                resolve(response);
+            };
+
+            script.onerror = function() {
+                if (completed) return;
+                completed = true; clearTimeout(timer); cleanup();
+                reject(new Error('Could not reach the server.'));
+            };
+
+            function cleanup() {
+                window[callbackName] = function() {};
+                setTimeout(function() { if (script.parentNode) script.parentNode.removeChild(script); }, 100);
+            }
+
+            document.head.appendChild(script);
+        });
+    }
+
+    function escHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+</script>
+</body>
+</html>
