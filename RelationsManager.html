@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.7
+  Frontend Version: V1.0.8
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,26 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.8 (Aug 2026): EventEntryModal coordination fix -- resolves the
+    "Resident/Party B Events panes don't show newly-added events"
+    finding documented above, confirmed live by Tony testing (Add Event
+    on a triaged Resident-to-Resident matter showed only Matter/
+    Resident/Board panes, no Party A/Party B options at all). Paired
+    with EventEntryModal.js V1.4.1 (new 'Relations-Resident' recognised
+    value, additive) and RelationsManager.js (no changes needed --
+    addEvent already just persists whatever matterType/visibility it's
+    given). Changes here: openEventEntry() now passes 'Relations-
+    Resident' for triaged Resident-to-Resident matters (matching
+    EventEntryModal's Party A/Party B/Board checkbox set) and 'Relations'
+    unchanged for Management matters; the Resident/Party A Events pane
+    filter (loadMatterHistory and the print-output equivalent) now
+    checks 'Party A' vs 'Resident' depending on r.matterType, matching
+    whichever tag EventEntryModal actually wrote. Also corrected two
+    pane subtitles ("Visibility: Party A, Shared, or All") that were
+    already stale before this fix -- "Shared" hasn't existed as a
+    distinct option since EventEntryModal V1.3 replaced it with
+    checkbox multi-select; reworded to "Includes events tagged X",
+    found and fixed in the same pass while already touching this code.
   V1.0.7 (Aug 2026): Party B entry at triage overhauled -- three
     related fixes from Tony's testing, addressed together since they're
     the same underlying gap:
@@ -146,19 +166,13 @@ VERSION HISTORY:
     metadata -- RC and Zone Rep notifications deliberately left
     minimal, per the locked privacy decision, pending Tony confirming
     whether that should also change.
-    KNOWN ISSUE, not yet fixed: the Resident/Other Resident Events
-    panes filter on visMatch(e.visibility, 'Party A'/'Party B') --
-    EventEntryModal.js currently only ever writes that tag scheme when
-    matterType === 'Dispute' exactly; since this file always passes
-    matterType: 'Relations', EventEntryModal falls into its else-branch
-    (tags 'Resident'/'Board') for every Relations matter regardless of
-    type, so these panes currently never match newly-added events
-    correctly for either matter type. Real fix requires a coordinated
-    change across EventEntryModal.js (add a recognised
-    'Relations-Resident' branch), this file (matterType passed to
-    EventEntryModal.open() and the visMatch tag each pane filters on,
-    both conditional on r.matterType), and possibly the backend --
-    pending Tony uploading the current EventEntryModal.js.
+    KNOWN ISSUE, FIXED V1.0.8: the Resident/Party B Events panes
+    filtered on visMatch(e.visibility, 'Party A'/'Party B') -- but
+    EventEntryModal.js only ever wrote that tag scheme when matterType
+    === 'Dispute' exactly, and this file passed matterType: 'Relations'
+    unconditionally, so EventEntryModal fell into its else-branch (tags
+    'Resident'/'Board') for every Relations matter regardless of type.
+    See V1.0.8 below for the fix.
   V1.0.2 (Aug 2026): Early Resolution corrected to a standalone action.
     Was nested inside the "Resolve & Close" panel, only reachable after
     first clicking "Resolved -- Proceed to Closure" on the Status
@@ -857,8 +871,8 @@ VERSION HISTORY:
 
         // ── FILTERED EVENT PANES (from Events tab) ──
         html += buildFilteredPane(r, 'all',    'Matter History', 'All board-recorded events');
-        html += buildFilteredPane(r, 'partyA', partyALabel(r) + ' Events',  'Visibility: Party A, Shared, or All');
-        if (isResident) html += buildFilteredPane(r, 'partyB', 'Party B Events', 'Visibility: Party B, Shared, or All');
+        html += buildFilteredPane(r, 'partyA', partyALabel(r) + ' Events',  'Includes events tagged ' + partyALabel(r));
+        if (isResident) html += buildFilteredPane(r, 'partyB', 'Party B Events', 'Includes events tagged Party B');
         html += buildFilteredPane(r, 'board',  'Board Notes',     'Visibility: Board or All');
 
         // ── SYSTEM EVENTS (read-only, auto-generated) ──
@@ -1370,6 +1384,13 @@ VERSION HISTORY:
         };
         const relForLabel = allRelations.find(function(x) { return x.referenceNumber === ref; });
         const aLabel = relForLabel ? partyALabel(relForLabel) : 'Resident';
+        // Tag actually written by EventEntryModal depends on which
+        // checkbox set it showed, which depends on the matterType passed
+        // to it (see openEventEntry) -- must match here or newly-added
+        // events won't be found by this filter. 'Party A' for triaged
+        // Resident-to-Resident matters, 'Resident' otherwise (Management,
+        // or untriaged pending triage).
+        const residentTag = (relForLabel && relForLabel.matterType === 'Resident') ? 'Party A' : 'Resident';
 
         jsonp({ action: 'getEvents', matterRef: ref },
             function(data) {
@@ -1381,7 +1402,7 @@ VERSION HISTORY:
                         ? events.map(renderEventEntry).join('')
                         : '<div class="pane-text" style="color:rgba(255,255,255,0.4);">No events recorded yet.</div>';
                 }
-                const partyAEvents = events.filter(function(e) { return visMatch(e.visibility, 'Party A'); });
+                const partyAEvents = events.filter(function(e) { return visMatch(e.visibility, residentTag); });
                 if (panes.partyA) {
                     panes.partyA.innerHTML = partyAEvents.length
                         ? partyAEvents.map(renderEventEntry).join('')
@@ -1435,9 +1456,16 @@ VERSION HISTORY:
 
     function openEventEntry(ref) {
         const userName = currentUserName();
+        const relation = allRelations.find(function(x) { return x.referenceNumber === ref; });
+        // 'Relations-Resident' triggers EventEntryModal's Party A/Party B/
+        // Board checkbox set (matches its existing 'Dispute' branch);
+        // 'Relations' (unchanged) keeps the Resident/Board set for
+        // Management matters. See EventEntryModal.js's own version
+        // history for the corresponding change this pairs with.
+        const eemMatterType = (relation && relation.matterType === 'Resident') ? 'Relations-Resident' : 'Relations';
         EventEntryModal.open({
             matterRef:  ref,
-            matterType: 'Relations',
+            matterType: eemMatterType,
             backendUrl: CONFIG.BACKEND_URL,
             userName:   userName,
             onSuccess:  function(event) { handleNewEvent(ref, event); }
@@ -1846,7 +1874,7 @@ VERSION HISTORY:
                 + detail + '</div>';
         }
 
-        var partyAEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Party A'); });
+        var partyAEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, isResident ? 'Party A' : 'Resident'); });
         var partyAEventsBlock = (isFull || isPartyA) && partyAEvents.length
             ? '<div class="section-title">' + escHtml(partyALabel(r)) + ' Events</div><div class="activity-log-print">' + partyAEvents.map(renderPrintEvent).join('') + '</div>'
             : '';
