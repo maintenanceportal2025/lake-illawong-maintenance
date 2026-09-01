@@ -23,23 +23,32 @@ PURPOSE:
   Detail) happens later, inside RelationsManager.html, not here. This
   form never asks who the "other party" is.
 
-MODE DETECTION (the "first time these two mechanisms need to coexist"
-question the Build Log flagged as open, resolved here):
-  VerificationModal is a singleton -- it cannot run two independent
-  sessions at once. Resolved by checking sessionStorage directly,
-  BEFORE initialising VerificationModal at all:
-    1. If 'portalAdminVerified' is already 'true' in sessionStorage AND
-       the stored roleTags include Relations-Manager or Developer, this
-       is a Board member arriving already-authenticated from
-       RelationsManager.html's "+ Log Matter" link -- Board mode,
-       userData read directly from sessionStorage, VerificationModal
-       never invoked for this page load.
-    2. Otherwise, falls through to ordinary resident OTP verification
-       via VerificationModal, SESSION_KEY 'lakeIllawongVerified' --
-       matches ComplaintForm.html's resident-facing convention exactly.
-  This means the two mechanisms never truly run concurrently in one
-  page load -- only one path is ever active, decided once at the top,
-  which is what makes them safe to coexist in the same file.
+MODE DETECTION:
+  V1.0.1 CORRECTION: the original design pre-checked sessionStorage for
+  an already-live 'portalAdminVerified' session before deciding which
+  verification path to run at all -- this meant anyone arriving without
+  a pre-existing admin session (e.g. via direct URL, not through
+  RelationsManager.html's link) always fell through to the resident
+  path, regardless of their actual roleTags, since those roleTags were
+  never even checked in that case. Caught in testing: a Developer-role
+  user landing directly on this page got auto-filled with their own
+  identity instead of the Board lookup.
+
+  Corrected to a single verification, one session key throughout
+  (SESSION_KEY: 'portalAdminVerified', per Build Log's original
+  instruction), with Board-vs-resident UI decided AFTER verification,
+  from the roleTags the verification itself returns -- not from
+  whether a session already happened to exist. sessionKey is purely a
+  frontend caching label (confirmed via VerificationModal_V1_0.js --
+  it has no bearing on backend identity resolution or which roles come
+  back), so a genuine resident verifying under this label is harmless:
+  if they later navigate to an actual admin page, that page's own role
+  check still correctly denies them -- verification and authorisation
+  remain two separate layers, as everywhere else in this system.
+  Practical benefit kept from the original design: a Board member who
+  already verified at AdminPortal/RelationsManager in this session
+  isn't re-prompted here either, since VerificationModal.init() itself
+  already skips prompting when the session key is already verified.
 
 FIELDS:
   Name/Unit/Email/Mobile  -- read-only, auto-filled either way (OTP
@@ -326,51 +335,49 @@ VERSION HISTORY:
     const CONFIG = {
         BACKEND_URL:      'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
         MGMT_URL:         'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
-        RESIDENT_SESSION_KEY: 'lakeIllawongVerified',
-        ADMIN_SESSION_KEY:    'portalAdminVerified',
+        SESSION_KEY:      'portalAdminVerified',
         ADMIN_ROLES:      ['Relations-Manager', 'Developer'],
         RESIDENT_PORTAL:  'ResidentPortal.html',
         ADMIN_MANAGER:    'RelationsManager.html'
     };
 
-    let isBoardMode   = false;
-    let currentUserData = null;
+    let isBoardMode      = false;
+    let currentUserData  = null;
     let selectedResident = null;  // Board mode only -- set once a lookup result is chosen
     let allResidents = [];
 
     // ── MODE DETECTION ───────────────────────────────────────────────────
-    // Checked BEFORE VerificationModal is ever touched -- see file header
-    // for why this resolves the "two mechanisms in one file" question.
+    // One verification, one session key -- see file header (V1.0.1
+    // correction) for why. Board-vs-resident is decided in
+    // handleVerified() below, from the roleTags this verification
+    // itself returns, not from any pre-existing session state.
     document.addEventListener('DOMContentLoaded', function () {
-        const params = new URLSearchParams(window.location.search);
-        const adminVerified = sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY) === 'true';
-
-        if (adminVerified) {
-            var roles = [];
-            try { roles = JSON.parse(sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY + '_roles') || '[]'); } catch (e) {}
-            var hasRelationsAccess = CONFIG.ADMIN_ROLES.some(function(r) { return roles.indexOf(r) !== -1; });
-
-            if (hasRelationsAccess) {
-                isBoardMode = true;
-                currentUserData = {
-                    name:  sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY + '_name') || 'Admin',
-                    email: sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY + '_email') || '',
-                    phone: sessionStorage.getItem(CONFIG.ADMIN_SESSION_KEY + '_phone') || ''
-                };
-                enterBoardMode();
-                return;
-            }
-        }
-
-        // Fall through -- resident OTP flow.
         const alreadyVerified = VerificationModal.init({
             moduleName: 'Relations',
             moduleIcon: '🤝',
-            sessionKey: CONFIG.RESIDENT_SESSION_KEY,
-            onSuccess:  handleResidentVerified
+            sessionKey: CONFIG.SESSION_KEY,
+            onSuccess:  handleVerified
         });
         if (!alreadyVerified) { VerificationModal.show(); }
     });
+
+    function handleVerified(userData) {
+        currentUserData = userData;
+        const roles = userData.roleTags || [];
+        console.log('RelationsForm: verified as', userData.name, '| roleTags:', roles);
+        isBoardMode = CONFIG.ADMIN_ROLES.some(function(r) { return roles.indexOf(r) !== -1; });
+        console.log('RelationsForm: isBoardMode =', isBoardMode);
+
+        if (isBoardMode) {
+            enterBoardMode();
+        } else {
+            document.getElementById('partyAName').value = userData.name;
+            document.getElementById('partyAUnit').value = userData.unit;
+            document.getElementById('backBtn').href = CONFIG.RESIDENT_PORTAL;
+            document.getElementById('backBtn').textContent = '\u2190 Back to Portal';
+        }
+        loadRelationsCategories();
+    }
 
     function enterBoardMode() {
         document.getElementById('boardModeBadge').classList.remove('hidden');
@@ -383,17 +390,8 @@ VERSION HISTORY:
         document.getElementById('backBtn').href = CONFIG.ADMIN_MANAGER;
         document.getElementById('backBtn').textContent = '\u2190 Back to Relations Manager';
         loadResidentList();
-        loadRelationsCategories();
     }
 
-    function handleResidentVerified(userData) {
-        currentUserData = userData;
-        document.getElementById('partyAName').value = userData.name;
-        document.getElementById('partyAUnit').value = userData.unit;
-        document.getElementById('backBtn').href = CONFIG.RESIDENT_PORTAL;
-        document.getElementById('backBtn').textContent = '\u2190 Back to Portal';
-        loadRelationsCategories();
-    }
 
     // ── RESIDENT LOOKUP (Board mode only) ───────────────────────────────
     // Same ManagementCentral getUnitListData pattern DisputesManager's
