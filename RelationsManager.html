@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.9
+  Frontend Version: V1.0.10
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,35 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.10 (Aug 2026): Under Review pane restructured to choice-then-
+    reveal, matching the pattern already used on Acknowledged's Status
+    Review screen. Previously showed "Resolve & Close" (Resolution
+    Summary textarea) and "Close as Unresolved" (Closure Notes
+    textarea) simultaneously -- Tony's point: pick one first, then only
+    the relevant form appears. New underReviewChoice state (per ref,
+    same pattern as relationsPathChoice) and selectUnderReviewChoice().
+    Early Resolution stays visible on the initial no-choice view only
+    (matching its Acknowledged-pane positioning) -- once a closure path
+    is chosen, only that section shows, with a "Back to Closure" link
+    matching the existing "Back to Status Review" pattern.
+    Also investigated, not code changes: (1) Tony raised a valid
+    concern about a repeated "bug disappears once logging is added"
+    pattern -- checked for an actual race condition (backend
+    updateRelation() flushes before returning; jsonp() helper's unique
+    per-call callback names rule out self-collision) and found none;
+    the last retest's matching, complete console log is positive
+    evidence the code executes correctly, pointing to stale caching
+    rather than a timing bug. Offered a visible version indicator as a
+    permanent fix for the ambiguity -- Tony has his own established
+    verification process (checks Netlify publish status after each
+    GitHub commit) and doesn't need it. (2) Tony reported intermittent
+    "Unable to reach server" errors where the operation had actually
+    succeeded server-side (confirmed by retry showing "already
+    registered") -- consistent with the 15-second jsonp() timeout being
+    shorter than occasional Apps Script cold-start response times.
+    Described by Tony as a longstanding pattern predating this build,
+    not something introduced here -- flagged rather than changed
+    unprompted; offered to increase the timeout if wanted.
   V1.0.9 (Aug 2026): Diagnostic console logging added to
     doEarlyResolutionClose() and refreshCard() -- Tony reports Early
     Resolution on a Resident-to-Resident matter writes correctly and
@@ -587,6 +616,12 @@ VERSION HISTORY:
     // matter reference, local to this page load only -- same session-
     // state-only pattern DisputesManager used (disputePathChoice).
     let relationsPathChoice = {};
+
+    // Tracks the Under Review closure choice (Resolve & Close / Close as
+    // Unresolved) per matter reference, same choice-then-reveal pattern
+    // as relationsPathChoice above -- applied here too so both textareas
+    // aren't shown simultaneously.
+    let underReviewChoice = {};
 
     // Tracks the in-progress Triage selection (Management / Resident)
     // per matter reference, local only, cleared once triage submits.
@@ -1152,9 +1187,25 @@ VERSION HISTORY:
                 buildEarlyResolutionButton(r) +
                 buildEarlyResolutionPanel(r) +
                 '<hr class="action-separator">';
-            html += buildResolveSection(r, 'Resolve & Close') +
-            '<hr class="action-separator">' +
-            buildCloseUnresolvedSection(r);
+
+            const urChoice = underReviewChoice[ref];
+
+            if (!urChoice) {
+                html += '<div class="action-title">Closure</div>' +
+                '<div class="action-note" style="margin-bottom:12px;">Choose how this matter is being closed.</div>' +
+                '<button class="btn-action" onclick="selectUnderReviewChoice(\'' + ref + '\', \'resolved\')">&#10003; Resolve &amp; Close</button>' +
+                '<button class="btn-danger-action" style="margin-left:8px;" onclick="selectUnderReviewChoice(\'' + ref + '\', \'unresolved\')">&#9888; Close as Unresolved</button>';
+            } else if (urChoice === 'resolved') {
+                html += buildResolveSection(r, 'Resolve & Close') +
+                '<div style="margin-top:10px;">' +
+                    '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="underReviewChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Closure</a>' +
+                '</div>';
+            } else {
+                html += buildCloseUnresolvedSection(r) +
+                '<div style="margin-top:10px;">' +
+                    '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="underReviewChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Closure</a>' +
+                '</div>';
+            }
         }
 
         else if (terminal.indexOf(status) !== -1) {
@@ -1392,6 +1443,11 @@ VERSION HISTORY:
 
     function doStatusReview(ref, path) {
         relationsPathChoice[ref] = path;
+        renderCard(ref);
+    }
+
+    function selectUnderReviewChoice(ref, choice) {
+        underReviewChoice[ref] = choice;
         renderCard(ref);
     }
 
