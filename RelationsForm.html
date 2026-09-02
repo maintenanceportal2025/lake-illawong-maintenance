@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident/Admin Shared Module
-  Frontend Version: V1.0.5
+  Frontend Version: V1.0.6
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -66,6 +66,18 @@ SUCCESS SCREEN:
   explanation only ever reaches the submitter at triage.
 
 VERSION HISTORY:
+  V1.0.6 (Aug 2026): JSONP timeouts increased -- loadResidentList()
+    15s -> 30s, jsonpCall() (used by submitMatter and
+    getRelationsCategories) 25s -> 30s. Tony reported a lodgement
+    submission that timed out client-side while actually succeeding
+    server-side. Checked against the ReportsHub/ZoneRepReports
+    precedent first (where a timeout increase did NOT fix a similar-
+    sounding symptom -- real cause was oversized-payload delivery
+    failure, not slowness) before making this change -- confirmed this
+    is a different, much smaller-payload context, so cold-start latency
+    is a plausible explanation here and a timeout increase is a
+    reasonable response, unlike there. Not fully diagnosed -- noted as
+    a watch item.
   V1.0.5 (Aug 2026): Diagnostic console logging added to
     loadResidentList()/searchResident() -- Tony reports search still
     not returning matches after V1.0.4's field-name fix. Rather than
@@ -449,7 +461,7 @@ VERSION HISTORY:
             if (settled) return;
             settled = true; cleanup();
             console.warn('loadResidentList timed out');
-        }, 15000);
+        }, 30000);
         window[callbackName] = function(data) {
             if (settled) return;
             settled = true; clearTimeout(timer); cleanup();
@@ -635,7 +647,7 @@ VERSION HISTORY:
                 if (completed) return;
                 completed = true; cleanup();
                 reject(new Error('Request timed out'));
-            }, 25000);
+            }, 30000);
 
             window[callbackName] = function(response) {
                 if (completed) return;
