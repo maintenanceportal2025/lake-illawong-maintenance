@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.10
+  Frontend Version: V1.0.11
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,28 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.11 (Aug 2026): JSONP timeouts increased 15s -> 30s (main jsonp()
+    default and loadResidentList()'s own timeout) -- Tony reported list-
+    load failures on opening the Manager (needing 2-3 refreshes) and a
+    submission that timed out client-side while actually succeeding
+    server-side (confirmed via retry showing "already registered").
+    Checked against the actual precedent first, not assumed safe:
+    recalled the ReportsHub/ZoneRepReports investigation, where
+    increasing the timeout (even to 120s) did NOT fix a similar-
+    sounding symptom -- that root cause was Apps Script's ContentService
+    failing on oversized payloads, not slowness. Confirmed this isn't
+    the same mechanism here (Tony has 8 records in the list; ReportsHub
+    was hundreds with richer fields), so a genuine cold-start-latency
+    explanation is plausible and a timeout increase is a reasonable,
+    evidence-informed response here, unlike there. Not fully diagnosed
+    (Tony deferred checking the Apps Script Executions log unless it
+    recurs) -- noted as a watch item, not closed as solved.
+    Separately: the "Resident list still loading" message on the Party
+    B search is NOT a timeout issue and this change doesn't address it
+    -- it fires whenever a search happens before loadResidentList()'s
+    background call has finished populating allResidents, regardless of
+    how long the timeout is. Left as-is; the existing message already
+    handles it gracefully (clear text, works on retry).
   V1.0.10 (Aug 2026): Under Review pane restructured to choice-then-
     reveal, matching the pattern already used on Acknowledged's Status
     Review screen. Previously showed "Resolve & Close" (Resolution
@@ -689,7 +711,7 @@ VERSION HISTORY:
             settled = true;
             cleanup();
             if (onError) onError('Server did not respond. Please try again.');
-        }, timeoutMs || 15000);
+        }, timeoutMs || 30000);
 
         window[callbackName] = function (data) {
             if (settled) return;
@@ -1255,7 +1277,7 @@ VERSION HISTORY:
             if (settled) return;
             settled = true; cleanup();
             console.warn('loadResidentList timed out');
-        }, 15000);
+        }, 30000);
         window[callbackName] = function(data) {
             if (settled) return;
             settled = true; clearTimeout(timer); cleanup();
