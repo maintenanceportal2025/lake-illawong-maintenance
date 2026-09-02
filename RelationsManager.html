@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.8
+  Frontend Version: V1.0.9
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,24 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.9 (Aug 2026): Diagnostic console logging added to
+    doEarlyResolutionClose() and refreshCard() -- Tony reports Early
+    Resolution on a Resident-to-Resident matter writes correctly and
+    fires notifications (confirmed via manual page reload showing the
+    correct Closed - Resolved status) but the pane doesn't update in
+    place, staying on the same view until a manual refresh. Code review
+    found no obvious cause -- doEarlyResolutionClose() is structurally
+    identical to the working doResolveClose()/doCloseUnresolved(), same
+    refreshCard() call, same success handling. Per "assume nothing",
+    added logging rather than guess a fix. Also fixed a real gap found
+    in the same review regardless of what the actual cause turns out to
+    be: refreshCard()'s inner getRelationByRef callback had a silent
+    `if (!data.success || !data.relation) return;` -- no error surfaced
+    anywhere if that call ever failed, which would produce exactly this
+    symptom (nothing visibly happens). Now falls back to updating the
+    Activity Log with the data already in hand from the original
+    updateRelation response, and logs an error either way instead of
+    failing silently.
   V1.0.8 (Aug 2026): EventEntryModal coordination fix -- resolves the
     "Resident/Party B Events panes don't show newly-added events"
     finding documented above, confirmed live by Tony testing (Add Event
@@ -1323,12 +1341,17 @@ VERSION HISTORY:
         const userName = currentUserName();
         const fbId = 'fb-early-' + ref;
         const btnEl = getSendBtn(fbId);
+        console.log('doEarlyResolutionClose: submitting for ' + ref);
         btnSending(fbId, btnEl);
         jsonp({ action: 'updateRelation', ref: ref, status: 'Closed - Resolved', resolutionSummary: res, earlyResolution: 'true', userName: userName, andSend: 'true' },
             function(data) {
+                console.log('doEarlyResolutionClose: updateRelation response', data);
                 if (data.success) { btnDone(fbId, btnEl, true, ''); refreshCard(ref, data.activityLog); }
                 else { btnDone(fbId, btnEl, false, data.error || 'Update failed.'); }
-            }, function(err) { btnDone(fbId, btnEl, false, err); });
+            }, function(err) {
+                console.error('doEarlyResolutionClose: updateRelation error', err);
+                btnDone(fbId, btnEl, false, err);
+            });
     }
 
     function saveRelationsDraft(ref, type) {
@@ -1504,21 +1527,34 @@ VERSION HISTORY:
     // ── REFRESH / RE-RENDER ───────────────────────────────────────────────
 
     function refreshCard(ref, activityLog) {
+        console.log('refreshCard: fetching latest for ' + ref);
         jsonp({ action: 'getRelationByRef', ref: ref }, function(data) {
-            if (!data.success || !data.relation) return;
+            console.log('refreshCard: getRelationByRef response', data);
+            if (!data.success || !data.relation) {
+                console.error('refreshCard: getRelationByRef did not return a relation -- falling back to activity log update only', data);
+                if (activityLog) updateActivityLog(ref, activityLog);
+                return;
+            }
             var r = data.relation;
             for (var i = 0; i < allRelations.length; i++) {
                 if (allRelations[i].referenceNumber === ref) { allRelations[i] = r; break; }
             }
             var card = document.getElementById('card-' + ref);
-            var wasExpanded = card && card.classList.contains('expanded');
+            if (!card) { console.error('refreshCard: no card element found for id card-' + ref); return; }
+            var wasExpanded = card.classList.contains('expanded');
             var wrapper = document.createElement('div');
             wrapper.innerHTML = buildCard(r);
             var newCard = wrapper.firstChild;
             if (wasExpanded) newCard.classList.add('expanded');
-            if (card && card.parentNode) card.parentNode.replaceChild(newCard, card);
+            if (card.parentNode) {
+                card.parentNode.replaceChild(newCard, card);
+                console.log('refreshCard: card replaced, new status = ' + r.status);
+            } else {
+                console.error('refreshCard: card has no parentNode, could not replace');
+            }
             updateSummary(allRelations);
-        }, function() {
+        }, function(err) {
+            console.error('refreshCard: getRelationByRef request failed', err);
             if (activityLog) updateActivityLog(ref, activityLog);
         });
     }
