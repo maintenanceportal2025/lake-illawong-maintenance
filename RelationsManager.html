@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.14
+  Frontend Version: V1.0.15
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,40 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.15 (Aug 2026): Acknowledged action flow redesigned -- Tony's
+    "biggie": the old structure had two different ways to reach
+    Resolved (a standalone Early Resolution button, and a separate
+    Status Review's "Resolved" choice), which was confusing and didn't
+    reflect that Early Resolution is really a *time-gated* alternative
+    to the standard flow, not an extra option sitting alongside it.
+    New structure, purely time-based:
+    - Within 72 hours of LoggedAt: single "Closure" step, two buttons
+      only -- "Resolved — Early Resolution" and "Not Resolved — Early
+      Resolution" (new -- covers a resident withdrawing/cancelling
+      their own report within the window, or other early-closure-
+      without-resolution cases; a single free-text Closure Notes field
+      covers the variants without needing further subdivision). No
+      "Status Review" language anywhere. Choosing either reveals its
+      dialogue directly (buildEarlyResolvedSection / new
+      buildEarlyUnresolvedSection + new doEarlyUnresolvedClose()).
+    - Past 72 hours: the choice screen doesn't appear at all -- the
+      Process Statement pane shows automatically, since it's the only
+      remaining valid path. No button needed to reach it.
+    Also removed: the standalone Early Resolution button/panel from the
+    Under Review branch entirely -- not explicitly requested, but a
+    direct logical consequence of the new design: reaching Under Review
+    means a Process Statement was already written, i.e. the fast/
+    bypass-the-full-process path was already foregone, so offering
+    Early Resolution there no longer makes sense. Flagged clearly to
+    Tony as an inference, not an explicit instruction.
+    Renamed for clarity, matching the dropped "Status Review" language:
+    relationsPathChoice -> earlyClosureChoice, doStatusReview() ->
+    selectEarlyChoice(). buildEarlyResolutionButton()/
+    buildEarlyResolutionPanel()/toggleEarlyPanel() removed (dead code
+    after the rewrite) -- replaced by buildEarlyResolvedSection()/
+    buildEarlyUnresolvedSection(), rendered directly rather than
+    toggled, since the new design shows exactly one relevant dialogue
+    at a time rather than a togglable extra option.
   V1.0.14 (Aug 2026): Concurrent-request reduction, investigating the
     intermittent Apps Script response-delivery failure (server
     completes every doGet call successfully -- confirmed via Executions
@@ -709,7 +743,12 @@ VERSION HISTORY:
     // Tracks the Status Review decision (Resolved / Not Resolved) per
     // dispute reference, local to this page load only -- same session-
     // state-only pattern DisputesManager used (disputePathChoice).
-    let relationsPathChoice = {};
+    // Tracks the early-closure choice (Resolved / Not Resolved), both
+    // "Early Resolution" outcomes, available only within 72 hours of
+    // LoggedAt on Acknowledged -- see buildActionPanel. Renamed from
+    // relationsPathChoice (was tied to "Status Review" language, now
+    // dropped entirely per the V1.0.15 redesign).
+    let earlyClosureChoice = {};
 
     // Tracks the Under Review closure choice (Resolve & Close / Close as
     // Unresolved) per dispute reference, same choice-then-reveal pattern
@@ -1144,44 +1183,36 @@ VERSION HISTORY:
         '<span id="fb-res-' + ref + '" class="save-feedback"></span>';
     }
 
-    // ── EARLY RESOLUTION ──────────────────────────────────────────────────
-    // Standalone action, styled and positioned with the same prominence
-    // as "Resolved -- Proceed to Closure" (same button row on
-    // Acknowledged), not nested behind any other choice. Clicking it
-    // reveals the lightweight confirm panel directly -- matches the
-    // locked design ("Ticking it opens a lightweight Resolved panel").
-    // Locked (disabled, not hidden) once 72 hours from LoggedAt has
-    // passed, reason stated on the control itself.
-    function buildEarlyResolutionButton(r) {
+    // ── EARLY CLOSURE (within 72 hours of lodgement) ────────────────────
+    // Two outcomes, both "Early Resolution" -- a fast Resolved, or a
+    // fast Not Resolved (e.g. resident withdraws/cancels their own
+    // report). Shown only within the 72-hour window; past it, the
+    // Process Statement pane takes over automatically -- see
+    // buildActionPanel's Acknowledged branch.
+
+    function buildEarlyResolvedSection(r) {
         const ref = r.referenceNumber;
-        const hoursElapsed = r.loggedAt ? (Date.now() - new Date(r.loggedAt).getTime()) / 3600000 : 999;
-        const earlyAvailable = hoursElapsed <= CONFIG.EARLY_RESOLUTION_HOURS;
-        return '<button class="btn-action" style="background:rgba(217,119,6,0.35);border-color:rgba(217,119,6,0.65);margin-right:8px;"' +
-            (earlyAvailable
-                ? ' onclick="toggleEarlyPanel(\'' + ref + '\')"'
-                : ' disabled title="72-hour window from lodgement has passed"') +
-            '>&#9889; Resolved within 72 Hours — Early Resolution</button>';
+        return '<div class="action-title" style="color:#6ee7b7;">&#10003; Resolved — Early Resolution</div>' +
+        '<div class="action-row"><div class="action-field">' +
+            '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
+            '<textarea id="earlyres-' + ref + '" placeholder="Briefly summarise how the dispute was resolved.">' + escHtml(r.resolutionSummary || '') + '</textarea>' +
+        '</div></div>' +
+        '<button class="btn-action" onclick="doEarlyResolutionClose(\'' + ref + '\')">Confirm Resolved &amp; Close</button>' +
+        '<span id="fb-early-' + ref + '" class="save-feedback"></span>';
     }
 
-    function buildEarlyResolutionPanel(r) {
+    function buildEarlyUnresolvedSection(r) {
         const ref = r.referenceNumber;
-        const hoursElapsed = r.loggedAt ? (Date.now() - new Date(r.loggedAt).getTime()) / 3600000 : 999;
-        const earlyAvailable = hoursElapsed <= CONFIG.EARLY_RESOLUTION_HOURS;
-
-        var html = !earlyAvailable
-            ? '<div class="action-note" style="margin-top:6px;">Early Resolution is no longer available — the 72-hour window from lodgement has passed.</div>'
-            : '';
-
-        html += '<div id="earlypanel-' + ref + '" class="hidden" style="margin-top:10px;">' +
-            '<div class="action-row"><div class="action-field">' +
-                '<label>Resolution Summary <span style="color:#fca5a5">*</span></label>' +
-                '<textarea id="earlyres-' + ref + '" placeholder="Briefly summarise how the dispute was resolved."></textarea>' +
-            '</div></div>' +
-            '<button class="btn-action" onclick="doEarlyResolutionClose(\'' + ref + '\')">Confirm Early Resolution &amp; Close</button>' +
-            '<span id="fb-early-' + ref + '" class="save-feedback"></span>' +
-        '</div>';
-        return html;
+        return '<div class="action-title" style="color:#fed7aa;">&#9888; Not Resolved — Early Resolution</div>' +
+        '<div class="action-note" style="margin-bottom:8px;">Use this if the dispute is closing early without a full resolution -- for example, the resident withdrawing or cancelling their own report.</div>' +
+        '<div class="action-row"><div class="action-field">' +
+            '<label>Closure Notes <span style="color:rgba(255,255,255,0.4);font-weight:400;">(optional)</span></label>' +
+            '<textarea id="earlyun-' + ref + '" placeholder="Briefly note why this is closing early without resolution (e.g. resident withdrew the report).">' + escHtml(r.closureNotes || '') + '</textarea>' +
+        '</div></div>' +
+        '<button class="btn-danger-action" onclick="doEarlyUnresolvedClose(\'' + ref + '\')">Confirm Not Resolved &amp; Close</button>' +
+        '<span id="fb-earlyun-' + ref + '" class="save-feedback"></span>';
     }
+
 
 
     function buildTriageSection(r) {
@@ -1251,45 +1282,54 @@ VERSION HISTORY:
         }
 
         else if (status === 'Acknowledged') {
-            const choice = relationsPathChoice[ref];
+            const hoursElapsed = r.loggedAt ? (Date.now() - new Date(r.loggedAt).getTime()) / 3600000 : 999;
+            const within72h = hoursElapsed <= CONFIG.EARLY_RESOLUTION_HOURS;
+            const choice = earlyClosureChoice[ref];
 
-            if (!choice) {
-                html += '<div class="action-title">Early Resolution</div>' +
-                    buildEarlyResolutionButton(r) +
-                    buildEarlyResolutionPanel(r) +
-                    '<hr class="action-separator">';
-                html += '<div class="action-title">Status Review</div>' +
-                '<div class="action-note" style="margin-bottom:12px;">Review the current status of this dispute. If already resolved, proceed directly to closure. If not yet resolved, open the Process Statement panel.</div>' +
-                '<button class="btn-action" onclick="doStatusReview(\'' + ref + '\', \'resolved\')">&#10003; Resolved — Proceed to Closure</button>' +
-                '<button class="btn-secondary-action" style="margin-left:8px;" onclick="doStatusReview(\'' + ref + '\', \'not_resolved\')">&#8594; Not Resolved — Open Process Statement</button>';
-                html += '<hr class="action-separator">';
-                html += '<button class="btn-print-record" onclick="showRelationsPrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
-                return html + '</div>';
-            }
-
-            if (choice === 'not_resolved') {
+            if (!within72h) {
+                // 72-hour window has passed -- Process Statement is the
+                // only remaining path, shown automatically. No button
+                // needed to reach it; there's nothing else to choose.
                 html += '<div class="action-title">Process Statement</div>' +
+                '<div class="action-note" style="margin-bottom:12px;">The 72-hour early resolution window has passed. Record the process the Board will follow.</div>' +
                 '<div class="action-row"><div class="action-field full-width">' +
                     '<label>Process Statement — describe the process the Board will follow <span style="color:#fca5a5">*</span></label>' +
                     '<textarea id="ps-' + ref + '" placeholder="e.g. The Board will meet with both parties separately within 7 days and provide a written summary of the meeting to each party. Both parties will be given an opportunity to respond before any determination is made."></textarea>' +
                 '</div></div>' +
-                '<div class="action-note">Recorded and sent within <strong>72 hours</strong> of this dispute being logged, if it remains unresolved by then.</div>' +
                 '<div style="margin-top:10px;">' +
                     '<button class="btn-action" onclick="doProcessStatement(\'' + ref + '\')">Send Process Statement &amp; Notify</button>' +
                     '<span id="fb-' + ref + '" class="save-feedback"></span>' +
-                '</div>' +
-                '<div style="margin-top:10px;">' +
-                    '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="relationsPathChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Status Review</a>' +
                 '</div>';
                 html += '<hr class="action-separator">';
                 html += '<button class="btn-print-record" onclick="showRelationsPrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
                 return html + '</div>';
             }
 
-            // RESOLVED (quick path)
-            html += buildResolveSection(r, 'Resolve & Close') +
+            // Within 72 hours -- Early Resolution choice.
+            if (!choice) {
+                html += '<div class="action-title">Closure</div>' +
+                '<div class="action-note" style="margin-bottom:12px;">This dispute is within 72 hours of lodgement. Choose an outcome below to close it early, or leave it -- if neither is actioned within the window, this will move to a Process Statement instead.</div>' +
+                '<button class="btn-action" onclick="selectEarlyChoice(\'' + ref + '\', \'resolved\')">&#10003; Resolved — Early Resolution</button>' +
+                '<button class="btn-danger-action" style="margin-left:8px;" onclick="selectEarlyChoice(\'' + ref + '\', \'not_resolved\')">&#9888; Not Resolved — Early Resolution</button>';
+                html += '<hr class="action-separator">';
+                html += '<button class="btn-print-record" onclick="showRelationsPrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
+                return html + '</div>';
+            }
+
+            if (choice === 'not_resolved') {
+                html += buildEarlyUnresolvedSection(r) +
+                '<div style="margin-top:10px;">' +
+                    '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="earlyClosureChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Closure</a>' +
+                '</div>';
+                html += '<hr class="action-separator">';
+                html += '<button class="btn-print-record" onclick="showRelationsPrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
+                return html + '</div>';
+            }
+
+            // choice === 'resolved'
+            html += buildEarlyResolvedSection(r) +
             '<div style="margin-top:10px;">' +
-                '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="relationsPathChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Status Review</a>' +
+                '<a href="#" style="color:#5eead4;font-size:0.82rem;font-weight:600;text-decoration:none;" onclick="earlyClosureChoice[\'' + ref + '\']=null; renderCard(\'' + ref + '\'); return false;">&larr; Back to Closure</a>' +
             '</div>';
             html += '<hr class="action-separator">';
             html += '<button class="btn-print-record" onclick="showRelationsPrintDialog(\'' + ref + '\')">&#128438; Print Record</button>';
@@ -1297,11 +1337,12 @@ VERSION HISTORY:
         }
 
         else if (status === 'Under Review') {
-            html += '<div class="action-title">Early Resolution</div>' +
-                buildEarlyResolutionButton(r) +
-                buildEarlyResolutionPanel(r) +
-                '<hr class="action-separator">';
-
+            // No Early Resolution here, deliberately -- reaching Under
+            // Review means a Process Statement was already written, i.e.
+            // the fast/bypass-the-full-process path was already
+            // foregone. Plain Resolve & Close / Close as Unresolved
+            // choice only, no early flag, standard end-of-process
+            // framing -- matches the pre-redesign behaviour, unchanged.
             const urChoice = underReviewChoice[ref];
 
             if (!urChoice) {
@@ -1509,12 +1550,6 @@ VERSION HISTORY:
             }, function(err) { btnDone(fbIdRes, btnElRes, false, err); });
     }
 
-    function toggleEarlyPanel(ref) {
-        var panel = document.getElementById('earlypanel-' + ref);
-        if (!panel) return;
-        panel.classList.toggle('hidden');
-    }
-
     function doEarlyResolutionClose(ref) {
         const res = val('earlyres-' + ref);
         if (!res) { feedback('fb-early-' + ref, 'Resolution summary is required.', false); return; }
@@ -1533,6 +1568,20 @@ VERSION HISTORY:
                 console.error('doEarlyResolutionClose: updateRelation error', err);
                 btnDone(fbId, btnEl, false, err);
             });
+    }
+
+    function doEarlyUnresolvedClose(ref) {
+        const notes = val('earlyun-' + ref);
+        if (!confirm('Confirm this dispute is Not Resolved (Early Resolution) and close it, notifying all parties? This cannot be undone.')) return;
+        const userName = currentUserName();
+        const fbId = 'fb-earlyun-' + ref;
+        const btnEl = getSendBtn(fbId);
+        btnSending(fbId, btnEl);
+        jsonp({ action: 'updateRelation', ref: ref, status: 'Closed - Unresolved', closureNotes: notes, earlyResolution: 'true', userName: userName, andSend: 'true' },
+            function(data) {
+                if (data.success) { btnDone(fbId, btnEl, true, ''); refreshCard(ref, data.activityLog); }
+                else { btnDone(fbId, btnEl, false, data.error || 'Update failed.'); }
+            }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
 
     function saveRelationsDraft(ref, type) {
@@ -1571,8 +1620,8 @@ VERSION HISTORY:
             }, function(err) { btnDone(fbId, btnEl, false, err); });
     }
 
-    function doStatusReview(ref, path) {
-        relationsPathChoice[ref] = path;
+    function selectEarlyChoice(ref, path) {
+        earlyClosureChoice[ref] = path;
         renderCard(ref);
     }
 
