@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.12
+  Frontend Version: V1.0.13
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,23 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.13 (Aug 2026): FIX for the same outage as backend V1.0.5 --
+    toggleCard() now lazy-loads activityLog via getRelationByRef() on
+    first card expand only (mirroring the existing Events-pane lazy-
+    load pattern already in this function), since the bulk
+    getRelations() list response no longer includes it. New
+    `_activityLoaded` flag (per-record, client-side only) tracks
+    whether the full value has been fetched yet; refreshCard() (which
+    already does a full getRelationByRef() fetch after any action)
+    also sets this flag so its result isn't needlessly re-fetched.
+    buildActivityLogPane() shows a "Loading..." placeholder instead of
+    a false "No system events recorded" before the fetch completes.
+    showRelationsPrintDialog()'s "Print Full Record" path also fetches
+    fresh first if the card was never expanded, so a Full Record print
+    can't silently omit System Events just because nobody happened to
+    open that card first -- Party A/Party B copies don't include
+    System Events at all (confirmed against the print code, unaffected
+    either way) so they proceed immediately, unchanged.
   V1.0.12 (Aug 2026): "MATTER" purged from every user-visible spot --
     Tony's actual, narrower ask after stepping back from the full
     Relations->Disputes rename: fix the word wherever it's genuinely
@@ -1013,6 +1030,14 @@ VERSION HISTORY:
 
     function buildActivityLogPane(r) {
         const ref = r.referenceNumber;
+        // activityLog is stripped from the bulk list response (see
+        // backend V1.0.5) and lazy-loaded on first card expand (see
+        // toggleCard()) -- show a loading placeholder rather than
+        // falsely claiming "no events" before that fetch completes.
+        if (!r._activityLoaded) {
+            return accordionPane('pane-sysevents-' + ref, 'System Events', 'Auto-generated only',
+                '<div class="pane-text" style="color:rgba(255,255,255,0.4);">Loading&hellip;</div>', false);
+        }
         const logEntries = r.activityLog
             ? r.activityLog.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse()
             : [];
@@ -1277,6 +1302,22 @@ VERSION HISTORY:
             const container = document.getElementById('events-all-' + ref);
             if (container && container.classList.contains('pane-text')) {
                 loadMatterHistory(ref);
+            }
+            // System Events (activityLog) is deliberately stripped from
+            // the bulk getRelations() list response to keep that payload
+            // small (see backend V1.0.5) -- lazy-load it here on first
+            // expand only, same pattern as the Events panes above.
+            const relForActivity = allRelations.find(function(x) { return x.referenceNumber === ref; });
+            if (relForActivity && !relForActivity._activityLoaded) {
+                jsonp({ action: 'getRelationByRef', ref: ref }, function(data) {
+                    if (data.success && data.relation) {
+                        relForActivity.activityLog = data.relation.activityLog || '';
+                        relForActivity._activityLoaded = true;
+                        updateActivityLog(ref, relForActivity.activityLog);
+                    }
+                }, function(err) {
+                    console.error('toggleCard: failed to lazy-load activity log for ' + ref, err);
+                });
             }
         }
     }
@@ -1641,6 +1682,7 @@ VERSION HISTORY:
                 return;
             }
             var r = data.relation;
+            r._activityLoaded = true;  // getRelationByRef returns full activityLog, unlike the list endpoint
             for (var i = 0; i < allRelations.length; i++) {
                 if (allRelations[i].referenceNumber === ref) { allRelations[i] = r; break; }
             }
@@ -1892,7 +1934,27 @@ VERSION HISTORY:
             + '</div>';
         document.body.appendChild(dialog);
 
-        document.getElementById('rpb-full').addEventListener('click',   function() { doRelationsPrint(ref, 'full'); });
+        document.getElementById('rpb-full').addEventListener('click', function() {
+            // Full Record print includes System Events (activityLog),
+            // which is stripped from the bulk list response and only
+            // populated once a card's been expanded (see toggleCard()).
+            // Fetch fresh first if this card was never expanded, so the
+            // printed record is accurate rather than silently blank.
+            if (!r._activityLoaded) {
+                dialog.remove();
+                jsonp({ action: 'getRelationByRef', ref: ref }, function(data) {
+                    if (data.success && data.relation) {
+                        data.relation._activityLoaded = true;
+                        for (var i = 0; i < allRelations.length; i++) {
+                            if (allRelations[i].referenceNumber === ref) { allRelations[i] = data.relation; break; }
+                        }
+                    }
+                    doRelationsPrint(ref, 'full');
+                }, function() { doRelationsPrint(ref, 'full'); });
+            } else {
+                doRelationsPrint(ref, 'full');
+            }
+        });
         document.getElementById('rpb-partyA').addEventListener('click', function() { doRelationsPrint(ref, 'partyA'); });
         if (isResident) document.getElementById('rpb-partyB').addEventListener('click', function() { doRelationsPrint(ref, 'partyB'); });
         document.getElementById('rpb-cancel').addEventListener('click', function() { dialog.remove(); });
