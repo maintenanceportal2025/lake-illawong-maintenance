@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.16
+  Frontend Version: V1.0.17
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,14 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.17 (Aug 2026): Early Resolution now visible at a glance -- new
+    statusDisplayLabel(r) appends " (ER)" to the status text wherever
+    it's shown (card pill, detail grid, print output, register table)
+    when r.earlyResolution is true. Applies to either closure outcome
+    (Resolved or Unresolved), matching the V1.0.15 redesign covering
+    both. Text suffix chosen over a new pill colour, per Tony's own
+    framing of it as an open choice -- avoids relying on colour alone
+    to carry meaning and avoids adding another colour to the palette.
   V1.0.16 (Aug 2026): "Back to Admin Portal" button repositioned from
     centered to left-aligned (.portal-back-btn's margin changed from
     "0 auto 20px auto" to "0 0 20px 0"). Cosmetic, per Tony.
@@ -982,6 +990,15 @@ VERSION HISTORY:
     // generic term until triage confirms which framing applies.
     function partyALabel(r) { return r.matterType === 'Resident' ? 'Party A' : 'Resident'; }
 
+    // Status label with an "(ER)" suffix when EarlyResolution is flagged
+    // -- applies to either closure outcome (Resolved or Unresolved,
+    // since the V1.0.15 redesign covers both). Text suffix rather than
+    // a new pill colour: unambiguous at a glance without relying on
+    // colour alone, and avoids adding another colour to the palette.
+    function statusDisplayLabel(r) {
+        return r.status + (r.earlyResolution ? ' (ER)' : '');
+    }
+
     function buildCard(r) {
         const ref      = r.referenceNumber;
         const tier     = overdueTier(r);
@@ -999,7 +1016,7 @@ VERSION HISTORY:
                 '<div class="card-parties">' + partyLabel + '</div>' +
                 '<span class="card-dispute-type ' + matterTypeClass(r) + '">' + matterTypeLabel(r) + '</span>' +
                 (tier ? '<span class="overdue-badge">&#9888; Overdue</span>' : '') +
-                '<span class="status-pill ' + pillCls + '">' + escHtml(r.status) + '</span>' +
+                '<span class="status-pill ' + pillCls + '">' + escHtml(statusDisplayLabel(r)) + '</span>' +
                 '<div class="card-dates">Logged ' + loggedStr + ' &bull; Due ' + dueStr + '</div>' +
                 '<div class="card-chevron">&#9660;</div>' +
             '</div>' +
@@ -1048,7 +1065,7 @@ VERSION HISTORY:
         html += detailField('Dispute Type', matterTypeLabel(r));
         if (r.triagedAt) html += detailField('Triaged', fmtDateLong(new Date(r.triagedAt)) + ' by ' + (r.triagedBy || '—'));
         html += detailField('Review Due', r.reviewDue ? fmtDateLong(new Date(r.reviewDue)) : '—');
-        html += detailField('Status', r.status || '—');
+        html += detailField('Status', statusDisplayLabel(r) || '—');
         html += detailField('Category', r.category || '—');
         html += detailField('Submission Method', r.submissionMethod || '—');
         if (r.incidentDateTime) html += detailField('Incident Date/Time', fmtDateLong(new Date(r.incidentDateTime)));
@@ -2192,7 +2209,7 @@ VERSION HISTORY:
             + '<title>' + printTitle + ' — ' + escHtml(ref) + '</title>'
             + '<style>' + printRelationsStyles() + '</style></head><body>'
             + printRelationsHeader(
-                printTitle + ' <span class="status-badge ' + statusBadgeClass + '">' + escHtml(r.status) + '</span>',
+                printTitle + ' <span class="status-badge ' + statusBadgeClass + '">' + escHtml(statusDisplayLabel(r)) + '</span>',
                 escHtml(ref)
               )
             + partyCopyBanner
@@ -2241,7 +2258,7 @@ VERSION HISTORY:
                 + '<td>' + typeLabel + '</td>'
                 + '<td>' + escHtml(r.partyAName) + (r.partyAUnit ? ' (' + escHtml(r.partyAUnit) + ')' : '') + '</td>'
                 + '<td>' + escHtml(r.partyBName || '—') + (r.partyBUnit ? ' (' + escHtml(r.partyBUnit) + ')' : '') + '</td>'
-                + '<td>' + escHtml(r.status) + overdueMark + '</td>'
+                + '<td>' + escHtml(statusDisplayLabel(r)) + overdueMark + '</td>'
                 + '<td>' + fmtD(r.loggedAt) + '</td>'
                 + '<td>' + fmtD(r.reviewDue) + '</td>'
                 + '</tr>';
