@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.13
+  Frontend Version: V1.0.14
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,34 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.14 (Aug 2026): Concurrent-request reduction, investigating the
+    intermittent Apps Script response-delivery failure (server
+    completes every doGet call successfully -- confirmed via Executions
+    log and Apps Script's own project analytics, 0% error rate across
+    299 executions -- but the browser occasionally never receives the
+    response). Tony's sharp observation: DisputesManager's Add Dispute
+    is an inline modal (stays on one page, one initial load); Relations'
+    equivalent flow navigates out to RelationsForm.html and back, so
+    RelationsManager.html's page-load burst of JSONP calls fires far
+    more often during a real testing/usage session than Disputes' ever
+    does. Two changes: (1) loadRelationsCategories() removed entirely
+    -- found to be genuinely dead code, its success callback did
+    nothing with the returned categories, and RelationsManager.html has
+    no category filter/dropdown anywhere to consume it (confirmed by
+    search, not assumed). This directly eliminates one of two
+    concurrent same-backend calls that fired on every single page load.
+    (2) loadRelations() and loadResidentList() (the remaining two page-
+    load calls) now sequenced -- loadResidentList() only fires once
+    loadRelations() completes, via a new optional onDone callback
+    parameter (backward compatible -- the plain onclick="loadRelations()"
+    Refresh button call is unaffected). loadResidentList() targets a
+    different backend (ManagementCentral) so isn't implicated by the
+    same-backend theory specifically, but sequenced anyway given the
+    stakes (this is intended for production). Not a confirmed fix --
+    root cause still unconfirmed, this removes a genuine, testable
+    difference from the one comparison script (Disputes) that hasn't
+    shown the issue, rather than accepting it as an unexplained
+    platform limitation.
   V1.0.13 (Aug 2026): FIX for the same outage as backend V1.0.5 --
     toggleCard() now lazy-loads activityLog via getRelationByRef() on
     first card expand only (mirroring the existing Events-pane lazy-
@@ -722,9 +750,20 @@ VERSION HISTORY:
             return;
         }
         document.getElementById('mainContent').classList.remove('hidden');
-        loadRelationsCategories();
-        loadRelations();
-        loadResidentList();
+        // Sequenced deliberately, not fired concurrently -- investigating
+        // an intermittent Apps Script response-delivery failure (server
+        // completes successfully every time per Executions log/analytics,
+        // but the browser occasionally never receives it). Concurrent
+        // same-backend JSONP calls on every page load were a real,
+        // testable difference from DisputesManager (whose modal-based
+        // Add Dispute flow never triggers repeat page loads the way
+        // navigating out to RelationsForm.html and back does here).
+        // loadResidentList() targets a different backend (ManagementCentral)
+        // so isn't part of the same-backend theory, but sequenced too as
+        // a belt-and-braces precaution given the stakes.
+        loadRelations(function() {
+            loadResidentList();
+        });
     }
 
     function reVerify() {
@@ -776,22 +815,23 @@ VERSION HISTORY:
 
     // ── LOAD RELATIONS ────────────────────────────────────────────────────
 
-    function loadRelations() {
+    function loadRelations(onDone) {
         const list = document.getElementById('relationsList');
         list.innerHTML = '<div class="loading-state"><div class="spinner"></div><div class="state-text">Loading disputes...</div></div>';
         document.getElementById('summaryStrip').style.display = 'none';
 
         jsonp({ action: 'getRelations' }, function(data) {
-            if (!data.success) { showPageError(data.error || 'Failed to load disputes.'); return; }
+            if (!data.success) { showPageError(data.error || 'Failed to load disputes.'); if (onDone) onDone(); return; }
             allRelations = data.relations || [];
             updateSummary(allRelations);
             document.getElementById('summaryStrip').style.display = 'flex';
             applyFilters();
+            if (onDone) onDone();
         }, function(err) {
             showPageError(err);
+            if (onDone) onDone();
         });
     }
-
     function showPageError(msg) {
         document.getElementById('relationsList').innerHTML =
             '<div class="error-state"><div class="state-icon">&#9888;</div><div class="state-text">' + escHtml(msg) + '</div></div>';
@@ -1663,12 +1703,6 @@ VERSION HISTORY:
     }
 
     // ── RELATIONS CATEGORIES (for print/reference; no intake form here) ──
-
-    function loadRelationsCategories() {
-        jsonp({ action: 'getRelationsCategories' }, function(data) {
-            if (!data.success) console.warn('loadRelationsCategories: failed -- ' + (data.error || 'unknown'));
-        }, function(err) { console.warn('loadRelationsCategories error: ' + err); });
-    }
 
     // ── REFRESH / RE-RENDER ───────────────────────────────────────────────
 
