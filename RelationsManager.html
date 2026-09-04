@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.17
+  Frontend Version: V1.0.18
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,34 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.18 (Aug 2026): Party copy disclaimer reworked and repositioned,
+    per Tony's review of the print output. Two problems with the old
+    banner: (1) it itemised exactly what was excluded ("Internal
+    Description, contact details for the other party, Board Notes, All
+    Events and System Events are not included in this copy") -- naming
+    specific categories reads as "what are they hiding" to a resident,
+    inviting suspicion rather than reassurance. (2) even setting that
+    aside, "All Events"/"System Events"/"Board Notes" are the Board's
+    own internal pane names -- a resident has no framework for what
+    "Events" means in this system, so the itemisation didn't actually
+    inform them either. Replaced with a plain statement that this is a
+    personal extract, not the complete file ("This is your personal
+    copy of the record, prepared for [Party A/Party B]. The Board
+    retains the complete case file.") -- honest about being partial
+    without naming what's withheld. Given its own .copy-disclaimer
+    style (amber left-border, distinct from the teal party-block/
+    content-block styling) with a small uppercase "Disclaimer" label,
+    so it reads unambiguously as a disclaimer rather than another
+    content section. Repositioned from directly under the header to
+    directly above the footer -- Tony's point: a disclaimer belongs
+    after the content it qualifies has been read, not before. Also:
+    loadMatterHistory()/matterHistoryBlock renamed to loadAllEvents()/
+    allEventsBlock -- "Matter" had already been purged from every
+    user-visible string (see V1.0.12), these were the two remaining
+    internal identifiers still carrying the old name. Zero behaviour
+    change; caught by Tony while reviewing the disclaimer, not a
+    functional bug -- the rendered pane title was already "All Events"
+    everywhere, only the JS identifiers lagged.
   V1.0.17 (Aug 2026): Early Resolution now visible at a glance -- new
     statusDisplayLabel(r) appends " (ER)" to the status text wherever
     it's shown (card pill, detail grid, print output, register table)
@@ -1402,7 +1430,7 @@ VERSION HISTORY:
         if (card.classList.contains('expanded')) {
             const container = document.getElementById('events-all-' + ref);
             if (container && container.classList.contains('pane-text')) {
-                loadMatterHistory(ref);
+                loadAllEvents(ref);
             }
             // System Events (activityLog) is deliberately stripped from
             // the bulk getRelations() list response to keep that payload
@@ -1653,7 +1681,7 @@ VERSION HISTORY:
     // ── DISPUTE HISTORY -- load events from Events tab ─────────────────────
     const _eventCache = {};
 
-    function loadMatterHistory(ref) {
+    function loadAllEvents(ref) {
         const panes = {
             all:    document.getElementById('events-all-'    + ref),
             partyA: document.getElementById('events-partyA-' + ref),
@@ -1971,6 +1999,8 @@ VERSION HISTORY:
             .party-block   { background: #f0fdfa; border: 1px solid #99f6e4; border-left: 4px solid #0d9488; padding: 10px 12px; border-radius: 3px; margin-bottom: 10px; }
             .party-block .field-label { color: #0f766e; }
             .content-block { background: #f8f9fa; border: 1px solid #e9ecef; border-left: 4px solid #0d9488; padding: 10px 12px; border-radius: 3px; margin-bottom: 10px; }
+            .copy-disclaimer { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #b45309; padding: 10px 12px; border-radius: 3px; margin-top: 20px; font-size: 9pt; color: #78350f; }
+            .copy-disclaimer .disclaimer-label { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #b45309; margin-bottom: 3px; }
             .activity-log-print { margin: 8px 0 16px 0; padding: 10px; background: #f8fafc; border-left: 3px solid #0d9488; }
             .activity-log-entry-print { font-size: 8pt; font-family: monospace; padding: 3px 0; border-bottom: 1px solid #e5e7eb; color: #374151; white-space: pre-wrap; }
             .activity-log-entry-print:last-child { border-bottom: none; }
@@ -2188,7 +2218,7 @@ VERSION HISTORY:
         var partyBEventsBlock = isResident && (isFull || isPartyB) && partyBEvents.length
             ? '<div class="section-title">Party B Events</div><div class="activity-log-print">' + partyBEvents.map(renderPrintEvent).join('') + '</div>'
             : '';
-        var matterHistoryBlock = isFull && cachedEvents.length
+        var allEventsBlock = isFull && cachedEvents.length
             ? '<div class="section-title">All Events</div><div class="activity-log-print">' + cachedEvents.map(renderPrintEvent).join('') + '</div>'
             : isFull
               ? '<div class="section-title">All Events</div><div class="activity-log-print"><div class="activity-log-entry-print" style="color:#6b7280;font-style:italic;">No events recorded. Open the dispute card to load events before printing.</div></div>'
@@ -2199,10 +2229,18 @@ VERSION HISTORY:
             : '';
 
         var printTitle = isFull ? 'Relations Record' : (isPartyA ? partyALabel(r) + ' Copy' : 'Party B Copy');
+        // Disclaimer -- states plainly that this is a personal extract,
+        // not the complete file, without naming the internal category
+        // names (All Events, System Events, Board Notes) that a party
+        // has no framework to interpret and that read as "what are they
+        // hiding" rather than as useful information. Repositioned to the
+        // bottom of the record (was directly under the header) -- Tony's
+        // point: a disclaimer belongs after the content it qualifies,
+        // not before it's even been seen.
         var partyCopyBanner = !isFull
-            ? '<div style="background:#f0fdfa;border:1px solid #0d9488;padding:8px 12px;margin-bottom:16px;font-size:9pt;color:#0f766e;font-weight:600;">'
-              + (isPartyA ? partyALabel(r).toUpperCase() + ' COPY' : 'PARTY B COPY')
-              + ' — Internal Description, contact details for the other party, Board Notes, All Events and System Events are not included in this copy.</div>'
+            ? '<div class="copy-disclaimer"><div class="disclaimer-label">Disclaimer</div>'
+              + 'This is your personal copy of the record, prepared for ' + escHtml(isPartyA ? partyALabel(r) : 'Party B')
+              + '. The Board retains the complete case file.</div>'
             : '';
 
         var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
@@ -2212,15 +2250,15 @@ VERSION HISTORY:
                 printTitle + ' <span class="status-badge ' + statusBadgeClass + '">' + escHtml(statusDisplayLabel(r)) + '</span>',
                 escHtml(ref)
               )
-            + partyCopyBanner
             + partyABlock + partyBBlock
             + timelineBlock
             + descBlock + supportBlockFull
             + issueDetailBlock
             + psBlock + resBlock + cnBlock
             + partyAEventsBlock + partyBEventsBlock
-            + matterHistoryBlock + boardNotesBlock
+            + allEventsBlock + boardNotesBlock
             + activityBlock
+            + partyCopyBanner
             + printRelationsFooter()
             + '</body></html>';
 
