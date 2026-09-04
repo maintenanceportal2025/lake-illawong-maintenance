@@ -1,0 +1,775 @@
+<!--
+=====================================================================
+RelationsChronicle.html - RELATIONS CORRESPONDENCE CHRONICLE
+=====================================================================
+DOCUMENT INFORMATION:
+  File Name:        RelationsChronicle.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Admin Module
+  Frontend Version: V1.0.0
+  Backend:          RelationsManager V1.0.10 -- getRelationByRef /
+                     getRelationsByUnit / getRelationsByName / getEvents
+  Status:           DEVELOPMENT
+  Created:          Aug 2026
+
+PURPOSE:
+  Focused, search-driven lookup + print tool for a single dispute --
+  Relations equivalent of CorrespondenceChronicle.html. Deliberately
+  leaner than the old file (Tony: "not sure but happy to try it"):
+  search -> confirm you found the right record -> print. No full
+  on-screen case detail rendering, since RelationsManager.html already
+  shows everything live for anyone who needs to work a case rather than
+  just locate and print one.
+
+WHY THIS IS SMALLER THAN THE OLD FILE (confirmed against source, not
+assumed):
+  - RC never logs in anywhere in this system -- getRCEmails() is a
+    static notification list, not a role/session. Chronicle's actual
+    audience has only ever been the same Relations-Manager/Developer
+    users who already use the full Manager, so there's no separate
+    "lighter access" audience to design for.
+  - RelationsManager.html has no search of its own (client-side text/
+    status filter on the full loaded list only) -- getRelationsByName
+    exists on the backend but was unused before this file, apparently
+    built for exactly this purpose.
+  - The entire Board/Party A/Party B print system already exists,
+    fully tested, in RelationsManager.html (showRelationsPrintDialog /
+    doRelationsPrint) -- reused near-verbatim here rather than
+    reinvented. Includes the V1.0.18 disclaimer fix (plain "personal
+    copy" wording, positioned above the footer, .copy-disclaimer
+    styling) -- ported as originally built, not re-derived.
+  - Relations has no legacy note-field variants (noteToResident,
+    notePartyA/B/Shared/Internal) and no parseBoardLogBody email-
+    parsing complexity -- activityLog is uniform timestamped entries
+    (addRelationComment format), split on blank lines. None of the old
+    file's legacy-format handling applies.
+  - getRelationByRef already returns the full record (activityLog
+    included, no stripping/lazy-load) -- unlike RelationsManager.html's
+    bulk list view, there's no "not yet expanded" state to handle here.
+
+SEARCH MODES:
+  Reference -- getRelationByRef, single record.
+  Name      -- getRelationsByName, partial/case-insensitive, partyA/
+               partyB name match, may return several.
+  Unit      -- getRelationsByUnit, partyA/partyB unit match, may
+               return several.
+
+VERSION HISTORY:
+  V1.0.0 (Aug 2026): Initial build.
+
+AUTHENTICATION:
+  Session Key:   portalAdminVerified (shared with RelationsManager.html/
+                 RelationsForm.html's Board mode)
+  Allowed Roles: Relations-Manager, Developer -- same gate as
+                 RelationsManager.html; no separate audience to serve.
+
+SYSTEM CONNECTIONS:
+  Relations: RelationsManager V1.0.10 -- getRelationByRef,
+             getRelationsByUnit, getRelationsByName, getEvents
+  Auth:      ManagementCentral (via VerificationModal)
+
+PORTAL:
+  Launched from Admin Portal.
+  Back button returns to Admin Portal.
+
+TECHNICAL:
+  Technology:   HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol: JSONP
+  Design:       Glass-morphism — Lake Illawong Unified Design System v2.4
+  Hosting:      Netlify
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relations Chronicle - Lake Illawong</title>
+<script src="VerificationModal_V1_0.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+        min-height: 100vh;
+        color: white;
+    }
+
+    .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+    .header { text-align: center; margin-bottom: 24px; }
+    .header-content { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+    .logo-image { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .header-text { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+    .header-title { font-size: 2.2rem; font-weight: 700; color: white; margin: 0 0 5px 0; line-height: 1.1; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+    .header-subtitle { font-size: 1rem; color: rgba(255,255,255,0.9); font-weight: 500; }
+    .header-divider {
+        height: 2px;
+        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%,
+            rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+        border-radius: 2px; margin-top: 15px;
+    }
+
+    /* ── BACK BUTTON ─────────────────────────────────────────── */
+    .portal-back-btn {
+        background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+        color: white; padding: 8px 18px; border-radius: 2px;
+        font-size: 0.88rem; font-weight: 600; cursor: pointer;
+        display: block; margin: 0 0 20px 0; transition: background 0.2s;
+    }
+    .portal-back-btn:hover { background: rgba(255,255,255,0.25); }
+
+    /* ── ACCESS DENIED ────────────────────────────────────────── */
+    .denied-box { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); border-radius: 2px; padding: 32px; text-align: center; margin: 40px auto; max-width: 480px; }
+    .denied-box h2 { color: #fca5a5; font-size: 1.3rem; margin-bottom: 10px; }
+    .denied-box p  { color: rgba(255,255,255,0.75); font-size: 0.9rem; margin-bottom: 6px; }
+    .btn-reverify { margin-top: 18px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 10px 24px; border-radius: 2px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+
+    /* ── SEARCH PANEL ─────────────────────────────────────────── */
+    .search-panel {
+        background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+        backdrop-filter: blur(10px); border-radius: 2px; padding: 18px 20px; margin-bottom: 20px;
+    }
+    .search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .search-row select {
+        background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 2px; padding: 10px 12px; font-size: 0.9rem; color: white; cursor: pointer; min-height: 44px;
+    }
+    .search-row select option { background: #1e3a8a; color: white; }
+    .search-row input[type="text"] {
+        background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 2px; color: white; padding: 10px 14px; font-size: 0.95rem;
+        min-height: 44px; flex: 1; min-width: 200px;
+    }
+    .search-row input[type="text"]::placeholder { color: rgba(255,255,255,0.45); }
+    .search-row input[type="text"]:focus { outline: none; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.45); }
+    .btn-search {
+        background: rgba(16,185,129,0.3); border: 1px solid rgba(16,185,129,0.6); color: #6ee7b7;
+        padding: 10px 24px; border-radius: 2px; font-weight: 700; cursor: pointer; font-size: 0.9rem;
+        min-height: 44px; transition: all 0.2s; white-space: nowrap;
+    }
+    .btn-search:hover { background: rgba(16,185,129,0.45); }
+    .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── RESULT CARDS ─────────────────────────────────────────── */
+    .result-card {
+        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+        border-left: 4px solid rgba(13,148,136,0.5); backdrop-filter: blur(10px);
+        border-radius: 2px; padding: 14px 16px; margin-bottom: 10px;
+        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .result-ref { font-family: monospace; font-size: 0.85rem; font-weight: 700; color: rgba(255,255,255,0.65); white-space: nowrap; }
+    .result-main { flex: 1; min-width: 160px; }
+    .result-parties { font-size: 0.95rem; font-weight: 600; color: white; }
+    .result-meta { font-size: 0.78rem; color: rgba(255,255,255,0.5); margin-top: 2px; }
+    .result-dispute-type {
+        font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+        padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+    }
+    .result-dispute-type.mt-management { background: rgba(59,130,246,0.3);  color: #bfdbfe; }
+    .result-dispute-type.mt-resident   { background: rgba(13,148,136,0.3);  color: #99f6e4; }
+    .result-dispute-type.mt-untriaged  { background: rgba(255,255,255,0.12);color: rgba(255,255,255,0.6); }
+    .status-pill {
+        display: inline-block; padding: 3px 10px; border-radius: 20px;
+        font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap;
+    }
+    .rel-pill-open              { background: rgba(20,184,166,0.35); color: #99f6e4; border: 1px solid rgba(45,212,191,0.6); }
+    .rel-pill-acknowledged      { background: rgba(16,185,129,0.3);  color: #6ee7b7; border: 1px solid rgba(52,211,153,0.6); }
+    .rel-pill-under-review      { background: rgba(234,179,8,0.3);   color: #fef08a; border: 1px solid rgba(234,179,8,0.6); }
+    .rel-pill-closed-resolved   { background: rgba(148,163,184,0.25);color: #cbd5e1; border: 1px solid rgba(148,163,184,0.5); }
+    .rel-pill-closed-unresolved { background: rgba(107,114,128,0.3); color: #d1d5db; border: 1px solid rgba(107,114,128,0.6); }
+    .btn-print-record {
+        background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white;
+        padding: 8px 18px; border-radius: 2px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.2s;
+    }
+    .btn-print-record:hover { background: rgba(255,255,255,0.25); }
+
+    /* ── STATES ──────────────────────────────────────────────── */
+    .loading-state, .empty-state { text-align: center; padding: 36px 20px; }
+    .spinner {
+        width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.2);
+        border-top-color: white; border-radius: 50%;
+        animation: spin 0.8s linear infinite; margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .state-text { color: rgba(255,255,255,0.65); font-size: 0.88rem; }
+    .state-icon { font-size: 2rem; margin-bottom: 8px; }
+
+    @media (max-width: 600px) {
+        .header-content { flex-direction: column; gap: 15px; }
+        .header-text    { align-items: center; text-align: center; }
+        .header-title   { font-size: 1.8rem; }
+        .logo-image     { width: 70px; height: 70px; }
+        .result-card    { flex-direction: column; align-items: flex-start; }
+    }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+            </div>
+            <div class="header-text">
+                <h1 class="header-title">Relations Chronicle</h1>
+                <p class="header-subtitle">Lake Illawong Retirement Village</p>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+    </div>
+
+    <!-- Back button -->
+    <button class="portal-back-btn" onclick="window.location.href='AdminPortal.html'">
+        &#8592; Back to Admin Portal
+    </button>
+
+    <!-- Access denied view -->
+    <div id="deniedView" class="denied-box hidden">
+        <h2>&#128683; Access Denied</h2>
+        <p>You do not have permission to access Relations Chronicle.</p>
+        <p>Signed in as: <strong id="deniedName"></strong></p>
+        <p>Role: <strong id="deniedRoles"></strong></p>
+        <button class="btn-reverify" onclick="reVerify()">Try Again</button>
+    </div>
+
+    <!-- Main content (hidden until auth) -->
+    <div id="mainContent" class="hidden">
+
+        <div class="search-panel">
+            <div class="search-row">
+                <select id="searchMode">
+                    <option value="ref">Reference</option>
+                    <option value="name">Name</option>
+                    <option value="unit">Unit</option>
+                </select>
+                <input type="text" id="searchInput" placeholder="e.g. REL-20260815-001"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();doSearch();}">
+                <button class="btn-search" id="btnSearch" onclick="doSearch()">Search</button>
+            </div>
+        </div>
+
+        <div id="resultsArea"></div>
+
+    </div><!-- end mainContent -->
+</div><!-- end container -->
+
+<script>
+    const CONFIG = {
+        BACKEND_URL:   'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
+        SESSION_KEY:   'portalAdminVerified',
+        ALLOWED_ROLES: ['Relations-Manager', 'Developer']
+    };
+
+    // Placeholder text per search mode -- set once on mode change, not
+    // re-derived per keystroke.
+    const PLACEHOLDERS = {
+        ref:  'e.g. REL-20260815-001',
+        name: 'Type a name, e.g. Smith',
+        unit: 'Type a unit, e.g. Unit 14'
+    };
+
+    var _eventCache = {};   // ref -> events array, populated on print open
+
+    // ── AUTH ──────────────────────────────────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Relations Chronicle',
+            moduleIcon: '📋',
+            sessionKey: CONFIG.SESSION_KEY,
+            onSuccess:  handleVerificationSuccess
+        });
+        if (!alreadyVerified) { VerificationModal.show(); }
+
+        document.getElementById('searchMode').addEventListener('change', function() {
+            document.getElementById('searchInput').placeholder = PLACEHOLDERS[this.value];
+        });
+    });
+
+    function handleVerificationSuccess(userData) {
+        window._sessionUser = userData;
+        const roles = userData.roleTags || [];
+        const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
+        if (!hasAccess) {
+            document.getElementById('deniedName').textContent  = userData.name || 'Unknown';
+            document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
+            document.getElementById('deniedView').classList.remove('hidden');
+            return;
+        }
+        document.getElementById('mainContent').classList.remove('hidden');
+    }
+
+    function reVerify() {
+        document.getElementById('deniedView').classList.add('hidden');
+        VerificationModal.clearVerification();
+        VerificationModal.show();
+    }
+
+    // ── JSONP HELPER -- ported verbatim from RelationsManager.html ────────
+
+    function jsonp(params, onSuccess, onError, timeoutMs) {
+        const callbackName = 'rc_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        const qs = Object.keys(params).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+        const url = CONFIG.BACKEND_URL + '?' + qs + '&callback=' + callbackName;
+
+        let settled = false;
+        const s = document.createElement('script');
+
+        function cleanup() {
+            window[callbackName] = function () {};
+            try { document.head.removeChild(s); } catch (e) {}
+        }
+
+        const timer = setTimeout(function () {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            if (onError) onError('Server did not respond. Please try again.');
+        }, timeoutMs || 30000);
+
+        window[callbackName] = function (data) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer); cleanup();
+            if (onSuccess) onSuccess(data);
+        };
+
+        s.onerror = function () {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer); cleanup();
+            if (onError) onError('Could not reach the server.');
+        };
+        s.src = url;
+        document.head.appendChild(s);
+    }
+
+    // ── SEARCH ───────────────────────────────────────────────────────────
+
+    function doSearch() {
+        const mode  = document.getElementById('searchMode').value;
+        const query = document.getElementById('searchInput').value.trim();
+        const btn   = document.getElementById('btnSearch');
+        const results = document.getElementById('resultsArea');
+
+        if (!query) { alert('Enter a ' + mode + ' to search.'); return; }
+
+        btn.disabled = true;
+        btn.textContent = 'Searching…';
+        results.innerHTML = '<div class="loading-state"><div class="spinner"></div><div class="state-text">Searching…</div></div>';
+
+        if (mode === 'ref') {
+            jsonp({ action: 'getRelationByRef', ref: query }, function(data) {
+                btn.disabled = false; btn.textContent = 'Search';
+                if (!data.success || !data.relation) {
+                    showEmpty('No dispute found for reference "' + query + '".');
+                    return;
+                }
+                renderResults([data.relation]);
+            }, function(err) { btn.disabled = false; btn.textContent = 'Search'; showEmpty(err); });
+        } else {
+            const action = mode === 'name' ? 'getRelationsByName' : 'getRelationsByUnit';
+            const param  = mode === 'name' ? { name: query } : { unit: query };
+            jsonp(Object.assign({ action: action }, param), function(data) {
+                btn.disabled = false; btn.textContent = 'Search';
+                if (!data.success) { showEmpty(data.error || 'Search failed.'); return; }
+                renderResults(data.relations || []);
+            }, function(err) { btn.disabled = false; btn.textContent = 'Search'; showEmpty(err); });
+        }
+    }
+
+    function showEmpty(msg) {
+        document.getElementById('resultsArea').innerHTML =
+            '<div class="empty-state"><div class="state-icon">&#128203;</div><div class="state-text">' + escHtml(msg) + '</div></div>';
+    }
+
+    function renderResults(relations) {
+        const results = document.getElementById('resultsArea');
+        if (relations.length === 0) {
+            showEmpty('No disputes found.');
+            return;
+        }
+        relations.sort(function(a, b) { return new Date(b.loggedAt) - new Date(a.loggedAt); });
+        results.innerHTML = relations.map(buildResultCard).join('');
+    }
+
+    // ── LABEL / CLASS HELPERS -- ported verbatim from RelationsManager.html
+
+    function matterTypeLabel(r) {
+        if (r.matterType === 'Management') return 'Resident-to-Management';
+        if (r.matterType === 'Resident')   return 'Resident-to-Resident';
+        return 'Untriaged';
+    }
+    function matterTypeClass(r) {
+        if (r.matterType === 'Management') return 'mt-management';
+        if (r.matterType === 'Resident')   return 'mt-resident';
+        return 'mt-untriaged';
+    }
+    function partyALabel(r) { return r.matterType === 'Resident' ? 'Party A' : 'Resident'; }
+    function statusPillClass(status) {
+        const map = {
+            'Open':                'rel-pill-open',
+            'Acknowledged':        'rel-pill-acknowledged',
+            'Under Review':        'rel-pill-under-review',
+            'Closed - Resolved':   'rel-pill-closed-resolved',
+            'Closed - Unresolved': 'rel-pill-closed-unresolved'
+        };
+        return map[status] || 'rel-pill-open';
+    }
+    function statusDisplayLabel(r) {
+        return r.status + (r.earlyResolution ? ' (ER)' : '');
+    }
+
+    // ── BUILD RESULT CARD (compact -- confirms the record, not a full
+    //    detail view; RelationsManager.html already provides that) ───────
+
+    function buildResultCard(r) {
+        const partyLabel = [r.partyAName, r.partyAUnit ? '(' + r.partyAUnit + ')' : ''].filter(Boolean).join(' ') +
+            (r.partyBName ? ' &mdash; ' + r.partyBName + (r.partyBUnit ? ' (' + r.partyBUnit + ')' : '') : '');
+        const loggedStr = r.loggedAt ? fmtDate(new Date(r.loggedAt)) : '—';
+
+        return '<div class="result-card">' +
+            '<div class="result-ref">' + escHtml(r.referenceNumber) + '</div>' +
+            '<div class="result-main">' +
+                '<div class="result-parties">' + (partyLabel || '—') + '</div>' +
+                '<div class="result-meta">' + escHtml(r.category || 'Dispute') + ' &bull; Logged ' + loggedStr + '</div>' +
+            '</div>' +
+            '<span class="result-dispute-type ' + matterTypeClass(r) + '">' + matterTypeLabel(r) + '</span>' +
+            '<span class="status-pill ' + statusPillClass(r.status) + '">' + escHtml(statusDisplayLabel(r)) + '</span>' +
+            '<button class="btn-print-record" onclick=\'showPrintDialog(' + JSON.stringify(r.referenceNumber) + ')\'>&#128438; Print</button>' +
+        '</div>';
+    }
+
+    // ── PRINT DIALOG -- adapted from RelationsManager.html's
+    //    showRelationsPrintDialog(). Chronicle always has the full
+    //    record already (getRelationByRef never strips activityLog,
+    //    unlike the bulk list response), so there's no "not yet
+    //    expanded, fetch first" branch to carry over here. ────────────────
+
+    var _resultRelations = {};  // ref -> full relation object, cached as results render
+
+    function showPrintDialog(ref) {
+        // Re-fetch by ref to guarantee the full record (search-by-name/
+        // unit results are already full records too, per getRelationsByUnit/
+        // getRelationsByName -- this just keeps one code path regardless
+        // of which search mode found it).
+        jsonp({ action: 'getRelationByRef', ref: ref }, function(data) {
+            if (!data.success || !data.relation) { alert('Dispute record not found.'); return; }
+            var r = data.relation;
+            _resultRelations[ref] = r;
+            openPrintDialog(r);
+        }, function() { alert('Could not reach the server.'); });
+    }
+
+    function openPrintDialog(r) {
+        var isResident = r.matterType === 'Resident';
+        var ref = r.referenceNumber;
+
+        var existing = document.getElementById('relationsPrintDialog');
+        if (existing) existing.remove();
+
+        var dialog = document.createElement('div');
+        dialog.id = 'relationsPrintDialog';
+        dialog.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        dialog.innerHTML = '<div style="background:#1e3a8a;border:1px solid rgba(255,255,255,0.2);border-radius:4px;padding:32px;max-width:400px;width:90%;text-align:center;">'
+            + '<div style="color:white;font-size:1.1rem;font-weight:600;margin-bottom:8px;">Print Dispute Record</div>'
+            + '<div style="color:rgba(255,255,255,0.7);font-size:0.85rem;margin-bottom:24px;">' + escHtml(ref) + '</div>'
+            + '<button id="rpb-full" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '&#128438; Print Full Record'
+            + '<div style="font-size:0.78rem;font-weight:400;color:rgba(255,255,255,0.6);margin-top:3px;">All sections — Board only.</div>'
+            + '</button>'
+            + '<button id="rpb-partyA" style="display:block;width:100%;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '&#128196; Print ' + escHtml(partyALabel(r)) + ' Copy'
+            + '</button>'
+            + (isResident ? '<button id="rpb-partyB" style="display:block;width:100%;padding:12px;margin-bottom:20px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:2px;color:white;font-size:0.95rem;font-weight:600;cursor:pointer;">'
+            + '&#128196; Print Party B Copy'
+            + '</button>' : '<div style="margin-bottom:10px;"></div>')
+            + '<button id="rpb-cancel" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.85rem;">Cancel</button>'
+            + '</div>';
+        document.body.appendChild(dialog);
+
+        document.getElementById('rpb-full').addEventListener('click', function() { doPrintWithEvents(ref, 'full'); });
+        document.getElementById('rpb-partyA').addEventListener('click', function() { doPrintWithEvents(ref, 'partyA'); });
+        if (isResident) document.getElementById('rpb-partyB').addEventListener('click', function() { doPrintWithEvents(ref, 'partyB'); });
+        document.getElementById('rpb-cancel').addEventListener('click', function() { dialog.remove(); });
+    }
+
+    // Events aren't part of getRelationByRef's response -- fetch once per
+    // ref, cache, then print. RelationsManager.html avoids this fetch on
+    // Full Record prints because its card view usually already triggered
+    // it (toggleCard -> loadAllEvents); Chronicle never pre-loads events
+    // since there's no card to expand, so it always fetches here.
+    function doPrintWithEvents(ref, printType) {
+        var dlg = document.getElementById('relationsPrintDialog');
+        if (dlg) dlg.remove();
+
+        if (_eventCache[ref]) {
+            doRelationsPrint(ref, printType);
+            return;
+        }
+        jsonp({ action: 'getEvents', matterRef: ref }, function(data) {
+            _eventCache[ref] = (data.success && data.events) ? data.events : [];
+            doRelationsPrint(ref, printType);
+        }, function() {
+            _eventCache[ref] = [];
+            doRelationsPrint(ref, printType);
+        });
+    }
+
+    function visMatch(visibility, tag) {
+        if (!visibility) return false;
+        return visibility.split(',').map(function(v) { return v.trim(); }).indexOf(tag) !== -1;
+    }
+
+    // ── PRINT -- ported verbatim from RelationsManager.html V1.0.18,
+    //    including the V1.0.18 disclaimer fix (plain wording, positioned
+    //    above the footer, .copy-disclaimer styling). allRelations lookup
+    //    replaced with the local _resultRelations cache; everything else
+    //    unchanged. ─────────────────────────────────────────────────────
+
+    function doRelationsPrint(ref, printType) {
+        var r = _resultRelations[ref];
+        if (!r) { alert('Dispute record not found.'); return; }
+        var isResident = r.matterType === 'Resident';
+
+        var isFull   = printType === 'full';
+        var isPartyA = printType === 'partyA';
+        var isPartyB = printType === 'partyB';
+
+        var statusBadgeClass = {
+            'Open':                   'rel-badge-open',
+            'Acknowledged':           'rel-badge-acknowledged',
+            'Under Review':           'rel-badge-under-review',
+            'Closed - Resolved':      'rel-badge-closed-resolved',
+            'Closed - Unresolved':    'rel-badge-closed-unresolved'
+        }[r.status] || 'rel-badge-open';
+
+        var fmtD = function(dateStr) {
+            if (!dateStr) return '—';
+            var dt = new Date(dateStr);
+            return isNaN(dt) ? dateStr : dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+        };
+
+        var partyABlock = '<div class="section-title">' + escHtml(partyALabel(r)) + '</div>'
+            + '<div class="party-block"><div class="field-grid">'
+            + relationsFieldRow('Name', r.partyAName, false)
+            + relationsFieldRow('Unit', r.partyAUnit, false)
+            + (isFull || isPartyA ? relationsFieldRow('Email', r.partyAEmail, false) + relationsFieldRow('Mobile', r.partyAMobile, false) : '')
+            + '</div></div>';
+
+        var partyBBlock = (isResident && r.partyBName)
+            ? '<div class="section-title">Party B</div>'
+              + '<div class="party-block"><div class="field-grid">'
+              + relationsFieldRow('Name', r.partyBName, false)
+              + relationsFieldRow('Unit', r.partyBUnit, false)
+              + (isFull || isPartyB ? relationsFieldRow('Email', r.partyBEmail, false) + relationsFieldRow('Mobile', r.partyBMobile, false) : '')
+              + '</div></div>'
+            : '';
+
+        var timelineBlock = '<div class="section-title">Timeline</div>'
+            + '<div class="field-grid">'
+            + relationsFieldRow('Logged',            fmtD(r.loggedAt), false)
+            + relationsFieldRow('Logged By',          r.loggedBy, false)
+            + relationsFieldRow('Dispute Type',        matterTypeLabel(r), false)
+            + relationsFieldRow('Triaged',            r.triagedAt ? fmtD(r.triagedAt) + ' by ' + (r.triagedBy || '') : 'Not yet triaged', false)
+            + relationsFieldRow('Review Due',         fmtD(r.reviewDue), false)
+            + relationsFieldRow('Process Statement',  r.processStatementAt ? fmtD(r.processStatementAt) : '—', false)
+            + relationsFieldRow('Resolved',           r.resolvedAt ? fmtD(r.resolvedAt) : '—', false)
+            + relationsFieldRow('Closed',             r.closedAt ? fmtD(r.closedAt) : '—', false)
+            + '</div>';
+
+        var descBlock = (isFull && r.description)
+            ? '<div class="section-title">Description (raw, internal only)</div>'
+              + '<div class="content-block"><div class="field-value">' + escHtml(r.description) + '</div></div>'
+            : '';
+        var supportBlockFull = isFull
+            ? (r.desiredOutcome  ? '<div class="section-title">Desired Outcome</div><div class="content-block"><div class="field-value">' + escHtml(r.desiredOutcome) + '</div></div>' : '')
+            + (r.previousActions ? '<div class="section-title">Previous Actions</div><div class="content-block"><div class="field-value">' + escHtml(r.previousActions) + '</div></div>' : '')
+            + (r.location        ? '<div class="section-title">Location</div><div class="content-block"><div class="field-value">' + escHtml(r.location) + '</div></div>' : '')
+            + (r.peopleInvolved  ? '<div class="section-title">People Involved</div><div class="content-block"><div class="field-value">' + escHtml(r.peopleInvolved) + '</div></div>' : '')
+            : '';
+
+        var issueDetailBlock = (isResident && r.issueDetail)
+            ? '<div class="section-title">Issue Detail</div>'
+              + '<div class="content-block" style="border-left-color:#6366f1;">'
+              + '<div class="field-value">' + escHtml(r.issueDetail) + '</div></div>'
+            : '';
+
+        var psBlock = r.processStatement
+            ? '<div class="section-title">Board Process Statement</div><div class="content-block"><div class="field-value">' + escHtml(r.processStatement) + '</div></div>'
+            : '';
+        var resBlock = r.resolutionSummary
+            ? '<div class="section-title">Resolution Summary' + (r.earlyResolution ? ' (Early Resolution)' : '') + '</div>'
+              + '<div class="content-block" style="border-left-color:#10b981;"><div class="field-value">' + escHtml(r.resolutionSummary) + '</div></div>'
+            : '';
+        var cnBlock = r.closureNotes
+            ? '<div class="section-title">Closure Notes</div><div class="content-block" style="border-left-color:#f97316;"><div class="field-value">' + escHtml(r.closureNotes) + '</div></div>'
+            : '';
+
+        var activityBlock = '';
+        if (isFull && r.activityLog) {
+            var allEntries = r.activityLog.split('\n\n').map(function(e) { return e.trim(); }).filter(Boolean).reverse();
+            if (allEntries.length > 0) {
+                activityBlock = '<div class="section-title">System Events</div><div class="activity-log-print">'
+                    + allEntries.map(function(e) { return '<div class="activity-log-entry-print">' + escHtml(e) + '</div>'; }).join('')
+                    + '</div>';
+            }
+        }
+
+        var cachedEvents = _eventCache[ref] || [];
+        function renderPrintEvent(ev) {
+            var isEmail = ['Email Received', 'Email Sent'].indexOf(ev.eventType) !== -1;
+            var detail = '';
+            if (isEmail) {
+                if (ev.emailDate)    detail += '<div class="field-label" style="margin:4px 0 1px;">Date: '    + escHtml(ev.emailDate)    + '</div>';
+                if (ev.emailFrom)    detail += '<div class="field-label" style="margin:1px 0;">From: '       + escHtml(ev.emailFrom)    + '</div>';
+                if (ev.emailTo)      detail += '<div class="field-label" style="margin:1px 0;">To: '         + escHtml(ev.emailTo)      + '</div>';
+                if (ev.emailSubject) detail += '<div class="field-label" style="margin:1px 0 4px;">Subject: ' + escHtml(ev.emailSubject) + '</div>';
+            } else if (ev.reference) {
+                detail += '<div class="field-label" style="margin:4px 0;">Ref: ' + escHtml(ev.reference) + '</div>';
+            }
+            if (ev.extendedNotes) detail += '<div style="font-style:italic;color:#4b5563;margin-top:4px;">' + escHtml(ev.extendedNotes) + '</div>';
+            var printVisLabel = (ev.visibility || '').split(',').map(function(v) { return v.trim(); }).join(' + ');
+            return '<div class="activity-log-entry-print" style="padding:6px 0;">'
+                + '<span style="color:#0d9488;font-weight:600;">' + escHtml(ev.timestamp) + '</span>'
+                + ' &mdash; <span style="font-weight:600;">' + escHtml(ev.user) + '</span>'
+                + ' [' + escHtml(ev.eventType) + ']'
+                + ' <span style="font-size:7.5pt;background:#e5e7eb;padding:1px 4px;border-radius:2px;">' + escHtml(printVisLabel) + '</span>'
+                + '<div style="margin-top:3px;">' + escHtml(ev.summary) + '</div>'
+                + detail + '</div>';
+        }
+
+        var partyAEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, isResident ? 'Party A' : 'Resident'); });
+        var partyAEventsBlock = (isFull || isPartyA) && partyAEvents.length
+            ? '<div class="section-title">' + escHtml(partyALabel(r)) + ' Events</div><div class="activity-log-print">' + partyAEvents.map(renderPrintEvent).join('') + '</div>'
+            : '';
+        var partyBEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Party B'); });
+        var partyBEventsBlock = isResident && (isFull || isPartyB) && partyBEvents.length
+            ? '<div class="section-title">Party B Events</div><div class="activity-log-print">' + partyBEvents.map(renderPrintEvent).join('') + '</div>'
+            : '';
+        var allEventsBlock = isFull && cachedEvents.length
+            ? '<div class="section-title">All Events</div><div class="activity-log-print">' + cachedEvents.map(renderPrintEvent).join('') + '</div>'
+            : isFull
+              ? '<div class="section-title">All Events</div><div class="activity-log-print"><div class="activity-log-entry-print" style="color:#6b7280;font-style:italic;">No events recorded.</div></div>'
+              : '';
+        var boardEvents = cachedEvents.filter(function(e) { return visMatch(e.visibility, 'Board'); });
+        var boardNotesBlock = isFull && boardEvents.length
+            ? '<div class="section-title">Board Notes</div><div class="activity-log-print">' + boardEvents.map(renderPrintEvent).join('') + '</div>'
+            : '';
+
+        var printTitle = isFull ? 'Relations Record' : (isPartyA ? partyALabel(r) + ' Copy' : 'Party B Copy');
+        var partyCopyBanner = !isFull
+            ? '<div class="copy-disclaimer"><div class="disclaimer-label">Disclaimer</div>'
+              + 'This is your personal copy of the record, prepared for ' + escHtml(isPartyA ? partyALabel(r) : 'Party B')
+              + '. The Board retains the complete case file.</div>'
+            : '';
+
+        var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+            + '<title>' + printTitle + ' — ' + escHtml(ref) + '</title>'
+            + '<style>' + printRelationsStyles() + '</style></head><body>'
+            + printRelationsHeader(
+                printTitle + ' <span class="status-badge ' + statusBadgeClass + '">' + escHtml(statusDisplayLabel(r)) + '</span>',
+                escHtml(ref)
+              )
+            + partyABlock + partyBBlock
+            + timelineBlock
+            + descBlock + supportBlockFull
+            + issueDetailBlock
+            + psBlock + resBlock + cnBlock
+            + partyAEventsBlock + partyBEventsBlock
+            + allEventsBlock + boardNotesBlock
+            + activityBlock
+            + partyCopyBanner
+            + printRelationsFooter()
+            + '</body></html>';
+
+        var w = window.open('', '_blank', 'width=800,height=900');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        w.print();
+    }
+
+    function relationsFieldRow(label, value, full) {
+        var v = value ? escHtml(value) : '<span class="field-empty">—</span>';
+        return '<div class="field-group' + (full ? ' field-full' : '') + '">'
+            + '<div class="field-label">' + label + '</div>'
+            + '<div class="field-value">' + v + '</div>'
+            + '</div>';
+    }
+
+    function printRelationsStyles() {
+        return `
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background: white; }
+            .print-header { border-bottom: 3px solid #0d9488; padding-bottom: 12px; margin-bottom: 20px; }
+            .print-village { font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #0d9488; margin-bottom: 4px; }
+            .print-title   { font-size: 16pt; font-weight: 700; color: #111; margin-bottom: 4px; }
+            .print-ref     { font-size: 10pt; color: #444; }
+            .print-confidential { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #dc2626; float: right; margin-top: 6px; }
+            .status-badge  { display: inline-block; padding: 3px 10px; border-radius: 3px; font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 10px; }
+            .rel-badge-open              { background: #ccfbf1; color: #0f766e; }
+            .rel-badge-acknowledged      { background: #bbf7d0; color: #047857; }
+            .rel-badge-under-review      { background: #fef3c7; color: #b45309; }
+            .rel-badge-closed-resolved   { background: #f1f5f9; color: #374151; }
+            .rel-badge-closed-unresolved { background: #f3f4f6; color: #374151; }
+            .section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin: 16px 0 10px; }
+            .field-grid    { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 8px; }
+            .field-full    { grid-column: 1 / -1; }
+            .field-label   { font-size: 8pt; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px; }
+            .field-value   { font-size: 10pt; color: #111; line-height: 1.5; white-space: pre-wrap; }
+            .field-empty   { color: #9ca3af; font-style: italic; }
+            .party-block   { background: #f0fdfa; border: 1px solid #99f6e4; border-left: 4px solid #0d9488; padding: 10px 12px; border-radius: 3px; margin-bottom: 10px; }
+            .party-block .field-label { color: #0f766e; }
+            .content-block { background: #f8f9fa; border: 1px solid #e9ecef; border-left: 4px solid #0d9488; padding: 10px 12px; border-radius: 3px; margin-bottom: 10px; }
+            .copy-disclaimer { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #b45309; padding: 10px 12px; border-radius: 3px; margin-top: 20px; font-size: 9pt; color: #78350f; }
+            .copy-disclaimer .disclaimer-label { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #b45309; margin-bottom: 3px; }
+            .activity-log-print { margin: 8px 0 16px 0; padding: 10px; background: #f8fafc; border-left: 3px solid #0d9488; }
+            .activity-log-entry-print { font-size: 8pt; font-family: monospace; padding: 3px 0; border-bottom: 1px solid #e5e7eb; color: #374151; white-space: pre-wrap; }
+            .activity-log-entry-print:last-child { border-bottom: none; }
+            .print-footer  { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 8pt; color: #374151; display: flex; justify-content: space-between; }
+        `;
+    }
+
+    function printRelationsHeader(title, subtitle) {
+        return '<div class="print-header">'
+            + '<div class="print-confidential">Confidential</div>'
+            + '<div class="print-village">Lake Illawong Retirement Village</div>'
+            + '<div class="print-title">' + title + '</div>'
+            + '<div class="print-ref">' + subtitle + '</div>'
+            + '</div>';
+    }
+
+    function printRelationsFooter() {
+        var now = new Date().toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        return '<div class="print-footer">'
+            + '<span>Lake Illawong Retirement Village — Relations Register</span>'
+            + '<span>Printed ' + now + '</span>'
+            + '</div>';
+    }
+
+    // ── UTILITY -- ported verbatim from RelationsManager.html ─────────────
+
+    function fmtDate(d) {
+        if (!d || isNaN(d)) return '—';
+        return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function escHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+</script>
+</body>
+</html>
