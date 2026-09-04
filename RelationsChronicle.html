@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.1
+  Frontend Version: V1.0.2
   Backend:          RelationsManager V1.0.10 -- getRelationByRef /
                      getRelationsByUnit / getRelationsByName / getEvents
   Status:           DEVELOPMENT
@@ -55,15 +55,21 @@ SEARCH MODES:
                return several.
 
 VERSION HISTORY:
+  V1.0.2 (Aug 2026): REAL FIX for the "Access Denied" Tony was seeing --
+    the V1.0.1 diagnostic confirmed hasAccess was correctly computing
+    true, ruling out an auth/role/data problem entirely. Actual cause:
+    this file never defined the .hidden CSS class at all (only ported
+    the JS that toggles it) -- RelationsManager.html has
+    `.hidden { display: none !important; }`, which was missed when
+    building this file from scratch rather than as a direct copy.
+    Result: #deniedView and #mainContent were BOTH visible from page
+    load regardless of auth outcome. Tony was looking at the Access
+    Denied box's default blank state (deniedName/deniedRoles are only
+    populated inside the !hasAccess branch, which never ran) -- not an
+    actual denial. Added the missing CSS rule; removed the V1.0.1
+    diagnostic logging now the real cause is confirmed and fixed.
   V1.0.1 (Aug 2026): TEMP diagnostic logging added to
-    handleVerificationSuccess -- Tony hitting Access Denied despite
-    UnitList and the raw verification response both confirmed (by
-    Tony, directly) to include Developer/Relations-Manager. Since the
-    backend data is confirmed correct, the fault is somewhere between
-    that response and this page's access check -- logs the exact
-    values (userData.name, roles, CONFIG.ALLOWED_ROLES, computed
-    hasAccess) this function's decision is actually based on, rather
-    than guessing further. Remove once cause is confirmed.
+    handleVerificationSuccess (since removed in V1.0.2 -- see above).
   V1.0.0 (Aug 2026): Initial build.
 
 AUTHENTICATION:
@@ -129,6 +135,8 @@ TECHNICAL:
         display: block; margin: 0 0 20px 0; transition: background 0.2s;
     }
     .portal-back-btn:hover { background: rgba(255,255,255,0.25); }
+
+    .hidden { display: none !important; }
 
     /* ── ACCESS DENIED ────────────────────────────────────────── */
     .denied-box { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); border-radius: 2px; padding: 32px; text-align: center; margin: 40px auto; max-width: 480px; }
@@ -304,17 +312,6 @@ TECHNICAL:
         window._sessionUser = userData;
         const roles = userData.roleTags || [];
         const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
-        // TEMP DIAGNOSTIC (V1.0.1) -- remove once the Access Denied cause
-        // is confirmed. Logs the exact values this function's decision is
-        // based on, since the backend response itself has already been
-        // confirmed correct (Tony inspected it directly) -- the fault is
-        // somewhere between that response and this check, not the data.
-        console.log('Chronicle auth check:', {
-            name: userData.name,
-            roles: roles,
-            allowedRoles: CONFIG.ALLOWED_ROLES,
-            hasAccess: hasAccess
-        });
         if (!hasAccess) {
             document.getElementById('deniedName').textContent  = userData.name || 'Unknown';
             document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
