@@ -13,18 +13,25 @@
  * doesn't apply here the way it does elsewhere. Track what changed by
  * date instead.):
  * - Aug 2026: show() fixed to always reset the modal to step 1
- *   (identifier entry) and clear any leftover expiry/resend timers.
- *   Previously, re-showing the modal after a prior incomplete attempt
- *   reached step 2 (code entry) left it stuck on that stale screen --
- *   affected every module's "Try Again"/reVerify pattern after Access
- *   Denied (clearVerification() + show(), no step reset), found via
- *   RelationsChronicle.html and confirmed identically broken in
- *   RelationsManager.html without either module having touched this
- *   file. Root cause was here, not per-module -- fixes all ~15+
- *   consumers at once. No legitimate prior behaviour relied on
- *   resuming mid-code-entry (already-verified sessions are handled
- *   entirely separately via init()'s storage check), so this is a
- *   strict bug fix with no functional trade-off for any caller.
+ *   (identifier entry), clear any leftover expiry/resend timers, AND
+ *   clear step 2's own stale state (code input value, error message,
+ *   Verify button re-disabled). Previously, re-showing the modal after
+ *   a prior incomplete attempt reached step 2 (code entry) left it
+ *   stuck on that stale screen -- affected every module's "Try Again"/
+ *   reVerify pattern after Access Denied (clearVerification() + show(),
+ *   no reset at all). First found via RelationsChronicle.html/
+ *   RelationsManager.html's identically-broken "Try Again", both
+ *   without either module touching this file -- root cause was here,
+ *   not per-module, so this fixes all ~15+ consumers at once. Follow-up
+ *   round caught by Tony testing the first fix: the step-visibility
+ *   reset alone didn't clear vmCodeInput's actual DOM value, so a fresh
+ *   code request could still land on step 2 with the previous attempt's
+ *   6 digits still populated (worked if manually overwritten, but
+ *   shouldn't have needed to be). No legitimate prior behaviour relied
+ *   on any of this stale state surviving a re-show -- already-verified
+ *   sessions are handled entirely separately via init()'s storage
+ *   check, never through show() -- so this is a strict bug fix with no
+ *   functional trade-off for any caller.
  * - Aug 2026: Optional persistent session support added -- new config
  *   options storageType ('session' [default, unchanged] or 'local') and
  *   expiryDays (only meaningful when storageType is 'local'; omit/null
@@ -154,6 +161,19 @@ const VerificationModal = (function() {
             step2El.classList.remove('active');
             step1El.classList.add('active');
         }
+        // Step reset above only controls which step is *visible* -- the
+        // code input's DOM value survives that untouched, so a fresh
+        // code request could still land on step 2 with the previous
+        // attempt's 6 digits still sitting in the field (Tony: "the
+        // previous code is there" -- works if overwritten, but
+        // shouldn't need to be). Clear the stale value, error message,
+        // and re-disable Verify to match the now-empty field.
+        const codeInputEl = document.getElementById('vmCodeInput');
+        const error2El    = document.getElementById('vmError2');
+        const verifyBtnEl = document.getElementById('vmVerifyBtn');
+        if (codeInputEl) codeInputEl.value = '';
+        if (error2El) { error2El.classList.add('hidden'); error2El.textContent = ''; }
+        if (verifyBtnEl) verifyBtnEl.disabled = true;
         if (config.smsOnly) {
             const emailOption = document.getElementById('vmEmailOption');
             if (emailOption) emailOption.style.display = 'none';
