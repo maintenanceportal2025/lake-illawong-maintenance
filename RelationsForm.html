@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident/Admin Shared Module
-  Frontend Version: V1.0.7
+  Frontend Version: V1.0.8
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -66,6 +66,21 @@ SUCCESS SCREEN:
   explanation only ever reaches the submitter at triage.
 
 VERSION HISTORY:
+  V1.0.8 (Aug 2026): Resident-mode good-faith acknowledgement checkbox
+    restored -- ComplaintForm.html (this form's field-set source) has
+    always required "I acknowledge that this [dispute] is submitted in
+    good faith and contains accurate information to the best of my
+    knowledge" before submission; this file never carried it, a genuine
+    gap from being built structurally off DisputesManager's old Log
+    Dispute modal (which never had one) rather than off ComplaintForm.
+    Confirmed against ComplaintProxyForm.html (the old Board-entry
+    equivalent) that Board direct-entry never required this either --
+    the declaration is the resident's own, not the Board member
+    recording on their behalf. Resident mode only: checkbox shown and
+    required; hidden and not validated in Board mode. Checkbox/label
+    CSS ported verbatim from ComplaintForm.html (identical glass theme,
+    no adaptation needed). Wording changed from "complaint" to
+    "dispute" to match this form's terminology throughout.
   V1.0.7 (Aug 2026): "MATTER" purged from every user-visible spot,
     same pass and same reasoning as RelationsManager.html V1.0.12 --
     see that file's changelog for the full account. Page title, form
@@ -212,6 +227,21 @@ VERSION HISTORY:
     .form-textarea { min-height: 120px; resize: vertical; font-family: inherit; }
     .form-input[readonly] { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.75); cursor: not-allowed; }
 
+    /* Checkbox -- ported verbatim from ComplaintForm.html */
+    .checkbox-group { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 20px; cursor: pointer; }
+    .checkbox-group input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+    .checkbox-custom {
+        flex-shrink: 0; width: 28px; height: 28px; min-width: 28px;
+        border: 2px solid rgba(255,255,255,0.4); border-radius: 4px; background: rgba(255,255,255,0.08);
+        display: flex; align-items: center; justify-content: center; margin-top: 1px; transition: all 0.2s;
+    }
+    .checkbox-group input[type="checkbox"]:checked + .checkbox-custom { background: rgba(255,255,255,0.9); border-color: white; }
+    .checkbox-group input[type="checkbox"]:checked + .checkbox-custom::after {
+        content: ''; width: 8px; height: 13px; border: 2px solid #1e3a8a; border-top: none; border-left: none;
+        transform: rotate(45deg) translateY(-2px); display: block;
+    }
+    .checkbox-label { color: rgba(255,255,255,0.9); font-size: 0.9rem; line-height: 1.5; cursor: pointer; padding: 2px 0; }
+
     /* ── PARTY LOOKUP (Board mode only) ─────────────────────── */
     .lookup-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; }
     .lookup-row .form-group { flex: 1; margin-bottom: 0; }
@@ -356,6 +386,16 @@ VERSION HISTORY:
                     </div>
                 </div>
 
+                <!-- Resident mode only -->
+                <div class="checkbox-group" id="acknowledgeGroup" onclick="document.getElementById('acknowledge').click()">
+                    <input type="checkbox" id="acknowledge">
+                    <div class="checkbox-custom"></div>
+                    <label class="checkbox-label" for="acknowledge">
+                        <span class="required">*</span> I acknowledge that this dispute is submitted in good faith and
+                        contains accurate information to the best of my knowledge.
+                    </label>
+                </div>
+
                 <!-- Board direct-entry only -->
                 <div class="form-group hidden" id="submissionMethodGroup">
                     <label class="form-label">How was this submitted? <span class="required">*</span></label>
@@ -446,6 +486,7 @@ VERSION HISTORY:
             'Capture the full field set here regardless of eventual dispute type. Triage (Resident-to-Management vs Resident-to-Resident) happens afterwards in Relations Manager.';
         document.getElementById('lookupSection').classList.remove('hidden');
         document.getElementById('submissionMethodGroup').classList.remove('hidden');
+        document.getElementById('acknowledgeGroup').classList.add('hidden');
         document.getElementById('backBtn').href = CONFIG.ADMIN_MANAGER;
         document.getElementById('backBtn').textContent = '\u2190 Back to Relations Manager';
         loadResidentList();
@@ -575,6 +616,7 @@ VERSION HISTORY:
         if (!description) { alert('Please describe the dispute before submitting.'); return; }
         if (isBoardMode && !partyAName) { alert('Please search for and select the resident before submitting.'); return; }
         if (isBoardMode && !document.getElementById('submissionMethod').value) { alert('Please select how this was submitted.'); return; }
+        if (!isBoardMode && !document.getElementById('acknowledge').checked) { alert('Please confirm the good faith acknowledgement before submitting.'); return; }
 
         submitBtn.disabled = true;
         submitBtn.textContent = 'Submitting…';
