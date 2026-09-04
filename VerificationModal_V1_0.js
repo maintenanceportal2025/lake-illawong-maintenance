@@ -12,6 +12,19 @@
  * file is shared across ~15+ modules by filename, so version-in-filename
  * doesn't apply here the way it does elsewhere. Track what changed by
  * date instead.):
+ * - Aug 2026: show() fixed to always reset the modal to step 1
+ *   (identifier entry) and clear any leftover expiry/resend timers.
+ *   Previously, re-showing the modal after a prior incomplete attempt
+ *   reached step 2 (code entry) left it stuck on that stale screen --
+ *   affected every module's "Try Again"/reVerify pattern after Access
+ *   Denied (clearVerification() + show(), no step reset), found via
+ *   RelationsChronicle.html and confirmed identically broken in
+ *   RelationsManager.html without either module having touched this
+ *   file. Root cause was here, not per-module -- fixes all ~15+
+ *   consumers at once. No legitimate prior behaviour relied on
+ *   resuming mid-code-entry (already-verified sessions are handled
+ *   entirely separately via init()'s storage check), so this is a
+ *   strict bug fix with no functional trade-off for any caller.
  * - Aug 2026: Optional persistent session support added -- new config
  *   options storageType ('session' [default, unchanged] or 'local') and
  *   expiryDays (only meaningful when storageType is 'local'; omit/null
@@ -116,6 +129,30 @@ const VerificationModal = (function() {
         if (!modalInjected) {
             injectModal();
             modalInjected = true;
+        }
+        // Always reset to step 1 (identifier entry) when the modal is
+        // shown. Without this, re-showing the modal after a previous
+        // incomplete attempt reached step 2 (code entry) -- e.g. a
+        // module's "Try Again" button after Access Denied, calling
+        // clearVerification() then show() -- left the modal stuck
+        // displaying the stale code-entry screen instead of starting
+        // over. There's no legitimate case where resuming mid-code-
+        // entry from a prior attempt is correct: already-verified
+        // sessions are handled entirely separately via init()'s storage
+        // check, never through show(). Found via RelationsChronicle.html
+        // and confirmed identically broken in RelationsManager.html's
+        // own "Try Again" -- both call this same show(), so the defect
+        // was here, not in either module. Also clears any leftover
+        // expiry/resend timers from that prior attempt (same cleanup
+        // hide() already does), so a stale countdown can't fire against
+        // step 2's elements once it's reached again.
+        if (expiryTimerInterval) { clearInterval(expiryTimerInterval); expiryTimerInterval = null; }
+        if (resendTimerInterval) { clearInterval(resendTimerInterval); resendTimerInterval = null; }
+        const step1El = document.getElementById('vmStep1');
+        const step2El = document.getElementById('vmStep2');
+        if (step1El && step2El) {
+            step2El.classList.remove('active');
+            step1El.classList.add('active');
         }
         if (config.smsOnly) {
             const emailOption = document.getElementById('vmEmailOption');
