@@ -1,0 +1,726 @@
+<!--
+=====================================================================
+RelationsAnnualReport.html - RELATIONS ANNUAL DISPUTE REPORT
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        RelationsAnnualReport.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Admin Portal Module
+  Frontend Version: V1.0.0
+  Backend:          RelationsManager V1.0.11
+  Status:           DEVELOPMENT
+  Created:          Aug 2026
+
+PURPOSE:
+  RVA 1986 (as amended) s.38ZA/38ZB annual dispute reporting for
+  Relations Manager. Generates the report the Board presents on all
+  village disputes at the Annual General Meeting, the same copy of
+  which is then lodged with the Director of Consumer Affairs Victoria
+  via myCAV within 14 days of the AGM -- one report, not two different-
+  content ones, confirmed directly against CAV's own published
+  operator guidance (Village dispute procedure, updated 30 Apr 2026):
+  the report must cover the number and nature of disputes, the outcome
+  of each dispute, and any changes made or proposed in response, and
+  "must not identify the parties to any dispute". The same document is
+  what's copied to the Director -- not a separately-scoped version.
+
+  New, standalone file -- NOT an extension of AnnualComplianceReport.html,
+  which remains exactly as it is, serving the old (frozen)
+  Complaints/Disputes system only, per the Relations Manager build's
+  duplication principle (every file Relations draws on gets duplicated
+  under a new name; originals stay untouched). Once Complaints/Disputes
+  are eventually deprecated, this file is the only annual report tool
+  needed.
+
+  Financial year based (1 Jul - 30 Jun), matching the CAV lodgement
+  cycle -- same convention as AnnualComplianceReport.html.
+
+  Single generation, single export. Earlier design considered a
+  separate AGM-formatted export and CAV-formatted export (mirroring
+  AnnualComplianceReport.html's two-button pattern), but that split
+  existed there because the CAV lodgement was textually disputes-only
+  while the AGM report combined complaints and disputes -- a scope
+  difference that doesn't exist here (Relations already covers the
+  full "village dispute" definition), and CAV's own guidance confirms
+  the AGM and CAV documents are the same report. One export serves
+  both purposes.
+
+  Deliberately does not display or export party names, unit numbers,
+  contact details, Description, or IssueDetail -- getAnnualRelationsReportData
+  never returns these fields in the first place (not fetched, not
+  stripped after the fact). Category is included (dispute "nature" per
+  CAV's wording) -- not identifying on its own. No per-dispute "action
+  taken" field -- confirmed against CAV's guidance that per-dispute
+  outcome + an aggregate changes-made-or-proposed narrative satisfies
+  the report content requirement; per-dispute action taken is a
+  separate s.38ZA(1) record-keeping duty already met by
+  ResolutionSummary/ClosureNotes living in the Relations sheet itself.
+
+  Export uses the same window.print() pattern as
+  AnnualComplianceReport.html and RelationsManager.html/RelationsChronicle.html's
+  own print dialogs (open a formatted print window, browser print
+  dialog handles Save as PDF) -- consistent with every other print/
+  export path in this system.
+
+VERSION HISTORY:
+  V1.0.0 (Aug 2026): Initial build. FY selector (defaults to the most
+    recently completed financial year, ported unchanged from
+    AnnualComplianceReport.html). Generate Report pulls anonymised data
+    from RelationsManager (getAnnualReportData) and the Board's FY
+    narrative (getAnnualNarrative) -- single backend, unlike the old
+    tool's two-backend Promise.all. On-screen summary stats, one
+    Relations table (Reference/Category/Type/Logged/Closed/Outcome/
+    Early Resolution), editable narrative section (saveAnnualNarrative,
+    same AnnualReports tab both systems share -- historic rows from
+    ComplaintsManager remain readable there but are not surfaced here).
+    One export button (Export Report) -- see PURPOSE above for why this
+    isn't split into separate AGM/CAV exports the way the old tool was.
+
+AUTHENTICATION:
+  Session inherited from AdminPortal.html (portalAdminVerified) --
+  same key RelationsManager.html/RelationsChronicle.html/RelationsForm.html's
+  Board mode already share.
+  Redirects to AdminPortal.html if session absent.
+  Allowed roles: Relations-Manager, Developer -- same gate as
+  RelationsManager.html; no separate audience to serve.
+
+SYSTEM CONNECTIONS:
+  RelationsManager backend V1.0.11 -- actions: getAnnualReportData,
+    getAnnualNarrative, saveAnnualNarrative
+
+PORTAL:
+  Launched from AdminPortal.html. Not yet card-linked -- held until the
+  Complaints/Disputes-to-Relations unification is further along, same
+  as RelationsStatus.html/RelationsChronicle.html.
+  Back button returns to AdminPortal.html.
+
+TECHNICAL:
+  Technology:   HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol: JSONP
+  Design:       Glass-morphism — Lake Illawong Unified Design System v2.4
+  Hosting:      Netlify
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relations Annual Report - Lake Illawong</title>
+<script src="VerificationModal_V1_0.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+        --glass-bg:           rgba(255, 255, 255, 0.08);
+        --glass-bg-hover:     rgba(255, 255, 255, 0.12);
+        --glass-bg-strong:    rgba(255, 255, 255, 0.15);
+        --glass-border:       rgba(255, 255, 255, 0.15);
+        --glass-border-hover: rgba(255, 255, 255, 0.30);
+        --glass-blur:         blur(15px);
+        --glass-text:         #ffffff;
+        --glass-text-muted:   rgba(255, 255, 255, 0.70);
+        --glass-text-subtle:  rgba(255, 255, 255, 0.50);
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+        min-height: 100vh;
+        color: white;
+    }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    .hidden { display: none !important; }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+    .header { text-align: center; margin-bottom: 24px; }
+    .header-content { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+    .logo-image { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .header-text { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+    .header-title { font-size: 2.2rem; font-weight: 700; color: white; margin: 0 0 5px 0; line-height: 1.1; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+    .header-subtitle { font-size: 1rem; color: rgba(255,255,255,0.9); font-weight: 500; }
+    .header-divider {
+        height: 2px;
+        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%,
+            rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+        border-radius: 2px; margin-top: 15px;
+    }
+
+    /* ── BACK BUTTON ─────────────────────────────────────────── */
+    .portal-back-btn {
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white; padding: 8px 18px; border-radius: 2px;
+        font-size: 0.88rem; font-weight: 600; cursor: pointer;
+        display: block; margin: 0 auto 20px auto; transition: background 0.2s;
+    }
+    .portal-back-btn:hover { background: rgba(255,255,255,0.25); }
+
+    /* ── ACCESS DENIED ───────────────────────────────────────── */
+    .denied-box {
+        background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4);
+        border-radius: 2px; padding: 32px; text-align: center; margin: 40px auto;
+        max-width: 480px;
+    }
+    .denied-box h2 { color: #fca5a5; font-size: 1.3rem; margin-bottom: 10px; }
+    .denied-box p  { color: rgba(255,255,255,0.75); font-size: 0.9rem; margin-bottom: 6px; }
+    .btn-reverify {
+        margin-top: 18px; background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.3); color: white;
+        padding: 10px 24px; border-radius: 2px; font-size: 0.88rem;
+        font-weight: 600; cursor: pointer;
+    }
+
+    /* ── GLASS PANEL / TOOLBAR ──────────────────────────────── */
+    .glass-panel {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        padding: 18px 20px;
+        margin-bottom: 18px;
+    }
+
+    .filter-bar {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+    }
+    .filter-group { display: flex; align-items: center; gap: 8px; }
+    .filter-label {
+        font-size: 0.75rem; color: var(--glass-text-muted); font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
+    }
+    .glass-select {
+        background: rgba(30, 64, 175, 0.7);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        color: var(--glass-text);
+        padding: 7px 12px;
+        font-size: 0.85rem;
+        min-height: 36px;
+        cursor: pointer;
+    }
+    .glass-select option { background: #1e3a8a; }
+    .glass-select:focus { outline: none; border-color: var(--glass-border-hover); }
+
+    .btn-glass-action {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        color: white;
+        padding: 9px 20px;
+        border-radius: 2px;
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        min-height: 40px;
+    }
+    .btn-glass-action:hover { background: var(--glass-bg-strong); border-color: var(--glass-border-hover); }
+    .btn-glass-action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status-text { font-size: 0.85rem; color: var(--glass-text-muted); margin: 6px 0 18px; }
+
+    /* ── STATS ROW ───────────────────────────────────────────── */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+    .glass-stat {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        padding: 14px 12px;
+        text-align: center;
+    }
+    .glass-stat-value { font-size: 1.7rem; font-weight: 700; color: var(--glass-text); line-height: 1; }
+    .glass-stat-label { font-size: 0.7rem; color: var(--glass-text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ── DATA TABLE (white, always) ─────────────────────────── */
+    .section-heading { font-size: 1rem; font-weight: 700; color: white; margin: 22px 0 10px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3); }
+    .table-container { background: white; border-radius: 2px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    thead { background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%); color: white; }
+    thead th { padding: 9px 8px; text-align: left; font-weight: 600; font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid #f1f5f9; }
+    tbody tr:hover { background: #f8fafc; }
+    tbody td { padding: 8px 8px; vertical-align: middle; color: #374151; }
+
+    /* ── NARRATIVE ───────────────────────────────────────────── */
+    .glass-textarea {
+        width: 100%;
+        min-height: 140px;
+        background: rgba(30, 64, 175, 0.35);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        color: white;
+        padding: 12px 14px;
+        font-size: 0.9rem;
+        font-family: inherit;
+        resize: vertical;
+        line-height: 1.5;
+    }
+    .glass-textarea::placeholder { color: var(--glass-text-subtle); }
+    .glass-textarea:focus { outline: none; border-color: var(--glass-border-hover); }
+    .narrative-meta { font-size: 0.78rem; color: var(--glass-text-muted); margin-top: 8px; }
+
+    .export-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+
+    /* ── COMPLIANCE NOTE ─────────────────────────────────────── */
+    .compliance-note {
+        font-size: 0.78rem; color: var(--glass-text-muted);
+        margin-top: 4px; line-height: 1.5;
+    }
+
+    @media (max-width: 600px) {
+        .header-content { flex-direction: column; gap: 15px; }
+        .header-text    { align-items: center; text-align: center; }
+        .header-title   { font-size: 1.8rem; }
+        .logo-image     { width: 70px; height: 70px; }
+        .filter-bar     { flex-direction: column; align-items: flex-start; gap: 10px; }
+        .export-row     { flex-direction: column; }
+    }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="logo.png" alt="Lake Illawong Logo" class="logo-image" onerror="this.style.display='none'">
+            </div>
+            <div class="header-text">
+                <h1 class="header-title">Relations Annual Report</h1>
+                <p class="header-subtitle">Lake Illawong Residential Village — RVA 1986 s.38ZA/38ZB AGM &amp; CAV Reporting</p>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+    </div>
+
+    <!-- Back button -->
+    <button class="portal-back-btn" onclick="window.location.href='AdminPortal.html'">
+        &#8592; Back to Admin Portal
+    </button>
+
+    <!-- Access denied -->
+    <div id="deniedView" class="denied-box hidden">
+        <h2>&#128683; Access Denied</h2>
+        <p>You do not have permission to access the Relations Annual Report.</p>
+        <p>Signed in as: <strong id="deniedName"></strong></p>
+        <p>Role: <strong id="deniedRoles"></strong></p>
+        <button class="btn-reverify" onclick="reVerify()">Try Again</button>
+    </div>
+
+    <!-- Main content -->
+    <div id="mainContent" class="hidden">
+
+        <!-- FY selector -->
+        <div class="filter-bar">
+            <div class="filter-group">
+                <span class="filter-label">Financial Year</span>
+                <select id="fySelect" class="glass-select"></select>
+            </div>
+            <button id="generateBtn" class="btn-glass-action" onclick="generateReport()">Generate Report</button>
+        </div>
+
+        <p id="reportStatus" class="status-text hidden"></p>
+
+        <!-- Report results -->
+        <div id="reportResults" class="hidden">
+
+            <div class="stats-grid">
+                <div class="glass-stat"><div class="glass-stat-value" id="statTotal">0</div><div class="glass-stat-label">Disputes Logged</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statResolved">0</div><div class="glass-stat-label">Resolved</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statUnresolved">0</div><div class="glass-stat-label">Unresolved</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statOpen">0</div><div class="glass-stat-label">Open as at Report Date</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statEarlyResolved">0</div><div class="glass-stat-label">Resolved &le; 72 Hours</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statManagement">0</div><div class="glass-stat-label">Resident-to-Management</div></div>
+                <div class="glass-stat"><div class="glass-stat-value" id="statResident">0</div><div class="glass-stat-label">Resident-to-Resident</div></div>
+            </div>
+
+            <div class="section-heading">Village Disputes — Number, Nature and Outcome</div>
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>Reference</th><th>Category</th><th>Type</th><th>Logged</th><th>Closed</th><th>Outcome</th><th>Resolved &le;72hrs</th></tr></thead>
+                    <tbody id="relationsTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="glass-panel">
+                <div class="filter-label" style="margin-bottom:10px;">Changes Made or Proposed (Board narrative for this financial year)</div>
+                <textarea id="narrativeText" class="glass-textarea" placeholder="Describe any changes made or proposed in response to village disputes during this financial year..."></textarea>
+                <div class="narrative-meta" id="narrativeMeta">Not yet recorded</div>
+                <div style="margin-top:12px;">
+                    <button id="saveNarrativeBtn" class="btn-glass-action" onclick="saveNarrative()">Save Narrative</button>
+                </div>
+            </div>
+
+            <div class="glass-panel">
+                <div class="filter-label" style="margin-bottom:10px;">Export</div>
+                <div class="export-row">
+                    <button class="btn-glass-action" onclick="exportReport()">&#128196; Export Report</button>
+                </div>
+                <p class="compliance-note">This single report serves both purposes: present it at the Annual General Meeting under s.38ZA(2), then lodge the same copy with the Director of Consumer Affairs Victoria via myCAV within 14 days, per s.38ZB.</p>
+            </div>
+
+        </div>
+        <!-- end reportResults -->
+
+    </div>
+    <!-- end mainContent -->
+
+</div>
+
+<script>
+    const CONFIG = {
+        BACKEND_URL:   'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
+        SESSION_KEY:   'portalAdminVerified',
+        PORTAL_URL:    'AdminPortal.html',
+        ALLOWED_ROLES: ['Relations-Manager', 'Developer']
+    };
+
+    let currentFYLabel = '';
+    let lastRelations   = [];
+    let lastAggregates  = {};
+
+    // ── AUTH ──────────────────────────────────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', function () {
+        buildFYOptions();
+
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Relations Annual Report',
+            moduleIcon: '📊',
+            sessionKey: CONFIG.SESSION_KEY,
+            onSuccess:  handleVerificationSuccess
+        });
+        if (!alreadyVerified) { VerificationModal.show(); }
+    });
+
+    function handleVerificationSuccess(userData) {
+        window._sessionUser = userData;
+        const roles = userData.roleTags || [];
+        const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
+        if (!hasAccess) {
+            document.getElementById('deniedName').textContent  = userData.name || 'Unknown';
+            document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
+            document.getElementById('deniedView').classList.remove('hidden');
+            return;
+        }
+        document.getElementById('mainContent').classList.remove('hidden');
+    }
+
+    function reVerify() {
+        document.getElementById('deniedView').classList.add('hidden');
+        VerificationModal.clearVerification();
+        VerificationModal.show();
+    }
+
+    // ── FINANCIAL YEAR HELPERS ──────────────────────────────────────────
+
+    function buildFYOptions() {
+        const select = document.getElementById('fySelect');
+        const today = new Date();
+        // Victorian financial year: 1 Jul - 30 Jun. getMonth() is 0-indexed; 6 = July.
+        const currentFYStart      = today.getMonth() >= 6 ? today.getFullYear() : today.getFullYear() - 1;
+        const mostRecentCompleted = currentFYStart - 1;
+
+        select.innerHTML = '';
+        for (let startYear = currentFYStart; startYear >= currentFYStart - 5; startYear--) {
+            const label      = startYear + '-' + String(startYear + 1).slice(-2);
+            const inProgress = startYear === currentFYStart;
+            const opt = document.createElement('option');
+            opt.value = label;
+            opt.textContent = label + (inProgress ? ' (in progress)' : '');
+            if (startYear === mostRecentCompleted) opt.selected = true;
+            select.appendChild(opt);
+        }
+    }
+
+    function fyLabelToRange(fyLabel) {
+        const startYear = parseInt(fyLabel.split('-')[0], 10);
+        return {
+            fyStart: startYear + '-07-01',
+            fyEnd:   (startYear + 1) + '-07-01'
+        };
+    }
+
+    // ── JSONP ─────────────────────────────────────────────────────────────
+
+    function jsonp(baseUrl, params, onSuccess, onError, timeoutMs) {
+        const callbackName = 'rar_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        const qs = Object.keys(params).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+        const url = baseUrl + '?' + qs + '&callback=' + callbackName;
+
+        let settled = false;
+        const s = document.createElement('script');
+
+        function cleanup() {
+            window[callbackName] = function () {};
+            try { document.head.removeChild(s); } catch (e) {}
+        }
+
+        const timer = setTimeout(function () {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            if (onError) onError(new Error('Server did not respond. Please try again.'));
+        }, timeoutMs || 20000);
+
+        window[callbackName] = function (data) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer); cleanup();
+            if (onSuccess) onSuccess(data);
+        };
+
+        s.onerror = function () {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer); cleanup();
+            if (onError) onError(new Error('Could not reach the server.'));
+        };
+        s.src = url;
+        document.head.appendChild(s);
+    }
+
+    function jsonpPromise(baseUrl, params, timeoutMs) {
+        return new Promise(function(resolve, reject) {
+            jsonp(baseUrl, params, resolve, reject, timeoutMs);
+        });
+    }
+
+    // ── GENERATE REPORT ───────────────────────────────────────────────────
+
+    async function generateReport() {
+        const fyLabel = document.getElementById('fySelect').value;
+        currentFYLabel = fyLabel;
+        const range = fyLabelToRange(fyLabel);
+
+        const genBtn = document.getElementById('generateBtn');
+        genBtn.disabled = true;
+        genBtn.textContent = 'Generating…';
+
+        document.getElementById('reportResults').classList.add('hidden');
+        const statusEl = document.getElementById('reportStatus');
+        statusEl.textContent = 'Loading data for FY ' + fyLabel + '…';
+        statusEl.classList.remove('hidden');
+
+        try {
+            const results = await Promise.all([
+                jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualReportData', fyStart: range.fyStart, fyEnd: range.fyEnd }, 20000),
+                jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualNarrative',  fyLabel: fyLabel }, 20000)
+            ]);
+            const relRes = results[0], narrRes = results[1];
+
+            if (!relRes.success) throw new Error(relRes.error || 'Failed to load Relations data');
+
+            lastRelations  = relRes.relations  || [];
+            lastAggregates = relRes.aggregates || {};
+
+            renderStats();
+            renderRelationsTable();
+            renderNarrative(narrRes);
+
+            statusEl.classList.add('hidden');
+            document.getElementById('reportResults').classList.remove('hidden');
+
+        } catch (err) {
+            statusEl.textContent = 'Error: ' + (err && err.message ? err.message : err);
+        } finally {
+            genBtn.disabled = false;
+            genBtn.textContent = 'Generate Report';
+        }
+    }
+
+    function renderStats() {
+        const a = lastAggregates;
+        document.getElementById('statTotal').textContent        = a.total || 0;
+        document.getElementById('statResolved').textContent     = a.resolved || 0;
+        document.getElementById('statUnresolved').textContent   = a.unresolved || 0;
+        document.getElementById('statOpen').textContent         = a.open || 0;
+        document.getElementById('statEarlyResolved').textContent = a.earlyResolved || 0;
+        document.getElementById('statManagement').textContent   = a.management || 0;
+        document.getElementById('statResident').textContent     = a.resident || 0;
+    }
+
+    function renderRelationsTable() {
+        const tbody = document.getElementById('relationsTableBody');
+        if (!lastRelations.length) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = lastRelations.map(function(r) {
+            return '<tr><td>' + escHtml(r.referenceNumber) + '</td>' +
+                   '<td>' + escHtml(r.category || '—') + '</td>' +
+                   '<td>' + escHtml(matterTypeLabel(r)) + '</td>' +
+                   '<td>' + formatDate(r.loggedAt) + '</td>' +
+                   '<td>' + (r.closedAt ? formatDate(r.closedAt) : '—') + '</td>' +
+                   '<td>' + escHtml(r.outcome) + '</td>' +
+                   '<td style="text-align:center;">' + (r.earlyResolution ? '&#10003;' : '') + '</td></tr>';
+        }).join('');
+    }
+
+    function matterTypeLabel(r) {
+        if (r.matterType === 'Management') return 'Resident-to-Management';
+        if (r.matterType === 'Resident')   return 'Resident-to-Resident';
+        return 'Untriaged';
+    }
+
+    function renderNarrative(narrRes) {
+        document.getElementById('narrativeText').value = (narrRes && narrRes.narrative) || '';
+        const meta = (narrRes && narrRes.lastUpdatedBy)
+            ? 'Last updated by ' + narrRes.lastUpdatedBy + ' on ' + formatDate(narrRes.lastUpdatedAt)
+            : 'Not yet recorded';
+        document.getElementById('narrativeMeta').textContent = meta;
+    }
+
+    // ── SAVE NARRATIVE ─────────────────────────────────────────────────
+
+    async function saveNarrative() {
+        if (!currentFYLabel) { alert('Generate a report first.'); return; }
+        const narrative = document.getElementById('narrativeText').value.trim();
+        const userName  = (window._sessionUser && window._sessionUser.name) || 'Admin';
+        const btn = document.getElementById('saveNarrativeBtn');
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+        try {
+            const res = await jsonpPromise(CONFIG.BACKEND_URL, {
+                action: 'saveAnnualNarrative', fyLabel: currentFYLabel, narrative: narrative, userName: userName
+            }, 20000);
+            if (!res.success) throw new Error(res.error || 'Save failed');
+            document.getElementById('narrativeMeta').textContent = 'Last updated by ' + userName + ' just now';
+        } catch (err) {
+            alert('Could not save narrative: ' + (err && err.message ? err.message : err));
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Narrative';
+        }
+    }
+
+    // ── EXPORT (window.print pattern, matching AnnualComplianceReport.html
+    //    and RelationsManager.html/RelationsChronicle.html's own print
+    //    dialogs) ───────────────────────────────────────────────────────
+
+    function printStyles() {
+        return [
+            '* { margin: 0; padding: 0; box-sizing: border-box; }',
+            'body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background: white; }',
+            '.print-header { border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 20px; }',
+            '.print-village { font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #1e3a8a; margin-bottom: 4px; }',
+            '.print-title   { font-size: 16pt; font-weight: 700; color: #111; margin-bottom: 4px; }',
+            '.print-ref     { font-size: 10pt; color: #444; }',
+            '.print-confidential { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #dc2626; float: right; margin-top: 6px; }',
+            '.section-title { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin: 20px 0 10px; }',
+            '.stat-row { display: flex; gap: 20px; margin-bottom: 10px; flex-wrap: wrap; }',
+            '.stat-box { border: 1px solid #e5e7eb; border-radius: 3px; padding: 8px 14px; text-align: center; }',
+            '.stat-box .num { font-size: 16pt; font-weight: 700; color: #1e3a8a; }',
+            '.stat-box .lbl { font-size: 8pt; text-transform: uppercase; color: #6b7280; letter-spacing: 0.4px; }',
+            'table  { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 6px; }',
+            'thead  { background: #1e3a8a; color: white; }',
+            'th     { padding: 7px 8px; text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.4px; }',
+            'td     { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }',
+            'tr:nth-child(even) td { background: #f8fafc; }',
+            '.narrative-block { border: 1px solid #e5e7eb; border-left: 4px solid #1e3a8a; padding: 10px 12px; border-radius: 3px; margin-top: 8px; font-size: 10pt; white-space: pre-wrap; }',
+            '.print-footer  { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 8pt; color: #374151; display: flex; justify-content: space-between; }'
+        ].join('\n');
+    }
+
+    function printHeader(title, subtitle) {
+        return '<div class="print-header">' +
+               '<div class="print-confidential">Confidential</div>' +
+               '<div class="print-village">Lake Illawong Residential Village</div>' +
+               '<div class="print-title">' + title + '</div>' +
+               '<div class="print-ref">' + subtitle + '</div>' +
+               '</div>';
+    }
+
+    function printFooter(label) {
+        const now = new Date().toLocaleString('en-AU', {
+            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+        return '<div class="print-footer"><span>Lake Illawong Residential Village — ' + label + '</span>' +
+               '<span>Printed ' + now + '</span></div>';
+    }
+
+    function openPrintWindow(html) {
+        const w = window.open('', '_blank', 'width=1000,height=900');
+        if (!w) { alert('Please allow pop-ups for this site to print.'); return; }
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(function() { w.print(); }, 300);
+    }
+
+    function exportReport() {
+        if (!currentFYLabel) { alert('Generate a report first.'); return; }
+
+        const narrative = document.getElementById('narrativeText').value.trim();
+        const a = lastAggregates;
+
+        const relationRows = lastRelations.length ? lastRelations.map(function(r) {
+            return '<tr><td>' + escHtml(r.referenceNumber) + '</td><td>' + escHtml(r.category || '—') + '</td><td>' +
+                   escHtml(matterTypeLabel(r)) + '</td><td>' + formatDate(r.loggedAt) + '</td><td>' +
+                   (r.closedAt ? formatDate(r.closedAt) : '—') + '</td><td>' + escHtml(r.outcome) + '</td></tr>';
+        }).join('') : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
+
+        const html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+            '<title>Relations Annual Report — FY ' + currentFYLabel + '</title>' +
+            '<style>' + printStyles() + '</style></head><body>' +
+            printHeader('Village Disputes — Annual Report', 'Financial Year ' + currentFYLabel + ' — for presentation at Annual General Meeting and lodgement with Consumer Affairs Victoria via myCAV (s.38ZA/38ZB)') +
+            '<div class="section-title">Summary</div>' +
+            '<div class="stat-row">' +
+                '<div class="stat-box"><div class="num">' + (a.total || 0) + '</div><div class="lbl">Disputes Logged</div></div>' +
+                '<div class="stat-box"><div class="num">' + (a.resolved || 0) + '</div><div class="lbl">Resolved</div></div>' +
+                '<div class="stat-box"><div class="num">' + (a.unresolved || 0) + '</div><div class="lbl">Unresolved</div></div>' +
+                '<div class="stat-box"><div class="num">' + (a.open || 0) + '</div><div class="lbl">Open as at Report Date</div></div>' +
+                '<div class="stat-box"><div class="num">' + (a.earlyResolved || 0) + '</div><div class="lbl">Resolved &le;72hrs</div></div>' +
+            '</div>' +
+            '<div class="section-title">Village Disputes — Number, Nature and Outcome</div>' +
+            '<table><thead><tr><th>Reference</th><th>Category</th><th>Type</th><th>Logged</th><th>Closed</th><th>Outcome</th></tr></thead>' +
+            '<tbody>' + relationRows + '</tbody></table>' +
+            '<div class="section-title">Changes Made or Proposed</div>' +
+            '<div class="narrative-block">' + (narrative ? escHtml(narrative) : '<span style="color:#94a3b8;font-style:italic;">No narrative recorded for this financial year.</span>') + '</div>' +
+            '<p style="font-size:8pt;color:#6b7280;margin-top:16px;">No individual resident or party is identified in this report, in accordance with the Retirement Villages Act 1986 (Vic) s.38ZA(2).</p>' +
+            printFooter('Village Disputes — Annual Report') +
+            '</body></html>';
+
+        openPrintWindow(html);
+    }
+
+    // ── HELPERS ────────────────────────────────────────────────────────
+
+    function escHtml(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function formatDate(val) {
+        if (!val) return '';
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return String(val);
+        return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+</script>
+</body>
+</html>
