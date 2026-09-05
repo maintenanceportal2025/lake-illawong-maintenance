@@ -7,8 +7,8 @@ DOCUMENT INFORMATION:
   File Name:        RelationsAnnualReport.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Portal Module
-  Frontend Version: V1.0.0
-  Backend:          RelationsManager V1.0.11
+  Frontend Version: V1.1.0
+  Backend:          RelationsManager V1.0.12
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -28,66 +28,101 @@ PURPOSE:
   New, standalone file -- NOT an extension of AnnualComplianceReport.html,
   which remains exactly as it is, serving the old (frozen)
   Complaints/Disputes system only, per the Relations Manager build's
-  duplication principle (every file Relations draws on gets duplicated
-  under a new name; originals stay untouched). Once Complaints/Disputes
-  are eventually deprecated, this file is the only annual report tool
-  needed.
+  duplication principle. Once Complaints/Disputes are eventually
+  deprecated, this file is the only annual report tool needed.
 
   Financial year based (1 Jul - 30 Jun), matching the CAV lodgement
   cycle -- same convention as AnnualComplianceReport.html.
 
-  Single generation, single export. Earlier design considered a
-  separate AGM-formatted export and CAV-formatted export (mirroring
-  AnnualComplianceReport.html's two-button pattern), but that split
-  existed there because the CAV lodgement was textually disputes-only
-  while the AGM report combined complaints and disputes -- a scope
-  difference that doesn't exist here (Relations already covers the
-  full "village dispute" definition), and CAV's own guidance confirms
-  the AGM and CAV documents are the same report. One export serves
-  both purposes.
+  Single generation, single export -- CAV's guidance confirms the AGM
+  and CAV documents are the same report, so one export serves both
+  purposes (see V1.0.0 history below for the fuller reasoning).
 
   Deliberately does not display or export party names, unit numbers,
-  contact details, Description, or IssueDetail -- getAnnualRelationsReportData
-  never returns these fields in the first place (not fetched, not
-  stripped after the fact). Category is included (dispute "nature" per
-  CAV's wording) -- not identifying on its own. No per-dispute "action
-  taken" field -- confirmed against CAV's guidance that per-dispute
-  outcome + an aggregate changes-made-or-proposed narrative satisfies
-  the report content requirement; per-dispute action taken is a
-  separate s.38ZA(1) record-keeping duty already met by
-  ResolutionSummary/ClosureNotes living in the Relations sheet itself.
+  contact details, raw Description, or IssueDetail --
+  getAnnualRelationsReportData never returns these fields (not
+  fetched, not stripped after the fact). Category is included
+  (dispute "nature" per CAV's wording) -- not identifying on its own.
+
+  V1.1 ADDS two annual-report-only fields per dispute -- Dispute
+  Summary and Action Taken -- entered by the Board through a dedicated
+  preparation panel, written from scratch for this report (not
+  pre-filled from ResolutionSummary/ClosureNotes, which are written for
+  the private party-facing closure notice and can't be guaranteed free
+  of identifying detail). This exceeds what CAV's guidance strictly
+  requires (outcome per dispute + an aggregate narrative would satisfy
+  it), but closes the gap more safely than pre-filling from party-facing
+  text would have -- confirmed with Tony after a second review of the
+  design. Stored in a new RelationsAnnualReport sheet tab, entirely
+  separate from the Relations tab -- see RelationsManager V1.0.12.
+  Export is gated: blocked while any dispute in the selected FY is
+  missing either field, so an incomplete report can't accidentally be
+  tabled or lodged.
 
   Export uses the same window.print() pattern as
   AnnualComplianceReport.html and RelationsManager.html/RelationsChronicle.html's
   own print dialogs (open a formatted print window, browser print
-  dialog handles Save as PDF) -- consistent with every other print/
-  export path in this system.
+  dialog handles Save as PDF).
 
 VERSION HISTORY:
+  V1.1.0 (Aug 2026): Relations Annual Report V1.1, per Tony's second-
+    opinion review of the reporting design.
+      - Individual Disputes table restructured: Reference column
+        replaced with a sequential report-only No. (1, 2, 3...) --
+        internal reference numbers are no longer published in the
+        report, an extra precaution against cross-referencing a report
+        row back to a specific case in a 44-unit village. Logged/Closed
+        date columns removed from the on-screen/exported table (still
+        used for FY filtering server-side, just not displayed).
+      - New Nature of Disputes section: on-screen and exported table
+        aggregating Category counts for the selected FY. No new data --
+        computed client-side from the existing per-dispute Category
+        field.
+      - New Dispute Summary / Action Taken columns, populated via a new
+        "Annual Report Entry" preparation panel (modal) per dispute.
+        The panel shows read-only case context (Category/Type/Outcome)
+        plus, in a clearly-marked "Internal case information -- not
+        published" box, the underlying Description/Issue Detail/Process
+        Statement/Resolution/Closure text (via the existing
+        getRelationByRef, unchanged) to help the Board write the two
+        new fields without needing the case open in a second tab.
+        Guidance placeholder text on both fields steers toward
+        anonymised wording. Saved via the new saveAnnualReportEntry
+        action.
+      - Incomplete rows show an "Entry Required" indicator. Export is
+        disabled while any dispute (open or closed) lacks both fields --
+        an open dispute's Action Taken can describe action still under
+        way; annual reporting never requires inventing a final outcome.
+      - Export restructured to the four sections Tony's review
+        specified: Annual Summary, Nature of Disputes, Individual
+        Disputes -- Actions and Outcomes, Changes Made or Proposed.
+        Export payload still excludes reference numbers, party detail,
+        dates, and all raw case text -- only Category/Type/Dispute
+        Summary/Action Taken/Outcome per row.
+    No change to the Relations tab, dispute lifecycle, Process
+    Statement, Events, or Closure -- confirmed out of scope for this
+    build, per Tony's explicit instruction.
+
   V1.0.0 (Aug 2026): Initial build. FY selector (defaults to the most
     recently completed financial year, ported unchanged from
     AnnualComplianceReport.html). Generate Report pulls anonymised data
     from RelationsManager (getAnnualReportData) and the Board's FY
     narrative (getAnnualNarrative) -- single backend, unlike the old
     tool's two-backend Promise.all. On-screen summary stats, one
-    Relations table (Reference/Category/Type/Logged/Closed/Outcome/
-    Early Resolution), editable narrative section (saveAnnualNarrative,
-    same AnnualReports tab both systems share -- historic rows from
-    ComplaintsManager remain readable there but are not surfaced here).
-    One export button (Export Report) -- see PURPOSE above for why this
-    isn't split into separate AGM/CAV exports the way the old tool was.
+    Relations table, editable narrative section (saveAnnualNarrative,
+    same AnnualReports tab both systems share). One export button.
 
 AUTHENTICATION:
   Session inherited from AdminPortal.html (portalAdminVerified) --
   same key RelationsManager.html/RelationsChronicle.html/RelationsForm.html's
   Board mode already share.
   Redirects to AdminPortal.html if session absent.
-  Allowed roles: Relations-Manager, Developer -- same gate as
-  RelationsManager.html; no separate audience to serve.
+  Allowed roles: Relations-Manager, Developer.
 
 SYSTEM CONNECTIONS:
-  RelationsManager backend V1.0.11 -- actions: getAnnualReportData,
-    getAnnualNarrative, saveAnnualNarrative
+  RelationsManager backend V1.0.12 -- actions: getAnnualReportData,
+    getAnnualNarrative, saveAnnualNarrative, saveAnnualReportEntry,
+    getRelationByRef
 
 PORTAL:
   Launched from AdminPortal.html. Not yet card-linked -- held until the
@@ -232,7 +267,22 @@ TECHNICAL:
     .btn-glass-action:hover { background: var(--glass-bg-strong); border-color: var(--glass-border-hover); }
     .btn-glass-action:disabled { opacity: 0.5; cursor: not-allowed; }
 
+    .btn-small {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        color: #1e3a8a;
+        padding: 5px 10px;
+        border-radius: 2px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .btn-small:hover { background: rgba(30,64,175,0.08); }
+    .btn-small.needs-entry { border-color: #f59e0b; color: #b45309; }
+
     .status-text { font-size: 0.85rem; color: var(--glass-text-muted); margin: 6px 0 18px; }
+    .status-text.warn { color: #fcd34d; }
 
     /* ── STATS ROW ───────────────────────────────────────────── */
     .stats-grid {
@@ -252,7 +302,7 @@ TECHNICAL:
     .glass-stat-value { font-size: 1.7rem; font-weight: 700; color: var(--glass-text); line-height: 1; }
     .glass-stat-label { font-size: 0.7rem; color: var(--glass-text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
 
-    /* ── DATA TABLE (white, always) ─────────────────────────── */
+    /* ── DATA TABLES (white, always) ─────────────────────────── */
     .section-heading { font-size: 1rem; font-weight: 700; color: white; margin: 22px 0 10px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3); }
     .table-container { background: white; border-radius: 2px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); margin-bottom: 8px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -261,6 +311,9 @@ TECHNICAL:
     tbody tr { border-bottom: 1px solid #f1f5f9; }
     tbody tr:hover { background: #f8fafc; }
     tbody td { padding: 8px 8px; vertical-align: middle; color: #374151; }
+    tbody td.excerpt { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tbody td.empty-cell { color: #9ca3af; font-style: italic; }
+    .nature-table td:last-child, .nature-table th:last-child { text-align: right; }
 
     /* ── NARRATIVE ───────────────────────────────────────────── */
     .glass-textarea {
@@ -288,6 +341,75 @@ TECHNICAL:
         margin-top: 4px; line-height: 1.5;
     }
 
+    /* ── ANNUAL REPORT ENTRY MODAL (mirrors EventEntryModal's design
+         tokens exactly -- same overlay/panel/field pattern already
+         in production elsewhere in this system) ────────────────── */
+    #rarModalOverlay {
+        display: none; position: fixed; inset: 0; z-index: 9000;
+        background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+        align-items: center; justify-content: center; padding: 16px;
+    }
+    #rarModal {
+        background: linear-gradient(135deg, rgba(30,64,175,0.95) 0%, rgba(30,58,138,0.98) 100%);
+        border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;
+        padding: 24px; width: 100%; max-width: 620px; max-height: 90vh;
+        overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        position: relative;
+    }
+    #rarModal h2 {
+        font-size: 1rem; font-weight: 700; color: white; margin: 0 0 6px;
+        padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .rar-close {
+        position: absolute; top: 16px; right: 16px; background: none; border: none;
+        color: rgba(255,255,255,0.5); font-size: 1.2rem; cursor: pointer; line-height: 1;
+    }
+    .rar-close:hover { color: white; }
+    .rar-context { font-size: 0.82rem; color: rgba(255,255,255,0.7); margin-bottom: 14px; }
+    .rar-context strong { color: white; }
+    .rar-field { margin-bottom: 14px; }
+    .rar-label {
+        display: block; font-size: 0.75rem; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.4px;
+        color: rgba(255,255,255,0.6); margin-bottom: 5px;
+    }
+    .rar-textarea {
+        width: 100%; min-height: 80px; background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.2); border-radius: 2px;
+        color: white; padding: 8px 10px; font-size: 0.85rem;
+        font-family: inherit; resize: vertical; box-sizing: border-box;
+    }
+    .rar-textarea:focus { outline: none; border-color: rgba(255,255,255,0.45); background: rgba(255,255,255,0.12); }
+    .rar-textarea::placeholder { color: rgba(255,255,255,0.35); }
+    .rar-panel {
+        margin-top: 8px; margin-bottom: 16px; padding: 14px;
+        background: rgba(0,0,0,0.15); border-radius: 2px;
+        border-left: 3px solid rgba(255,255,255,0.15);
+        font-size: 0.82rem; color: rgba(255,255,255,0.75); line-height: 1.5;
+    }
+    .rar-panel-title {
+        font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.5px; color: rgba(255,255,255,0.45); margin-bottom: 10px;
+    }
+    .rar-panel-row { margin-bottom: 8px; }
+    .rar-panel-row strong { display: block; color: rgba(255,255,255,0.55); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px; }
+    .rar-actions { display: flex; gap: 10px; align-items: center; margin-top: 18px; }
+    .rar-btn-save {
+        background: rgba(13,148,136,0.25); border: 1px solid rgba(13,148,136,0.6);
+        color: #99f6e4; padding: 9px 20px; border-radius: 2px;
+        font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    }
+    .rar-btn-save:hover:not(:disabled) { background: rgba(13,148,136,0.4); }
+    .rar-btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+    .rar-btn-cancel {
+        background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);
+        color: rgba(255,255,255,0.7); padding: 9px 16px; border-radius: 2px;
+        font-size: 0.85rem; cursor: pointer;
+    }
+    .rar-btn-cancel:hover { background: rgba(255,255,255,0.1); }
+    .rar-feedback { font-size: 0.82rem; }
+    .rar-error { color: #f87171; }
+
     @media (max-width: 600px) {
         .header-content { flex-direction: column; gap: 15px; }
         .header-text    { align-items: center; text-align: center; }
@@ -295,6 +417,7 @@ TECHNICAL:
         .logo-image     { width: 70px; height: 70px; }
         .filter-bar     { flex-direction: column; align-items: flex-start; gap: 10px; }
         .export-row     { flex-direction: column; }
+        tbody td.excerpt { max-width: 120px; }
     }
 </style>
 </head>
@@ -346,6 +469,7 @@ TECHNICAL:
         <!-- Report results -->
         <div id="reportResults" class="hidden">
 
+            <div class="section-heading">Annual Summary</div>
             <div class="stats-grid">
                 <div class="glass-stat"><div class="glass-stat-value" id="statTotal">0</div><div class="glass-stat-label">Disputes Logged</div></div>
                 <div class="glass-stat"><div class="glass-stat-value" id="statResolved">0</div><div class="glass-stat-label">Resolved</div></div>
@@ -356,10 +480,18 @@ TECHNICAL:
                 <div class="glass-stat"><div class="glass-stat-value" id="statResident">0</div><div class="glass-stat-label">Resident-to-Resident</div></div>
             </div>
 
-            <div class="section-heading">Village Disputes — Number, Nature and Outcome</div>
+            <div class="section-heading">Nature of Disputes</div>
+            <div class="table-container">
+                <table class="nature-table">
+                    <thead><tr><th>Category</th><th>Number</th></tr></thead>
+                    <tbody id="natureTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="section-heading">Individual Disputes — Actions and Outcomes</div>
             <div class="table-container">
                 <table>
-                    <thead><tr><th>Reference</th><th>Category</th><th>Type</th><th>Logged</th><th>Closed</th><th>Outcome</th><th>Resolved &le;72hrs</th></tr></thead>
+                    <thead><tr><th>No.</th><th>Category</th><th>Type</th><th>Dispute Summary</th><th>Action Taken</th><th>Outcome</th><th></th></tr></thead>
                     <tbody id="relationsTableBody"></tbody>
                 </table>
             </div>
@@ -376,8 +508,9 @@ TECHNICAL:
             <div class="glass-panel">
                 <div class="filter-label" style="margin-bottom:10px;">Export</div>
                 <div class="export-row">
-                    <button class="btn-glass-action" onclick="exportReport()">&#128196; Export Report</button>
+                    <button id="exportBtn" class="btn-glass-action" onclick="exportReport()">&#128196; Export Report</button>
                 </div>
+                <p id="exportGateStatus" class="status-text warn hidden"></p>
                 <p class="compliance-note">This single report serves both purposes: present it at the Annual General Meeting under s.38ZA(2), then lodge the same copy with the Director of Consumer Affairs Victoria via myCAV within 14 days, per s.38ZB.</p>
             </div>
 
@@ -389,6 +522,35 @@ TECHNICAL:
 
 </div>
 
+<!-- Annual Report Entry modal -->
+<div id="rarModalOverlay">
+    <div id="rarModal">
+        <button class="rar-close" onclick="closeReportEntryModal()">&times;</button>
+        <h2 id="rarModalTitle">Annual Report Entry</h2>
+        <div class="rar-context" id="rarModalContext"></div>
+
+        <div class="rar-panel">
+            <div class="rar-panel-title">Internal case information — not published</div>
+            <div id="rarPanelBody">Loading…</div>
+        </div>
+
+        <div class="rar-field">
+            <label class="rar-label">Dispute Summary</label>
+            <textarea id="rarSummaryInput" class="rar-textarea" placeholder="Briefly and anonymously describe what the dispute concerned. Do not include names, unit numbers or other identifying information."></textarea>
+        </div>
+        <div class="rar-field">
+            <label class="rar-label">Action Taken</label>
+            <textarea id="rarActionInput" class="rar-textarea" placeholder="Briefly describe the principal action taken by the operator to address the dispute. Do not include names, unit numbers or other identifying information."></textarea>
+        </div>
+
+        <div class="rar-actions">
+            <button id="rarSaveBtn" class="rar-btn-save" onclick="saveReportEntryModal()">Save Annual Report Entry</button>
+            <button class="rar-btn-cancel" onclick="closeReportEntryModal()">Cancel</button>
+            <span id="rarFeedback" class="rar-feedback"></span>
+        </div>
+    </div>
+</div>
+
 <script>
     const CONFIG = {
         BACKEND_URL:   'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
@@ -397,9 +559,10 @@ TECHNICAL:
         ALLOWED_ROLES: ['Relations-Manager', 'Developer']
     };
 
-    let currentFYLabel = '';
-    let lastRelations   = [];
-    let lastAggregates  = {};
+    let currentFYLabel  = '';
+    let lastRelations    = [];
+    let lastAggregates   = {};
+    let currentModalIndex = -1;
 
     // ── AUTH ──────────────────────────────────────────────────────────────
 
@@ -528,7 +691,7 @@ TECHNICAL:
 
         try {
             const results = await Promise.all([
-                jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualReportData', fyStart: range.fyStart, fyEnd: range.fyEnd }, 20000),
+                jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualReportData', fyStart: range.fyStart, fyEnd: range.fyEnd, fyLabel: fyLabel }, 20000),
                 jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualNarrative',  fyLabel: fyLabel }, 20000)
             ]);
             const relRes = results[0], narrRes = results[1];
@@ -539,8 +702,10 @@ TECHNICAL:
             lastAggregates = relRes.aggregates || {};
 
             renderStats();
+            renderNatureTable();
             renderRelationsTable();
             renderNarrative(narrRes);
+            updateExportGate();
 
             statusEl.classList.add('hidden');
             document.getElementById('reportResults').classList.remove('hidden');
@@ -564,27 +729,73 @@ TECHNICAL:
         document.getElementById('statResident').textContent     = a.resident || 0;
     }
 
+    // ── NATURE OF DISPUTES (computed client-side, no new data) ──────────
+
+    function computeNatureOfDisputes() {
+        const counts = {};
+        lastRelations.forEach(function(r) {
+            const cat = (r.category && r.category.trim()) || 'Uncategorised';
+            counts[cat] = (counts[cat] || 0) + 1;
+        });
+        const rows = Object.keys(counts).map(function(cat) {
+            return { category: cat, count: counts[cat] };
+        });
+        rows.sort(function(a, b) { return b.count - a.count || a.category.localeCompare(b.category); });
+        return rows;
+    }
+
+    function renderNatureTable() {
+        const tbody = document.getElementById('natureTableBody');
+        const rows = computeNatureOfDisputes();
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:20px;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
+            return;
+        }
+        let html = rows.map(function(r) {
+            return '<tr><td>' + escHtml(r.category) + '</td><td>' + r.count + '</td></tr>';
+        }).join('');
+        html += '<tr style="font-weight:700;"><td>Total</td><td>' + lastRelations.length + '</td></tr>';
+        tbody.innerHTML = html;
+    }
+
+    // ── INDIVIDUAL DISPUTES TABLE ─────────────────────────────────────────
+
+    function matterTypeLabel(r) {
+        if (r.matterType === 'Management') return 'Resident-to-Management';
+        if (r.matterType === 'Resident')   return 'Resident-to-Resident';
+        return 'Untriaged';
+    }
+
+    function excerpt(text, maxLen) {
+        if (!text) return '';
+        return text.length > maxLen ? text.slice(0, maxLen).trim() + '…' : text;
+    }
+
     function renderRelationsTable() {
         const tbody = document.getElementById('relationsTableBody');
         if (!lastRelations.length) {
             tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
             return;
         }
-        tbody.innerHTML = lastRelations.map(function(r) {
-            return '<tr><td>' + escHtml(r.referenceNumber) + '</td>' +
+        tbody.innerHTML = lastRelations.map(function(r, idx) {
+            const summaryCell = r.disputeSummary
+                ? '<td class="excerpt" title="' + escHtml(r.disputeSummary) + '">' + escHtml(excerpt(r.disputeSummary, 40)) + '</td>'
+                : '<td class="empty-cell">Not yet entered</td>';
+            const actionCell = r.actionTaken
+                ? '<td class="excerpt" title="' + escHtml(r.actionTaken) + '">' + escHtml(excerpt(r.actionTaken, 40)) + '</td>'
+                : '<td class="empty-cell">Not yet entered</td>';
+            const btnLabel = r.reportEntryComplete ? 'Edit Summary' : 'Add Summary';
+            const btnClass = r.reportEntryComplete ? 'btn-small' : 'btn-small needs-entry';
+            return '<tr>' +
+                   '<td>' + (idx + 1) + '</td>' +
                    '<td>' + escHtml(r.category || '—') + '</td>' +
                    '<td>' + escHtml(matterTypeLabel(r)) + '</td>' +
-                   '<td>' + formatDate(r.loggedAt) + '</td>' +
-                   '<td>' + (r.closedAt ? formatDate(r.closedAt) : '—') + '</td>' +
+                   summaryCell +
+                   actionCell +
                    '<td>' + escHtml(r.outcome) + '</td>' +
-                   '<td style="text-align:center;">' + (r.earlyResolution ? '&#10003;' : '') + '</td></tr>';
+                   '<td><button class="' + btnClass + '" onclick="openReportEntryModal(' + idx + ')">' + btnLabel + '</button></td>' +
+                   '</tr>';
         }).join('');
-    }
-
-    function matterTypeLabel(r) {
-        if (r.matterType === 'Management') return 'Resident-to-Management';
-        if (r.matterType === 'Resident')   return 'Resident-to-Resident';
-        return 'Untriaged';
     }
 
     function renderNarrative(narrRes) {
@@ -593,6 +804,23 @@ TECHNICAL:
             ? 'Last updated by ' + narrRes.lastUpdatedBy + ' on ' + formatDate(narrRes.lastUpdatedAt)
             : 'Not yet recorded';
         document.getElementById('narrativeMeta').textContent = meta;
+    }
+
+    // ── EXPORT GATE (completeness check) ─────────────────────────────────
+
+    function updateExportGate() {
+        const incomplete = lastRelations.filter(function(r) { return !r.reportEntryComplete; }).length;
+        const btn    = document.getElementById('exportBtn');
+        const status = document.getElementById('exportGateStatus');
+
+        if (incomplete > 0) {
+            btn.disabled = true;
+            status.textContent = incomplete + ' of ' + lastRelations.length + ' disputes still need a Dispute Summary and Action Taken entered before this report can be exported.';
+            status.classList.remove('hidden');
+        } else {
+            btn.disabled = false;
+            status.classList.add('hidden');
+        }
     }
 
     // ── SAVE NARRATIVE ─────────────────────────────────────────────────
@@ -615,6 +843,106 @@ TECHNICAL:
         } finally {
             btn.disabled = false;
             btn.textContent = 'Save Narrative';
+        }
+    }
+
+    // ── ANNUAL REPORT ENTRY MODAL ─────────────────────────────────────────
+
+    function openReportEntryModal(idx) {
+        currentModalIndex = idx;
+        const r = lastRelations[idx];
+
+        document.getElementById('rarModalTitle').textContent = 'Annual Report Entry — Dispute ' + (idx + 1);
+        document.getElementById('rarModalContext').innerHTML =
+            '<strong>Category:</strong> ' + escHtml(r.category || '—') + ' &nbsp;|&nbsp; ' +
+            '<strong>Type:</strong> ' + escHtml(matterTypeLabel(r)) + ' &nbsp;|&nbsp; ' +
+            '<strong>Outcome:</strong> ' + escHtml(r.outcome);
+        document.getElementById('rarSummaryInput').value = r.disputeSummary || '';
+        document.getElementById('rarActionInput').value  = r.actionTaken || '';
+        document.getElementById('rarFeedback').textContent = '';
+        document.getElementById('rarFeedback').className = 'rar-feedback';
+        document.getElementById('rarPanelBody').textContent = 'Loading…';
+
+        document.getElementById('rarModalOverlay').style.display = 'flex';
+
+        jsonpPromise(CONFIG.BACKEND_URL, { action: 'getRelationByRef', ref: r.referenceNumber }, 20000)
+            .then(function(res) {
+                if (currentModalIndex !== idx) return; // modal moved on / closed
+                if (!res.success) {
+                    document.getElementById('rarPanelBody').textContent = 'Could not load case detail: ' + (res.error || 'unknown error');
+                    return;
+                }
+                renderCaseContextPanel(res.relation);
+            })
+            .catch(function(err) {
+                if (currentModalIndex !== idx) return;
+                document.getElementById('rarPanelBody').textContent = 'Could not load case detail: ' + (err && err.message ? err.message : err);
+            });
+    }
+
+    function renderCaseContextPanel(rel) {
+        const rows = [
+            ['Description',          rel.description],
+            ['Issue Detail',         rel.issueDetail],
+            ['Process Statement',    rel.processStatement],
+            ['Resolution Summary',   rel.resolutionSummary],
+            ['Closure Notes',        rel.closureNotes]
+        ].filter(function(pair) { return pair[1] && pair[1].trim(); });
+
+        if (!rows.length) {
+            document.getElementById('rarPanelBody').textContent = 'No case detail recorded yet.';
+            return;
+        }
+        document.getElementById('rarPanelBody').innerHTML = rows.map(function(pair) {
+            return '<div class="rar-panel-row"><strong>' + escHtml(pair[0]) + '</strong>' + escHtml(pair[1]) + '</div>';
+        }).join('');
+    }
+
+    function closeReportEntryModal() {
+        document.getElementById('rarModalOverlay').style.display = 'none';
+        currentModalIndex = -1;
+    }
+
+    async function saveReportEntryModal() {
+        if (currentModalIndex < 0) return;
+        const r = lastRelations[currentModalIndex];
+        const disputeSummary = document.getElementById('rarSummaryInput').value.trim();
+        const actionTaken    = document.getElementById('rarActionInput').value.trim();
+        const userName        = (window._sessionUser && window._sessionUser.name) || 'Admin';
+
+        const btn = document.getElementById('rarSaveBtn');
+        const feedback = document.getElementById('rarFeedback');
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+        feedback.textContent = '';
+        feedback.className = 'rar-feedback';
+
+        try {
+            const res = await jsonpPromise(CONFIG.BACKEND_URL, {
+                action: 'saveAnnualReportEntry',
+                fyLabel: currentFYLabel,
+                relationRef: r.referenceNumber,
+                disputeSummary: disputeSummary,
+                actionTaken: actionTaken,
+                userName: userName
+            }, 20000);
+            if (!res.success) throw new Error(res.error || 'Save failed');
+
+            r.disputeSummary       = disputeSummary;
+            r.actionTaken           = actionTaken;
+            r.reportEntryComplete   = !!(disputeSummary && actionTaken);
+            r.reportEntryUpdatedBy = userName;
+
+            renderRelationsTable();
+            updateExportGate();
+            closeReportEntryModal();
+
+        } catch (err) {
+            feedback.textContent = 'Could not save: ' + (err && err.message ? err.message : err);
+            feedback.className = 'rar-feedback rar-error';
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Annual Report Entry';
         }
     }
 
@@ -675,20 +1003,32 @@ TECHNICAL:
     function exportReport() {
         if (!currentFYLabel) { alert('Generate a report first.'); return; }
 
+        const incomplete = lastRelations.filter(function(r) { return !r.reportEntryComplete; }).length;
+        if (incomplete > 0) {
+            alert(incomplete + ' dispute(s) still need a Dispute Summary and Action Taken entered before this report can be exported.');
+            return;
+        }
+
         const narrative = document.getElementById('narrativeText').value.trim();
         const a = lastAggregates;
+        const natureRows = computeNatureOfDisputes();
 
-        const relationRows = lastRelations.length ? lastRelations.map(function(r) {
-            return '<tr><td>' + escHtml(r.referenceNumber) + '</td><td>' + escHtml(r.category || '—') + '</td><td>' +
-                   escHtml(matterTypeLabel(r)) + '</td><td>' + formatDate(r.loggedAt) + '</td><td>' +
-                   (r.closedAt ? formatDate(r.closedAt) : '—') + '</td><td>' + escHtml(r.outcome) + '</td></tr>';
+        const natureHtml = natureRows.length
+            ? natureRows.map(function(r) { return '<tr><td>' + escHtml(r.category) + '</td><td>' + r.count + '</td></tr>'; }).join('') +
+              '<tr style="font-weight:700;"><td>Total</td><td>' + lastRelations.length + '</td></tr>'
+            : '<tr><td colspan="2" style="text-align:center;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
+
+        const relationRows = lastRelations.length ? lastRelations.map(function(r, idx) {
+            return '<tr><td>' + (idx + 1) + '</td><td>' + escHtml(r.category || '—') + '</td><td>' +
+                   escHtml(matterTypeLabel(r)) + '</td><td>' + escHtml(r.disputeSummary) + '</td><td>' +
+                   escHtml(r.actionTaken) + '</td><td>' + escHtml(r.outcome) + '</td></tr>';
         }).join('') : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">No disputes recorded for this financial year.</td></tr>';
 
         const html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
             '<title>Relations Annual Report — FY ' + currentFYLabel + '</title>' +
             '<style>' + printStyles() + '</style></head><body>' +
             printHeader('Village Disputes — Annual Report', 'Financial Year ' + currentFYLabel + ' — for presentation at Annual General Meeting and lodgement with Consumer Affairs Victoria via myCAV (s.38ZA/38ZB)') +
-            '<div class="section-title">Summary</div>' +
+            '<div class="section-title">Annual Summary</div>' +
             '<div class="stat-row">' +
                 '<div class="stat-box"><div class="num">' + (a.total || 0) + '</div><div class="lbl">Disputes Logged</div></div>' +
                 '<div class="stat-box"><div class="num">' + (a.resolved || 0) + '</div><div class="lbl">Resolved</div></div>' +
@@ -696,8 +1036,10 @@ TECHNICAL:
                 '<div class="stat-box"><div class="num">' + (a.open || 0) + '</div><div class="lbl">Open as at Report Date</div></div>' +
                 '<div class="stat-box"><div class="num">' + (a.earlyResolved || 0) + '</div><div class="lbl">Resolved &le;72hrs</div></div>' +
             '</div>' +
-            '<div class="section-title">Village Disputes — Number, Nature and Outcome</div>' +
-            '<table><thead><tr><th>Reference</th><th>Category</th><th>Type</th><th>Logged</th><th>Closed</th><th>Outcome</th></tr></thead>' +
+            '<div class="section-title">Nature of Disputes</div>' +
+            '<table><thead><tr><th>Category</th><th>Number</th></tr></thead><tbody>' + natureHtml + '</tbody></table>' +
+            '<div class="section-title">Individual Disputes — Actions and Outcomes</div>' +
+            '<table><thead><tr><th>No.</th><th>Category</th><th>Type</th><th>Dispute Summary</th><th>Action Taken</th><th>Outcome</th></tr></thead>' +
             '<tbody>' + relationRows + '</tbody></table>' +
             '<div class="section-title">Changes Made or Proposed</div>' +
             '<div class="narrative-block">' + (narrative ? escHtml(narrative) : '<span style="color:#94a3b8;font-style:italic;">No narrative recorded for this financial year.</span>') + '</div>' +
