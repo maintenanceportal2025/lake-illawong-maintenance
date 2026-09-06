@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.19
+  Frontend Version: V1.0.20
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,18 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.20 (Aug 2026): Deep-link (?ref=) refined -- shows ONLY the
+    target dispute (renderList([rel]), filter bar and summary strip
+    hidden, replaced by a small banner) rather than the full filtered
+    list scrolled to one expanded card. Tony's point after using
+    V1.0.19: landing partway down the whole list wasn't really less
+    friction than opening the Manager directly and searching -- the
+    actual benefit is not having to cross-reference the annual report's
+    sequential No. against an internal reference number, which only
+    works if the rest of the list isn't sitting there to search through
+    anyway. "Show All Disputes" (clearDeepLink) restores the normal
+    view and strips ?ref from the URL so a refresh doesn't re-trigger
+    single-record mode.
   V1.0.19 (Aug 2026): Deep-link support -- an optional ?ref=REL-...
     URL parameter, checked once after the initial getRelations load,
     clears any filter state and auto-expands that specific card (via
@@ -737,7 +749,7 @@ VERSION HISTORY:
         </div>
 
         <!-- Filter bar -->
-        <div class="filter-bar">
+        <div class="filter-bar" id="filterBar">
             <input type="text" id="filterSearch" placeholder="&#128269; Search name or unit&hellip;" oninput="applyFilters()" style="margin-right:10px;">
             <label for="filterStatus">Status:</label>
             <select id="filterStatus" onchange="applyFilters()">
@@ -763,6 +775,13 @@ VERSION HISTORY:
             <button class="btn-refresh" onclick="loadRelations()">&#8635; Refresh</button>
             <button class="btn-print" onclick="printRelationsRegister()">&#128438; Print Register</button>
             <a class="btn-log-dispute" href="RelationsForm.html">+ Log Dispute</a>
+        </div>
+
+        <!-- Deep-link banner (shown only when ?ref= opened this page directly
+             at a single dispute -- see openDeepLinkIfPresent) -->
+        <div class="filter-bar hidden" id="deepLinkBanner">
+            <span>Showing dispute <strong id="deepLinkRefLabel"></strong> only.</span>
+            <button class="btn-refresh" onclick="clearDeepLink()">&#8634; Show All Disputes</button>
         </div>
 
         <!-- Relations list -->
@@ -932,25 +951,30 @@ VERSION HISTORY:
     // V1.0.19: opened from RelationsAnnualReport.html's preparation modal
     // ("Open in RelationsManager") so the Board has the full case --
     // Process Statement, full Activity Log, everything -- while writing
-    // that dispute's Dispute Summary/Action Taken text, rather than just
-    // the modal's own compact context panel. Read-only: clears any
-    // filter state so the target card is guaranteed visible, expands it
-    // (reusing toggleCard's existing lazy-load of the full activity log,
-    // unchanged), and scrolls to it. Does nothing if ref is absent or
-    // not found -- normal page load is unaffected either way.
+    // that dispute's annual report Dispute Summary/Action Taken text,
+    // rather than just the modal's own compact context panel.
+    // V1.0.20: shows ONLY the target dispute (renderList([rel]), filter
+    // bar hidden) rather than the full list scrolled to one expanded
+    // card -- the whole point was avoiding the rest of the list, not
+    // just landing partway down it. "Show All Disputes" (clearDeepLink)
+    // restores the normal filtered view and strips ?ref from the URL so
+    // a refresh doesn't re-trigger single-record mode. Read-only either
+    // way -- doesn't touch triage, Process Statement, resolution, or
+    // closure. No effect on a normal page load with no ref parameter.
     function openDeepLinkIfPresent() {
         const params = new URLSearchParams(window.location.search);
         const ref = params.get('ref');
         if (!ref) return;
 
-        const exists = allRelations.some(function(r) { return r.referenceNumber === ref; });
-        if (!exists) { console.warn('openDeepLinkIfPresent: reference not found -- ' + ref); return; }
+        const rel = allRelations.find(function(r) { return r.referenceNumber === ref; });
+        if (!rel) { console.warn('openDeepLinkIfPresent: reference not found -- ' + ref); return; }
 
-        document.getElementById('filterStatus').value      = '';
-        document.getElementById('filterMatterType').value  = '';
-        document.getElementById('filterOverdue').value     = '';
-        document.getElementById('filterSearch').value       = '';
-        applyFilters();
+        document.getElementById('filterBar').classList.add('hidden');
+        document.getElementById('summaryStrip').style.display = 'none';
+        document.getElementById('deepLinkRefLabel').textContent = ref;
+        document.getElementById('deepLinkBanner').classList.remove('hidden');
+
+        renderList([rel]);
 
         setTimeout(function() {
             const card = document.getElementById('card-' + ref);
@@ -958,6 +982,18 @@ VERSION HISTORY:
             if (!card.classList.contains('expanded')) toggleCard(ref);
             card.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 50);
+    }
+
+    function clearDeepLink() {
+        document.getElementById('deepLinkBanner').classList.add('hidden');
+        document.getElementById('filterBar').classList.remove('hidden');
+        document.getElementById('summaryStrip').style.display = 'flex';
+        if (window.history && window.history.replaceState) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('ref');
+            window.history.replaceState({}, '', url.toString());
+        }
+        applyFilters();
     }
 
     // ── SUMMARY STRIP ─────────────────────────────────────────────────────
