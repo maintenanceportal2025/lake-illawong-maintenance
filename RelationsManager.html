@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.18
+  Frontend Version: V1.0.19
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,18 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.0.19 (Aug 2026): Deep-link support -- an optional ?ref=REL-...
+    URL parameter, checked once after the initial getRelations load,
+    clears any filter state and auto-expands that specific card (via
+    the existing toggleCard, unchanged -- same lazy activity-log load
+    as a normal click), then scrolls to it. Built for
+    RelationsAnnualReport.html's "Open in RelationsManager" link, so
+    the Board can see a dispute's full case -- Process Statement, full
+    Activity Log, everything -- while writing that dispute's annual
+    report Dispute Summary/Action Taken text, instead of relying on the
+    report modal's own compact context panel. No effect on a normal
+    page load with no ref parameter. Read-only -- doesn't touch triage,
+    Process Statement, resolution, or closure.
   V1.0.18 (Aug 2026): Party copy disclaimer reworked and repositioned,
     per Tony's review of the print output. Two problems with the old
     banner: (1) it itemised exactly what was excluded ("Internal
@@ -841,6 +853,7 @@ VERSION HISTORY:
         // a belt-and-braces precaution given the stakes.
         loadRelations(function() {
             loadResidentList();
+            openDeepLinkIfPresent();
         });
     }
 
@@ -913,6 +926,38 @@ VERSION HISTORY:
     function showPageError(msg) {
         document.getElementById('relationsList').innerHTML =
             '<div class="error-state"><div class="state-icon">&#9888;</div><div class="state-text">' + escHtml(msg) + '</div></div>';
+    }
+
+    // ── DEEP LINK (?ref=REL-...) ──────────────────────────────────────────
+    // V1.0.19: opened from RelationsAnnualReport.html's preparation modal
+    // ("Open in RelationsManager") so the Board has the full case --
+    // Process Statement, full Activity Log, everything -- while writing
+    // that dispute's Dispute Summary/Action Taken text, rather than just
+    // the modal's own compact context panel. Read-only: clears any
+    // filter state so the target card is guaranteed visible, expands it
+    // (reusing toggleCard's existing lazy-load of the full activity log,
+    // unchanged), and scrolls to it. Does nothing if ref is absent or
+    // not found -- normal page load is unaffected either way.
+    function openDeepLinkIfPresent() {
+        const params = new URLSearchParams(window.location.search);
+        const ref = params.get('ref');
+        if (!ref) return;
+
+        const exists = allRelations.some(function(r) { return r.referenceNumber === ref; });
+        if (!exists) { console.warn('openDeepLinkIfPresent: reference not found -- ' + ref); return; }
+
+        document.getElementById('filterStatus').value      = '';
+        document.getElementById('filterMatterType').value  = '';
+        document.getElementById('filterOverdue').value     = '';
+        document.getElementById('filterSearch').value       = '';
+        applyFilters();
+
+        setTimeout(function() {
+            const card = document.getElementById('card-' + ref);
+            if (!card) return;
+            if (!card.classList.contains('expanded')) toggleCard(ref);
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
     }
 
     // ── SUMMARY STRIP ─────────────────────────────────────────────────────
