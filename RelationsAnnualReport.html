@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsAnnualReport.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Portal Module
-  Frontend Version: V1.1.4
+  Frontend Version: V1.1.5
   Backend:          RelationsManager V1.0.12
   Status:           DEVELOPMENT
   Created:          Aug 2026
@@ -46,18 +46,19 @@ PURPOSE:
 
   V1.1 ADDS two annual-report-only fields per dispute -- Dispute
   Summary and Action Taken -- entered by the Board through a dedicated
-  preparation panel, written from scratch for this report (not
-  pre-filled from ResolutionSummary/ClosureNotes, which are written for
-  the private party-facing closure notice and can't be guaranteed free
-  of identifying detail). This exceeds what CAV's guidance strictly
-  requires (outcome per dispute + an aggregate narrative would satisfy
-  it), but closes the gap more safely than pre-filling from party-facing
-  text would have -- confirmed with Tony after a second review of the
-  design. Stored in a new RelationsAnnualReport sheet tab, entirely
-  separate from the Relations tab -- see RelationsManager V1.0.12.
-  Export is gated: blocked while any dispute in the selected FY is
-  missing either field, so an incomplete report can't accidentally be
-  tabled or lodged.
+  preparation panel. These fields support the annual reporting
+  requirement by recording, in anonymised form, the nature of each
+  dispute, the action taken in response, and the outcome. They are
+  deliberately written separately from the private party-facing
+  ResolutionSummary/ClosureNotes to minimise the risk of identifying
+  information appearing in the annual report. CAV's current annual-
+  meeting guidance specifically says the annual dispute report
+  includes action taken to resolve disputes. Stored in a new
+  RelationsAnnualReport sheet tab, entirely separate from the Relations
+  tab -- see RelationsManager V1.0.12. Export is gated: blocked while
+  any dispute in the selected FY is missing either field, or while the
+  Changes Made or Proposed narrative is blank, so an incomplete report
+  can't accidentally be tabled or lodged.
 
   Export uses the same window.print() pattern as
   AnnualComplianceReport.html and RelationsManager.html/RelationsChronicle.html's
@@ -65,6 +66,30 @@ PURPOSE:
   dialog handles Save as PDF).
 
 VERSION HISTORY:
+  V1.1.5 (Aug 2026): Peer review fixes.
+      - Print header's "Confidential" label replaced with "Anonymised —
+        No Parties Identified" -- missed when the export was built;
+        "Confidential" was left over from AnnualComplianceReport.html
+        and says the wrong thing about a report with no party detail in
+        it at all.
+      - Export now also gated on the Changes Made or Proposed narrative
+        being non-blank -- previously the Board could leave it empty
+        and the exported statutory report would print "No narrative
+        recorded for this financial year," which doesn't satisfy CAV's
+        requirement that the report cover changes made or proposed.
+        Placeholder text now guides an explicit statement (e.g. "No
+        broader changes were considered necessary during the reporting
+        year") when there's genuinely nothing to report, rather than
+        leaving the field blank. Gate checks live as the Board types,
+        same pattern as the per-dispute completeness gate.
+      - Documentation corrected (no functional change): the PURPOSE
+        section's claim that the Dispute Summary/Action Taken fields
+        "exceed what CAV's guidance strictly requires" was wrong --
+        CAV's current annual-meeting guidance specifically includes
+        action taken to resolve disputes as report content. Replaced
+        with an accurate description of what the fields do and why
+        they're kept separate from ResolutionSummary/ClosureNotes.
+
   V1.1.4 (Aug 2026): Two small fixes per Tony.
       - EARLIEST_FY_START corrected from 2026 to 2025 -- system live
         date is Nov 2025 (FY2025-26), not Nov 2026 as stated in V1.1.3.
@@ -544,7 +569,7 @@ TECHNICAL:
 
             <div class="glass-panel">
                 <div class="filter-label" style="margin-bottom:10px;">Changes Made or Proposed (Board narrative for this financial year)</div>
-                <textarea id="narrativeText" class="glass-textarea" placeholder="Describe any changes made or proposed in response to village disputes during this financial year..."></textarea>
+                <textarea id="narrativeText" class="glass-textarea" placeholder="Describe any changes made or proposed in response to village disputes during this financial year. If there is nothing to report, enter an explicit statement rather than leaving this blank -- for example: &quot;No broader changes were considered necessary during the reporting year.&quot;"></textarea>
                 <div class="narrative-meta" id="narrativeMeta">Not yet recorded</div>
                 <div style="margin-top:12px;">
                     <button id="saveNarrativeBtn" class="btn-glass-action" onclick="saveNarrative()">Save Narrative</button>
@@ -624,6 +649,7 @@ TECHNICAL:
         buildFYOptions();
         document.getElementById('rarSummaryInput').addEventListener('input', updateModalSaveState);
         document.getElementById('rarActionInput').addEventListener('input', updateModalSaveState);
+        document.getElementById('narrativeText').addEventListener('input', updateExportGate);
 
         const alreadyVerified = VerificationModal.init({
             moduleName: 'Relations Annual Report',
@@ -886,13 +912,22 @@ TECHNICAL:
     // ── EXPORT GATE (completeness check) ─────────────────────────────────
 
     function updateExportGate() {
-        const incomplete = lastRelations.filter(function(r) { return !r.reportEntryComplete; }).length;
+        const incomplete       = lastRelations.filter(function(r) { return !r.reportEntryComplete; }).length;
+        const narrativeMissing = !document.getElementById('narrativeText').value.trim();
         const btn    = document.getElementById('exportBtn');
         const status = document.getElementById('exportGateStatus');
 
-        if (incomplete > 0) {
+        if (incomplete > 0 && narrativeMissing) {
+            btn.disabled = true;
+            status.textContent = incomplete + ' of ' + lastRelations.length + ' disputes still need a Dispute Summary and Action Taken, and the Changes Made or Proposed narrative needs an entry (or an explicit "no changes" statement) before this report can be exported.';
+            status.classList.remove('hidden');
+        } else if (incomplete > 0) {
             btn.disabled = true;
             status.textContent = incomplete + ' of ' + lastRelations.length + ' disputes still need a Dispute Summary and Action Taken entered before this report can be exported.';
+            status.classList.remove('hidden');
+        } else if (narrativeMissing) {
+            btn.disabled = true;
+            status.textContent = 'The Changes Made or Proposed narrative needs an entry -- or an explicit "no changes" statement -- before this report can be exported.';
             status.classList.remove('hidden');
         } else {
             btn.disabled = false;
@@ -1067,7 +1102,7 @@ TECHNICAL:
 
     function printHeader(title, subtitle) {
         return '<div class="print-header">' +
-               '<div class="print-confidential">Confidential</div>' +
+               '<div class="print-confidential">Anonymised — No Parties Identified</div>' +
                '<div class="print-village">Lake Illawong Residential Village</div>' +
                '<div class="print-title">' + title + '</div>' +
                '<div class="print-ref">' + subtitle + '</div>' +
@@ -1123,6 +1158,10 @@ TECHNICAL:
         }
 
         const narrative = document.getElementById('narrativeText').value.trim();
+        if (!narrative) {
+            alert('The Changes Made or Proposed narrative needs an entry -- or an explicit "no changes" statement -- before this report can be exported.');
+            return;
+        }
         const natureRows = computeNatureOfDisputes();
 
         const natureHtml = natureRows.length
