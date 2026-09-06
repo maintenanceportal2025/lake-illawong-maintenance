@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsAnnualReport.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Portal Module
-  Frontend Version: V1.1.0
+  Frontend Version: V1.1.2
   Backend:          RelationsManager V1.0.12
   Status:           DEVELOPMENT
   Created:          Aug 2026
@@ -65,6 +65,37 @@ PURPOSE:
   dialog handles Save as PDF).
 
 VERSION HISTORY:
+  V1.1.2 (Aug 2026): Added "Open in RelationsManager" link to the
+    Annual Report Entry modal's context line -- opens
+    RelationsManager.html?ref=<reference> in a new tab, landing
+    directly on that dispute's full card (Process Statement, full
+    Activity Log, everything), expanded, via RelationsManager V1.0.19's
+    new deep-link support. This is what "open up the actual lodgement"
+    in Tony's original review turned out to mean once clarified -- the
+    underlying case, not the myCAV government portal. The "Open myCAV
+    Lodgement" button added in V1.1.1 was a misreading of that same
+    request; left in place since it's still a genuinely useful shortcut
+    once the report itself is ready to lodge, just not what was being
+    asked for at the time.
+
+  V1.1.1 (Aug 2026): Three refinements per Tony's review of V1.1.0.
+      - Annual Summary changed from stat tiles to a Metric/Number table,
+        matching the Nature of Disputes and Individual Disputes table
+        style, on-screen and in the export.
+      - Fixed a real gap: the modal's Save Annual Report Entry button
+        could previously be clicked with one or both fields empty
+        (the row correctly stayed flagged "Add Summary" and nothing
+        was written to the sheet, but the button shouldn't have let
+        the click happen at all). Save is now disabled until both
+        Dispute Summary and Action Taken have content, live as the
+        Board types, with a defensive check in the save handler itself.
+      - Added "Open myCAV Lodgement" next to Export Report -- opens
+        CAV's own published myCAV sign-in link
+        (my.consumer.vic.gov.au) in a separate window, so the Board
+        can export the report here and switch across to lodge it
+        without losing this page.
+    No backend change -- all three are frontend-only.
+
   V1.1.0 (Aug 2026): Relations Annual Report V1.1, per Tony's second-
     opinion review of the reporting design.
       - Individual Disputes table restructured: Reference column
@@ -284,24 +315,6 @@ TECHNICAL:
     .status-text { font-size: 0.85rem; color: var(--glass-text-muted); margin: 6px 0 18px; }
     .status-text.warn { color: #fcd34d; }
 
-    /* ── STATS ROW ───────────────────────────────────────────── */
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: 12px;
-        margin-bottom: 18px;
-    }
-    .glass-stat {
-        background: var(--glass-bg);
-        backdrop-filter: var(--glass-blur);
-        border: 1px solid var(--glass-border);
-        border-radius: 2px;
-        padding: 14px 12px;
-        text-align: center;
-    }
-    .glass-stat-value { font-size: 1.7rem; font-weight: 700; color: var(--glass-text); line-height: 1; }
-    .glass-stat-label { font-size: 0.7rem; color: var(--glass-text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
-
     /* ── DATA TABLES (white, always) ─────────────────────────── */
     .section-heading { font-size: 1rem; font-weight: 700; color: white; margin: 22px 0 10px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3); }
     .table-container { background: white; border-radius: 2px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.15); margin-bottom: 8px; }
@@ -470,14 +483,11 @@ TECHNICAL:
         <div id="reportResults" class="hidden">
 
             <div class="section-heading">Annual Summary</div>
-            <div class="stats-grid">
-                <div class="glass-stat"><div class="glass-stat-value" id="statTotal">0</div><div class="glass-stat-label">Disputes Logged</div></div>
-                <div class="glass-stat"><div class="glass-stat-value" id="statResolved">0</div><div class="glass-stat-label">Resolved</div></div>
-                <div class="glass-stat"><div class="glass-stat-value" id="statUnresolved">0</div><div class="glass-stat-label">Unresolved</div></div>
-                <div class="glass-stat"><div class="glass-stat-value" id="statOpen">0</div><div class="glass-stat-label">Open as at Report Date</div></div>
-                <div class="glass-stat"><div class="glass-stat-value" id="statEarlyResolved">0</div><div class="glass-stat-label">Resolved &le; 72 Hours</div></div>
-                <div class="glass-stat"><div class="glass-stat-value" id="statManagement">0</div><div class="glass-stat-label">Resident-to-Management</div></div>
-                <div class="glass-stat"><div class="glass-stat-value" id="statResident">0</div><div class="glass-stat-label">Resident-to-Resident</div></div>
+            <div class="table-container">
+                <table class="nature-table">
+                    <thead><tr><th>Metric</th><th>Number</th></tr></thead>
+                    <tbody id="summaryTableBody"></tbody>
+                </table>
             </div>
 
             <div class="section-heading">Nature of Disputes</div>
@@ -509,6 +519,7 @@ TECHNICAL:
                 <div class="filter-label" style="margin-bottom:10px;">Export</div>
                 <div class="export-row">
                     <button id="exportBtn" class="btn-glass-action" onclick="exportReport()">&#128196; Export Report</button>
+                    <button class="btn-glass-action" onclick="openMyCAV()">&#128279; Open myCAV Lodgement</button>
                 </div>
                 <p id="exportGateStatus" class="status-text warn hidden"></p>
                 <p class="compliance-note">This single report serves both purposes: present it at the Annual General Meeting under s.38ZA(2), then lodge the same copy with the Director of Consumer Affairs Victoria via myCAV within 14 days, per s.38ZB.</p>
@@ -568,6 +579,8 @@ TECHNICAL:
 
     document.addEventListener('DOMContentLoaded', function () {
         buildFYOptions();
+        document.getElementById('rarSummaryInput').addEventListener('input', updateModalSaveState);
+        document.getElementById('rarActionInput').addEventListener('input', updateModalSaveState);
 
         const alreadyVerified = VerificationModal.init({
             moduleName: 'Relations Annual Report',
@@ -718,15 +731,24 @@ TECHNICAL:
         }
     }
 
-    function renderStats() {
+    function summaryRows() {
         const a = lastAggregates;
-        document.getElementById('statTotal').textContent        = a.total || 0;
-        document.getElementById('statResolved').textContent     = a.resolved || 0;
-        document.getElementById('statUnresolved').textContent   = a.unresolved || 0;
-        document.getElementById('statOpen').textContent         = a.open || 0;
-        document.getElementById('statEarlyResolved').textContent = a.earlyResolved || 0;
-        document.getElementById('statManagement').textContent   = a.management || 0;
-        document.getElementById('statResident').textContent     = a.resident || 0;
+        return [
+            ['Disputes Logged',              a.total || 0],
+            ['Resolved',                      a.resolved || 0],
+            ['Unresolved',                     a.unresolved || 0],
+            ['Open as at Report Date',          a.open || 0],
+            ['Resolved \u2264 72 Hours',         a.earlyResolved || 0],
+            ['Resident-to-Management',            a.management || 0],
+            ['Resident-to-Resident',               a.resident || 0]
+        ];
+    }
+
+    function renderStats() {
+        const tbody = document.getElementById('summaryTableBody');
+        tbody.innerHTML = summaryRows().map(function(row) {
+            return '<tr><td>' + escHtml(row[0]) + '</td><td>' + row[1] + '</td></tr>';
+        }).join('');
     }
 
     // ── NATURE OF DISPUTES (computed client-side, no new data) ──────────
@@ -856,12 +878,14 @@ TECHNICAL:
         document.getElementById('rarModalContext').innerHTML =
             '<strong>Category:</strong> ' + escHtml(r.category || '—') + ' &nbsp;|&nbsp; ' +
             '<strong>Type:</strong> ' + escHtml(matterTypeLabel(r)) + ' &nbsp;|&nbsp; ' +
-            '<strong>Outcome:</strong> ' + escHtml(r.outcome);
+            '<strong>Outcome:</strong> ' + escHtml(r.outcome) + ' &nbsp;|&nbsp; ' +
+            '<a href="RelationsManager.html?ref=' + encodeURIComponent(r.referenceNumber) + '" target="_blank" rel="noopener" style="color:#5eead4;">Open in RelationsManager &#8599;</a>';
         document.getElementById('rarSummaryInput').value = r.disputeSummary || '';
         document.getElementById('rarActionInput').value  = r.actionTaken || '';
         document.getElementById('rarFeedback').textContent = '';
         document.getElementById('rarFeedback').className = 'rar-feedback';
         document.getElementById('rarPanelBody').textContent = 'Loading…';
+        updateModalSaveState();
 
         document.getElementById('rarModalOverlay').style.display = 'flex';
 
@@ -898,6 +922,12 @@ TECHNICAL:
         }).join('');
     }
 
+    function updateModalSaveState() {
+        const hasSummary = document.getElementById('rarSummaryInput').value.trim().length > 0;
+        const hasAction  = document.getElementById('rarActionInput').value.trim().length > 0;
+        document.getElementById('rarSaveBtn').disabled = !(hasSummary && hasAction);
+    }
+
     function closeReportEntryModal() {
         document.getElementById('rarModalOverlay').style.display = 'none';
         currentModalIndex = -1;
@@ -909,6 +939,12 @@ TECHNICAL:
         const disputeSummary = document.getElementById('rarSummaryInput').value.trim();
         const actionTaken    = document.getElementById('rarActionInput').value.trim();
         const userName        = (window._sessionUser && window._sessionUser.name) || 'Admin';
+
+        if (!disputeSummary || !actionTaken) {
+            document.getElementById('rarFeedback').textContent = 'Both Dispute Summary and Action Taken are required.';
+            document.getElementById('rarFeedback').className = 'rar-feedback rar-error';
+            return;
+        }
 
         const btn = document.getElementById('rarSaveBtn');
         const feedback = document.getElementById('rarFeedback');
@@ -991,6 +1027,14 @@ TECHNICAL:
                '<span>Printed ' + now + '</span></div>';
     }
 
+    function openMyCAV() {
+        // my.consumer.vic.gov.au is CAV's own published myCAV sign-in
+        // link (see e.g. their "Change retirement village details" page).
+        // Opens in a separate window/tab so the report stays open here --
+        // Board can export first, then switch across to lodge it.
+        window.open('https://my.consumer.vic.gov.au', '_blank', 'noopener');
+    }
+
     function openPrintWindow(html) {
         const w = window.open('', '_blank', 'width=1000,height=900');
         if (!w) { alert('Please allow pop-ups for this site to print.'); return; }
@@ -1010,7 +1054,6 @@ TECHNICAL:
         }
 
         const narrative = document.getElementById('narrativeText').value.trim();
-        const a = lastAggregates;
         const natureRows = computeNatureOfDisputes();
 
         const natureHtml = natureRows.length
@@ -1029,13 +1072,9 @@ TECHNICAL:
             '<style>' + printStyles() + '</style></head><body>' +
             printHeader('Village Disputes — Annual Report', 'Financial Year ' + currentFYLabel + ' — for presentation at Annual General Meeting and lodgement with Consumer Affairs Victoria via myCAV (s.38ZA/38ZB)') +
             '<div class="section-title">Annual Summary</div>' +
-            '<div class="stat-row">' +
-                '<div class="stat-box"><div class="num">' + (a.total || 0) + '</div><div class="lbl">Disputes Logged</div></div>' +
-                '<div class="stat-box"><div class="num">' + (a.resolved || 0) + '</div><div class="lbl">Resolved</div></div>' +
-                '<div class="stat-box"><div class="num">' + (a.unresolved || 0) + '</div><div class="lbl">Unresolved</div></div>' +
-                '<div class="stat-box"><div class="num">' + (a.open || 0) + '</div><div class="lbl">Open as at Report Date</div></div>' +
-                '<div class="stat-box"><div class="num">' + (a.earlyResolved || 0) + '</div><div class="lbl">Resolved &le;72hrs</div></div>' +
-            '</div>' +
+            '<table><thead><tr><th>Metric</th><th>Number</th></tr></thead><tbody>' +
+                summaryRows().map(function(row) { return '<tr><td>' + escHtml(row[0]) + '</td><td>' + row[1] + '</td></tr>'; }).join('') +
+            '</tbody></table>' +
             '<div class="section-title">Nature of Disputes</div>' +
             '<table><thead><tr><th>Category</th><th>Number</th></tr></thead><tbody>' + natureHtml + '</tbody></table>' +
             '<div class="section-title">Individual Disputes — Actions and Outcomes</div>' +
