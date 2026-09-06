@@ -1,0 +1,298 @@
+<!--
+=====================================================================
+PublicDocuments.html - PUBLIC DOCUMENTS
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        PublicDocuments.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Standalone public-facing module (NOT part of a portal)
+  Frontend Version: V1.0.0
+  Status:           PRODUCTION
+  Created:          Sep 2026
+
+PURPOSE:
+  Official public publication point for Village documents that must be
+  accessible without login -- e.g. the Village Dispute Resolution
+  Procedure under the Retirement Villages Act 1986 (Vic, as amended).
+  Intentionally separate from the gated Document Library (DocumentLibrary.html),
+  which requires OTP verification before showing anything, including
+  documents tagged "Public" internally. This page has no such gate.
+
+  General-purpose: built to hold any number of publicly disclosable
+  documents, added to as required -- not a single-document page.
+
+AUTHENTICATION:
+  None. Deliberately no VerificationModal, no session, no OTP.
+  This is by design -- the entire purpose is access with no login,
+  for residents, prospective residents, CAV, or anyone else with the link.
+
+DATA SOURCE / MAINTENANCE:
+  Static. Documents are listed in the PUBLIC_DOCUMENTS array below --
+  no backend, no JSONP, no Apps Script dependency. This is a deliberate
+  reliability choice: a page discharging a regulatory disclosure
+  obligation should not depend on Apps Script cold-starts, quota, or
+  JSONP callback behaviour. To add or update a document, edit the
+  array directly and redeploy (GitHub push -> Netlify auto-deploy).
+
+  Each entry stores a full URL (not a Drive File ID) so the source can
+  be Drive, or anything else, without changing any construction logic.
+
+  Relationship to DocumentLibrary: if a document listed here is also
+  useful to surface inside the gated Document Library for residents,
+  add it there separately via DocumentLibraryManager using Source Type
+  "Link" and the SAME url used below. This is not a second copy of the
+  document -- one file, two independent listings pointing at it. Keep
+  the title wording consistent by convention; there is no automated
+  sync between the two listings.
+
+DESIGN SYSTEM: Lake Illawong Unified V2.4
+  - Header: Transparent with logo (V1.4 standard)
+  - Layout: Glass panel (intro), white card (document list -- dense/
+    readable content per Style Philosophy)
+  - Border radius: 2px glass, 8px white-panel buttons
+  - No portal back button -- this page has no parent portal
+
+RELATED FILES: None (standalone). No shared session, no shared backend.
+
+HIERARCHICAL POSITION: None -- root-level standalone page.
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Public Documents - Lake Illawong</title>
+
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+        --glass-bg:           rgba(255, 255, 255, 0.08);
+        --glass-bg-hover:     rgba(255, 255, 255, 0.12);
+        --glass-border:       rgba(255, 255, 255, 0.15);
+        --glass-border-hover: rgba(255, 255, 255, 0.30);
+        --glass-blur:         blur(15px);
+        --glass-text:         #ffffff;
+        --glass-text-muted:   rgba(255, 255, 255, 0.70);
+        --primary-blue:       #667eea;
+        --primary-blue-dark:  #764ba2;
+        --text-primary:       #1e293b;
+        --text-secondary:     #64748b;
+        --border-primary:     #e2e8f0;
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                     'Helvetica Neue', Arial, sans-serif;
+        background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+        min-height: 100vh;
+        color: var(--text-primary);
+        line-height: 1.6;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+    /* HEADER (transparent with logo) */
+    .header { background: transparent; text-align: center; margin-bottom: 30px; color: white; }
+    .header-content { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+    .logo-container { flex-shrink: 0; }
+    .logo-image { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; }
+    .header-text { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+    .header-title { font-size: 2rem; font-weight: 700; line-height: 1.1; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); color: white; }
+    .header-subtitle { font-size: 1rem; font-weight: 500; color: rgba(255,255,255,0.9); }
+    .header-divider {
+        height: 2px;
+        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%,
+            rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+        border-radius: 2px;
+        margin-top: 15px;
+    }
+
+    @media (max-width: 480px) {
+        .header-content { flex-direction: column; gap: 15px; }
+        .header-text { align-items: center; text-align: center; }
+        .header-title { font-size: 1.6rem; }
+        .logo-image { width: 70px; height: 70px; }
+    }
+
+    /* GLASS INTRO PANEL */
+    .glass-panel {
+        background: var(--glass-bg);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-border);
+        border-radius: 2px;
+        color: var(--glass-text);
+        padding: 20px 24px;
+        margin-bottom: 24px;
+        font-size: 0.95rem;
+    }
+    .glass-panel p { color: var(--glass-text-muted); }
+
+    /* WHITE DOCUMENT LIST CARD (dense/readable content) */
+    .doc-list-card {
+        background: white;
+        border-radius: 16px;
+        padding: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        border: 1px solid var(--border-primary);
+    }
+
+    .doc-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 20px;
+        border-bottom: 1px solid var(--border-primary);
+    }
+    .doc-row:last-child { border-bottom: none; }
+
+    .doc-info { flex: 1; min-width: 0; }
+    .doc-title { font-size: 1.05rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+    .doc-meta { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 6px; }
+    .doc-category {
+        display: inline-block;
+        background: #ede9fe;
+        color: #6d28d9;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        padding: 2px 9px;
+        border-radius: 10px;
+        margin-right: 8px;
+    }
+    .doc-description { font-size: 0.88rem; color: var(--text-secondary); }
+
+    .btn-view {
+        flex-shrink: 0;
+        background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+        color: white;
+        border: none;
+        padding: 12px 22px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 44px;
+        transition: transform 0.2s, box-shadow 0.2s;
+        white-space: nowrap;
+    }
+    .btn-view:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(59,130,246,0.3); }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-secondary);
+    }
+
+    .footer {
+        text-align: center;
+        color: rgba(255,255,255,0.6);
+        font-size: 0.78rem;
+        margin-top: 30px;
+        padding-bottom: 20px;
+    }
+
+    @media (max-width: 600px) {
+        .doc-row { flex-direction: column; align-items: stretch; }
+        .btn-view { justify-content: center; }
+    }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+    <div class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+            </div>
+            <div class="header-text">
+                <div class="header-title">Public Documents</div>
+                <div class="header-subtitle">Lake Illawong Residential Village</div>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+    </div>
+
+    <div class="glass-panel">
+        <p>Documents on this page are published for public access and require no login.
+        They are provided in accordance with the Village's obligations under the
+        Retirement Villages Act 1986 (Vic), as amended.</p>
+    </div>
+
+    <div class="doc-list-card" id="docListCard">
+        <!-- Rendered by renderDocuments() -->
+    </div>
+
+    <div class="footer">Lake Illawong Residential Village</div>
+
+</div>
+
+<script>
+    // ================================================================
+    // PUBLIC DOCUMENTS -- edit this array to add, update, or remove
+    // publicly disclosable documents. Each entry needs a full URL
+    // (not a Drive File ID) -- copy the "Anyone with the link" share
+    // URL directly from Drive (or wherever the document is hosted).
+    // ================================================================
+    const PUBLIC_DOCUMENTS = [
+        {
+            title: 'Village Dispute Resolution Procedure',
+            category: 'Policies & Procedures',
+            description: 'The Village\u2019s procedure for resolving Village Disputes under the Retirement Villages Act 1986 (Vic), as amended.',
+            dateLabel: 'Adopted: [DATE]',           // TODO: replace with actual adopted/effective date
+            url: 'PASTE_PUBLIC_SHARE_URL_HERE'       // TODO: replace with actual Drive share URL
+        }
+        // Add further entries here as needed, e.g.:
+        // {
+        //     title: 'Example Document Title',
+        //     category: 'Example Category',
+        //     description: 'Short description shown under the title.',
+        //     dateLabel: 'Adopted: 1 July 2026',
+        //     url: 'https://drive.google.com/file/d/EXAMPLE_ID/view?usp=sharing'
+        // }
+    ];
+
+    function esc(s) {
+        return (s || '').toString()
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function renderDocuments() {
+        const el = document.getElementById('docListCard');
+
+        if (!PUBLIC_DOCUMENTS.length) {
+            el.innerHTML = '<div class="empty-state">No public documents are currently listed.</div>';
+            return;
+        }
+
+        el.innerHTML = PUBLIC_DOCUMENTS.map(function(doc) {
+            return '<div class="doc-row">' +
+                        '<div class="doc-info">' +
+                            '<div class="doc-title">' + esc(doc.title) + '</div>' +
+                            '<div class="doc-meta">' +
+                                (doc.category ? '<span class="doc-category">' + esc(doc.category) + '</span>' : '') +
+                                esc(doc.dateLabel || '') +
+                            '</div>' +
+                            (doc.description ? '<div class="doc-description">' + esc(doc.description) + '</div>' : '') +
+                        '</div>' +
+                        '<a class="btn-view" href="' + esc(doc.url) + '" target="_blank" rel="noopener">View Document \u2197</a>' +
+                    '</div>';
+        }).join('');
+    }
+
+    renderDocuments();
+</script>
+
+</body>
+</html>
