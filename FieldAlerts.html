@@ -4,11 +4,28 @@ FIELD NOTIFICATIONS - UNIFIED EMAIL + SMS SYSTEM
 =====================================================================
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.3.1 - Session guard recognises Field Ops' persistent login
+VERSION: V3.3.3 - Fixed selectedTemplate sticking after a successful send
 LAST UPDATED: August 2026
 DESIGN SYSTEM: Lake Illawong Unified V2.0 (glass-morphism, confirmed against
   actual CSS -- corrected from a stale "v1.4" that contradicted this file's
   own VERSION line above, which already correctly noted the V2.0 conversion)
+
+NEW IN V3.3.3:
+✅ Fixed selectedTemplate not resetting after a successful send -- it was
+   only ever cleared by the manual "Clear Selections" button, so sending a
+   template message left it stuck true. The next message (even a fresh
+   custom one, no template picked) silently inherited skipGreeting from
+   the previous send until the page was refreshed. Now reset alongside
+   the message text in the send-success handler.
+
+NEW IN V3.3.2:
+✅ Compose pane no longer needs a typed salutation -- NotificationServer
+   (V3.9.0) now prepends "Hi [First Name]," per recipient automatically
+   for custom-typed messages. The five quick-fill templates (EMERGENCY
+   ALERT, MAINTENANCE NOTICE, etc.) already carry their own heading, so
+   they're flagged via a new skipGreeting param and get no greeting added.
+   Placeholder text updated to reflect this; requires NotificationServer
+   V3.9.0 or later.
 
 NEW IN V3.3.1:
 ✅ checkSession() now also checks localStorage for each valid key, not just
@@ -1497,7 +1514,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
     <textarea 
         class="message-input" 
         id="messageText" 
-        placeholder="Select a template or type your message here..."
+        placeholder="The greeting (&quot;Hi [First Name],&quot;) is added automatically per recipient — just select a template or enter your custom message here..."
         maxlength="5000"></textarea>
     <div class="char-count" id="charCount">0/5000 characters</div>
 </div>
@@ -2774,7 +2791,11 @@ async function executeFieldAlertSend() {
             includeEmail: emailEnabled ? 'true' : 'false',
             includeSMS: smsEnabled ? 'true' : 'false',
             useAlertFormat: useAlertFormat ? 'true' : 'false',
-            emailSubject: emailSubject || ''
+            emailSubject: emailSubject || '',
+            // Template messages (EMERGENCY ALERT, MAINTENANCE NOTICE, etc.) already
+            // carry their own heading/structure, so the personalised "Hi [Name],"
+            // greeting is skipped for them -- only custom-typed messages get it.
+            skipGreeting: selectedTemplate ? 'true' : 'false'
         };
         
         // Add attachment if present
@@ -2804,6 +2825,18 @@ async function executeFieldAlertSend() {
             // Clear form including attachment
             document.getElementById('messageText').value = '';
             clearAttachment(); // Clear attachment after successful send
+
+            // Reset the template flag so the next message (even if typed
+            // fresh, no template picked) doesn't inherit skipGreeting from
+            // this send. Was previously only cleared by the manual Clear
+            // Selections button -- a template send left it stuck until a
+            // page refresh, silently skipping the greeting on whatever was
+            // sent next too.
+            selectedTemplate = null;
+            document.querySelectorAll('.template-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+
             updateCharCount();
             updateSendButton();
         } else {
