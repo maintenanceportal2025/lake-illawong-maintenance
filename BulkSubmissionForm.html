@@ -7,13 +7,33 @@
       File Name:        BulkSubmissionForm.html
       System:           Lake Illawong Management Central System
       Component Type:   Staff Module
-      Frontend Version: V2.2.2
+      Frontend Version: V2.3.0
       Backend:          BulkSubmissionForm V2.0.2
       Status:           PRODUCTION
       Created:          Nov 2025
       Last Modified:    Aug 2026
 
     VERSION HISTORY:
+      V2.3.0 (Aug 2026): Now launchable from Field Ops Portal as well as
+                         Admin Portal, via a new ?portal=fieldops URL
+                         param (default/no-param behaviour unchanged --
+                         still Admin). Session guard now accepts either
+                         portalAdminVerified (sessionStorage, unchanged)
+                         or portalFieldOpsVerified (checked in both
+                         sessionStorage and localStorage, since Field Ops
+                         sessions moved to a persistent localStorage
+                         session with a 30-day expiry in Aug 2026 --
+                         checking sessionStorage only, the way the other
+                         shared modules did before their own fix, would
+                         have hit the exact same drop-out bug here too).
+                         Back button and failure-redirect both now target
+                         whichever portal the ?portal= param says, instead
+                         of always AdminPortal.html. Also corrected a
+                         stale header comment that said this checks
+                         sessionStorage key "lakeIllawongVerified" -- it's
+                         actually checked "portalAdminVerified" and now
+                         also "portalFieldOpsVerified"; no functional
+                         change, just fixing the doc to match the code.
       V2.2.2 (Aug 2026): System-wide JSONP audit fix — callScript() deleted
                          its callback on completion/onerror instead of
                          replacing it with a no-op, risking a thrown
@@ -38,8 +58,10 @@
 
     AUTHENTICATION:
       Session guard on body (style="display:none").
-      Checks sessionStorage key: lakeIllawongVerified
-      On failure: redirects to AdminPortal.html
+      Checks sessionStorage key: portalAdminVerified, OR
+        portalFieldOpsVerified (sessionStorage or localStorage) -- V2.3.0.
+      Launch portal determined by ?portal= URL param (default: admin).
+      On failure: redirects to whichever portal launched it.
 
     SYSTEM CONNECTIONS:
       Backend API:      BulkSubmissionForm V2.0.1
@@ -703,7 +725,7 @@
             <div class="header-divider"></div>
         </div>
 
-<button class="portal-back-btn" onclick="window.location.href='AdminPortal.html'">&#8592; Back to Portal</button>
+<button class="portal-back-btn" onclick="window.location.href=homePortalUrl">&#8592; Back to Portal</button>
 		
         <!-- Title Card -->
         <div class="title-card">
@@ -1017,9 +1039,20 @@
     </div>
 
     <script>
-// SESSION GUARD
-        if (!sessionStorage.getItem('portalAdminVerified')) {
-            window.location.href = 'AdminPortal.html';
+// SESSION GUARD -- supports launch from Admin Portal (default/legacy,
+// no ?portal= param) or Field Ops Portal (?portal=fieldops). Field Ops
+// sessions are localStorage-backed (30-day expiry, since Aug 2026) so
+// that key is checked in both storages; Admin's stays sessionStorage-only,
+// unchanged.
+        const launchPortal = new URLSearchParams(window.location.search).get('portal') || 'admin';
+        const homePortalUrl = launchPortal === 'fieldops' ? 'FieldOperationsPortal.html' : 'AdminPortal.html';
+
+        const hasAdminSession = sessionStorage.getItem('portalAdminVerified') === 'true';
+        const hasFieldOpsSession = sessionStorage.getItem('portalFieldOpsVerified') === 'true' ||
+                                    localStorage.getItem('portalFieldOpsVerified') === 'true';
+
+        if (!hasAdminSession && !hasFieldOpsSession) {
+            window.location.href = homePortalUrl;
         } else {
             document.body.style.display = '';
         }
