@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.19
+VERSION: V1.1.21
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -36,6 +36,43 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.21 (Sep 2026): makeRequest brought fully in line with
+                     DesktopExplorer's version -- retries 2->3 (matches;
+                     3 retries = 4 total attempts, was 3), and the V1.1.6
+                     "dead response" fail-fast (onload fires without the
+                     callback having run -> fail early) removed entirely.
+                     That check existed for one specific signature -- a
+                     stale redirect serving an HTML error page with HTTP
+                     200 -- and every failure actually captured since
+                     (ERR_BLOCKED, genuine Network error, genuine Timeout)
+                     has fired onerror or the timeout directly, never that
+                     signature. Raised directly by Tony: no reason left
+                     for this file to be less tolerant of the same
+                     external failures than the sibling file sitting next
+                     to it, hitting the same backends, that's never shown
+                     the problem.
+  V1.1.20 (Sep 2026): Global Dataset selector -- V1.1.19 gave each of the 7
+                     reports offering Current/Legacy its own independent
+                     selector, so picking "Current + Legacy" in one report
+                     didn't carry over when switching to another (Tony
+                     feedback, immediate). One selector now lives in the
+                     sidebar above the report catalogue and drives all 6
+                     of the reports that read a shared current/legacy
+                     choice (Top Units, Month-on-Month, Priorities Trend,
+                     By Category, By Zone, Keyword Search) -- their own
+                     per-report Dataset dropdowns are removed; each still
+                     calls the same needsLegacyWait() guard from V1.1.19,
+                     just reading the global value instead of a local
+                     select. Switching the global selector re-runs
+                     whichever report is currently showing in place
+                     (doesn't rebuild the panel), so filters already set
+                     and, for Keyword Search, an in-progress search term
+                     aren't lost. Unit Problem History keeps its own
+                     separate local selector -- it's the one report with
+                     a genuine third state ("Legacy only", for tracing a
+                     unit's full history) that doesn't fit the global
+                     Current/Current+Legacy choice, and it's the one Tony
+                     confirmed was already working correctly.
   V1.1.19 (Sep 2026): Current data only on first paint; legacy loads on
                      demand -- the same pattern DesktopExplorer already
                      uses (current data by default, legacy fetched only
@@ -718,6 +755,14 @@ VERSION HISTORY:
                 <span id="dataStatusText">Loading data...</span>
             </div>
 
+            <div class="filter-group" id="globalDatasetGroup" style="margin-bottom:16px;">
+                <span class="filter-label">Dataset</span>
+                <select id="globalDatasetSelect" class="glass-select" onchange="setGlobalDataset()" style="flex:1;">
+                    <option value="current" selected>Current only</option>
+                    <option value="all">Current + Legacy</option>
+                </select>
+            </div>
+
             <div class="report-item active" onclick="selectReport('unit-history')" id="cat-unit-history">
                 <span class="report-icon">🏠</span>Unit Problem History
             </div>
@@ -802,6 +847,9 @@ let programmedData = [];    // Programmed + Programmed-Completed (current only)
 let dataLoaded     = false; // true once CURRENT data has loaded (see legacyDataLoaded for legacy)
 let legacyDataLoaded = false;
 let legacyLoadPromise = null;
+let globalDataset  = 'current';  // drives Top Units/MoM/Priorities Trend/
+                                  // By Category/By Zone/Keyword Search;
+                                  // Unit History keeps its own local select
 let activeReport   = null;
 let activeChart    = null;
 
@@ -844,20 +892,20 @@ function pdfCategoryLines(pdf, category, colWidthMm) {
 // =====================================================================
 // DATA LOADING (JSONP)
 // =====================================================================
-// Retry-with-backoff pattern mirrored from DesktopExplorer's makeRequest,
-// which hits the same Explorer endpoints reliably. The intermittent
-// failures here were never slowness: Apps Script's one-time
-// googleusercontent redirect occasionally goes stale (404) or serves an
-// error page with the wrong content-type (Safari nosniff refusal). Those
-// responses will never execute the callback no matter how long we wait --
-// V1.1.5's 120s timeout proved that. The cure is fail fast + retry, not
-// wait longer.
-// lean=true requests Explorer V1.3's stripped-down payload (omits
-// activityLog and legacy placeholder fields) on getFaultLogData/
-// getLegacyLogData -- safe here, this file doesn't reference any field
-// lean mode omits. No effect on other actions (e.g. getDropdownOptions).
+// Retry-with-backoff pattern matching DesktopExplorer's makeRequest
+// exactly (v1.1.21) -- 3 retries, 30s timeout, no dead-response fail-fast.
+// The dead-response check (onload fires, callback hasn't run -> fail
+// fast) was added in V1.1.6 for one specific signature: a stale redirect
+// serving an HTML error page with HTTP 200, where a plain timeout would
+// sit out the full 30s for nothing. Every failure actually captured since
+// -- ERR_BLOCKED, genuine "Network error", genuine "Timeout" -- fires
+// onerror or the timeout directly; none has shown that signature. Keeping
+// a guess-based early-fail mechanism that isn't demonstrably catching
+// anything, in a file that already has one fewer retry than the sibling
+// file proven reliable against the same backends, was working against
+// itself. Aligning fully removes both gaps at once.
 function makeRequest(action, targetUrl, retries, lean) {
-    if (retries === undefined) retries = 2;
+    if (retries === undefined) retries = 3;
     const url = targetUrl || API_URL;
     return new Promise((resolve, reject) => {
         const cbName = 'rh_cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
@@ -886,9 +934,7 @@ function makeRequest(action, targetUrl, retries, lean) {
             }
         }
 
-        // 30s per attempt (reverted from V1.1.5's 120s -- see header note).
-        // Genuine slow-but-working calls complete well inside 30s; anything
-        // that hasn't answered by then is dead and retrying beats waiting.
+        // 30s per attempt.
         const timeout = setTimeout(() => failOrRetry('Timeout'), 30000);
 
         window[cbName] = (data) => {
@@ -900,17 +946,6 @@ function makeRequest(action, targetUrl, retries, lean) {
         };
 
         script.onerror = () => failOrRetry('Network error');
-
-        // Dead-response detection: a JSONP callback runs during script
-        // execution, i.e. before onload fires. So if onload fires and we're
-        // still not settled, the response arrived but didn't execute the
-        // callback (HTML error page served with HTTP 200, truncated payload,
-        // etc.). Fail the attempt now rather than burning the full 30s.
-        // Short grace delay purely as insurance against execution-order
-        // edge cases; the settled-guard makes it a no-op on success.
-        script.onload = () => {
-            setTimeout(() => failOrRetry('Dead response'), 500);
-        };
 
         script.src = url + '?action=' + action + '&callback=' + cbName + (lean ? '&lean=1' : '');
         document.body.appendChild(script);
@@ -1017,6 +1052,30 @@ function needsLegacyWait(dataset, resultsElId, rerunFn) {
             <div class="placeholder-text">Could not load legacy records — try again, or switch Dataset to "Current only".</div></div>`;
     });
     return true;
+}
+
+// Global Dataset selector (v1.1.20) -- one choice, shared by every report
+// below that isn't Unit History. Re-runs the currently-showing report in
+// place (not a full panel rebuild), so a report's own filters -- and, for
+// Keyword Search, an in-progress search term -- survive the switch.
+function setGlobalDataset() {
+    globalDataset = document.getElementById('globalDatasetSelect').value;
+    rerunActiveReportForDataset();
+}
+
+function rerunActiveReportForDataset() {
+    switch (currentReportId) {
+        case 'top-units':      runTopUnits();                break;
+        case 'mom-reported':   runMoM('reported');           break;
+        case 'mom-completed':  runMoM('completed');          break;
+        case 'priorities':     runPriorities();              break;
+        case 'by-category':    runByCategory();              break;
+        case 'by-zone':        runByZone();                  break;
+        case 'keyword-search': if (kwTerm) runKeywordSearch(); break;
+        // Unit History has its own local selector (see header note);
+        // all other reports are current-data-only by design -- nothing
+        // to do for either case.
+    }
 }
 
 function setDataStatus(state, text) {
@@ -1787,13 +1846,6 @@ function renderTopUnits() {
                     <option value="all">All time</option>
                 </select>
             </div>
-            <div class="filter-group">
-                <span class="filter-label">Dataset</span>
-                <select id="tuDataset" class="glass-select" onchange="runTopUnits()">
-                    <option value="all">Current + Legacy</option>
-                    <option value="current" selected>Current only</option>
-                </select>
-            </div>
             <button class="pdf-btn" onclick="exportTopUnitsPDF()">&#8595; PDF</button>
         </div>
         <div class="results-area" id="tuResults"></div>`);
@@ -1807,7 +1859,7 @@ function runTopUnits() {
     if (!dataLoaded) return;
     const zone    = document.getElementById('tuZone').value;
     const months  = document.getElementById('tuMonths').value;
-    const dataset = document.getElementById('tuDataset').value;
+    const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'tuResults', runTopUnits)) return;
     let pool = dataset === 'current' ? currentData : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
@@ -1948,13 +2000,6 @@ function renderMoM(mode) {
                 </select>
             </div>
             <div class="filter-group">
-                <span class="filter-label">Dataset</span>
-                <select id="momDataset" class="glass-select" onchange="runMoM('${mode}')">
-                    <option value="all">Current + Legacy</option>
-                    <option value="current" selected>Current only</option>
-                </select>
-            </div>
-            <div class="filter-group">
                 <span class="filter-label">Months</span>
                 <select id="momMonths" class="glass-select" onchange="runMoM('${mode}')">
                     <option value="12">Last 12 months</option>
@@ -1974,8 +2019,8 @@ let momChartData = {};
 function runMoM(mode) {
     if (!dataLoaded) return;
     const zone    = document.getElementById('momZone').value;
-    const dataset = document.getElementById('momDataset').value;
     const months  = document.getElementById('momMonths').value;
+    const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'momResults', () => runMoM(mode))) return;
     let pool      = dataset === 'current' ? currentData : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
@@ -2174,13 +2219,6 @@ function renderPriorities() {
                 </select>
             </div>
             <div class="filter-group">
-                <span class="filter-label">Dataset</span>
-                <select id="prDataset" class="glass-select" onchange="runPriorities()">
-                    <option value="all">Current + Legacy</option>
-                    <option value="current" selected>Current only</option>
-                </select>
-            </div>
-            <div class="filter-group">
                 <span class="filter-label">Months</span>
                 <select id="prMonths" class="glass-select" onchange="runPriorities()">
                     <option value="12">Last 12 months</option>
@@ -2206,9 +2244,9 @@ function runPriorities() {
 
 function runPrioritiesTrend(view) {
     const zone     = document.getElementById('prZone').value;
-    const dataset  = document.getElementById('prDataset').value;
     const months   = document.getElementById('prMonths').value;
     const priority = document.getElementById('prPriorityFilter').value;
+    const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'prResults', () => runPrioritiesTrend(view))) return;
     let pool = dataset === 'current' ? currentData : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
@@ -2431,13 +2469,6 @@ function renderByCategory() {
         <div class="report-subheading">Breakdown of problems by category and sub-category.</div>
         <div class="filter-row">
             <div class="filter-group">
-                <span class="filter-label">Dataset</span>
-                <select id="catDataset" class="glass-select" onchange="runByCategory()">
-                    <option value="current" selected>Current only</option>
-                    <option value="all">Current + Legacy</option>
-                </select>
-            </div>
-            <div class="filter-group">
                 <span class="filter-label">Status</span>
                 <select id="catStatus" class="glass-select" onchange="runByCategory()">
                     <option value="all">All</option>
@@ -2456,7 +2487,7 @@ let catReportData = {};
 
 function runByCategory() {
     if (!dataLoaded) return;
-    const dataset = document.getElementById('catDataset').value;
+    const dataset = globalDataset;
     const status  = document.getElementById('catStatus').value;
     if (needsLegacyWait(dataset, 'catResults', runByCategory)) return;
     const pool    = dataset === 'current' ? currentData : allData;
@@ -2591,13 +2622,6 @@ function renderByZone() {
                 <span class="filter-label" style="margin-left:8px;">To</span>
                 <input type="date" id="zoneTo" class="glass-input" onchange="runByZone()">
             </div>
-            <div class="filter-group">
-                <span class="filter-label">Dataset</span>
-                <select id="zoneDataset" class="glass-select" onchange="runByZone()">
-                    <option value="current" selected>Current only</option>
-                    <option value="all">Current + Legacy</option>
-                </select>
-            </div>
             <button class="pdf-btn" onclick="exportZonePDF()">&#8595; PDF</button>
         </div>
         <div class="results-area" id="zoneResults"></div>`);
@@ -2626,7 +2650,7 @@ let zoneReportData = {};
 function runByZone() {
     if (!dataLoaded) return;
     const months  = document.getElementById('zoneMonths').value;
-    const dataset = document.getElementById('zoneDataset').value;
+    const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'zoneResults', runByZone)) return;
     let pool = dataset === 'current' ? currentData : allData;
 
@@ -2788,13 +2812,6 @@ function renderKeywordForm() {
                     <option value="all-fields">Description + Category + Comments</option>
                 </select>
             </div>
-            <div class="filter-group">
-                <span class="filter-label">Dataset</span>
-                <select id="kwDataset" class="glass-select">
-                    <option value="all">Current + Legacy</option>
-                    <option value="current" selected>Current only</option>
-                </select>
-            </div>
             <button class="run-btn" onclick="runKeywordSearch()">Search</button>
             <button class="pdf-btn" id="kwPdfBtn" onclick="exportKeywordPDF()" style="display:none;">&#8595; PDF</button>
         </div>
@@ -2811,7 +2828,7 @@ function runKeywordSearch() {
     if (!kwTerm) { alert('Please enter a keyword to search.'); return; }
     if (!dataLoaded) { alert('Data is still loading — please wait a moment and try again.'); return; }
     const field   = document.getElementById('kwField').value;
-    const dataset = document.getElementById('kwDataset').value;
+    const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'kwResults', runKeywordSearch)) return;
     const pool    = dataset === 'current' ? currentData : allData;
 
