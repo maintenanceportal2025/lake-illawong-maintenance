@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.22
+VERSION: V1.1.23
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -36,6 +36,20 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.23 (Sep 2026): Global Dataset selector gets a third state, "Legacy
+                     only", matching Unit Problem History's existing
+                     three-way choice (Tony feedback, confirmed the two-
+                     way current/all selector was otherwise working --
+                     "Open Problems" showing no dataset effect was
+                     expected, since open problems only exist in the
+                     current FaultLog by definition). Top Units, Month-
+                     on-Month, Priorities Trend, By Category, By Zone and
+                     Keyword Search all now do the same three-way pool
+                     selection Unit History already did. Unit History's
+                     own local selector now syncs directly from the
+                     global one (all three states match one-for-one, so
+                     the earlier "don't override a deliberate Legacy-only
+                     choice" special case is no longer needed).
   V1.1.22 (Sep 2026): BUG FIX -- the global Dataset selector had no effect
                      at all while Unit Problem History was the report on
                      screen, because rerunActiveReportForDataset()
@@ -773,6 +787,7 @@ VERSION HISTORY:
                 <select id="globalDatasetSelect" class="glass-select" onchange="setGlobalDataset()" style="flex:1;">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
+                    <option value="legacy">Legacy only</option>
                 </select>
             </div>
 
@@ -1087,7 +1102,7 @@ function rerunActiveReportForDataset() {
         // only"), and re-run if a search is already showing.
         case 'unit-history': {
             const uhSel = document.getElementById('uhDataset');
-            if (uhSel && uhSel.value !== 'legacy') uhSel.value = globalDataset;
+            if (uhSel) uhSel.value = globalDataset;
             const uhUnitEl = document.getElementById('uhUnit');
             if (uhUnitEl && uhUnitEl.value.trim()) runUnitHistory();
             break;
@@ -1887,7 +1902,9 @@ function runTopUnits() {
     const months  = document.getElementById('tuMonths').value;
     const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'tuResults', runTopUnits)) return;
-    let pool = dataset === 'current' ? currentData : allData;
+    let pool = dataset === 'current' ? currentData
+             : dataset === 'legacy'  ? legacyData
+             : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
     if (months !== 'all') {
         const cutoff = new Date();
@@ -2048,7 +2065,9 @@ function runMoM(mode) {
     const months  = document.getElementById('momMonths').value;
     const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'momResults', () => runMoM(mode))) return;
-    let pool      = dataset === 'current' ? currentData : allData;
+    let pool      = dataset === 'current' ? currentData
+                   : dataset === 'legacy'  ? legacyData
+                   : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
     // Build monthly counts
@@ -2274,7 +2293,9 @@ function runPrioritiesTrend(view) {
     const priority = document.getElementById('prPriorityFilter').value;
     const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'prResults', () => runPrioritiesTrend(view))) return;
-    let pool = dataset === 'current' ? currentData : allData;
+    let pool = dataset === 'current' ? currentData
+             : dataset === 'legacy'  ? legacyData
+             : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
     // Single series -- either one selected priority, or all combined
@@ -2516,7 +2537,9 @@ function runByCategory() {
     const dataset = globalDataset;
     const status  = document.getElementById('catStatus').value;
     if (needsLegacyWait(dataset, 'catResults', runByCategory)) return;
-    const pool    = dataset === 'current' ? currentData : allData;
+    const pool    = dataset === 'current' ? currentData
+                   : dataset === 'legacy'  ? legacyData
+                   : allData;
 
     let filtered = pool;
     if (status === 'open')      filtered = pool.filter(isOpen);
@@ -2678,7 +2701,9 @@ function runByZone() {
     const months  = document.getElementById('zoneMonths').value;
     const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'zoneResults', runByZone)) return;
-    let pool = dataset === 'current' ? currentData : allData;
+    let pool = dataset === 'current' ? currentData
+             : dataset === 'legacy'  ? legacyData
+             : allData;
 
     // Period filter (v1.0.18) -- previously only Current/Legacy toggle,
     // no way to ask "how did zones compare this quarter". Filters to
@@ -2856,7 +2881,9 @@ function runKeywordSearch() {
     const field   = document.getElementById('kwField').value;
     const dataset = globalDataset;
     if (needsLegacyWait(dataset, 'kwResults', runKeywordSearch)) return;
-    const pool    = dataset === 'current' ? currentData : allData;
+    const pool    = dataset === 'current' ? currentData
+                   : dataset === 'legacy'  ? legacyData
+                   : allData;
 
     kwData = pool.filter(p => {
         if (field === 'all-fields') {
