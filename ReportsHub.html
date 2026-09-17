@@ -6,12 +6,12 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.18
-LAST UPDATED: August 2026
+VERSION: V1.1.19
+LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
 DEPENDENCIES:
-  - Explorer_V1_2.js backend (getFaultLogData, getLegacyLogData)
+  - Explorer_V1_3_2.js backend (getFaultLogData, getLegacyLogData)
   - Chart.js 4.4.0 (cdn.jsdelivr.net)
   - jsPDF 4.2.1 (unpkg) -- lazy-loaded on first export, not on page open
 API URL: Explorer backend (same as ExecutiveDashboard)
@@ -36,6 +36,35 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.19 (Sep 2026): Current data only on first paint; legacy loads on
+                     demand -- the same pattern DesktopExplorer already
+                     uses (current data by default, legacy fetched only
+                     when "Select All" is actually asked for). Previously
+                     dataLoaded didn't go true until getFaultLogData,
+                     getLegacyLogData AND getDropdownOptions had all three
+                     succeeded, so a single slow/blocked leg held up every
+                     report regardless of which dataset it actually
+                     needed. Diagnosed from a captured DevTools waterfall
+                     showing a genuine ERR_BLOCKED failure on the data
+                     request plus a real 30s timeout on getDropdownOptions
+                     -- not the payload-size/dead-response theory V1.1.6-
+                     V1.1.16 had worked from. dropdownOptions fetch is now
+                     fire-and-forget (it already has hardcoded fallback
+                     values if it fails, so nothing should have been
+                     waiting on it). New ensureLegacyData() fetches
+                     LegacyLog once, the first time any report's Dataset
+                     is switched to "Current + Legacy"/"Legacy only";
+                     concurrent triggers share one in-flight promise. New
+                     needsLegacyWait() is the shared guard the 7 affected
+                     report run-functions (Unit History, Top Units, Month-
+                     on-Month, Priorities Trend, By Category, By Zone,
+                     Keyword Search) call before touching legacyData/
+                     allData -- shows a brief "Loading legacy data..."
+                     state and re-runs the report once it arrives. All 7
+                     Dataset selectors now default to "Current only".
+                     Sidebar loading indicator made harder to miss: larger
+                     pulsing dot while loading, brighter/bold status text
+                     (was low-contrast muted text at all times).
   V1.1.18 (Aug 2026): Problems by Zone -- added a Custom range option
                      alongside the existing Period presets, ported from
                      ZoneRepReports V1.0.21 (raised by Tony while the
@@ -434,14 +463,26 @@ VERSION HISTORY:
             border-radius: 2px; padding: 10px 12px; margin-bottom: 16px;
             font-size: 0.78rem; color: var(--glass-text-muted); line-height: 1.6;
         }
+        /* v1.1.19: the loading/error states are the ones a user actually
+           needs to notice -- brighter, bolder text than the steady-state
+           "loaded" message, which can stay quiet. */
+        .data-status.is-loading, .data-status.is-error {
+            color: var(--glass-text); font-weight: 600;
+        }
 
         .data-status .status-dot {
-            display: inline-block; width: 8px; height: 8px;
-            border-radius: 50%; margin-right: 6px; vertical-align: middle;
+            display: inline-block; width: 10px; height: 10px;
+            border-radius: 50%; margin-right: 7px; vertical-align: middle;
         }
         .status-dot.loaded  { background: #34d399; }
-        .status-dot.loading { background: #fbbf24; }
+        .status-dot.loading { background: #fbbf24; animation: statusPulse 1.1s ease-in-out infinite; }
         .status-dot.error   { background: #f87171; }
+        /* v1.1.19: pulsing loading dot -- the previous static 8px dot at
+           muted text contrast was easy to miss entirely. */
+        @keyframes statusPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.55); }
+            50%      { box-shadow: 0 0 0 5px rgba(251,191,36,0); }
+        }
 
         .report-item {
             display: flex; align-items: center; gap: 10px;
@@ -754,11 +795,13 @@ let dropdownOptions = { priorities: [], assignedTo: [] };
 // =====================================================================
 // DATA CACHE
 // =====================================================================
-let currentData    = null;  // FaultLog records — Programmed excluded
-let legacyData     = null;  // LegacyLog records — Programmed excluded
-let allData        = null;  // Combined — Programmed excluded
-let programmedData = null;  // Programmed + Programmed-Completed (current only)
-let dataLoaded     = false;
+let currentData    = [];    // FaultLog records — Programmed excluded
+let legacyData     = [];    // LegacyLog records — Programmed excluded — loaded on demand (v1.1.19)
+let allData        = [];    // currentData alone until legacy loads, then currentData+legacyData
+let programmedData = [];    // Programmed + Programmed-Completed (current only)
+let dataLoaded     = false; // true once CURRENT data has loaded (see legacyDataLoaded for legacy)
+let legacyDataLoaded = false;
+let legacyLoadPromise = null;
 let activeReport   = null;
 let activeChart    = null;
 
@@ -902,31 +945,27 @@ async function fetchDropdownOptions() {
 async function loadAllData() {
     setDataStatus('loading', 'Loading FaultLog...');
     try {
-        // Sequential, not Promise.all. Two simultaneous anonymous hits on
-        // the same Apps Script deployment made the stale-redirect failure
-        // more likely, and Promise.all meant one dead response failed the
-        // entire load. DesktopExplorer loads these same two endpoints
-        // sequentially and doesn't exhibit the problem. The dropdown fetch
-        // stays parallel -- it targets a different deployment and handles
-        // its own failures with fallback values.
-        const dropdownPromise = fetchDropdownOptions();
-        const cr = await makeRequest('getFaultLogData', null, undefined, true);
-        setDataStatus('loading', 'Loading LegacyLog...');
-        const lr = await makeRequest('getLegacyLogData', null, undefined, true);
-        await dropdownPromise;
+        // Current data only on first paint; legacy loads on demand (v1.1.19)
+        // -- same pattern DesktopExplorer already uses. Previously this
+        // function waited on getFaultLogData + getLegacyLogData +
+        // getDropdownOptions all three before any report could run, so one
+        // slow/blocked leg held up the whole page regardless of which
+        // dataset a report actually needed. fetchDropdownOptions() already
+        // has hardcoded fallback values if it fails, so it's fire-and-
+        // forget here -- nothing should wait on it either.
+        fetchDropdownOptions();
 
+        const cr = await makeRequest('getFaultLogData', null, undefined, true);
         const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
-        const rawLegacy  = (lr && lr.success) ? (lr.data || []) : [];
 
         // Split programmed works out into their own pool
         programmedData = rawCurrent.filter(isProgrammed);
         currentData    = rawCurrent.filter(p => !isProgrammed(p));
-        legacyData     = rawLegacy.filter(p => !isProgrammed(p));
-        allData        = [...currentData, ...legacyData];
+        allData        = [...currentData];  // legacy folded in once ensureLegacyData() resolves
         dataLoaded     = true;
 
         setDataStatus('loaded',
-            `&#10003; ${currentData.length} current + ${legacyData.length} legacy + ${programmedData.length} programmed loaded`);
+            `&#10003; ${currentData.length} current + ${programmedData.length} programmed loaded &middot; legacy loads on request`);
 
         // Auto-run the default report
         runCurrentReport();
@@ -937,11 +976,59 @@ async function loadAllData() {
     }
 }
 
+// Fetches LegacyLog once, on demand -- the first time a report's Dataset
+// selector is switched to "Current + Legacy" or "Legacy only" (v1.1.19).
+// A call while one is already in flight reuses the same promise so
+// several reports switching around the same time don't fire duplicate
+// requests.
+async function ensureLegacyData() {
+    if (legacyDataLoaded) return;
+    if (legacyLoadPromise) return legacyLoadPromise;
+    legacyLoadPromise = (async () => {
+        const lr = await makeRequest('getLegacyLogData', null, undefined, true);
+        const rawLegacy = (lr && lr.success) ? (lr.data || []) : [];
+        legacyData = rawLegacy.filter(p => !isProgrammed(p));
+        allData = [...currentData, ...legacyData];
+        legacyDataLoaded = true;
+    })();
+    try {
+        await legacyLoadPromise;
+    } finally {
+        legacyLoadPromise = null;
+    }
+}
+
+// Shared guard for the report run-functions whose Dataset selector can
+// request legacy data ("all"/"legacy"). Shows a brief loading state and
+// re-invokes the caller once legacy has arrived. Returns true if the
+// caller should stop now (fetch under way) -- false means proceed
+// immediately ("current" selected, or legacy is already loaded).
+function needsLegacyWait(dataset, resultsElId, rerunFn) {
+    if (dataset === 'current' || legacyDataLoaded) return false;
+    const el = document.getElementById(resultsElId);
+    if (el) {
+        el.innerHTML = `<div class="placeholder"><div class="loading-spinner"></div>
+            <div class="placeholder-title">Loading legacy data...</div>
+            <div class="placeholder-text">Historical records are fetched the first time they're needed.</div></div>`;
+    }
+    ensureLegacyData().then(rerunFn).catch(() => {
+        const el2 = document.getElementById(resultsElId);
+        if (el2) el2.innerHTML = `<div class="placeholder"><div class="placeholder-title">&#9888; Legacy data unavailable</div>
+            <div class="placeholder-text">Could not load legacy records — try again, or switch Dataset to "Current only".</div></div>`;
+    });
+    return true;
+}
+
 function setDataStatus(state, text) {
+    const container = document.getElementById('dataStatus');
     const dot  = document.querySelector('.status-dot');
     const span = document.getElementById('dataStatusText');
     dot.className  = 'status-dot ' + state;
     span.innerHTML = text;
+    if (container) {
+        container.classList.toggle('is-loading', state === 'loading');
+        container.classList.toggle('is-error', state === 'error');
+    }
 }
 
 // =====================================================================
@@ -1050,7 +1137,7 @@ function renderUnitHistoryForm() {
                 <span class="filter-label">Dataset</span>
                 <select id="uhDataset" class="glass-select">
                     <option value="all">Current + Legacy</option>
-                    <option value="current">Current only</option>
+                    <option value="current" selected>Current only</option>
                     <option value="legacy">Legacy only</option>
                 </select>
             </div>
@@ -1072,6 +1159,7 @@ function runUnitHistory() {
     const dataset = document.getElementById('uhDataset').value;
     if (!unit) { alert('Please enter a unit number.'); return; }
     if (!dataLoaded) { alert('Data is still loading — please wait a moment and try again.'); return; }
+    if (needsLegacyWait(dataset, 'uhResults', runUnitHistory)) return;
 
     const search = normaliseUnit(unit);
     const pool   = dataset === 'current' ? (currentData || [])
@@ -1703,7 +1791,7 @@ function renderTopUnits() {
                 <span class="filter-label">Dataset</span>
                 <select id="tuDataset" class="glass-select" onchange="runTopUnits()">
                     <option value="all">Current + Legacy</option>
-                    <option value="current">Current only</option>
+                    <option value="current" selected>Current only</option>
                 </select>
             </div>
             <button class="pdf-btn" onclick="exportTopUnitsPDF()">&#8595; PDF</button>
@@ -1720,6 +1808,7 @@ function runTopUnits() {
     const zone    = document.getElementById('tuZone').value;
     const months  = document.getElementById('tuMonths').value;
     const dataset = document.getElementById('tuDataset').value;
+    if (needsLegacyWait(dataset, 'tuResults', runTopUnits)) return;
     let pool = dataset === 'current' ? currentData : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
     if (months !== 'all') {
@@ -1862,7 +1951,7 @@ function renderMoM(mode) {
                 <span class="filter-label">Dataset</span>
                 <select id="momDataset" class="glass-select" onchange="runMoM('${mode}')">
                     <option value="all">Current + Legacy</option>
-                    <option value="current">Current only</option>
+                    <option value="current" selected>Current only</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -1887,6 +1976,7 @@ function runMoM(mode) {
     const zone    = document.getElementById('momZone').value;
     const dataset = document.getElementById('momDataset').value;
     const months  = document.getElementById('momMonths').value;
+    if (needsLegacyWait(dataset, 'momResults', () => runMoM(mode))) return;
     let pool      = dataset === 'current' ? currentData : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
@@ -2087,7 +2177,7 @@ function renderPriorities() {
                 <span class="filter-label">Dataset</span>
                 <select id="prDataset" class="glass-select" onchange="runPriorities()">
                     <option value="all">Current + Legacy</option>
-                    <option value="current">Current only</option>
+                    <option value="current" selected>Current only</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -2119,6 +2209,7 @@ function runPrioritiesTrend(view) {
     const dataset  = document.getElementById('prDataset').value;
     const months   = document.getElementById('prMonths').value;
     const priority = document.getElementById('prPriorityFilter').value;
+    if (needsLegacyWait(dataset, 'prResults', () => runPrioritiesTrend(view))) return;
     let pool = dataset === 'current' ? currentData : allData;
     if (zone !== 'all') pool = pool.filter(p => p.zone === zone);
 
@@ -2342,7 +2433,7 @@ function renderByCategory() {
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
                 <select id="catDataset" class="glass-select" onchange="runByCategory()">
-                    <option value="current">Current only</option>
+                    <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                 </select>
             </div>
@@ -2367,6 +2458,7 @@ function runByCategory() {
     if (!dataLoaded) return;
     const dataset = document.getElementById('catDataset').value;
     const status  = document.getElementById('catStatus').value;
+    if (needsLegacyWait(dataset, 'catResults', runByCategory)) return;
     const pool    = dataset === 'current' ? currentData : allData;
 
     let filtered = pool;
@@ -2502,7 +2594,7 @@ function renderByZone() {
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
                 <select id="zoneDataset" class="glass-select" onchange="runByZone()">
-                    <option value="current">Current only</option>
+                    <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                 </select>
             </div>
@@ -2535,6 +2627,7 @@ function runByZone() {
     if (!dataLoaded) return;
     const months  = document.getElementById('zoneMonths').value;
     const dataset = document.getElementById('zoneDataset').value;
+    if (needsLegacyWait(dataset, 'zoneResults', runByZone)) return;
     let pool = dataset === 'current' ? currentData : allData;
 
     // Period filter (v1.0.18) -- previously only Current/Legacy toggle,
@@ -2699,7 +2792,7 @@ function renderKeywordForm() {
                 <span class="filter-label">Dataset</span>
                 <select id="kwDataset" class="glass-select">
                     <option value="all">Current + Legacy</option>
-                    <option value="current">Current only</option>
+                    <option value="current" selected>Current only</option>
                 </select>
             </div>
             <button class="run-btn" onclick="runKeywordSearch()">Search</button>
@@ -2719,6 +2812,7 @@ function runKeywordSearch() {
     if (!dataLoaded) { alert('Data is still loading — please wait a moment and try again.'); return; }
     const field   = document.getElementById('kwField').value;
     const dataset = document.getElementById('kwDataset').value;
+    if (needsLegacyWait(dataset, 'kwResults', runKeywordSearch)) return;
     const pool    = dataset === 'current' ? currentData : allData;
 
     kwData = pool.filter(p => {
