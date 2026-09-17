@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.21
+VERSION: V1.1.22
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -36,6 +36,19 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.22 (Sep 2026): BUG FIX -- the global Dataset selector had no effect
+                     at all while Unit Problem History was the report on
+                     screen, because rerunActiveReportForDataset()
+                     deliberately skipped it (it keeps its own local
+                     selector). Unit History is the default report shown
+                     on load, so this was the very first thing anyone
+                     would try and see do nothing (Tony: "the dataset
+                     selector doesn't work"). Fixed: switching the global
+                     selector now syncs Unit History's local selector to
+                     match (unless it's deliberately set to "Legacy
+                     only", which the global selector has no equivalent
+                     for) and re-runs the search immediately if a unit is
+                     already entered.
   V1.1.21 (Sep 2026): makeRequest brought fully in line with
                      DesktopExplorer's version -- retries 2->3 (matches;
                      3 retries = 4 total attempts, was 3), and the V1.1.6
@@ -1065,6 +1078,20 @@ function setGlobalDataset() {
 
 function rerunActiveReportForDataset() {
     switch (currentReportId) {
+        // Unit History keeps its own local selector (a genuine third
+        // "Legacy only" state the global one doesn't have), but it was
+        // being skipped here entirely -- so toggling the global selector
+        // while viewing the *default* report (this one) did nothing at
+        // all, which is exactly what anyone would try first. Sync the
+        // local selector to match (unless it's deliberately on "Legacy
+        // only"), and re-run if a search is already showing.
+        case 'unit-history': {
+            const uhSel = document.getElementById('uhDataset');
+            if (uhSel && uhSel.value !== 'legacy') uhSel.value = globalDataset;
+            const uhUnitEl = document.getElementById('uhUnit');
+            if (uhUnitEl && uhUnitEl.value.trim()) runUnitHistory();
+            break;
+        }
         case 'top-units':      runTopUnits();                break;
         case 'mom-reported':   runMoM('reported');           break;
         case 'mom-completed':  runMoM('completed');          break;
@@ -1072,9 +1099,8 @@ function rerunActiveReportForDataset() {
         case 'by-category':    runByCategory();              break;
         case 'by-zone':        runByZone();                  break;
         case 'keyword-search': if (kwTerm) runKeywordSearch(); break;
-        // Unit History has its own local selector (see header note);
-        // all other reports are current-data-only by design -- nothing
-        // to do for either case.
+        // All other reports are current-data-only by design -- nothing
+        // to do.
     }
 }
 
