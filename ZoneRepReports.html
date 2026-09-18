@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          8 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.22
+VERSION: V1.0.23
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
@@ -38,6 +38,21 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.0.23 (Sep 2026): BUG FIX -- Top Units, Month-on-Month, Priorities
+                     Trend and By Zone all pair a Dataset selector with a
+                     Period filter, and legacy records all predate this
+                     system going live, so switching Dataset to include
+                     legacy while Period stayed on a recent preset (e.g.
+                     "Last 12 months") silently hid nearly all of it --
+                     Tony hit this on Top Units and couldn't work out why
+                     legacy counts were so low. New syncPeriodThenRun()
+                     now forces Period to "All time" the moment Dataset
+                     moves off "Current only" on any of those four
+                     reports (including collapsing By Zone's Custom range
+                     inputs back to the preset view), rather than leaving
+                     the two filters free to silently contradict each
+                     other. Narrowing Period back down afterward is still
+                     a deliberate choice at that point, not a trap.
   V1.0.22 (Sep 2026): Brought to parity with ReportsHub's reliability work
                      (V1.1.19-26) and dataset-selector pattern (V1.1.25),
                      since the two modules are staying separate but each
@@ -991,6 +1006,24 @@ async function ensureLegacyData() {
 // re-invokes the caller once legacy has arrived. Returns true if the
 // caller should stop now (fetch under way) -- false means proceed
 // immediately ("current" selected, or legacy is already loaded).
+// Legacy records all predate this system going live, so a Dataset choice
+// that includes legacy paired with anything but "All time" almost always
+// shows a near-empty result with no obvious reason why -- Tony hit this
+// exact confusion on Top Units (Period still "Last 12 months" after
+// switching Dataset). Forcing Period back to "All time" the moment
+// Dataset stops being "Current only" removes the trap without removing
+// the ability to narrow it back down afterwards -- that's a deliberate
+// choice at that point, not a silent one.
+function syncPeriodThenRun(datasetElId, monthsElId, runFn) {
+    const datasetEl = document.getElementById(datasetElId);
+    const monthsEl = document.getElementById(monthsElId);
+    if (datasetEl && monthsEl && datasetEl.value !== 'current' && monthsEl.value !== 'all') {
+        monthsEl.value = 'all';
+        if (monthsElId === 'zoneMonths') toggleZoneCustomRange();
+    }
+    runFn();
+}
+
 function needsLegacyWait(dataset, resultsElId, rerunFn) {
     if (dataset === 'current' || legacyDataLoaded) return false;
     const el = document.getElementById(resultsElId);
@@ -1780,7 +1813,7 @@ function renderMoM(mode) {
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="momDataset" class="glass-select" onchange="runMoM('${mode}')">
+                <select id="momDataset" class="glass-select" onchange="syncPeriodThenRun('momDataset','momMonths', () => runMoM('${mode}'))">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                     <option value="legacy">Legacy only</option>
@@ -2010,7 +2043,7 @@ function renderPriorities() {
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="prDataset" class="glass-select" onchange="runPriorities()">
+                <select id="prDataset" class="glass-select" onchange="syncPeriodThenRun('prDataset','prMonths', runPriorities)">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                     <option value="legacy">Legacy only</option>
@@ -2292,7 +2325,7 @@ function renderTopUnits() {
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="tuDataset" class="glass-select" onchange="runTopUnits()">
+                <select id="tuDataset" class="glass-select" onchange="syncPeriodThenRun('tuDataset','tuMonths',runTopUnits)">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                     <option value="legacy">Legacy only</option>
@@ -2449,7 +2482,7 @@ function renderByZone() {
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="zoneDataset" class="glass-select" onchange="runByZone()">
+                <select id="zoneDataset" class="glass-select" onchange="syncPeriodThenRun('zoneDataset','zoneMonths', runByZone)">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                     <option value="legacy">Legacy only</option>
