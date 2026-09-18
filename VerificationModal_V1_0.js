@@ -12,10 +12,17 @@
  * file is shared across ~15+ modules by filename, so version-in-filename
  * doesn't apply here the way it does elsewhere. Track what changed by
  * date instead.):
- * - Sep 2026: _callAPI() gets retry-with-backoff (3 retries, 30s timeout,
+ * - Sep 2026: _callAPI() gets retry-with-backoff (3 retries, 10s timeout,
  *   2s delay) -- previously the only JSONP caller anywhere in this system
  *   with none at all, despite being the single most-used path (every
- *   resident and Zone Rep, every session). Safe to add only because of
+ *   resident and Zone Rep, every session). Timeout deliberately shorter
+ *   than the 30s used elsewhere (ReportsHub, DesktopExplorer): those read
+ *   a large, growing sheet, where 30s is a defensible worst case; this
+ *   file's two calls are trivial VerificationCodes lookups that should
+ *   answer in under a second, so a live test (Tony) showing a real
+ *   verifyCode retry only firing at the 30s mark -- "that took far too
+ *   long to verify" -- meant the wait itself was closer to the whole
+ *   problem than the retry logic was. Safe to add only because of
  *   two companion fixes in ManagementCentral V1.5.3: sendVerificationCode
  *   now retries its own call to NotificationServer server-side (a
  *   captured case showed the UI reporting "Failed to send verification
@@ -990,7 +997,19 @@ const VerificationModal = (function() {
             
             document.head.appendChild(script);
             
-            const timeoutId = setTimeout(() => failOrRetry('Timeout'), 30000);
+            // 10s, not the 30s used elsewhere in this system (ReportsHub,
+            // DesktopExplorer) -- those calls can legitimately be reading
+            // a large, growing sheet. sendVerificationCode/verifyCode are
+            // trivial lookups against VerificationCodes; under normal
+            // conditions they answer in well under a second, so a response
+            // that hasn't arrived by 10s is already effectively lost, not
+            // "still working" -- waiting a further 20s before retrying
+            // was pure dead time for the one call in this whole system
+            // where users expect near-instant feedback (Tony: "that took
+            // far too long to verify", captured retrying at the full 30s
+            // mark). 3 retries still gives a worst case of ~34s total
+            // instead of the previous ~96s+.
+            const timeoutId = setTimeout(() => failOrRetry('Timeout'), 10000);
         });
     }
     
