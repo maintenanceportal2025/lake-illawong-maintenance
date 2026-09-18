@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.23
+VERSION: V1.1.24
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -36,6 +36,28 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.24 (Sep 2026): EXPERIMENT -- new makeRequestFetch() using real
+                     fetch() (GET, no custom headers -- a CORS "simple
+                     request", same pattern already proven in
+                     FieldAlerts_V3_2_4.html's callNotificationAPI)
+                     instead of a <script>-tag JSONP call. Wired ONLY to
+                     the initial getFaultLogData load in loadAllData() --
+                     legacy and dropdowns stay on the existing
+                     makeRequest() JSONP path untouched, so any
+                     difference is attributable to the transport alone.
+                     No backend change needed: Explorer.js's doGet
+                     already returns plain JSON when the request has no
+                     `callback` param. Same retry count/timeout/backoff
+                     shape as makeRequest(). The point isn't different
+                     retry behaviour -- it's that a bad response now
+                     surfaces as a real HTTP status or actual response
+                     text via console.warn, instead of an opaque
+                     script.onerror/NS_ERROR_* with nothing behind it.
+                     Sidebar status text tagged "(fetch test)" during
+                     load so it's obvious which path is running. If this
+                     proves reliably better, next step is converting
+                     makeRequest() itself rather than keeping two
+                     parallel implementations.
   V1.1.23 (Sep 2026): Global Dataset selector gets a third state, "Legacy
                      only", matching Unit Problem History's existing
                      three-way choice (Tony feedback, confirmed the two-
@@ -932,6 +954,69 @@ function pdfCategoryLines(pdf, category, colWidthMm) {
 // anything, in a file that already has one fewer retry than the sibling
 // file proven reliable against the same backends, was working against
 // itself. Aligning fully removes both gaps at once.
+// Side-by-side test (v1.1.24) -- real fetch() instead of a <script>-tag
+// JSONP call, wired ONLY to getFaultLogData's initial load below. Legacy
+// and dropdowns stay on the existing makeRequest() JSONP path untouched,
+// so any difference we see is attributable to the transport, not
+// anything else changing at the same time.
+//
+// Mirrors the already-proven pattern in FieldAlerts_V3_2_4.html's
+// callNotificationAPI -- a "simple" cross-origin request (GET, no custom
+// headers) never triggers a CORS preflight, which is the thing Apps
+// Script Web Apps can't handle; a fetch() with a JSON content-type or
+// custom headers would. Explorer.js's doGet already returns plain JSON
+// (not JSONP-wrapped) whenever the request has no `callback` param
+// (lines ~288-295), so no backend change is needed -- omitting
+// `&callback=...` here is what selects that branch.
+//
+// The real win isn't retry logic (identical shape/timeout/backoff to
+// makeRequest) -- it's that a bad response becomes something we can
+// actually inspect: a real HTTP status, and real response text if it's
+// not valid JSON, instead of an opaque script.onerror / NS_ERROR_* with
+// no detail behind it.
+async function makeRequestFetch(action, targetUrl, retries, lean) {
+    if (retries === undefined) retries = 3;
+    const url = targetUrl || API_URL;
+    const qs = '?action=' + action + (lean ? '&lean=1' : '');
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        try {
+            const response = await fetch(url + qs, { method: 'GET', signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            const text = await response.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (parseErr) {
+                // Apps Script can still occasionally serve an HTML error
+                // page despite a 200 status -- this is the equivalent of
+                // the "dead response"/NS_ERROR_CORRUPTED_CONTENT failures
+                // seen under JSONP, just with the actual content visible
+                // now instead of an opaque browser error.
+                throw new Error('Non-JSON response: ' + text.slice(0, 60).replace(/\s+/g, ' '));
+            }
+            return data;
+
+        } catch (err) {
+            clearTimeout(timeoutId);
+            const reason = err.name === 'AbortError' ? 'Timeout' : err.message;
+            if (attempt < retries) {
+                console.warn('Retrying ' + action + ' via fetch (' + reason + ', ' + (retries - attempt) + ' attempt(s) left)');
+                await new Promise(r => setTimeout(r, 2000));
+            } else {
+                throw new Error(reason + ': ' + action);
+            }
+        }
+    }
+}
+
+
 function makeRequest(action, targetUrl, retries, lean) {
     if (retries === undefined) retries = 3;
     const url = targetUrl || API_URL;
@@ -1006,7 +1091,7 @@ async function fetchDropdownOptions() {
 }
 
 async function loadAllData() {
-    setDataStatus('loading', 'Loading FaultLog...');
+    setDataStatus('loading', 'Loading FaultLog (fetch test)...');
     try {
         // Current data only on first paint; legacy loads on demand (v1.1.19)
         // -- same pattern DesktopExplorer already uses. Previously this
@@ -1018,7 +1103,7 @@ async function loadAllData() {
         // forget here -- nothing should wait on it either.
         fetchDropdownOptions();
 
-        const cr = await makeRequest('getFaultLogData', null, undefined, true);
+        const cr = await makeRequestFetch('getFaultLogData', null, undefined, true);
         const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
 
         // Split programmed works out into their own pool
