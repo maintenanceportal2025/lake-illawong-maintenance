@@ -6,10 +6,14 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.27
+VERSION: V1.1.30
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
-AUTHENTICATION: None (accessed via authenticated portal)
+AUTHENTICATION: Shares Admin Portal's "portalAdminVerified" session
+                 (SSO -- verified there or here, either counts), plus its
+                 own "ReportsHub-Portal" role check (blanket Admin-Portal
+                 access isn't sufficient) -- added V1.1.30, matching the
+                 established RelationsManager pattern
 DEPENDENCIES:
   - Explorer_V1_3_2.js backend (getFaultLogData, getLegacyLogData)
   - Chart.js 4.4.0 (cdn.jsdelivr.net)
@@ -36,6 +40,49 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.30 (Sep 2026): Access gating rebuilt to match the established
+                     RelationsManager pattern (also inside Admin Portal,
+                     also restricted beyond blanket Admin-Portal access
+                     to specific staff) -- Tony pointed to it directly.
+                     Shares Admin Portal's own "portalAdminVerified"
+                     sessionKey rather than a separate one, so it's
+                     genuine SSO: verified via Admin Portal already, or
+                     verified right here if landed on directly, either
+                     way populates the one shared session. Verifying only
+                     proves identity, not authorisation -- a new
+                     "ReportsHub-Portal" role tag (or "Developer") is the
+                     separate check that actually gates access, same two-
+                     tier shape RelationsManager uses for
+                     "Relations-Manager". Supersedes V1.1.29's redirect-
+                     only guard, which wrongly assumed blanket Admin-
+                     Portal access was the right bar for this file too.
+  V1.1.29 (Sep 2026): Access gating changed to a session guard, replacing
+                     V1.1.28's independent OTP prompt (Tony: Reports Hub
+                     lives inside Admin Portal, so it should trust Admin
+                     Portal's own session instead of asking again).
+                     VerificationModal.init() now reuses Admin Portal's
+                     own "portalAdminVerified" sessionKey, so its existing
+                     isVerified()/getStoredUserData() logic checks it the
+                     same way Admin Portal itself does -- already verified
+                     there, Reports Hub opens straight through with no
+                     further prompt; not verified, it redirects to
+                     AdminPortal.html rather than showing its own OTP
+                     modal. The Admin-Portal role check itself still only
+                     happens in Admin Portal, same as before -- Reports
+                     Hub just trusts that it already ran.
+  V1.1.28 (Sep 2026): Access gating added -- this file had none at all
+                     before now. Follows the exact pattern already used
+                     by every other portal in this system (ZoneRepPortal,
+                     AdminPortal, SysAdminPortal): VerificationModal OTP
+                     on load, onSuccess checks roleTags for a new
+                     "ReportsHub-Portal" tag (following the existing
+                     <Name>-Portal convention) or the universal
+                     "Developer" override, and data only starts loading
+                     once access is confirmed. The tag name is a decision
+                     for Tony, not a technical one -- trivial to rename to
+                     reuse an existing tag (e.g. "Admin-Portal") instead
+                     of a new one if that fits how roles are actually
+                     assigned.
   V1.1.27 (Sep 2026): BUG FIX -- Top Units, Month-on-Month, Priorities
                      Trend and By Zone all pair a Dataset selector with a
                      Period filter, and legacy records all predate this
@@ -824,6 +871,7 @@ VERSION HISTORY:
             .header-text { align-items: center; }
         }
     </style>
+<script src="VerificationModal_V1_0.js"></script>
 </head>
 <body>
 <div class="container">
@@ -3509,11 +3557,65 @@ function getLast12MonthLabels() {
 // =====================================================================
 // INIT
 // =====================================================================
+// Access gating (v1.1.30) -- matches the established pattern from
+// RelationsManager (also inside Admin Portal, also restricted to
+// specific staff beyond blanket Admin-Portal access): shares Admin
+// Portal's own "portalAdminVerified" sessionKey, so this is genuinely
+// one session, not a separate one -- already verified into Admin Portal,
+// Reports Hub opens straight through; landed here directly without ever
+// visiting Admin Portal, VerificationModal.show() lets them verify right
+// here instead of bouncing them away first (also populating the same
+// shared session, so Admin Portal then sees them as verified too).
+// Either way, verifying only proves identity -- ALLOWED_ROLES is the
+// separate, actual authorisation check, same two-tier shape
+// RelationsManager uses. Supersedes V1.1.29's redirect-only guard, which
+// assumed blanket Admin-Portal access was the right bar; it wasn't, per
+// Tony, for the same reason RelationsManager isn't either.
+const REPORTS_HUB_ALLOWED_ROLES = ['ReportsHub-Portal', 'Developer'];
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Show default report form immediately (no data needed for UI)
-    renderUnitHistoryForm();
-    // Load data
-    loadAllData();
+    const alreadyVerified = VerificationModal.init({
+        moduleName: 'Reports Hub',
+        moduleIcon: '📊',
+        sessionKey: 'portalAdminVerified',
+        onSuccess: function(userData) {
+            const roles = userData.roleTags || [];
+            const allowed = REPORTS_HUB_ALLOWED_ROLES.some(r => roles.includes(r));
+            if (!allowed) {
+                document.body.innerHTML = `
+                    <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;
+                                background:linear-gradient(90deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">
+                        <div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);
+                                    border:1px solid rgba(255,255,255,0.15);border-radius:2px;
+                                    padding:40px;max-width:450px;width:100%;text-align:center;">
+                            <div style="font-size:3rem;margin-bottom:16px;">🚫</div>
+                            <h2 style="color:white;font-size:1.4rem;font-weight:600;margin-bottom:12px;">
+                                Access Not Authorised</h2>
+                            <p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">
+                                Verified as: <strong style="color:white;">${userData.name}</strong></p>
+                            <p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">
+                                Your account does not have access to Reports Hub.
+                                Please contact management if you believe this is an error.</p>
+                            <button onclick="window.location.href='AdminPortal.html'"
+                                    style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+                                           color:white;border:none;padding:12px 24px;border-radius:8px;
+                                           font-weight:600;cursor:pointer;font-size:0.95rem;">
+                                Back to Admin Portal
+                            </button>
+                        </div>
+                    </div>`;
+                return;
+            }
+            // Show default report form immediately (no data needed for UI)
+            renderUnitHistoryForm();
+            // Load data
+            loadAllData();
+        }
+    });
+
+    if (!alreadyVerified) {
+        VerificationModal.show();
+    }
 });
 </script>
 </body>
