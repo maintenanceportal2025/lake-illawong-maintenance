@@ -5,13 +5,31 @@
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
  * VERSION: 1.0
  * CREATED: February 16, 2026
- * LAST UPDATED: August 2026
+ * LAST UPDATED: September 2026
  * DESIGN: Glass effect modal from Unified Design System V2.4
  *
  * CHANGE LOG (version number intentionally stays fixed at 1.0 -- this
  * file is shared across ~15+ modules by filename, so version-in-filename
  * doesn't apply here the way it does elsewhere. Track what changed by
  * date instead.):
+ * - Sep 2026: _callAPI() gets retry-with-backoff (3 retries, 30s timeout,
+ *   2s delay) -- previously the only JSONP caller anywhere in this system
+ *   with none at all, despite being the single most-used path (every
+ *   resident and Zone Rep, every session). Safe to add only because of
+ *   two companion fixes in ManagementCentral V1.5.3: sendVerificationCode
+ *   now retries its own call to NotificationServer server-side (a
+ *   captured case showed the UI reporting "Failed to send verification
+ *   code via email" while the email had genuinely arrived -- the
+ *   response back from NotificationServer was corrupted in transit, the
+ *   same Apps-Script echo/redirect flakiness seen from browsers all
+ *   week, now confirmed happening server-to-server too), and verifyCode
+ *   now treats a resubmission of a code marked used within the last 60s
+ *   as a successful re-confirmation rather than "invalid code" -- which
+ *   is exactly what a naive retry here would otherwise have triggered
+ *   right after a real success. No dead-response fail-fast (onload fires
+ *   without the callback running) added -- every real failure actually
+ *   observed in this system fires onerror or the timeout directly, and
+ *   ReportsHub V1.1.21 removed that same mechanism for the same reason.
  * - Aug 2026: show() fixed to always reset the modal to step 1
  *   (identifier entry), clear any leftover expiry/resend timers, AND
  *   clear step 2's own stale state (code input value, error message,
@@ -913,9 +931,23 @@ const VerificationModal = (function() {
     }
     
     // API call (JSONP) - Using exact working code from QuickTest
-    function _callAPI(action, params) {
+    // Retry-with-backoff added (v1.0, Sep 2026 -- see header) -- this function had none at all
+    // before now, unlike every other module's JSONP caller in this
+    // system. Safe to add now specifically because of two companion
+    // fixes in ManagementCentral V1.5.3: sendVerificationCode's call to
+    // NotificationServer now retries on its own side (so a retried send
+    // here is redundant rather than harmful -- worst case a duplicate
+    // email with the same still-valid code), and verifyCode now treats a
+    // resubmission of a just-used code (within 60s) as a successful re-
+    // confirmation rather than "invalid code" -- which is exactly what a
+    // naive retry would have triggered before that fix existed. No dead-
+    // response fail-fast (see ReportsHub V1.1.21's reasoning) -- every
+    // real failure seen in this system fires onerror or the timeout
+    // directly.
+    function _callAPI(action, params, retries) {
+        if (retries === undefined) retries = 3;
         return new Promise((resolve, reject) => {
-            const cb = 'cb_' + Date.now();
+            const cb = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
             const script = document.createElement('script');
             let settled = false;
 
@@ -923,10 +955,26 @@ const VerificationModal = (function() {
                 window[cb] = function() {};
                 try { document.head.removeChild(script); } catch (e) {}
             }
-            
+
+            function failOrRetry(reason) {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeoutId);
+                cleanup();
+                if (retries > 0) {
+                    console.warn('Retrying ' + action + ' (' + reason + ', ' + retries + ' attempt(s) left)');
+                    setTimeout(() => {
+                        _callAPI(action, params, retries - 1).then(resolve).catch(reject);
+                    }, 2000);
+                } else {
+                    reject(new Error(reason));
+                }
+            }
+
             window[cb] = function(r) {
                 if (settled) return;
                 settled = true;
+                clearTimeout(timeoutId);
                 cleanup();
                 resolve(r);
             };
@@ -938,21 +986,11 @@ const VerificationModal = (function() {
             console.log('📡 API Call:', action);
             console.log('🔗 URL:', script.src);
             
-            script.onerror = () => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                reject(new Error('Network failed'));
-            };
+            script.onerror = () => failOrRetry('Network failed');
             
             document.head.appendChild(script);
             
-            setTimeout(() => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                reject(new Error('Timeout'));
-            }, 30000);
+            const timeoutId = setTimeout(() => failOrRetry('Timeout'), 30000);
         });
     }
     
