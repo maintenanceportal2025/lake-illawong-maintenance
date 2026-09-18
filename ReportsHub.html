@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.25
+VERSION: V1.1.26
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -36,6 +36,25 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.26 (Sep 2026): BUG FIX -- the sidebar status line was frozen at
+                     whatever it said right after the initial FaultLog
+                     load ("...legacy loads on request") and never
+                     updated again, no matter which report later
+                     triggered a legacy fetch or how long it took (Tony:
+                     "the message in the report catalogue doesn't change
+                     when I change the dataset selection"). ensureLegacyData()
+                     -- the one function every report's legacy request
+                     already funnels through -- now drives the sidebar
+                     directly: switches it to the same pulsing/bold
+                     "loading" state used for the initial load the moment
+                     any report asks for legacy data, then updates it to
+                     an accurate current+legacy+programmed count once it
+                     arrives (or a plain "legacy unavailable" note if the
+                     fetch fails, without flagging the whole page as
+                     errored -- current data is still genuinely fine).
+                     The existing per-report "Loading legacy data..."
+                     placeholder in each report's own results panel is
+                     unchanged and still shows too.
   V1.1.25 (Sep 2026): Global Dataset selector (V1.1.20-23) reverted --
                      design decision: per-report selectors, placed only
                      where a report actually offers a choice (e.g. Open
@@ -1136,12 +1155,30 @@ async function loadAllData() {
 async function ensureLegacyData() {
     if (legacyDataLoaded) return;
     if (legacyLoadPromise) return legacyLoadPromise;
+    // Drives the sidebar status directly (v1.1.26) -- previously this ran
+    // silently and the sidebar kept showing its initial "legacy loads on
+    // request" message forever, even once legacy had actually loaded, no
+    // matter which report triggered the fetch. Now it's the one place
+    // every report's legacy request funnels through, so it's the one
+    // place that needs to update the sidebar for all of them.
+    setDataStatus('loading', 'Loading legacy data...');
     legacyLoadPromise = (async () => {
-        const lr = await makeRequest('getLegacyLogData', null, undefined, true);
-        const rawLegacy = (lr && lr.success) ? (lr.data || []) : [];
-        legacyData = rawLegacy.filter(p => !isProgrammed(p));
-        allData = [...currentData, ...legacyData];
-        legacyDataLoaded = true;
+        try {
+            const lr = await makeRequest('getLegacyLogData', null, undefined, true);
+            const rawLegacy = (lr && lr.success) ? (lr.data || []) : [];
+            legacyData = rawLegacy.filter(p => !isProgrammed(p));
+            allData = [...currentData, ...legacyData];
+            legacyDataLoaded = true;
+            setDataStatus('loaded',
+                `&#10003; ${currentData.length} current + ${legacyData.length} legacy + ${programmedData.length} programmed loaded`);
+        } catch (err) {
+            // Current data is still genuinely loaded and usable -- only
+            // legacy failed -- so this stays a "loaded" status, just an
+            // accurate one, rather than flagging the whole page as errored.
+            setDataStatus('loaded',
+                `&#10003; ${currentData.length} current + ${programmedData.length} programmed loaded &middot; legacy unavailable`);
+            throw err;
+        }
     })();
     try {
         await legacyLoadPromise;
