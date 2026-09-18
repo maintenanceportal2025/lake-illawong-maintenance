@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.26
+VERSION: V1.1.27
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -36,6 +36,22 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.27 (Sep 2026): BUG FIX -- Top Units, Month-on-Month, Priorities
+                     Trend and By Zone all pair a Dataset selector with a
+                     Period filter, and legacy records all predate this
+                     system going live, so switching Dataset to include
+                     legacy while Period stayed on a recent preset (e.g.
+                     "Last 12 months") silently hid nearly all of it --
+                     found on ZoneRepReports' Top Units (same report,
+                     same filters, ported back here). New
+                     syncPeriodThenRun() forces Period to "All time" the
+                     moment Dataset moves off "Current only" on any of
+                     those four reports (including collapsing By Zone's
+                     Custom range inputs back to the preset view), rather
+                     than leaving the two filters free to silently
+                     contradict each other. Narrowing Period back down
+                     afterward is still a deliberate choice at that
+                     point, not a trap.
   V1.1.26 (Sep 2026): BUG FIX -- the sidebar status line was frozen at
                      whatever it said right after the initial FaultLog
                      load ("...legacy loads on request") and never
@@ -1192,6 +1208,24 @@ async function ensureLegacyData() {
 // re-invokes the caller once legacy has arrived. Returns true if the
 // caller should stop now (fetch under way) -- false means proceed
 // immediately ("current" selected, or legacy is already loaded).
+// Legacy records all predate this system going live, so a Dataset choice
+// that includes legacy paired with anything but "All time" almost always
+// shows a near-empty result with no obvious reason why (found on
+// ZoneRepReports' Top Units, same reports/filters exist here). Forcing
+// Period back to "All time" the moment Dataset moves off "Current only"
+// removes the trap without removing the ability to narrow it back down
+// afterwards -- that's a deliberate choice at that point, not a silent
+// one.
+function syncPeriodThenRun(datasetElId, monthsElId, runFn) {
+    const datasetEl = document.getElementById(datasetElId);
+    const monthsEl = document.getElementById(monthsElId);
+    if (datasetEl && monthsEl && datasetEl.value !== 'current' && monthsEl.value !== 'all') {
+        monthsEl.value = 'all';
+        if (monthsElId === 'zoneMonths') toggleZoneCustomRange();
+    }
+    runFn();
+}
+
 function needsLegacyWait(dataset, resultsElId, rerunFn) {
     if (dataset === 'current' || legacyDataLoaded) return false;
     const el = document.getElementById(resultsElId);
@@ -1980,7 +2014,7 @@ function renderTopUnits() {
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="tuDataset" class="glass-select" onchange="runTopUnits()">
+                <select id="tuDataset" class="glass-select" onchange="syncPeriodThenRun('tuDataset','tuMonths',runTopUnits)">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                     <option value="legacy">Legacy only</option>
@@ -2151,7 +2185,7 @@ function renderMoM(mode) {
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="momDataset" class="glass-select" onchange="runMoM('${mode}')">
+                <select id="momDataset" class="glass-select" onchange="syncPeriodThenRun('momDataset','momMonths', () => runMoM('${mode}'))">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                     <option value="legacy">Legacy only</option>
@@ -2380,7 +2414,7 @@ function renderPriorities() {
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="prDataset" class="glass-select" onchange="runPriorities()">
+                <select id="prDataset" class="glass-select" onchange="syncPeriodThenRun('prDataset','prMonths', runPriorities)">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                     <option value="legacy">Legacy only</option>
@@ -2796,7 +2830,7 @@ function renderByZone() {
             </div>
             <div class="filter-group">
                 <span class="filter-label">Dataset</span>
-                <select id="zoneDataset" class="glass-select" onchange="runByZone()">
+                <select id="zoneDataset" class="glass-select" onchange="syncPeriodThenRun('zoneDataset','zoneMonths', runByZone)">
                     <option value="current" selected>Current only</option>
                     <option value="all">Current + Legacy</option>
                     <option value="legacy">Legacy only</option>
