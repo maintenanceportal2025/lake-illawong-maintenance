@@ -6,10 +6,11 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          8 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.23
+VERSION: V1.0.24
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
-AUTHENTICATION: None (accessed via authenticated ZoneRep Portal)
+AUTHENTICATION: VerificationModal OTP, gated on the "ZoneRep-Portal"
+                 role tag (or "Developer") -- added V1.0.24
 DEPENDENCIES:
   - Explorer_V1_3_2.js backend (getFaultLogData, getLegacyLogData)
   - Chart.js 4.4.0 (cdn.jsdelivr.net)
@@ -38,6 +39,15 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.0.24 (Sep 2026): Access gating added -- this file had none at all
+                     before now, despite being accessed by real Zone Reps.
+                     Follows the exact pattern already used by every
+                     other portal in this system: VerificationModal OTP
+                     on load, onSuccess checks roleTags for the existing
+                     "ZoneRep-Portal" tag (reused, not a new one -- this
+                     file is explicitly built for that audience) or the
+                     universal "Developer" override, and data only starts
+                     loading once access is confirmed.
   V1.0.23 (Sep 2026): BUG FIX -- Top Units, Month-on-Month, Priorities
                      Trend and By Zone all pair a Dataset selector with a
                      Period filter, and legacy records all predate this
@@ -696,6 +706,7 @@ VERSION HISTORY:
             .header-text { align-items: center; }
         }
     </style>
+<script src="VerificationModal_V1_0.js"></script>
 </head>
 <body>
 <div class="container">
@@ -2992,11 +3003,58 @@ function getLast12MonthLabels() {
 // =====================================================================
 // INIT
 // =====================================================================
+// Access gating (v1.0.24) -- this file had none at all before now, same
+// as ReportsHub. Follows the exact pattern already used by every other
+// portal in this system: VerificationModal.init() checks/collects OTP
+// verification, onSuccess checks roleTags for the existing
+// "ZoneRep-Portal" tag (the same one ZoneRepPortal itself gates on --
+// this file is explicitly built for that same audience, so it reuses
+// the tag rather than inventing a new one) OR the universal "Developer"
+// override. Data only starts loading once access is confirmed.
 document.addEventListener('DOMContentLoaded', () => {
-    // Show default report form immediately (no data needed for UI)
-    renderUnitHistoryForm();
-    // Load data
-    loadAllData();
+    const alreadyVerified = VerificationModal.init({
+        moduleName: 'Zone Reports',
+        moduleIcon: '📊',
+        sessionKey: 'portalZoneRepReportsVerified',
+        onSuccess: function(userData) {
+            const roles = userData.roleTags || [];
+            const allowed = roles.includes('ZoneRep-Portal') || roles.includes('Developer');
+            if (!allowed) {
+                VerificationModal.clearVerification();
+                document.body.innerHTML = `
+                    <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;
+                                background:linear-gradient(90deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">
+                        <div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);
+                                    border:1px solid rgba(255,255,255,0.15);border-radius:2px;
+                                    padding:40px;max-width:450px;width:100%;text-align:center;">
+                            <div style="font-size:3rem;margin-bottom:16px;">🚫</div>
+                            <h2 style="color:white;font-size:1.4rem;font-weight:600;margin-bottom:12px;">
+                                Access Not Authorised</h2>
+                            <p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">
+                                Verified as: <strong style="color:white;">${userData.name}</strong></p>
+                            <p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">
+                                Your account does not have access to Zone Reports.
+                                Please contact management if you believe this is an error.</p>
+                            <button onclick="window.location.href='SystemHub.html'"
+                                    style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+                                           color:white;border:none;padding:12px 24px;border-radius:8px;
+                                           font-weight:600;cursor:pointer;font-size:0.95rem;">
+                                Back to System Hub
+                            </button>
+                        </div>
+                    </div>`;
+            } else {
+                // Show default report form immediately (no data needed for UI)
+                renderUnitHistoryForm();
+                // Load data
+                loadAllData();
+            }
+        }
+    });
+
+    if (!alreadyVerified) {
+        VerificationModal.show();
+    }
 });
 </script>
 </body>
