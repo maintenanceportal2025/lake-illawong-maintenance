@@ -6,11 +6,13 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          8 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.24
+VERSION: V1.0.25
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
-AUTHENTICATION: VerificationModal OTP, gated on the "ZoneRep-Portal"
-                 role tag (or "Developer") -- added V1.0.24
+AUTHENTICATION: Shares Zone Rep Portal's "portalZoneRepVerified" session
+                 (SSO -- verified there or here, either counts), gated on
+                 the "ZoneRep-Portal" role tag (or "Developer") -- added
+                 V1.0.24, sessionKey fixed V1.0.25
 DEPENDENCIES:
   - Explorer_V1_3_2.js backend (getFaultLogData, getLegacyLogData)
   - Chart.js 4.4.0 (cdn.jsdelivr.net)
@@ -39,6 +41,16 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.0.25 (Sep 2026): BUG FIX -- V1.0.24 gave this file its own separate
+                     sessionKey ("portalZoneRepReportsVerified") instead
+                     of sharing Zone Rep Portal's actual one, so
+                     verifying in Zone Rep Portal wasn't recognised here
+                     at all -- Tony had to re-verify every time despite
+                     already being verified in the Portal. Now shares
+                     Zone Rep Portal's own "portalZoneRepVerified" key,
+                     same fix as ReportsHub V1.1.30 for the same reason:
+                     genuine SSO, not two separate sessions that happen
+                     to look similar.
   V1.0.24 (Sep 2026): Access gating added -- this file had none at all
                      before now, despite being accessed by real Zone Reps.
                      Follows the exact pattern already used by every
@@ -3003,19 +3015,25 @@ function getLast12MonthLabels() {
 // =====================================================================
 // INIT
 // =====================================================================
-// Access gating (v1.0.24) -- this file had none at all before now, same
-// as ReportsHub. Follows the exact pattern already used by every other
-// portal in this system: VerificationModal.init() checks/collects OTP
-// verification, onSuccess checks roleTags for the existing
-// "ZoneRep-Portal" tag (the same one ZoneRepPortal itself gates on --
-// this file is explicitly built for that same audience, so it reuses
-// the tag rather than inventing a new one) OR the universal "Developer"
-// override. Data only starts loading once access is confirmed.
+// Access gating (v1.0.24, sessionKey fixed v1.0.25) -- follows the exact
+// pattern already used by every other portal in this system:
+// VerificationModal.init() checks/collects OTP verification, onSuccess
+// checks roleTags for the existing "ZoneRep-Portal" tag (the same one
+// ZoneRepPortal itself gates on -- this file is explicitly built for
+// that same audience, so it reuses the tag rather than inventing a new
+// one) OR the universal "Developer" override. Data only starts loading
+// once access is confirmed. sessionKey shares ZoneRepPortal's own
+// "portalZoneRepVerified" rather than a separate key -- v1.0.24 used its
+// own, distinct key, so verifying in Zone Rep Portal wasn't recognised
+// here at all and forced a redundant re-verification (Tony). Sharing the
+// key makes this genuine SSO: verified via the Portal already, or
+// verified right here if landed on directly, either way populates the
+// one shared session.
 document.addEventListener('DOMContentLoaded', () => {
     const alreadyVerified = VerificationModal.init({
         moduleName: 'Zone Reports',
         moduleIcon: '📊',
-        sessionKey: 'portalZoneRepReportsVerified',
+        sessionKey: 'portalZoneRepVerified',
         onSuccess: function(userData) {
             const roles = userData.roleTags || [];
             const allowed = roles.includes('ZoneRep-Portal') || roles.includes('Developer');
