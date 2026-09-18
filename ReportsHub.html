@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.24
+VERSION: V1.1.25
 LAST UPDATED: September 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: None (accessed via authenticated portal)
@@ -36,6 +36,22 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.25 (Sep 2026): Global Dataset selector (V1.1.20-23) reverted --
+                     design decision: per-report selectors, placed only
+                     where a report actually offers a choice (e.g. Open
+                     Problems never gets one, since it's current-only by
+                     definition), rather than one shared control. Top
+                     Units, Month-on-Month, Priorities Trend, By
+                     Category, By Zone and Keyword Search all get their
+                     own local Dataset selector back -- each now
+                     three-way (Current only/Current + Legacy/Legacy
+                     only), matching Unit History, rather than the old
+                     two-way version they had before V1.1.20. This is
+                     also the layout ZoneRepReports already uses, so the
+                     two modules -- kept deliberately separate, each to
+                     get its own access gating -- now share the same
+                     Dataset UI pattern as well as the same reliability
+                     work underneath.
   V1.1.24 (Sep 2026): EXPERIMENT -- new makeRequestFetch() using real
                      fetch() (GET, no custom headers -- a CORS "simple
                      request", same pattern already proven in
@@ -804,15 +820,6 @@ VERSION HISTORY:
                 <span id="dataStatusText">Loading data...</span>
             </div>
 
-            <div class="filter-group" id="globalDatasetGroup" style="margin-bottom:16px;">
-                <span class="filter-label">Dataset</span>
-                <select id="globalDatasetSelect" class="glass-select" onchange="setGlobalDataset()" style="flex:1;">
-                    <option value="current" selected>Current only</option>
-                    <option value="all">Current + Legacy</option>
-                    <option value="legacy">Legacy only</option>
-                </select>
-            </div>
-
             <div class="report-item active" onclick="selectReport('unit-history')" id="cat-unit-history">
                 <span class="report-icon">🏠</span>Unit Problem History
             </div>
@@ -897,9 +904,6 @@ let programmedData = [];    // Programmed + Programmed-Completed (current only)
 let dataLoaded     = false; // true once CURRENT data has loaded (see legacyDataLoaded for legacy)
 let legacyDataLoaded = false;
 let legacyLoadPromise = null;
-let globalDataset  = 'current';  // drives Top Units/MoM/Priorities Trend/
-                                  // By Category/By Zone/Keyword Search;
-                                  // Unit History keeps its own local select
 let activeReport   = null;
 let activeChart    = null;
 
@@ -1167,42 +1171,7 @@ function needsLegacyWait(dataset, resultsElId, rerunFn) {
     return true;
 }
 
-// Global Dataset selector (v1.1.20) -- one choice, shared by every report
-// below that isn't Unit History. Re-runs the currently-showing report in
-// place (not a full panel rebuild), so a report's own filters -- and, for
-// Keyword Search, an in-progress search term -- survive the switch.
-function setGlobalDataset() {
-    globalDataset = document.getElementById('globalDatasetSelect').value;
-    rerunActiveReportForDataset();
-}
 
-function rerunActiveReportForDataset() {
-    switch (currentReportId) {
-        // Unit History keeps its own local selector (a genuine third
-        // "Legacy only" state the global one doesn't have), but it was
-        // being skipped here entirely -- so toggling the global selector
-        // while viewing the *default* report (this one) did nothing at
-        // all, which is exactly what anyone would try first. Sync the
-        // local selector to match (unless it's deliberately on "Legacy
-        // only"), and re-run if a search is already showing.
-        case 'unit-history': {
-            const uhSel = document.getElementById('uhDataset');
-            if (uhSel) uhSel.value = globalDataset;
-            const uhUnitEl = document.getElementById('uhUnit');
-            if (uhUnitEl && uhUnitEl.value.trim()) runUnitHistory();
-            break;
-        }
-        case 'top-units':      runTopUnits();                break;
-        case 'mom-reported':   runMoM('reported');           break;
-        case 'mom-completed':  runMoM('completed');          break;
-        case 'priorities':     runPriorities();              break;
-        case 'by-category':    runByCategory();              break;
-        case 'by-zone':        runByZone();                  break;
-        case 'keyword-search': if (kwTerm) runKeywordSearch(); break;
-        // All other reports are current-data-only by design -- nothing
-        // to do.
-    }
-}
 
 function setDataStatus(state, text) {
     const container = document.getElementById('dataStatus');
@@ -1972,6 +1941,14 @@ function renderTopUnits() {
                     <option value="all">All time</option>
                 </select>
             </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="tuDataset" class="glass-select" onchange="runTopUnits()">
+                    <option value="current" selected>Current only</option>
+                    <option value="all">Current + Legacy</option>
+                    <option value="legacy">Legacy only</option>
+                </select>
+            </div>
             <button class="pdf-btn" onclick="exportTopUnitsPDF()">&#8595; PDF</button>
         </div>
         <div class="results-area" id="tuResults"></div>`);
@@ -1985,7 +1962,7 @@ function runTopUnits() {
     if (!dataLoaded) return;
     const zone    = document.getElementById('tuZone').value;
     const months  = document.getElementById('tuMonths').value;
-    const dataset = globalDataset;
+    const dataset = document.getElementById('tuDataset').value;
     if (needsLegacyWait(dataset, 'tuResults', runTopUnits)) return;
     let pool = dataset === 'current' ? currentData
              : dataset === 'legacy'  ? legacyData
@@ -2135,6 +2112,14 @@ function renderMoM(mode) {
                     <option value="all">All time</option>
                 </select>
             </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="momDataset" class="glass-select" onchange="runMoM('${mode}')">
+                    <option value="current" selected>Current only</option>
+                    <option value="all">Current + Legacy</option>
+                    <option value="legacy">Legacy only</option>
+                </select>
+            </div>
             <button class="pdf-btn" onclick="exportMoMPDF('${mode}')">&#8595; PDF</button>
         </div>
         <div class="results-area" id="momResults"></div>`);
@@ -2148,7 +2133,7 @@ function runMoM(mode) {
     if (!dataLoaded) return;
     const zone    = document.getElementById('momZone').value;
     const months  = document.getElementById('momMonths').value;
-    const dataset = globalDataset;
+    const dataset = document.getElementById('momDataset').value;
     if (needsLegacyWait(dataset, 'momResults', () => runMoM(mode))) return;
     let pool      = dataset === 'current' ? currentData
                    : dataset === 'legacy'  ? legacyData
@@ -2355,6 +2340,14 @@ function renderPriorities() {
                     <option value="24">Last 24 months</option>
                     <option value="all">All time</option>
                 </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="prDataset" class="glass-select" onchange="runPriorities()">
+                    <option value="current" selected>Current only</option>
+                    <option value="all">Current + Legacy</option>
+                    <option value="legacy">Legacy only</option>
+                </select>
             </div>`}
             <button class="pdf-btn" onclick="exportPrioritiesPDF()">&#8595; PDF</button>
         </div>
@@ -2376,7 +2369,7 @@ function runPrioritiesTrend(view) {
     const zone     = document.getElementById('prZone').value;
     const months   = document.getElementById('prMonths').value;
     const priority = document.getElementById('prPriorityFilter').value;
-    const dataset = globalDataset;
+    const dataset = document.getElementById('prDataset').value;
     if (needsLegacyWait(dataset, 'prResults', () => runPrioritiesTrend(view))) return;
     let pool = dataset === 'current' ? currentData
              : dataset === 'legacy'  ? legacyData
@@ -2608,6 +2601,14 @@ function renderByCategory() {
                     <option value="completed">Completed only</option>
                 </select>
             </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="catDataset" class="glass-select" onchange="runByCategory()">
+                    <option value="current" selected>Current only</option>
+                    <option value="all">Current + Legacy</option>
+                    <option value="legacy">Legacy only</option>
+                </select>
+            </div>
             <button class="pdf-btn" onclick="exportCategoryPDF()">&#8595; PDF</button>
         </div>
         <div class="results-area" id="catResults"></div>`);
@@ -2619,7 +2620,7 @@ let catReportData = {};
 
 function runByCategory() {
     if (!dataLoaded) return;
-    const dataset = globalDataset;
+    const dataset = document.getElementById('catDataset').value;
     const status  = document.getElementById('catStatus').value;
     if (needsLegacyWait(dataset, 'catResults', runByCategory)) return;
     const pool    = dataset === 'current' ? currentData
@@ -2756,6 +2757,14 @@ function renderByZone() {
                 <span class="filter-label" style="margin-left:8px;">To</span>
                 <input type="date" id="zoneTo" class="glass-input" onchange="runByZone()">
             </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="zoneDataset" class="glass-select" onchange="runByZone()">
+                    <option value="current" selected>Current only</option>
+                    <option value="all">Current + Legacy</option>
+                    <option value="legacy">Legacy only</option>
+                </select>
+            </div>
             <button class="pdf-btn" onclick="exportZonePDF()">&#8595; PDF</button>
         </div>
         <div class="results-area" id="zoneResults"></div>`);
@@ -2784,7 +2793,7 @@ let zoneReportData = {};
 function runByZone() {
     if (!dataLoaded) return;
     const months  = document.getElementById('zoneMonths').value;
-    const dataset = globalDataset;
+    const dataset = document.getElementById('zoneDataset').value;
     if (needsLegacyWait(dataset, 'zoneResults', runByZone)) return;
     let pool = dataset === 'current' ? currentData
              : dataset === 'legacy'  ? legacyData
@@ -2948,6 +2957,14 @@ function renderKeywordForm() {
                     <option value="all-fields">Description + Category + Comments</option>
                 </select>
             </div>
+            <div class="filter-group">
+                <span class="filter-label">Dataset</span>
+                <select id="kwDataset" class="glass-select">
+                    <option value="current" selected>Current only</option>
+                    <option value="all">Current + Legacy</option>
+                    <option value="legacy">Legacy only</option>
+                </select>
+            </div>
             <button class="run-btn" onclick="runKeywordSearch()">Search</button>
             <button class="pdf-btn" id="kwPdfBtn" onclick="exportKeywordPDF()" style="display:none;">&#8595; PDF</button>
         </div>
@@ -2964,7 +2981,7 @@ function runKeywordSearch() {
     if (!kwTerm) { alert('Please enter a keyword to search.'); return; }
     if (!dataLoaded) { alert('Data is still loading — please wait a moment and try again.'); return; }
     const field   = document.getElementById('kwField').value;
-    const dataset = globalDataset;
+    const dataset = document.getElementById('kwDataset').value;
     if (needsLegacyWait(dataset, 'kwResults', runKeywordSearch)) return;
     const pool    = dataset === 'current' ? currentData
                    : dataset === 'legacy'  ? legacyData
