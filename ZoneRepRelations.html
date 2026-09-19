@@ -6,25 +6,27 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepRelations.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.0
-  Backend:          RelationsManager V1.0.16 -- getRelationsByZone
+  Frontend Version: V1.0.1
+  Backend:          RelationsManager V1.0.17 -- getRelationsByZone
   Status:           DEVELOPMENT
   Created:          Sep 2026
 
 PURPOSE:
-  Read-only dispute monitoring view for Zone Representatives -- the
-  Relations equivalent of ZoneRepComplaints.html, which had no
-  counterpart until Tony spotted the gap. Zone derived from ZoneRep-N
+  Read-only dispute HISTORICAL REFERENCE view for Zone Representatives
+  -- not a live alert (that's sendZoneRepNotification's separate
+  triage/closure emails to the zone's reps, already live in
+  RelationsManager.js) but somewhere a rep can browse back through
+  what's happened in their zone over time. Zone derived from ZoneRep-N
   role tag in the session inherited from ZoneRepPortal.html, same
   pattern ZoneRepComplaints.html uses.
 
-FIELD SCOPE -- DELIBERATELY MINIMAL, NOT PARITY WITH ZoneRepComplaints:
-  Shown:     Reference number, status, logged date. That's all.
-  Not shown: Category, matter type (Resident-to-Management vs
-             Resident-to-Resident), party names, units, description,
-             or anything else RelationsManager holds. No expandable
-             detail panel at all -- there's nothing behind the card to
-             expand into.
+FIELD SCOPE -- DELIBERATELY LIMITED, NOT PARITY WITH ZoneRepComplaints:
+  Shown:     Reference number, matter type (Resident-to-Management vs
+             Resident-to-Resident), status, an overdue flag (28-day
+             review deadline vs now, open records only), logged date.
+  Not shown: Category, party names, units, description, or anything
+             else RelationsManager holds. No expandable detail panel --
+             there's nothing behind the card to expand into.
   Why less than ZoneRepComplaints.html: Complaints are structurally
   resident-vs-Management. Relations also covers resident-vs-resident
   disputes, which is materially more sensitive to hand a Zone Rep
@@ -36,8 +38,19 @@ FIELD SCOPE -- DELIBERATELY MINIMAL, NOT PARITY WITH ZoneRepComplaints:
   (getRelationsByZone) enforces this server-side already -- it never
   returns the extra fields in the first place, so this isn't just a
   front-end display choice that a curious Zone Rep could bypass.
+  Category specifically stays out even though it seems harmless --
+  in a 44-unit village, category alone can narrow down who's involved.
 
 VERSION HISTORY:
+  V1.0.1 (Sep 2026): Matter type and an overdue flag (28-day review
+    deadline) added, per Tony, once he clarified this module's actual
+    purpose -- not a live alert (already covered separately by
+    sendZoneRepNotification's triage/closure emails), but a historical
+    reference Zone Reps browse back through, which needed more than a
+    bare reference+status to actually work as one. Overdue filter
+    added to the filter bar alongside status, matching
+    ZoneRepComplaints.html's "Overdue only" pattern. Category
+    deliberately still excluded -- see FIELD SCOPE above.
   V1.0.0 (Sep 2026): Initial release. Session/zone-extraction pattern
     ported from ZoneRepComplaints_V1_1_3.html (inherited
     portalZoneRepVerified session, zone from ZoneRep-N role tag).
@@ -57,7 +70,7 @@ AUTHENTICATION:
   Redirects to ZoneRepPortal.html if session absent.
 
 SYSTEM CONNECTIONS:
-  Backend: RelationsManager
+  Backend: RelationsManager V1.0.17
   Action:  getRelationsByZone
   URL:     CONFIG.BACKEND_URL
 
@@ -168,8 +181,25 @@ TECHNICAL:
         .relations-card.status-closed-unresolved { border-left: 4px solid #9ca3af; background: rgba(156,163,175,0.2); backdrop-filter: none; }
 
         .card-row { padding: 13px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .card-ref  { font-family: monospace; font-size: 0.85rem; font-weight: 700; color: rgba(255,255,255,0.75); flex: 1; min-width: 140px; }
-        .card-date { font-size: 0.78rem; color: rgba(255,255,255,0.45); white-space: nowrap; }
+        .card-ref  { font-family: monospace; font-size: 0.85rem; font-weight: 700; color: rgba(255,255,255,0.75); white-space: nowrap; }
+        .card-date { font-size: 0.78rem; color: rgba(255,255,255,0.45); white-space: nowrap; margin-left: auto; }
+
+        /* ── MATTER TYPE BADGE -- ported verbatim from RelationsStatus.html ── */
+        .card-matter-type {
+            font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+            padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+        }
+        .mt-management { background: rgba(59,130,246,0.3);  color: #bfdbfe; }
+        .mt-resident    { background: rgba(13,148,136,0.3);  color: #99f6e4; }
+        .mt-untriaged   { background: rgba(255,255,255,0.12);color: rgba(255,255,255,0.6); }
+
+        /* ── OVERDUE BADGE ──────────────────────────────────────────── */
+        .overdue-badge {
+            display: inline-block; padding: 3px 8px; border-radius: 3px;
+            font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.4px; white-space: nowrap;
+            background: rgba(239,68,68,0.35); color: #fca5a5; border: 1px solid rgba(239,68,68,0.6);
+        }
 
         /* ── STATUS PILLS -- teal palette, ported verbatim ─────────── */
         .status-pill {
@@ -227,9 +257,10 @@ TECHNICAL:
 
     <!-- Info notice -->
     <div class="info-notice" id="infoNotice" style="display:none">
-        This view shows disputes from your zone by reference number and status only.
-        Party and case detail are not shown here -- that broader visibility question
-        is still with the Board.
+        This is a historical reference of disputes from your zone -- matter type, status,
+        and overdue flags only. You're already emailed when a dispute in your zone is
+        raised or closed; this is for looking back, not the alert itself. Party and case
+        detail are not shown -- that broader visibility question is still with the Board.
     </div>
 
     <!-- Filter bar -->
@@ -242,6 +273,11 @@ TECHNICAL:
             <option value="Under Review">Under Review</option>
             <option value="Closed - Resolved">Closed - Resolved</option>
             <option value="Closed - Unresolved">Closed - Unresolved</option>
+        </select>
+        <label for="filterOverdue">Show:</label>
+        <select id="filterOverdue" onchange="applyFilters()">
+            <option value="">All disputes</option>
+            <option value="overdue">Overdue only</option>
         </select>
     </div>
 
@@ -355,9 +391,11 @@ TECHNICAL:
     }
 
     function applyFilters() {
-        const statusFilter = document.getElementById('filterStatus').value;
+        const statusFilter  = document.getElementById('filterStatus').value;
+        const overdueFilter = document.getElementById('filterOverdue').value;
         let filtered = allRelations;
         if (statusFilter) filtered = filtered.filter(r => r.status === statusFilter);
+        if (overdueFilter === 'overdue') filtered = filtered.filter(r => isOverdue(r));
         renderRelations(filtered);
     }
 
@@ -377,6 +415,16 @@ TECHNICAL:
 
     // ── LABEL / CLASS HELPERS -- ported verbatim from RelationsStatus.html /
     //    RelationsManager.html V1.0.17, the authoritative source. ─────────
+    function matterTypeLabel(r) {
+        if (r.matterType === 'Management') return 'Resident-to-Management';
+        if (r.matterType === 'Resident')   return 'Resident-to-Resident';
+        return 'Untriaged';
+    }
+    function matterTypeClass(r) {
+        if (r.matterType === 'Management') return 'mt-management';
+        if (r.matterType === 'Resident')   return 'mt-resident';
+        return 'mt-untriaged';
+    }
     function statusPillClass(status) {
         const map = {
             'Open':                   'rel-pill-open',
@@ -398,16 +446,28 @@ TECHNICAL:
         return map[status] || 'status-open';
     }
 
+    // reviewDue is the 28-day service-standard deadline (LoggedAt + 28
+    // days). Only meaningful while still open -- a closed record has
+    // already been dealt with, however long it took.
+    function isOverdue(r) {
+        if (r.status === 'Closed - Resolved' || r.status === 'Closed - Unresolved') return false;
+        if (!r.reviewDue) return false;
+        return new Date() > new Date(r.reviewDue);
+    }
+
     // ── BUILD ROW -- no expand/detail, nothing behind the card to show ────
     function buildRow(r) {
         const borderCls = statusCardClass(r.status);
         const pillCls   = statusPillClass(r.status);
         const dateStr   = r.loggedAt ? fmtDate(new Date(r.loggedAt)) : '—';
+        const overdue   = isOverdue(r);
 
         return '<div class="relations-card ' + borderCls + '">' +
             '<div class="card-row">' +
                 '<div class="card-ref">' + escHtml(r.referenceNumber) + '</div>' +
+                '<span class="card-matter-type ' + matterTypeClass(r) + '">' + matterTypeLabel(r) + '</span>' +
                 '<span class="status-pill ' + pillCls + '">' + escHtml(r.status || '') + '</span>' +
+                (overdue ? '<span class="overdue-badge">28-Day Review Overdue</span>' : '') +
                 '<div class="card-date">Logged ' + dateStr + '</div>' +
             '</div>' +
         '</div>';
