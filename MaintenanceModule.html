@@ -7,13 +7,30 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.6
-  Backend:          MaintenancePortal V1.6.1
+  Frontend Version: V1.2.8
+  Backend:          MaintenancePortal V1.6.2
   Status:           PRODUCTION
   Created:          September 2025
   Last Modified:    Sep 2026
 
 VERSION HISTORY:
+  V1.2.8 (Sep 2026): Interactive framework Q&A -- new "💬 Ask About This
+                     Problem" button opens a chat panel where staff can ask
+                     follow-up questions about a genuinely unclear problem.
+                     Calls askFrameworkQuestion (MaintenancePortal V1.6.2+),
+                     which is grounded on the full framework document text
+                     and asks clarifying questions back rather than forcing
+                     an answer. Scratchpad only -- conversation resets when
+                     the panel is closed, nothing is saved to FaultLog or
+                     anywhere server-side, matching the agreed design.
+  V1.2.7 (Sep 2026): Suggest Classification button now hides once Category,
+                     Sub-Category, Priority and Cost Responsibility are all
+                     filled, replaced by a small "↻" re-suggest icon in the
+                     same spot -- keeps the full button visible only while a
+                     problem genuinely needs triage, without losing the
+                     ability to re-run a suggestion later (e.g. after the
+                     description is edited). Visibility re-evaluates live on
+                     any of the four fields changing, not just on page load.
   V1.2.6 (Sep 2026): AI-assisted classification -- new "Suggest Classification"
                      button on the problem detail view calls the backend's
                      getClassificationSuggestion action (MaintenancePortal
@@ -1504,7 +1521,7 @@ Padding: 10px;
 
                         <div class="detail-field">
                             <label>Priority</label>
-                            <select id="detailPriority" class="form-input">
+                            <select id="detailPriority" class="form-input" onchange="updateSuggestButtonVisibility()">
                                 <option value="">Select Priority</option>
                                 <option value="Low">Low</option>
                                 <option value="Medium">Medium</option>
@@ -1514,7 +1531,7 @@ Padding: 10px;
                         </div>
                         <div class="detail-field">
                             <label>Category</label>
-                            <select id="detailCategory" class="form-input">
+                            <select id="detailCategory" class="form-input" onchange="updateSuggestButtonVisibility()">
                                 <option value="">Select Category</option>
                                 <option value="Plumbing">Plumbing</option>
                                 <option value="HVAC">HVAC</option>
@@ -1526,7 +1543,7 @@ Padding: 10px;
                         </div>
                         <div class="detail-field">
                             <label>Sub-Category</label>
-                            <select id="detailSubCategory" class="form-input">
+                            <select id="detailSubCategory" class="form-input" onchange="updateSuggestButtonVisibility()">
                                 <option value="">Select Sub-Category</option>
                                 <option value="Faucet/Tap">Faucet/Tap</option>
                                 <option value="Air Conditioning">Air Conditioning</option>
@@ -1537,7 +1554,7 @@ Padding: 10px;
                         </div>
                         <div class="detail-field">
                             <label>Cost Responsibility</label>
-                            <select id="detailCostResponsibility" class="form-input">
+                            <select id="detailCostResponsibility" class="form-input" onchange="updateSuggestButtonVisibility()">
                                 <option value="">Select Cost Responsibility</option>
                                 <option value="Resident">Resident</option>
                                 <option value="Body Corporate">Body Corporate</option>
@@ -1549,6 +1566,9 @@ Padding: 10px;
                             <button type="button" id="suggestClassificationBtn" class="btn" style="background: #7c3aed; color: white;" onclick="suggestClassification()">
                                 🤖 Suggest Classification
                             </button>
+                            <button type="button" id="reSuggestClassificationBtn" title="Re-run classification suggestion" style="display: none; background: #f5f3ff; border: 1px solid #ddd6fe; color: #7c3aed; width: 36px; height: 36px; border-radius: 50%; font-size: 16px; cursor: pointer;" onclick="suggestClassification()">
+                                ↻
+                            </button>
                             <div id="classificationSuggestionPanel" style="display: none; margin-top: 10px; padding: 12px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; font-size: 13px; color: #374151;">
                                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                                     <strong>AI Suggestion</strong>
@@ -1557,6 +1577,9 @@ Padding: 10px;
                                 <div id="classificationReasoningText"></div>
                                 <div style="margin-top: 8px; color: #6b7280; font-style: italic;">Suggestions are pre-filled above -- review and adjust any field before saving.</div>
                             </div>
+                            <button type="button" id="askFrameworkBtn" class="btn" style="background: #ffffff; border: 1px solid #7c3aed; color: #7c3aed; margin-top: 8px;" onclick="openFrameworkChat()">
+                                💬 Ask About This Problem
+                            </button>
                         </div>
                         <div class="detail-field">
                             <label>Assigned To</label>
@@ -1622,6 +1645,27 @@ Padding: 10px;
             </div>
         </div>
     </div>
+
+    <!-- Framework Q&A chat modal (V1.2.8) -- scratchpad only, resets on close, no server-side storage -->
+    <div id="frameworkChatModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 12px; width: 90%; max-width: 700px; height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+            <div style="padding: 20px 25px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="font-size: 18px; font-weight: 600; color: #1f2937; margin: 0;">💬 Ask About This Problem</h3>
+                    <div style="font-size: 12px; color: #6b7280; margin-top: 2px;">Not legal advice -- for genuinely unclear cases, confirm with the Board or Consumer Affairs Victoria. Nothing here is saved.</div>
+                </div>
+                <button id="closeFrameworkChat" onclick="closeFrameworkChat()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280; padding: 0; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px;">×</button>
+            </div>
+            <div id="frameworkChatMessages" style="flex: 1; overflow-y: auto; padding: 20px 25px; display: flex; flex-direction: column; gap: 12px;">
+                <div style="color: #6b7280; font-size: 13px; font-style: italic;">Ask a question about this problem, or about the framework document generally. If there isn't enough information to give a clear answer, expect a clarifying question back rather than a guess.</div>
+            </div>
+            <div style="padding: 15px 25px; border-top: 1px solid #e5e7eb; display: flex; gap: 10px;">
+                <input type="text" id="frameworkChatInput" class="form-input" style="flex: 1;" placeholder="Ask a question..." onkeydown="if(event.key==='Enter'){sendFrameworkChatMessage();}">
+                <button type="button" id="frameworkChatSendBtn" class="btn" style="background: #7c3aed; color: white;" onclick="sendFrameworkChatMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
 
     <script>
 
@@ -2769,10 +2813,11 @@ document.getElementById('detailPriority').value = problem.problemPriority || 'Me
     document.getElementById('detailCategory').value = problem.category || '';
     document.getElementById('detailSubCategory').value = problem.subCategory || '';
     document.getElementById('detailCostResponsibility').value = problem.costResponsibility || '';
-    document.getElementById('detailAssignedTo').value = problem.assignedTo || '';
+    document.getElementById('detailAssignedTo').value = problem.assignedTo || 'Ben';
     
     // Clear any classification suggestion left over from a previously viewed problem
     hideClassificationSuggestion();
+    updateSuggestButtonVisibility();
     
     // Completion date
     const completionDate = problem.completionDate || '';
@@ -3114,6 +3159,20 @@ async function reopenProblem() {
         // and adjust freely before Save Changes as usual. Nothing here writes
         // to FaultLog directly.
         // =====================================================================
+        function updateSuggestButtonVisibility() {
+            const fullBtn = document.getElementById('suggestClassificationBtn');
+            const iconBtn = document.getElementById('reSuggestClassificationBtn');
+            if (!fullBtn || !iconBtn) return;
+
+            const allFilled = document.getElementById('detailCategory').value &&
+                               document.getElementById('detailSubCategory').value &&
+                               document.getElementById('detailPriority').value &&
+                               document.getElementById('detailCostResponsibility').value;
+
+            fullBtn.style.display = allFilled ? 'none' : 'inline-block';
+            iconBtn.style.display = allFilled ? 'inline-block' : 'none';
+        }
+
         async function suggestClassification() {
             if (!currentProblem) return;
 
@@ -3150,6 +3209,7 @@ async function reopenProblem() {
                 if (suggestion.costResponsibility) document.getElementById('detailCostResponsibility').value = suggestion.costResponsibility;
 
                 showClassificationSuggestion(suggestion);
+                updateSuggestButtonVisibility();
 
             } catch (error) {
                 console.error('❌ Error getting classification suggestion:', error);
@@ -3187,6 +3247,90 @@ async function reopenProblem() {
         function hideClassificationSuggestion() {
             const panel = document.getElementById('classificationSuggestionPanel');
             if (panel) panel.style.display = 'none';
+        }
+
+        // =====================================================================
+        // Framework Q&A chat (V1.2.8 addition)
+        // Scratchpad only -- conversationHistory lives in this JS variable for
+        // the life of the panel and is discarded on close, per the agreed
+        // design. Not saved to FaultLog, not saved anywhere server-side.
+        // =====================================================================
+        let frameworkChatHistory = [];
+
+        function openFrameworkChat() {
+            if (!currentProblem) return;
+            frameworkChatHistory = [];
+            document.getElementById('frameworkChatMessages').innerHTML =
+                '<div style="color: #6b7280; font-size: 13px; font-style: italic;">Ask a question about this problem, or about the framework document generally. If there isn\'t enough information to give a clear answer, expect a clarifying question back rather than a guess.</div>';
+            document.getElementById('frameworkChatModal').classList.remove('hidden');
+            document.getElementById('frameworkChatInput').value = '';
+            document.getElementById('frameworkChatInput').focus();
+        }
+
+        function closeFrameworkChat() {
+            document.getElementById('frameworkChatModal').classList.add('hidden');
+            frameworkChatHistory = []; // scratchpad -- discard on close
+        }
+
+        function appendFrameworkChatMessage(role, text) {
+            const container = document.getElementById('frameworkChatMessages');
+            const bubble = document.createElement('div');
+            const isUser = role === 'user';
+            bubble.style.cssText = `align-self: ${isUser ? 'flex-end' : 'flex-start'}; max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; background: ${isUser ? '#7c3aed' : '#f5f3ff'}; color: ${isUser ? 'white' : '#374151'};`;
+            bubble.textContent = text;
+            container.appendChild(bubble);
+            container.scrollTop = container.scrollHeight;
+            return bubble;
+        }
+
+        async function sendFrameworkChatMessage() {
+            const input = document.getElementById('frameworkChatInput');
+            const question = input.value.trim();
+            if (!question) return;
+
+            const sendBtn = document.getElementById('frameworkChatSendBtn');
+            input.value = '';
+            input.disabled = true;
+            sendBtn.disabled = true;
+
+            appendFrameworkChatMessage('user', question);
+            const thinkingBubble = appendFrameworkChatMessage('assistant', '...');
+
+            try {
+                const problemContext = {
+                    description: document.getElementById('detailDescription').value,
+                    category: document.getElementById('detailCategory').value,
+                    subCategory: document.getElementById('detailSubCategory').value,
+                    priority: document.getElementById('detailPriority').value,
+                    costResponsibility: document.getElementById('detailCostResponsibility').value
+                };
+
+                const response = await makeRequest('askFrameworkQuestion', {
+                    question: question,
+                    conversationHistory: JSON.stringify(frameworkChatHistory),
+                    problemContext: JSON.stringify(problemContext)
+                });
+
+                thinkingBubble.remove();
+
+                if (!response.success) {
+                    appendFrameworkChatMessage('assistant', '⚠️ ' + (response.message || 'Something went wrong getting a response.'));
+                    return;
+                }
+
+                appendFrameworkChatMessage('assistant', response.reply);
+                frameworkChatHistory.push({ role: 'user', content: question });
+                frameworkChatHistory.push({ role: 'assistant', content: response.reply });
+
+            } catch (error) {
+                thinkingBubble.remove();
+                console.error('❌ Error in framework chat:', error);
+                appendFrameworkChatMessage('assistant', '⚠️ Failed to get a response: ' + error.message);
+            } finally {
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
+            }
         }
 
         async function makeRequest(action, additionalData = {}, retryCount = 0) {
