@@ -7,13 +7,28 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.5
-  Backend:          MaintenancePortal V1.5.js
+  Frontend Version: V1.2.6
+  Backend:          MaintenancePortal V1.6.1
   Status:           PRODUCTION
   Created:          September 2025
-  Last Modified:    Aug 2026
+  Last Modified:    Sep 2026
 
 VERSION HISTORY:
+  V1.2.6 (Sep 2026): AI-assisted classification -- new "Suggest Classification"
+                     button on the problem detail view calls the backend's
+                     getClassificationSuggestion action (MaintenancePortal
+                     V1.6.0+) and pre-fills Category, Sub-Category, Priority
+                     and the new Cost Responsibility field, with the model's
+                     reasoning shown in a panel below (low-confidence flag
+                     surfaced as a badge when Priority couldn't be read
+                     confidently from the description). Suggestion only --
+                     staff review/adjust before the existing Save Changes,
+                     nothing is written automatically. New Cost Responsibility
+                     dropdown (Resident / Body Corporate / Operator (Capital) /
+                     Needs Assessment) added to the detail form and wired into
+                     save/populate alongside the existing three classification
+                     fields. Requires backend >= V1.6.1 for Cost Responsibility
+                     to actually persist (V1.6.0 alone only returns suggestions).
   V1.2.5 (Aug 2026): Persistent session, matching FieldOperationsPortal
                      V2.1.2 -- this file previously read/wrote the
                      portalFieldOpsVerified session keys directly against
@@ -573,6 +588,7 @@ Padding: 10px;
 .badge-project { background: #fef3c7; color: #d97706; }
 .badge-unknown { background: #f3f4f6; color: #6b7280; } 
 .badge-programmed-completed { background: #e9d5ff; color: #9333ea; }
+.badge-low-confidence { background: #fde68a; color: #92400e; }
         
         .report-btn {
             padding: 10px 20px;
@@ -1518,6 +1534,29 @@ Padding: 10px;
                                 <option value="Door Lock">Door Lock</option>
                                 <option value="General">General</option>
                             </select>
+                        </div>
+                        <div class="detail-field">
+                            <label>Cost Responsibility</label>
+                            <select id="detailCostResponsibility" class="form-input">
+                                <option value="">Select Cost Responsibility</option>
+                                <option value="Resident">Resident</option>
+                                <option value="Body Corporate">Body Corporate</option>
+                                <option value="Operator (Capital)">Operator (Capital)</option>
+                                <option value="Needs Assessment">Needs Assessment</option>
+                            </select>
+                        </div>
+                        <div class="detail-field" style="grid-column: 1 / -1;">
+                            <button type="button" id="suggestClassificationBtn" class="btn" style="background: #7c3aed; color: white;" onclick="suggestClassification()">
+                                🤖 Suggest Classification
+                            </button>
+                            <div id="classificationSuggestionPanel" style="display: none; margin-top: 10px; padding: 12px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; font-size: 13px; color: #374151;">
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                    <strong>AI Suggestion</strong>
+                                    <span id="classificationConfidenceBadge" class="badge" style="display: none;">Low Confidence</span>
+                                </div>
+                                <div id="classificationReasoningText"></div>
+                                <div style="margin-top: 8px; color: #6b7280; font-style: italic;">Suggestions are pre-filled above -- review and adjust any field before saving.</div>
+                            </div>
                         </div>
                         <div class="detail-field">
                             <label>Assigned To</label>
@@ -2729,7 +2768,11 @@ document.getElementById('detailPriority').value = problem.problemPriority || 'Me
     document.getElementById('detailPriority').value = problem.problemPriority || 'Medium';
     document.getElementById('detailCategory').value = problem.category || '';
     document.getElementById('detailSubCategory').value = problem.subCategory || '';
+    document.getElementById('detailCostResponsibility').value = problem.costResponsibility || '';
     document.getElementById('detailAssignedTo').value = problem.assignedTo || '';
+    
+    // Clear any classification suggestion left over from a previously viewed problem
+    hideClassificationSuggestion();
     
     // Completion date
     const completionDate = problem.completionDate || '';
@@ -2887,6 +2930,7 @@ async function saveDetailsFromPage(e) {
             problemPriority: document.getElementById('detailPriority').value,
             category: document.getElementById('detailCategory').value,
             subCategory: document.getElementById('detailSubCategory').value,
+            costResponsibility: document.getElementById('detailCostResponsibility').value,
             assignedTo: document.getElementById('detailAssignedTo').value,
             comments: document.getElementById('detailComments').value,
 			user: loggedInUser
@@ -3064,6 +3108,87 @@ async function reopenProblem() {
     }
 }
         
+        // =====================================================================
+        // AI-Assisted Classification (V1.2.5 addition)
+        // Suggestion only -- pre-fills the four dropdowns above, staff review
+        // and adjust freely before Save Changes as usual. Nothing here writes
+        // to FaultLog directly.
+        // =====================================================================
+        async function suggestClassification() {
+            if (!currentProblem) return;
+
+            const description = document.getElementById('detailDescription').value;
+            if (!description || !description.trim()) {
+                alert('Enter a Problem Description before requesting a classification suggestion.');
+                return;
+            }
+
+            const btn = document.getElementById('suggestClassificationBtn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '🤖 Thinking...';
+
+            try {
+                const currentCategory = document.getElementById('detailCategory').value;
+                const requestData = { problemDescription: description };
+                if (currentCategory) requestData.category = currentCategory;
+
+                const response = await makeRequest('getClassificationSuggestion', requestData);
+
+                if (!response.success) {
+                    alert('Could not get a classification suggestion: ' + (response.message || 'Unknown error'));
+                    return;
+                }
+
+                const suggestion = response.suggestion;
+
+                // Only pre-fill fields the model returned a valid (dropdown-matching) value for --
+                // an invalid suggestion comes back as null from the backend and is left alone here.
+                if (suggestion.category) document.getElementById('detailCategory').value = suggestion.category;
+                if (suggestion.subCategory) document.getElementById('detailSubCategory').value = suggestion.subCategory;
+                if (suggestion.priority) document.getElementById('detailPriority').value = suggestion.priority;
+                if (suggestion.costResponsibility) document.getElementById('detailCostResponsibility').value = suggestion.costResponsibility;
+
+                showClassificationSuggestion(suggestion);
+
+            } catch (error) {
+                console.error('❌ Error getting classification suggestion:', error);
+                alert('Failed to get classification suggestion: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        function showClassificationSuggestion(suggestion) {
+            const panel = document.getElementById('classificationSuggestionPanel');
+            const confidenceBadge = document.getElementById('classificationConfidenceBadge');
+            const reasoningText = document.getElementById('classificationReasoningText');
+
+            const reasoning = suggestion.reasoning || {};
+            const lines = [];
+            if (reasoning.category) lines.push(`<strong>Category:</strong> ${reasoning.category}`);
+            if (reasoning.subCategory) lines.push(`<strong>Sub-Category:</strong> ${reasoning.subCategory}`);
+            if (reasoning.priority) lines.push(`<strong>Priority:</strong> ${reasoning.priority}`);
+            if (reasoning.costResponsibility) lines.push(`<strong>Cost Responsibility:</strong> ${reasoning.costResponsibility}`);
+            reasoningText.innerHTML = lines.map(line => `<div style="margin-bottom: 4px;">${line}</div>`).join('');
+
+            if (suggestion.priorityConfidence === 'low') {
+                confidenceBadge.textContent = 'Low Confidence on Priority';
+                confidenceBadge.className = 'badge badge-low-confidence';
+                confidenceBadge.style.display = 'inline-block';
+            } else {
+                confidenceBadge.style.display = 'none';
+            }
+
+            panel.style.display = 'block';
+        }
+
+        function hideClassificationSuggestion() {
+            const panel = document.getElementById('classificationSuggestionPanel');
+            if (panel) panel.style.display = 'none';
+        }
+
         async function makeRequest(action, additionalData = {}, retryCount = 0) {
     const MAX_RETRIES = 2;
     const TIMEOUT_DURATION = 30000; // 30 seconds
