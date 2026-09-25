@@ -7,13 +7,20 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.8
-  Backend:          MaintenancePortal V1.6.2
+  Frontend Version: V1.2.9
+  Backend:          MaintenancePortal V1.6.3
   Status:           PRODUCTION
   Created:          September 2025
   Last Modified:    Sep 2026
 
 VERSION HISTORY:
+  V1.2.9 (Sep 2026): Framework Q&A chat now opens by immediately asking the
+                     first diagnostic question (a synthetic opening message
+                     kicks this off, not shown to the user) instead of
+                     waiting for staff to type a question -- matches
+                     MaintenancePortal V1.6.3's system-led interrogation.
+                     Input placeholder and header copy updated to reflect
+                     that the assistant leads and staff answer.
   V1.2.8 (Sep 2026): Interactive framework Q&A -- new "💬 Ask About This
                      Problem" button opens a chat panel where staff can ask
                      follow-up questions about a genuinely unclear problem.
@@ -1652,15 +1659,14 @@ Padding: 10px;
             <div style="padding: 20px 25px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="font-size: 18px; font-weight: 600; color: #1f2937; margin: 0;">💬 Ask About This Problem</h3>
-                    <div style="font-size: 12px; color: #6b7280; margin-top: 2px;">Not legal advice -- for genuinely unclear cases, confirm with the Board or Consumer Affairs Victoria. Nothing here is saved.</div>
+                    <div style="font-size: 12px; color: #6b7280; margin-top: 2px;">The assistant asks the questions -- just answer them. Not legal advice; confirm anything uncertain with the Board or Consumer Affairs Victoria. Nothing here is saved.</div>
                 </div>
                 <button id="closeFrameworkChat" onclick="closeFrameworkChat()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280; padding: 0; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px;">×</button>
             </div>
             <div id="frameworkChatMessages" style="flex: 1; overflow-y: auto; padding: 20px 25px; display: flex; flex-direction: column; gap: 12px;">
-                <div style="color: #6b7280; font-size: 13px; font-style: italic;">Ask a question about this problem, or about the framework document generally. If there isn't enough information to give a clear answer, expect a clarifying question back rather than a guess.</div>
             </div>
             <div style="padding: 15px 25px; border-top: 1px solid #e5e7eb; display: flex; gap: 10px;">
-                <input type="text" id="frameworkChatInput" class="form-input" style="flex: 1;" placeholder="Ask a question..." onkeydown="if(event.key==='Enter'){sendFrameworkChatMessage();}">
+                <input type="text" id="frameworkChatInput" class="form-input" style="flex: 1;" placeholder="Type your answer..." onkeydown="if(event.key==='Enter'){sendFrameworkChatMessage();}">
                 <button type="button" id="frameworkChatSendBtn" class="btn" style="background: #7c3aed; color: white;" onclick="sendFrameworkChatMessage()">Send</button>
             </div>
         </div>
@@ -3260,11 +3266,10 @@ async function reopenProblem() {
         function openFrameworkChat() {
             if (!currentProblem) return;
             frameworkChatHistory = [];
-            document.getElementById('frameworkChatMessages').innerHTML =
-                '<div style="color: #6b7280; font-size: 13px; font-style: italic;">Ask a question about this problem, or about the framework document generally. If there isn\'t enough information to give a clear answer, expect a clarifying question back rather than a guess.</div>';
+            document.getElementById('frameworkChatMessages').innerHTML = '';
             document.getElementById('frameworkChatModal').classList.remove('hidden');
             document.getElementById('frameworkChatInput').value = '';
-            document.getElementById('frameworkChatInput').focus();
+            startFrameworkAssessment();
         }
 
         function closeFrameworkChat() {
@@ -3283,32 +3288,75 @@ async function reopenProblem() {
             return bubble;
         }
 
+        function currentProblemContext() {
+            return {
+                description: document.getElementById('detailDescription').value,
+                category: document.getElementById('detailCategory').value,
+                subCategory: document.getElementById('detailSubCategory').value,
+                priority: document.getElementById('detailPriority').value,
+                costResponsibility: document.getElementById('detailCostResponsibility').value
+            };
+        }
+
+        // Kicks the conversation off with a synthetic opening message -- not shown as
+        // a user bubble, since the assistant is meant to be the one asking questions.
+        // Its resulting first question is what the person actually sees.
+        async function startFrameworkAssessment() {
+            const input = document.getElementById('frameworkChatInput');
+            const sendBtn = document.getElementById('frameworkChatSendBtn');
+            input.disabled = true;
+            sendBtn.disabled = true;
+
+            const thinkingBubble = appendFrameworkChatMessage('assistant', '...');
+            const kickoff = 'I need to determine cost responsibility and priority for this reported problem. Please start by asking me whatever you need to know first.';
+
+            try {
+                const response = await makeRequest('askFrameworkQuestion', {
+                    question: kickoff,
+                    conversationHistory: JSON.stringify([]),
+                    problemContext: JSON.stringify(currentProblemContext())
+                });
+
+                thinkingBubble.remove();
+
+                if (!response.success) {
+                    appendFrameworkChatMessage('assistant', '⚠️ ' + (response.message || 'Something went wrong starting the assessment.'));
+                    return;
+                }
+
+                appendFrameworkChatMessage('assistant', response.reply);
+                frameworkChatHistory.push({ role: 'user', content: kickoff });
+                frameworkChatHistory.push({ role: 'assistant', content: response.reply });
+
+            } catch (error) {
+                thinkingBubble.remove();
+                console.error('❌ Error starting framework assessment:', error);
+                appendFrameworkChatMessage('assistant', '⚠️ Failed to start: ' + error.message);
+            } finally {
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
+            }
+        }
+
         async function sendFrameworkChatMessage() {
             const input = document.getElementById('frameworkChatInput');
-            const question = input.value.trim();
-            if (!question) return;
+            const answer = input.value.trim();
+            if (!answer) return;
 
             const sendBtn = document.getElementById('frameworkChatSendBtn');
             input.value = '';
             input.disabled = true;
             sendBtn.disabled = true;
 
-            appendFrameworkChatMessage('user', question);
+            appendFrameworkChatMessage('user', answer);
             const thinkingBubble = appendFrameworkChatMessage('assistant', '...');
 
             try {
-                const problemContext = {
-                    description: document.getElementById('detailDescription').value,
-                    category: document.getElementById('detailCategory').value,
-                    subCategory: document.getElementById('detailSubCategory').value,
-                    priority: document.getElementById('detailPriority').value,
-                    costResponsibility: document.getElementById('detailCostResponsibility').value
-                };
-
                 const response = await makeRequest('askFrameworkQuestion', {
-                    question: question,
+                    question: answer,
                     conversationHistory: JSON.stringify(frameworkChatHistory),
-                    problemContext: JSON.stringify(problemContext)
+                    problemContext: JSON.stringify(currentProblemContext())
                 });
 
                 thinkingBubble.remove();
@@ -3319,7 +3367,7 @@ async function reopenProblem() {
                 }
 
                 appendFrameworkChatMessage('assistant', response.reply);
-                frameworkChatHistory.push({ role: 'user', content: question });
+                frameworkChatHistory.push({ role: 'user', content: answer });
                 frameworkChatHistory.push({ role: 'assistant', content: response.reply });
 
             } catch (error) {
