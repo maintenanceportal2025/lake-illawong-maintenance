@@ -7,13 +7,34 @@
       File Name:        BulkSubmissionForm.html
       System:           Lake Illawong Management Central System
       Component Type:   Staff Module
-      Frontend Version: V2.3.0
+      Frontend Version: V2.3.1
       Backend:          BulkSubmissionForm V2.0.2
       Status:           PRODUCTION
       Created:          Nov 2025
-      Last Modified:    Aug 2026
+      Last Modified:    Sep 2026
 
     VERSION HISTORY:
+      V2.3.1 (Sep 2026): Program Mode priority fix. (1) Select Affected
+                         Units moved up to directly follow Submission
+                         Type, with Program Mode Editor and Advanced
+                         Options now following it, instead of the editor
+                         sitting above the unit grid it depends on --
+                         also makes the editor's own empty-state message
+                         ("Select units above...") point the right way.
+                         (2) initializeProgramMode() now re-runs on every
+                         unit checkbox change (previously only ran once,
+                         when the Program radio was clicked), so units
+                         checked/unchecked afterwards actually get a
+                         priority control -- this was the root cause of
+                         "nowhere to set the priority" when Program mode
+                         was selected before any units. (3) Per-unit
+                         priority <select> and the Set All buttons were
+                         hardcoded to Low/Medium/High; both now build
+                         from dropdownData.priority (the same Dropdowns-
+                         sheet-backed list the main Priority field
+                         already uses), restoring Urgent. No backend
+                         change -- BulkSubmissionForm.js already accepts
+                         any priority string per unit.
       V2.3.0 (Aug 2026): Now launchable from Field Ops Portal as well as
                          Admin Portal, via a new ?portal=fieldops URL
                          param (default/no-param behaviour unchanged --
@@ -80,7 +101,7 @@
     TECHNICAL:
       Technology:     HTML5 + CSS3 + Vanilla JavaScript
       API Protocol:   JSONP (required for static hosting CORS compatibility)
-      Design System:  Lake Illawong Unified Design System v1.4
+      Design System:  Lake Illawong Unified Design System v2.4
       Hosting:        Netlify (auto-deployed from GitHub)
 
     =====================================================================
@@ -810,6 +831,36 @@
                     </div>
                 </div>
 
+                <!-- Unit Selection -->
+                <h2 class="section-header">Select Affected Units</h2>
+                
+                <div class="unit-controls">
+                    <div class="form-group unit-search">
+                        <input type="text" 
+                               id="unitSearch" 
+                               class="form-input" 
+                               placeholder="Search units..." 
+                               autocomplete="off">
+                    </div>
+                    
+                    <div class="unit-actions">
+                        <button type="button" class="btn-small btn-outline" onclick="selectAllUnits()">
+                            Select All
+                        </button>
+                        <button type="button" class="btn-small btn-outline" onclick="deselectAllUnits()">
+                            Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div class="unit-grid" id="unitGrid">
+                    <!-- Units will be populated here -->
+                </div>
+
+                <div class="selected-summary">
+                    <span id="selectedCount">0 units selected</span>
+                </div>
+
                 <!-- Program Mode Editor -->
                 <div id="programModeEditor" style="display: none; margin-top: 16px;">
                     <div class="info-box">
@@ -820,16 +871,8 @@
                         <!-- Unit priorities will be populated here -->
                     </div>
                     
-                    <div style="margin-top: 16px; text-align: center;">
-                        <button type="button" class="btn-small btn-outline" onclick="applyPriorityToAll('High')">
-                            Set All to High
-                        </button>
-                        <button type="button" class="btn-small btn-outline" onclick="applyPriorityToAll('Medium')">
-                            Set All to Medium
-                        </button>
-                        <button type="button" class="btn-small btn-outline" onclick="applyPriorityToAll('Low')">
-                            Set All to Low
-                        </button>
+                    <div style="margin-top: 16px; text-align: center;" id="programSetAllButtons">
+                        <!-- Set All buttons populated dynamically from dropdownData.priority -- V2.3.1 -->
                     </div>
                 </div>
 
@@ -873,36 +916,6 @@
                                autocomplete="off">
                         <div class="searchable-dropdown" id="assignedToDropdown"></div>
                     </div>
-                </div>
-
-                <!-- Unit Selection -->
-                <h2 class="section-header">Select Affected Units</h2>
-                
-                <div class="unit-controls">
-                    <div class="form-group unit-search">
-                        <input type="text" 
-                               id="unitSearch" 
-                               class="form-input" 
-                               placeholder="Search units..." 
-                               autocomplete="off">
-                    </div>
-                    
-                    <div class="unit-actions">
-                        <button type="button" class="btn-small btn-outline" onclick="selectAllUnits()">
-                            Select All
-                        </button>
-                        <button type="button" class="btn-small btn-outline" onclick="deselectAllUnits()">
-                            Clear All
-                        </button>
-                    </div>
-                </div>
-
-                <div class="unit-grid" id="unitGrid">
-                    <!-- Units will be populated here -->
-                </div>
-
-                <div class="selected-summary">
-                    <span id="selectedCount">0 units selected</span>
                 </div>
 
                 <!-- Email Options -->
@@ -1304,6 +1317,14 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
     // Update email recipient count (just for display)
     document.getElementById('unitEmailCount').textContent = count;
     
+    // Keep the Program Mode priority grid in sync with unit selection -- V2.3.1.
+    // Previously the grid was only built once, when the Program radio was clicked,
+    // so units checked/unchecked afterwards never got (or lost) a priority control.
+    const currentSubmissionType = document.querySelector('input[name="submissionType"]:checked').value;
+    if (currentSubmissionType === 'program') {
+        initializeProgramMode();
+    }
+    
     updateConfirmation();
     updateSMSRecipientCount(); // ← ADD THIS LINE
 }
@@ -1438,6 +1459,7 @@ function handleSMSCheckboxChange() {
             }
             
             if (isProgramMode) {
+                renderSetAllButtons();
                 initializeProgramMode();
             } else {
                 // Clear any stored priorities when switching back to Problem mode
@@ -1445,6 +1467,23 @@ function handleSMSCheckboxChange() {
             }
             
             updateConfirmation();
+        }
+
+        // Priority levels for Program mode come from dropdownData.priority (Dropdowns
+        // sheet, same source as the main Priority field) rather than a hardcoded list --
+        // V2.3.1, fixes Urgent missing from the per-unit selector and Set All buttons.
+        function getProgramPriorityOptions() {
+            return (dropdownData.priority && dropdownData.priority.length)
+                ? dropdownData.priority
+                : ['Low', 'Medium', 'High'];
+        }
+
+        function renderSetAllButtons() {
+            const container = document.getElementById('programSetAllButtons');
+            if (!container) return;
+            container.innerHTML = getProgramPriorityOptions().map(p =>
+                `<button type="button" class="btn-small btn-outline" onclick="applyPriorityToAll('${p}')">Set All to ${p}</button>`
+            ).join('\n');
         }
 
         function initializeProgramMode() {
@@ -1458,6 +1497,9 @@ function handleSMSCheckboxChange() {
                 return;
             }
             
+            const priorityOptions = getProgramPriorityOptions();
+            const defaultPriority = priorityOptions.includes('Medium') ? 'Medium' : priorityOptions[0];
+
             selectedUnits.forEach(unit => {
                 const unitPriorityDiv = document.createElement('div');
                 unitPriorityDiv.style.padding = '12px';
@@ -1465,17 +1507,22 @@ function handleSMSCheckboxChange() {
                 unitPriorityDiv.style.border = '2px solid #e2e8f0';
                 unitPriorityDiv.style.borderRadius = '8px';
                 
-                // Get existing priority or default to Medium
-                const existingPriority = window.unitPriorities ? window.unitPriorities[unit] : 'Medium';
+                // Get existing priority, or default (Medium, else whatever the first
+                // configured priority level is)
+                const existingPriority = (window.unitPriorities && window.unitPriorities[unit])
+                    ? window.unitPriorities[unit]
+                    : defaultPriority;
+                
+                const optionsHtml = priorityOptions.map(p =>
+                    `<option value="${p}" ${existingPriority === p ? 'selected' : ''}>${p} Priority</option>`
+                ).join('');
                 
                 unitPriorityDiv.innerHTML = `
                     <div style="font-weight: 600; margin-bottom: 8px; color: #1e293b;">${unit}</div>
                     <select class="unit-priority-select" data-unit="${unit}" 
                             onchange="updateUnitPriority('${unit}', this.value)"
                             style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white;">
-                        <option value="Low" ${existingPriority === 'Low' ? 'selected' : ''}>Low Priority</option>
-                        <option value="Medium" ${existingPriority === 'Medium' ? 'selected' : ''}>Medium Priority</option>
-                        <option value="High" ${existingPriority === 'High' ? 'selected' : ''}>High Priority</option>
+                        ${optionsHtml}
                     </select>
                 `;
                 priorityGrid.appendChild(unitPriorityDiv);
@@ -1510,13 +1557,7 @@ function handleSMSCheckboxChange() {
                 updateUnitPriority(unit, priority);
             });
             
-            // Show confirmation
-            const priorityNames = {
-                'High': 'High',
-                'Medium': 'Medium', 
-                'Low': 'Low'
-            };
-            alert(`All units set to ${priorityNames[priority]} priority`);
+            alert(`All units set to ${priority} priority`);
         }
 
         async function handleSubmit(e) {
@@ -1704,7 +1745,7 @@ formData.consolidateEmails = true;
             });
         }
 
-        console.log('🚀 Bulk Submission Form V2.2.2 loaded');
+        console.log('🚀 Bulk Submission Form V2.3.1 loaded');
 
     </script>
 </body>
