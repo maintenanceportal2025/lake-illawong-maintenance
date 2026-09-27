@@ -4,11 +4,35 @@ FIELD NOTIFICATIONS - UNIFIED EMAIL + SMS SYSTEM
 =====================================================================
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.4.0 - Multiple file attachments per alert
+VERSION: V3.4.1 - Fixed duplicate sends from a second click before the
+  Send button was actually disabled
 LAST UPDATED: Sep 2026
 DESIGN SYSTEM: Lake Illawong Unified V2.0 (glass-morphism, confirmed against
   actual CSS -- corrected from a stale "v1.4" that contradicted this file's
   own VERSION line above, which already correctly noted the V2.0 conversion)
+
+NEW IN V3.4.1:
+✅ Fixed a duplicate-send bug: sendFieldAlert() (the button's click
+   handler) didn't disable the Send button until deep inside
+   executeFieldAlertSend(), after an async getNoEmailResidents round trip
+   AND a blocking confirm() dialog. A second click landing in that window
+   started a fully independent second invocation -- its own no-email
+   check, its own confirm() dialog, its own full backend send -- so the
+   same alert (same message, same recipients, same attachments) went out
+   twice. Confirmed in production: an AGM alert with 6 attachments went to
+   all 50 residents twice, ~63s apart, and the two sends' recipient loops
+   overlapped in the EmailLog for a stretch in the middle (each loop
+   writes rows in UnitList order, but two loops running at once interleave
+   whichever one happens to write next). This was always technically
+   possible but was a narrow window before V3.4.0 (sends took a few
+   seconds); attachments pushing sends to 60-70s+ made the window far more
+   likely to actually be hit, since two clicks now had much more time to
+   both get an independent no-email response and confirm() dialog. Fixed
+   by disabling the Send button synchronously as the very first statement
+   in sendFieldAlert(), with every validation early-return restoring it via
+   updateSendButton() (cancelSend() and both early-return paths in
+   executeFieldAlertSend() do the same) so a validation failure doesn't
+   leave Send stuck disabled. No backend change.
 
 NEW IN V3.4.0:
 ✅ File input now takes multiple files (was one). attachmentData/
@@ -2211,6 +2235,8 @@ function toggleSubjectField() {
         function cancelSend() {
             const modal = document.getElementById('noEmailModal');
             modal.classList.add('hidden');
+            pendingSendParams = null;
+            updateSendButton();
             showNotification('Send cancelled', 'info');
         }
         
@@ -2689,18 +2715,40 @@ let pendingSendParams = null;
 
 async function sendFieldAlert() {
     const sendBtn = document.getElementById('sendBtn');
+    
+    // Guard against duplicate/concurrent sends -- V3.4.1. Previously the
+    // button wasn't actually disabled until deep inside
+    // executeFieldAlertSend(), after an async getNoEmailResidents round
+    // trip and a blocking confirm() dialog -- a second click in that
+    // window started a fully independent second send (its own no-email
+    // check, its own confirm() dialog, its own backend call), so the same
+    // alert could go out twice. Far more likely to actually happen now
+    // that attachments push a send past 60-70s, widening that window and
+    // making the wait feel like nothing happened. Checking/disabling
+    // synchronously, as the very first statement, closes the window
+    // completely; every early-return path below restores the button via
+    // updateSendButton() so a validation failure doesn't leave Send stuck
+    // disabled.
+    if (sendBtn.disabled) {
+        console.warn('⚠️ Send already in progress -- ignoring duplicate click');
+        return;
+    }
+    sendBtn.disabled = true;
+    
     const messageText = document.getElementById('messageText').value;
     const emailEnabled = document.getElementById('emailEnabled').checked;
     const smsEnabled = document.getElementById('smsEnabled').checked;
     
     if (!messageText || messageText.trim() === '') {
         showNotification('Please enter a message', 'error');
+        updateSendButton();
         return;
     }
     
     // Must select at least email OR SMS
     if (!emailEnabled && !smsEnabled) {
         showNotification('Please select Email and/or SMS', 'error');
+        updateSendButton();
         return;
     }
     
@@ -2735,6 +2783,7 @@ async function sendFieldAlert() {
             
             if (!confirmed) {
                 showNotification('Cancelled', 'info');
+                updateSendButton();
                 return;
             }
         }
@@ -2742,6 +2791,7 @@ async function sendFieldAlert() {
     
     if (selectedZones.length === 0 && selectedUnits.length === 0) {
         showNotification('Please select recipients', 'error');
+        updateSendButton();
         return;
     }
     
@@ -2781,6 +2831,10 @@ if (!selectedZones.includes('ecopy') && emailEnabled) {
         });
         
         if (noEmailResponse.success && noEmailResponse.count > 0) {
+            // Button stays disabled while the modal is up -- cancelSend()
+            // restores it via updateSendButton() if the user backs out;
+            // confirmAndSend() proceeds into executeFieldAlertSend(),
+            // which restores it in its own finally block either way.
             showNoEmailModal(noEmailResponse.residents);
             return;
         }
@@ -2797,7 +2851,10 @@ if (!selectedZones.includes('ecopy') && emailEnabled) {
 // =====================================================================
 
 async function executeFieldAlertSend() {
-    if (!pendingSendParams) return;
+    if (!pendingSendParams) {
+        updateSendButton();
+        return;
+    }
     
     const { recipientFilter, messageText, emailEnabled, smsEnabled, sendBtn } = pendingSendParams;
     
@@ -2825,6 +2882,8 @@ async function executeFieldAlertSend() {
     
     if (!confirm(confirmMsg)) {
         showNotification('Cancelled', 'info');
+        pendingSendParams = null;
+        updateSendButton();
         return;
     }
     
