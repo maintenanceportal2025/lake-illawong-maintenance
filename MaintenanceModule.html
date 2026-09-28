@@ -7,13 +7,26 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.9
+  Frontend Version: V1.2.10
   Backend:          MaintenancePortal V1.6.3
   Status:           PRODUCTION
   Created:          September 2025
   Last Modified:    Sep 2026
 
 VERSION HISTORY:
+  V1.2.10 (Sep 2026): Reopen fix. ROOT CAUSE: the Reopen button sat inside
+                     the details <form> without type="button", so clicking it
+                     ALSO submitted the form -- firing a Save Changes (status
+                     still Completed) alongside the reopen. The two requests
+                     raced in the backend, so the reopen's activity entry and
+                     cleared completion date were overwritten by the save.
+                     Button is now type="button" (plus preventDefault and a
+                     double-click guard). Also: the completion date field
+                     showed the stored date one day early (toISOString() UTC
+                     shift in Australian time) -- now uses local date
+                     components; and the date is only sent on save when the
+                     user actually changed it. 'Reopened' timeline icon added.
+                     Requires MaintenancePortal V1.6.4.
   V1.2.9 (Sep 2026): Framework Q&A chat now opens by immediately asking the
                      first diagnostic question (a synthetic opening message
                      kicks this off, not shown to the user) instead of
@@ -1520,7 +1533,7 @@ Padding: 10px;
 
 <!-- Reopen Button (only shows for Completed problems) -->
 <div class="detail-field" id="reopenButtonContainer" style="display: none; grid-column: 1 / -1;">
-    <button id="reopenProblemBtn" class="btn" style="background: #f59e0b; color: white; width: 100%; padding: 12px; font-weight: 600;">
+    <button type="button" id="reopenProblemBtn" class="btn" style="background: #f59e0b; color: white; width: 100%; padding: 12px; font-weight: 600;">
         🔄 Reopen Problem (Change Status to Reported)
     </button>
 </div>
@@ -1941,7 +1954,11 @@ if (showProgrammedToggle) {
 // Reopen Problem Button
 const reopenBtn = document.getElementById('reopenProblemBtn');
 if (reopenBtn) {
-    reopenBtn.addEventListener('click', reopenProblem);
+    reopenBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        reopenProblem();
+    });
 }
 
 		// Priority filters
@@ -2827,13 +2844,22 @@ document.getElementById('detailPriority').value = problem.problemPriority || 'Me
     
     // Completion date
     const completionDate = problem.completionDate || '';
+    let formattedDate = '';
     if (completionDate) {
+        // V1.2.10: use LOCAL calendar components. toISOString() converts to
+        // UTC first, which in Australian time shifts the date back a day
+        // (a stored 20/08 displayed as 19/08, then drifted a further day
+        // on every save).
         const date = new Date(completionDate);
-        const formattedDate = date.toISOString().split('T')[0];
-        document.getElementById('detailCompletionDate').value = formattedDate;
-    } else {
-        document.getElementById('detailCompletionDate').value = '';
+        if (!isNaN(date.getTime())) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            formattedDate = `${y}-${m}-${d}`;
+        }
     }
+    document.getElementById('detailCompletionDate').value = formattedDate;
+    originalCompletionDateValue = formattedDate;
     
     document.getElementById('detailComments').value = problem.comments || '';
     
@@ -2954,6 +2980,8 @@ console.log('🔒 DEBUG: Full problem object:', problem);
 // Add this code in the saveDetailsFromPage function in MaintenanceModule.html
 // =====================================================================
 
+let originalCompletionDateValue = '';  // V1.2.10: date-picker value as loaded
+
 async function saveDetailsFromPage(e) {
     e.preventDefault();
     
@@ -2989,10 +3017,21 @@ async function saveDetailsFromPage(e) {
         
         // 🔧 FIX: Only include completion date when appropriate
         // Case 1: User manually entered a date (for backdating)
-        if (completionDateValue && completionDateValue.trim() !== '') {
-            updateData.completionDate = completionDateValue;
-            console.log('✅ Using manual completion date:', completionDateValue);
+        // V1.2.10: only when it differs from what the form loaded with --
+        // re-sending the unchanged picker value on every save made the
+        // backend rewrite the stored date and log a fresh Days to Close.
+        if (completionDateValue && completionDateValue.trim() !== '' &&
+            (completionDateValue !== originalCompletionDateValue || statusValue !== 'Completed')) {
+            if (statusValue === 'Completed') {
+                updateData.completionDate = completionDateValue;
+                console.log('✅ Using manual completion date:', completionDateValue);
+            } else {
+                console.log('✅ Not completed - completion date not sent');
+            }
         } 
+        else if (completionDateValue && completionDateValue.trim() !== '') {
+            console.log('✅ Completion date unchanged - not sent');
+        }
         // Case 2: Status is Completed but no manual date (backend will auto-set)
         else if (statusValue === 'Completed') {
             updateData.completionDate = '';  // Empty signals backend to auto-set
@@ -3118,6 +3157,12 @@ async function reopenProblem() {
     
     if (!confirmReopen) return;
     
+    const reopenBtnEl = document.getElementById('reopenProblemBtn');
+    if (reopenBtnEl) {
+        if (reopenBtnEl.disabled) return;
+        reopenBtnEl.disabled = true;
+    }
+    
     try {
         // Prepare update data
         const loggedInUser = (VerificationModal.getUserData() && VerificationModal.getUserData().name) || 'SYSTEM';
@@ -3156,6 +3201,8 @@ async function reopenProblem() {
     } catch (error) {
         console.error('❌ Error reopening problem:', error);
         alert('Failed to reopen problem: ' + error.message);
+    } finally {
+        if (reopenBtnEl) reopenBtnEl.disabled = false;
     }
 }
         
@@ -3689,6 +3736,9 @@ function createTimelineItem(activity, isLatest = false) {
     } else if (activity.action === 'Completed') {
         icon = '✅';
         iconClass = 'completion';
+    } else if (activity.action === 'Reopened') {
+        icon = '🔄';
+        iconClass = 'update';
     } else if (activity.action === 'Updated') {
         icon = ' 📝';
         iconClass = 'update';
