@@ -7,13 +7,20 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.10
+  Frontend Version: V1.2.11
   Backend:          MaintenancePortal V1.6.3
   Status:           PRODUCTION
   Created:          September 2025
   Last Modified:    Sep 2026
 
 VERSION HISTORY:
+  V1.2.11 (Sep 2026): Closing-notes prompt is now a proper modal (Add closing
+                     notes / Complete without notes; Escape or clicking away
+                     = add notes) instead of a native confirm() dialog.
+                     Completion-date field now reads a plain 'YYYY-MM-DD
+                     HH:mm:ss' string directly rather than via new Date(),
+                     which Safari cannot parse (it left the field blank).
+                     Save payload now logged to the console.
   V1.2.10 (Sep 2026): Reopen fix. ROOT CAUSE: the Reopen button sat inside
                      the details <form> without type="button", so clicking it
                      ALSO submitted the form -- firing a Save Changes (status
@@ -1650,6 +1657,28 @@ Padding: 10px;
 
     
 
+    <!-- CLOSING NOTES MODAL (V1.2.11) -->
+    <div id="closingNotesModal" class="modal hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
+        <div style="background: white; border-radius: 4px; width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+            <div style="background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%); color: white; padding: 18px 22px;">
+                <h3 style="font-size: 18px; font-weight: 600; margin: 0;">📝 Add closing notes before completing</h3>
+            </div>
+            <div style="padding: 22px; color: #1f2937; font-size: 14px; line-height: 1.5;">
+                <p style="margin-bottom: 12px;">You're marking this problem as <strong>Completed</strong>. Please record in <strong>Internal Comments</strong>:</p>
+                <ul style="margin: 0 0 14px 20px;">
+                    <li>What was done to fix the problem</li>
+                    <li>Parts or materials used</li>
+                    <li>Time spent or follow-up needed</li>
+                </ul>
+                <p style="color: #6b7280; font-size: 13px;">This keeps a complete audit trail for future reference, warranty tracking and team knowledge sharing.</p>
+            </div>
+            <div style="padding: 0 22px 22px; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+                <button type="button" id="closingNotesSkipBtn" class="btn" style="background: #e5e7eb; color: #374151;">Complete without notes</button>
+                <button type="button" id="closingNotesAddBtn" class="btn" style="background: #2563eb; color: white;">Add closing notes</button>
+            </div>
+        </div>
+    </div>
+
     <!-- REPORT MODAL -->
     <div id="reportModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
         <div style="background: white; border-radius: 12px; width: 90%; max-width: 800px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
@@ -2850,12 +2879,22 @@ document.getElementById('detailPriority').value = problem.problemPriority || 'Me
         // UTC first, which in Australian time shifts the date back a day
         // (a stored 20/08 displayed as 19/08, then drifted a further day
         // on every save).
-        const date = new Date(completionDate);
-        if (!isNaN(date.getTime())) {
-            const y = date.getFullYear();
-            const m = String(date.getMonth() + 1).padStart(2, '0');
-            const d = String(date.getDate()).padStart(2, '0');
-            formattedDate = `${y}-${m}-${d}`;
+        const cdStr = String(completionDate);
+        if (/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$/.test(cdStr)) {
+            // Plain Sydney-local 'YYYY-MM-DD[ HH:mm:ss]' string as written by
+            // the backend -- take the date part as-is (no timezone maths, and
+            // Safari can't parse the space-separated form with new Date()).
+            formattedDate = cdStr.substring(0, 10);
+        } else {
+            const date = new Date(completionDate);
+            if (!isNaN(date.getTime())) {
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                formattedDate = `${y}-${m}-${d}`;
+            } else {
+                console.warn('⚠️ Unparseable completion date:', completionDate);
+            }
         }
     }
     document.getElementById('detailCompletionDate').value = formattedDate;
@@ -2982,6 +3021,37 @@ console.log('🔒 DEBUG: Full problem object:', problem);
 
 let originalCompletionDateValue = '';  // V1.2.10: date-picker value as loaded
 
+// V1.2.11: closing-notes prompt as a proper modal (was a native confirm()).
+// Resolves 'add' (go back and write notes) or 'skip' (complete without).
+// Escape or clicking outside the card counts as 'add' -- the safe choice.
+function showClosingNotesModal() {
+    return new Promise(resolve => {
+        const modal = document.getElementById('closingNotesModal');
+        const addBtn = document.getElementById('closingNotesAddBtn');
+        const skipBtn = document.getElementById('closingNotesSkipBtn');
+        
+        function finish(choice) {
+            modal.classList.add('hidden');
+            addBtn.removeEventListener('click', onAdd);
+            skipBtn.removeEventListener('click', onSkip);
+            modal.removeEventListener('click', onBackdrop);
+            document.removeEventListener('keydown', onKey);
+            resolve(choice);
+        }
+        function onAdd() { finish('add'); }
+        function onSkip() { finish('skip'); }
+        function onBackdrop(e) { if (e.target === modal) finish('add'); }
+        function onKey(e) { if (e.key === 'Escape') finish('add'); }
+        
+        addBtn.addEventListener('click', onAdd);
+        skipBtn.addEventListener('click', onSkip);
+        modal.addEventListener('click', onBackdrop);
+        document.addEventListener('keydown', onKey);
+        modal.classList.remove('hidden');
+        addBtn.focus();
+    });
+}
+
 async function saveDetailsFromPage(e) {
     e.preventDefault();
     
@@ -3058,23 +3128,8 @@ async function saveDetailsFromPage(e) {
                 commentsField.style.border = '3px solid #f59e0b';
                 commentsField.style.backgroundColor = '#fffbeb';
                 
-                const shouldAddComments = confirm(
-                    '⚠️ CLOSING NOTES RECOMMENDED\n\n' +
-                    'You\'re marking this problem as Completed.\n\n' +
-                    'Best Practice - Add brief closing notes:\n' +
-                    '• What was done to fix the problem\n' +
-                    '• Parts or materials used\n' +
-                    '• Time spent or follow-up needed\n' +
-                    '\n' +
-                    'This helps with:\n' +
-                    '✓ Future reference and warranty tracking\n' +
-                    '✓ Team knowledge sharing\n' +
-                    '✓ Complete audit trail\n' +
-                    '\n' +
-                    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-                    'Click OK to add notes (recommended)\n' +
-                    'Click Cancel to complete without notes'
-                );
+                const closingChoice = await showClosingNotesModal();
+                const shouldAddComments = (closingChoice === 'add');
                 
                 if (shouldAddComments) {
                     // User chose to add comments - stop save, focus field, but don't validate length
@@ -3106,6 +3161,7 @@ async function saveDetailsFromPage(e) {
         // END IMPROVED SOFT VALIDATION
         // ============================================================
         
+        console.log('💾 Save payload:', JSON.stringify(updateData));
         const response = await makeRequest('updateProblem', updateData);
         
         if (response.success) {
