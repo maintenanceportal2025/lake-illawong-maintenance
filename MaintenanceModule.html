@@ -7,33 +7,23 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.11
-  Backend:          MaintenancePortal V1.6.3
+  Frontend Version: V1.2.10
+  Backend:          MaintenancePortal V1.6.5
   Status:           PRODUCTION
   Created:          September 2025
   Last Modified:    Sep 2026
 
 VERSION HISTORY:
-  V1.2.11 (Sep 2026): Closing-notes prompt is now a proper modal (Add closing
-                     notes / Complete without notes; Escape or clicking away
-                     = add notes) instead of a native confirm() dialog.
-                     Completion-date field now reads a plain 'YYYY-MM-DD
-                     HH:mm:ss' string directly rather than via new Date(),
-                     which Safari cannot parse (it left the field blank).
-                     Save payload now logged to the console.
-  V1.2.10 (Sep 2026): Reopen fix. ROOT CAUSE: the Reopen button sat inside
-                     the details <form> without type="button", so clicking it
-                     ALSO submitted the form -- firing a Save Changes (status
-                     still Completed) alongside the reopen. The two requests
-                     raced in the backend, so the reopen's activity entry and
-                     cleared completion date were overwritten by the save.
-                     Button is now type="button" (plus preventDefault and a
-                     double-click guard). Also: the completion date field
-                     showed the stored date one day early (toISOString() UTC
-                     shift in Australian time) -- now uses local date
-                     components; and the date is only sent on save when the
-                     user actually changed it. 'Reopened' timeline icon added.
-                     Requires MaintenancePortal V1.6.4.
+  V1.2.10 (Sep 2026): New "📄 Draft Resident Explanation" button -- one-shot
+                      companion to the framework chat for when the
+                      classification is already decided and a cited,
+                      resident-facing explanation is needed (e.g. responding
+                      to pushback). Calls getDecisionJustification
+                      (MaintenancePortal V1.6.5+), shows the result in a
+                      plain-text, read-only box with a Copy button for
+                      pasting into an email or letter. Does not replace the
+                      framework chat -- that stays for genuinely unclear
+                      cases; this is for justifying a call already made.
   V1.2.9 (Sep 2026): Framework Q&A chat now opens by immediately asking the
                      first diagnostic question (a synthetic opening message
                      kicks this off, not shown to the user) instead of
@@ -1540,7 +1530,7 @@ Padding: 10px;
 
 <!-- Reopen Button (only shows for Completed problems) -->
 <div class="detail-field" id="reopenButtonContainer" style="display: none; grid-column: 1 / -1;">
-    <button type="button" id="reopenProblemBtn" class="btn" style="background: #f59e0b; color: white; width: 100%; padding: 12px; font-weight: 600;">
+    <button id="reopenProblemBtn" class="btn" style="background: #f59e0b; color: white; width: 100%; padding: 12px; font-weight: 600;">
         🔄 Reopen Problem (Change Status to Reported)
     </button>
 </div>
@@ -1607,6 +1597,13 @@ Padding: 10px;
                             <button type="button" id="askFrameworkBtn" class="btn" style="background: #ffffff; border: 1px solid #7c3aed; color: #7c3aed; margin-top: 8px;" onclick="openFrameworkChat()">
                                 💬 Ask About This Problem
                             </button>
+                            <button type="button" id="justifyDecisionBtn" class="btn" style="background: #ffffff; border: 1px solid #059669; color: #059669; margin-top: 8px; margin-left: 8px;" onclick="requestDecisionJustification()">
+                                📄 Draft Resident Explanation
+                            </button>
+                            <div id="justificationPanel" style="display: none; margin-top: 10px;">
+                                <textarea id="justificationText" class="form-input" rows="6" style="width: 100%; font-family: inherit; resize: vertical;" readonly></textarea>
+                                <button type="button" id="copyJustificationBtn" class="btn" style="background: #059669; color: white; margin-top: 6px;" onclick="copyJustificationToClipboard()">📋 Copy</button>
+                            </div>
                         </div>
                         <div class="detail-field">
                             <label>Assigned To</label>
@@ -1656,28 +1653,6 @@ Padding: 10px;
     </div>
 
     
-
-    <!-- CLOSING NOTES MODAL (V1.2.11) -->
-    <div id="closingNotesModal" class="modal hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
-        <div style="background: white; border-radius: 4px; width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
-            <div style="background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%); color: white; padding: 18px 22px;">
-                <h3 style="font-size: 18px; font-weight: 600; margin: 0;">📝 Add closing notes before completing</h3>
-            </div>
-            <div style="padding: 22px; color: #1f2937; font-size: 14px; line-height: 1.5;">
-                <p style="margin-bottom: 12px;">You're marking this problem as <strong>Completed</strong>. Please record in <strong>Internal Comments</strong>:</p>
-                <ul style="margin: 0 0 14px 20px;">
-                    <li>What was done to fix the problem</li>
-                    <li>Parts or materials used</li>
-                    <li>Time spent or follow-up needed</li>
-                </ul>
-                <p style="color: #6b7280; font-size: 13px;">This keeps a complete audit trail for future reference, warranty tracking and team knowledge sharing.</p>
-            </div>
-            <div style="padding: 0 22px 22px; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
-                <button type="button" id="closingNotesSkipBtn" class="btn" style="background: #e5e7eb; color: #374151;">Complete without notes</button>
-                <button type="button" id="closingNotesAddBtn" class="btn" style="background: #2563eb; color: white;">Add closing notes</button>
-            </div>
-        </div>
-    </div>
 
     <!-- REPORT MODAL -->
     <div id="reportModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
@@ -1983,11 +1958,7 @@ if (showProgrammedToggle) {
 // Reopen Problem Button
 const reopenBtn = document.getElementById('reopenProblemBtn');
 if (reopenBtn) {
-    reopenBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        reopenProblem();
-    });
+    reopenBtn.addEventListener('click', reopenProblem);
 }
 
 		// Priority filters
@@ -2870,35 +2841,17 @@ document.getElementById('detailPriority').value = problem.problemPriority || 'Me
     // Clear any classification suggestion left over from a previously viewed problem
     hideClassificationSuggestion();
     updateSuggestButtonVisibility();
+    document.getElementById('justificationPanel').style.display = 'none';
     
     // Completion date
     const completionDate = problem.completionDate || '';
-    let formattedDate = '';
     if (completionDate) {
-        // V1.2.10: use LOCAL calendar components. toISOString() converts to
-        // UTC first, which in Australian time shifts the date back a day
-        // (a stored 20/08 displayed as 19/08, then drifted a further day
-        // on every save).
-        const cdStr = String(completionDate);
-        if (/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$/.test(cdStr)) {
-            // Plain Sydney-local 'YYYY-MM-DD[ HH:mm:ss]' string as written by
-            // the backend -- take the date part as-is (no timezone maths, and
-            // Safari can't parse the space-separated form with new Date()).
-            formattedDate = cdStr.substring(0, 10);
-        } else {
-            const date = new Date(completionDate);
-            if (!isNaN(date.getTime())) {
-                const y = date.getFullYear();
-                const m = String(date.getMonth() + 1).padStart(2, '0');
-                const d = String(date.getDate()).padStart(2, '0');
-                formattedDate = `${y}-${m}-${d}`;
-            } else {
-                console.warn('⚠️ Unparseable completion date:', completionDate);
-            }
-        }
+        const date = new Date(completionDate);
+        const formattedDate = date.toISOString().split('T')[0];
+        document.getElementById('detailCompletionDate').value = formattedDate;
+    } else {
+        document.getElementById('detailCompletionDate').value = '';
     }
-    document.getElementById('detailCompletionDate').value = formattedDate;
-    originalCompletionDateValue = formattedDate;
     
     document.getElementById('detailComments').value = problem.comments || '';
     
@@ -3019,39 +2972,6 @@ console.log('🔒 DEBUG: Full problem object:', problem);
 // Add this code in the saveDetailsFromPage function in MaintenanceModule.html
 // =====================================================================
 
-let originalCompletionDateValue = '';  // V1.2.10: date-picker value as loaded
-
-// V1.2.11: closing-notes prompt as a proper modal (was a native confirm()).
-// Resolves 'add' (go back and write notes) or 'skip' (complete without).
-// Escape or clicking outside the card counts as 'add' -- the safe choice.
-function showClosingNotesModal() {
-    return new Promise(resolve => {
-        const modal = document.getElementById('closingNotesModal');
-        const addBtn = document.getElementById('closingNotesAddBtn');
-        const skipBtn = document.getElementById('closingNotesSkipBtn');
-        
-        function finish(choice) {
-            modal.classList.add('hidden');
-            addBtn.removeEventListener('click', onAdd);
-            skipBtn.removeEventListener('click', onSkip);
-            modal.removeEventListener('click', onBackdrop);
-            document.removeEventListener('keydown', onKey);
-            resolve(choice);
-        }
-        function onAdd() { finish('add'); }
-        function onSkip() { finish('skip'); }
-        function onBackdrop(e) { if (e.target === modal) finish('add'); }
-        function onKey(e) { if (e.key === 'Escape') finish('add'); }
-        
-        addBtn.addEventListener('click', onAdd);
-        skipBtn.addEventListener('click', onSkip);
-        modal.addEventListener('click', onBackdrop);
-        document.addEventListener('keydown', onKey);
-        modal.classList.remove('hidden');
-        addBtn.focus();
-    });
-}
-
 async function saveDetailsFromPage(e) {
     e.preventDefault();
     
@@ -3087,21 +3007,10 @@ async function saveDetailsFromPage(e) {
         
         // 🔧 FIX: Only include completion date when appropriate
         // Case 1: User manually entered a date (for backdating)
-        // V1.2.10: only when it differs from what the form loaded with --
-        // re-sending the unchanged picker value on every save made the
-        // backend rewrite the stored date and log a fresh Days to Close.
-        if (completionDateValue && completionDateValue.trim() !== '' &&
-            (completionDateValue !== originalCompletionDateValue || statusValue !== 'Completed')) {
-            if (statusValue === 'Completed') {
-                updateData.completionDate = completionDateValue;
-                console.log('✅ Using manual completion date:', completionDateValue);
-            } else {
-                console.log('✅ Not completed - completion date not sent');
-            }
+        if (completionDateValue && completionDateValue.trim() !== '') {
+            updateData.completionDate = completionDateValue;
+            console.log('✅ Using manual completion date:', completionDateValue);
         } 
-        else if (completionDateValue && completionDateValue.trim() !== '') {
-            console.log('✅ Completion date unchanged - not sent');
-        }
         // Case 2: Status is Completed but no manual date (backend will auto-set)
         else if (statusValue === 'Completed') {
             updateData.completionDate = '';  // Empty signals backend to auto-set
@@ -3128,8 +3037,23 @@ async function saveDetailsFromPage(e) {
                 commentsField.style.border = '3px solid #f59e0b';
                 commentsField.style.backgroundColor = '#fffbeb';
                 
-                const closingChoice = await showClosingNotesModal();
-                const shouldAddComments = (closingChoice === 'add');
+                const shouldAddComments = confirm(
+                    '⚠️ CLOSING NOTES RECOMMENDED\n\n' +
+                    'You\'re marking this problem as Completed.\n\n' +
+                    'Best Practice - Add brief closing notes:\n' +
+                    '• What was done to fix the problem\n' +
+                    '• Parts or materials used\n' +
+                    '• Time spent or follow-up needed\n' +
+                    '\n' +
+                    'This helps with:\n' +
+                    '✓ Future reference and warranty tracking\n' +
+                    '✓ Team knowledge sharing\n' +
+                    '✓ Complete audit trail\n' +
+                    '\n' +
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
+                    'Click OK to add notes (recommended)\n' +
+                    'Click Cancel to complete without notes'
+                );
                 
                 if (shouldAddComments) {
                     // User chose to add comments - stop save, focus field, but don't validate length
@@ -3161,7 +3085,6 @@ async function saveDetailsFromPage(e) {
         // END IMPROVED SOFT VALIDATION
         // ============================================================
         
-        console.log('💾 Save payload:', JSON.stringify(updateData));
         const response = await makeRequest('updateProblem', updateData);
         
         if (response.success) {
@@ -3213,12 +3136,6 @@ async function reopenProblem() {
     
     if (!confirmReopen) return;
     
-    const reopenBtnEl = document.getElementById('reopenProblemBtn');
-    if (reopenBtnEl) {
-        if (reopenBtnEl.disabled) return;
-        reopenBtnEl.disabled = true;
-    }
-    
     try {
         // Prepare update data
         const loggedInUser = (VerificationModal.getUserData() && VerificationModal.getUserData().name) || 'SYSTEM';
@@ -3257,8 +3174,6 @@ async function reopenProblem() {
     } catch (error) {
         console.error('❌ Error reopening problem:', error);
         alert('Failed to reopen problem: ' + error.message);
-    } finally {
-        if (reopenBtnEl) reopenBtnEl.disabled = false;
     }
 }
         
@@ -3364,6 +3279,69 @@ async function reopenProblem() {
         // the life of the panel and is discarded on close, per the agreed
         // design. Not saved to FaultLog, not saved anywhere server-side.
         // =====================================================================
+        // =====================================================================
+        // Decision justification (V1.2.10 addition)
+        // One-shot companion to the framework chat -- for when the
+        // classification is already settled and a resident-facing, cited
+        // explanation is needed (e.g. responding to pushback), not a guided
+        // walkthrough.
+        // =====================================================================
+        async function requestDecisionJustification() {
+            if (!currentProblem) return;
+
+            const category = document.getElementById('detailCategory').value;
+            const costResponsibility = document.getElementById('detailCostResponsibility').value;
+
+            if (!category || !costResponsibility) {
+                alert('Set Category and Cost Responsibility before requesting an explanation to justify.');
+                return;
+            }
+
+            const btn = document.getElementById('justifyDecisionBtn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '📄 Drafting...';
+
+            try {
+                const response = await makeRequest('getDecisionJustification', {
+                    category: category,
+                    subCategory: document.getElementById('detailSubCategory').value,
+                    priority: document.getElementById('detailPriority').value,
+                    costResponsibility: costResponsibility,
+                    description: document.getElementById('detailDescription').value
+                });
+
+                if (!response.success) {
+                    alert('Could not draft an explanation: ' + (response.message || 'Unknown error'));
+                    return;
+                }
+
+                document.getElementById('justificationText').value = response.explanation;
+                document.getElementById('justificationPanel').style.display = 'block';
+
+            } catch (error) {
+                console.error('❌ Error drafting decision justification:', error);
+                alert('Failed to draft explanation: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        async function copyJustificationToClipboard() {
+            const text = document.getElementById('justificationText').value;
+            try {
+                await navigator.clipboard.writeText(text);
+                const copyBtn = document.getElementById('copyJustificationBtn');
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '✅ Copied!';
+                setTimeout(() => { copyBtn.innerHTML = originalText; }, 2000);
+            } catch (error) {
+                console.error('❌ Error copying justification:', error);
+                alert('Could not copy to clipboard: ' + error.message);
+            }
+        }
+
         let frameworkChatHistory = [];
 
         function openFrameworkChat() {
@@ -3792,9 +3770,6 @@ function createTimelineItem(activity, isLatest = false) {
     } else if (activity.action === 'Completed') {
         icon = '✅';
         iconClass = 'completion';
-    } else if (activity.action === 'Reopened') {
-        icon = '🔄';
-        iconClass = 'update';
     } else if (activity.action === 'Updated') {
         icon = ' 📝';
         iconClass = 'update';
