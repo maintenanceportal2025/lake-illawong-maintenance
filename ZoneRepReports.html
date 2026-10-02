@@ -6,8 +6,8 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          8 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.0.26
-LAST UPDATED: September 2026
+VERSION: V1.1.0
+LAST UPDATED: October 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: Shares Zone Rep Portal's "portalZoneRepVerified" session
                  (SSO -- verified there or here, either counts), gated on
@@ -15,6 +15,7 @@ AUTHENTICATION: Shares Zone Rep Portal's "portalZoneRepVerified" session
                  V1.0.24, sessionKey fixed V1.0.25
 DEPENDENCIES:
   - Explorer_V1_3_2.js backend (getFaultLogData, getLegacyLogData)
+  - ApiClient.js (shared JSONP client -- all API calls go through it)
   - Chart.js 4.4.0 (cdn.jsdelivr.net)
   - jsPDF 4.2.1 (unpkg) -- lazy-loaded on first export, not on page open
 
@@ -41,6 +42,18 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.1.0 (Oct 2026): MIGRATED TO SHARED ApiClient.js -- same change as
+                     ReportsHub V1.2.0 (this file's reliability work has
+                     tracked ReportsHub's throughout). The private
+                     makeRequest() JSONP function is removed; all three API
+                     calls (getFaultLogData, getLegacyLogData,
+                     getDropdownOptions) now go through ApiClient.call().
+                     Behaviour kept the same: reads retry 3x (4 attempts)
+                     with 30s timeout, sequential current-data-first load
+                     (legacy on demand, dropdowns fire-and-forget), lean=1
+                     on both Explorer data calls. Retry backoff is now
+                     2s/4s/6s (was fixed 2s). Requires ApiClient.js
+                     deployed alongside this file. No report logic changed.
   V1.0.26 (Oct 2026): COSMETIC FIX -- priority badges: Urgent had no
                      background color at all (the "urgent" key was
                      missing from the priorityBadge() lookup map, so
@@ -728,6 +741,7 @@ VERSION HISTORY:
             .header-text { align-items: center; }
         }
     </style>
+<script src="ApiClient.js"></script>
 <script src="VerificationModal_V1_0.js"></script>
 </head>
 <body>
@@ -872,74 +886,15 @@ function pdfCategoryLines(pdf, category, colWidthMm) {
 }
 
 // =====================================================================
-// DATA LOADING (JSONP)
+// DATA LOADING (via shared ApiClient.js, v1.1.0)
 // =====================================================================
-// Retry-with-backoff pattern mirrored from DesktopExplorer's makeRequest,
-// which hits the same Explorer endpoints reliably. The intermittent
-// failures here were never slowness: Apps Script's one-time
-// googleusercontent redirect occasionally goes stale (404) or serves an
-// error page with the wrong content-type. Those responses will never
-// execute the callback no matter how long we wait -- V1.0.4's 120s
-// timeout proved that. The cure is fail fast + retry, not wait longer.
-// lean=true requests Explorer V1.3's stripped-down payload (omits
-// activityLog and legacy placeholder fields) on getFaultLogData/
-// getLegacyLogData -- safe here, this file doesn't reference any field
-// lean mode omits. No effect on other actions (e.g. getDropdownOptions).
-// Retry-with-backoff pattern matching DesktopExplorer's makeRequest
-// exactly, and ReportsHub V1.1.21 -- 3 retries, 30s timeout, no dead-
-// response fail-fast. That check (onload fires, callback hasn't run ->
-// fail fast) was built for one specific signature -- a stale redirect
-// serving an HTML error page with HTTP 200 -- and every failure actually
-// captured across this system since has fired onerror or the timeout
-// directly, never that signature. No reason for this file to be less
-// tolerant of the same external failures than its siblings.
-function makeRequest(action, targetUrl, retries, lean) {
-    if (retries === undefined) retries = 3;
-    const url = targetUrl || API_URL;
-    return new Promise((resolve, reject) => {
-        const cbName = 'rh_cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
-        const script = document.createElement('script');
-        let settled = false;
-
-        function cleanup() {
-            window[cbName] = () => {};
-            if (script.parentNode) script.parentNode.removeChild(script);
-        }
-
-        // Shared failure path: retry if attempts remain, otherwise reject.
-        // Settled-guard makes double-fires (e.g. onerror + timeout) safe.
-        function failOrRetry(reason) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timeout);
-            cleanup();
-            if (retries > 0) {
-                console.warn('Retrying ' + action + ' (' + reason + ', ' + retries + ' attempt(s) left)');
-                setTimeout(() => {
-                    makeRequest(action, targetUrl, retries - 1, lean).then(resolve).catch(reject);
-                }, 2000);
-            } else {
-                reject(new Error(reason + ': ' + action));
-            }
-        }
-
-        // 30s per attempt.
-        const timeout = setTimeout(() => failOrRetry('Timeout'), 30000);
-
-        window[cbName] = (data) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timeout);
-            cleanup();
-            resolve(data);
-        };
-
-        script.onerror = () => failOrRetry('Network error');
-
-        script.src = url + '?action=' + action + '&callback=' + cbName + (lean ? '&lean=1' : '');
-        document.body.appendChild(script);
-    });
-}
+// All API calls go through ApiClient.call(baseUrl, action, params), which
+// owns the JSONP transport: 30s timeout, 3 retries on reads, settled-guard,
+// no-op callback cleanup. The private makeRequest() that used to live here
+// is gone. lean=1 requests Explorer V1.3's stripped-down payload on
+// getFaultLogData/getLegacyLogData (safe here, this file doesn't reference
+// any field lean mode omits). Callers still check response.success
+// themselves -- the client only handles transport.
 
 // Fetches Priority and Assigned To lists from the Dropdowns sheet via
 // MaintenanceModule's backend. Falls back to the same defaults
@@ -947,7 +902,7 @@ function makeRequest(action, targetUrl, retries, lean) {
 // way in both places if the sheet is ever empty or the call fails.
 async function fetchDropdownOptions() {
     try {
-        const response = await makeRequest('getDropdownOptions', DROPDOWN_API_URL);
+        const response = await ApiClient.call(DROPDOWN_API_URL, 'getDropdownOptions');
         if (response && response.success && response.data) {
             dropdownOptions = {
                 priorities: (response.data.priorities && response.data.priorities.length)
@@ -980,7 +935,7 @@ async function loadAllData() {
         // wait on it either.
         fetchDropdownOptions();
 
-        const cr = await makeRequest('getFaultLogData', null, undefined, true);
+        const cr = await ApiClient.call(API_URL, 'getFaultLogData', { lean: 1 });
         const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
 
         // Split programmed works out into their own pool
@@ -1014,7 +969,7 @@ async function ensureLegacyData() {
     setDataStatus('loading', 'Loading legacy data...');
     legacyLoadPromise = (async () => {
         try {
-            const lr = await makeRequest('getLegacyLogData', null, undefined, true);
+            const lr = await ApiClient.call(API_URL, 'getLegacyLogData', { lean: 1 });
             const rawLegacy = (lr && lr.success) ? (lr.data || []) : [];
             legacyData = rawLegacy.filter(p => !isProgrammed(p));
             allData = [...currentData, ...legacyData];
