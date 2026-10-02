@@ -6,8 +6,8 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.1.31
-LAST UPDATED: September 2026
+VERSION: V1.1.32
+LAST UPDATED: October 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: Shares Admin Portal's "portalAdminVerified" session
                  (SSO -- verified there or here, either counts), plus its
@@ -16,6 +16,7 @@ AUTHENTICATION: Shares Admin Portal's "portalAdminVerified" session
                  established RelationsManager pattern
 DEPENDENCIES:
   - Explorer_V1_3_2.js backend (getFaultLogData, getLegacyLogData)
+  - ApiClient.js (shared JSONP client -- all API calls go through it)
   - Chart.js 4.4.0 (cdn.jsdelivr.net)
   - jsPDF 4.2.1 (unpkg) -- lazy-loaded on first export, not on page open
 API URL: Explorer backend (same as ExecutiveDashboard)
@@ -40,6 +41,23 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.1.32 (Oct 2026): MIGRATED TO SHARED ApiClient.js -- first module moved
+                     onto the new shared API client (part of the API
+                     reliability work: one hardened transport instead of
+                     ~40 hand-rolled copies). The file's two private request
+                     functions, makeRequest() (JSONP) and makeRequestFetch()
+                     (the V1.1.24 fetch() experiment -- Tony: no better than
+                     JSONP), are removed; all three API calls
+                     (getFaultLogData, getLegacyLogData, getDropdownOptions)
+                     now go through ApiClient.call(). Behaviour kept the
+                     same: reads retry 3x (4 attempts) with 30s timeout,
+                     the initial load stays sequential and current-data-first
+                     (legacy on demand, dropdowns fire-and-forget), lean=1
+                     on both Explorer data calls. Retry backoff is now
+                     2s/4s/6s (was fixed 2s). The fetch path is retired, so
+                     initial load is JSONP again and the sidebar text no
+                     longer says "(fetch test)". Requires ApiClient.js
+                     deployed alongside this file. No report logic changed.
   V1.1.31 (Oct 2026): COSMETIC FIX -- priority badges: Urgent had no
                      background color at all (the "urgent" key was
                      missing from the priorityBadge() lookup map, so
@@ -881,6 +899,7 @@ VERSION HISTORY:
             .header-text { align-items: center; }
         }
     </style>
+<script src="ApiClient.js"></script>
 <script src="VerificationModal_V1_0.js"></script>
 </head>
 <body>
@@ -1037,130 +1056,13 @@ function pdfCategoryLines(pdf, category, colWidthMm) {
 }
 
 // =====================================================================
-// DATA LOADING (JSONP)
+// DATA LOADING (via shared ApiClient.js, v1.1.32)
 // =====================================================================
-// Retry-with-backoff pattern matching DesktopExplorer's makeRequest
-// exactly (v1.1.21) -- 3 retries, 30s timeout, no dead-response fail-fast.
-// The dead-response check (onload fires, callback hasn't run -> fail
-// fast) was added in V1.1.6 for one specific signature: a stale redirect
-// serving an HTML error page with HTTP 200, where a plain timeout would
-// sit out the full 30s for nothing. Every failure actually captured since
-// -- ERR_BLOCKED, genuine "Network error", genuine "Timeout" -- fires
-// onerror or the timeout directly; none has shown that signature. Keeping
-// a guess-based early-fail mechanism that isn't demonstrably catching
-// anything, in a file that already has one fewer retry than the sibling
-// file proven reliable against the same backends, was working against
-// itself. Aligning fully removes both gaps at once.
-// Side-by-side test (v1.1.24) -- real fetch() instead of a <script>-tag
-// JSONP call, wired ONLY to getFaultLogData's initial load below. Legacy
-// and dropdowns stay on the existing makeRequest() JSONP path untouched,
-// so any difference we see is attributable to the transport, not
-// anything else changing at the same time.
-//
-// Mirrors the already-proven pattern in FieldAlerts_V3_2_4.html's
-// callNotificationAPI -- a "simple" cross-origin request (GET, no custom
-// headers) never triggers a CORS preflight, which is the thing Apps
-// Script Web Apps can't handle; a fetch() with a JSON content-type or
-// custom headers would. Explorer.js's doGet already returns plain JSON
-// (not JSONP-wrapped) whenever the request has no `callback` param
-// (lines ~288-295), so no backend change is needed -- omitting
-// `&callback=...` here is what selects that branch.
-//
-// The real win isn't retry logic (identical shape/timeout/backoff to
-// makeRequest) -- it's that a bad response becomes something we can
-// actually inspect: a real HTTP status, and real response text if it's
-// not valid JSON, instead of an opaque script.onerror / NS_ERROR_* with
-// no detail behind it.
-async function makeRequestFetch(action, targetUrl, retries, lean) {
-    if (retries === undefined) retries = 3;
-    const url = targetUrl || API_URL;
-    const qs = '?action=' + action + (lean ? '&lean=1' : '');
-
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-        try {
-            const response = await fetch(url + qs, { method: 'GET', signal: controller.signal });
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                throw new Error('HTTP ' + response.status);
-            }
-            const text = await response.text();
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch (parseErr) {
-                // Apps Script can still occasionally serve an HTML error
-                // page despite a 200 status -- this is the equivalent of
-                // the "dead response"/NS_ERROR_CORRUPTED_CONTENT failures
-                // seen under JSONP, just with the actual content visible
-                // now instead of an opaque browser error.
-                throw new Error('Non-JSON response: ' + text.slice(0, 60).replace(/\s+/g, ' '));
-            }
-            return data;
-
-        } catch (err) {
-            clearTimeout(timeoutId);
-            const reason = err.name === 'AbortError' ? 'Timeout' : err.message;
-            if (attempt < retries) {
-                console.warn('Retrying ' + action + ' via fetch (' + reason + ', ' + (retries - attempt) + ' attempt(s) left)');
-                await new Promise(r => setTimeout(r, 2000));
-            } else {
-                throw new Error(reason + ': ' + action);
-            }
-        }
-    }
-}
-
-
-function makeRequest(action, targetUrl, retries, lean) {
-    if (retries === undefined) retries = 3;
-    const url = targetUrl || API_URL;
-    return new Promise((resolve, reject) => {
-        const cbName = 'rh_cb_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
-        const script = document.createElement('script');
-        let settled = false;
-
-        function cleanup() {
-            window[cbName] = () => {};
-            if (script.parentNode) script.parentNode.removeChild(script);
-        }
-
-        // Shared failure path: retry if attempts remain, otherwise reject.
-        // Settled-guard makes double-fires (e.g. onerror + timeout) safe.
-        function failOrRetry(reason) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timeout);
-            cleanup();
-            if (retries > 0) {
-                console.warn('Retrying ' + action + ' (' + reason + ', ' + retries + ' attempt(s) left)');
-                setTimeout(() => {
-                    makeRequest(action, targetUrl, retries - 1, lean).then(resolve).catch(reject);
-                }, 2000);
-            } else {
-                reject(new Error(reason + ': ' + action));
-            }
-        }
-
-        // 30s per attempt.
-        const timeout = setTimeout(() => failOrRetry('Timeout'), 30000);
-
-        window[cbName] = (data) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timeout);
-            cleanup();
-            resolve(data);
-        };
-
-        script.onerror = () => failOrRetry('Network error');
-
-        script.src = url + '?action=' + action + '&callback=' + cbName + (lean ? '&lean=1' : '');
-        document.body.appendChild(script);
-    });
-}
+// All API calls go through ApiClient.call(baseUrl, action, params), which
+// owns the JSONP transport: 30s timeout, 3 retries on reads, settled-guard,
+// no-op callback cleanup. The private makeRequest()/makeRequestFetch()
+// functions that used to live here are gone. Callers still check
+// response.success themselves -- the client only handles transport.
 
 // Fetches Priority and Assigned To lists from the Dropdowns sheet via
 // MaintenanceModule's backend. Falls back to the same defaults
@@ -1168,7 +1070,7 @@ function makeRequest(action, targetUrl, retries, lean) {
 // way in both places if the sheet is ever empty or the call fails.
 async function fetchDropdownOptions() {
     try {
-        const response = await makeRequest('getDropdownOptions', DROPDOWN_API_URL);
+        const response = await ApiClient.call(DROPDOWN_API_URL, 'getDropdownOptions');
         if (response && response.success && response.data) {
             dropdownOptions = {
                 priorities: (response.data.priorities && response.data.priorities.length)
@@ -1188,7 +1090,7 @@ async function fetchDropdownOptions() {
 }
 
 async function loadAllData() {
-    setDataStatus('loading', 'Loading FaultLog (fetch test)...');
+    setDataStatus('loading', 'Loading FaultLog...');
     try {
         // Current data only on first paint; legacy loads on demand (v1.1.19)
         // -- same pattern DesktopExplorer already uses. Previously this
@@ -1200,7 +1102,7 @@ async function loadAllData() {
         // forget here -- nothing should wait on it either.
         fetchDropdownOptions();
 
-        const cr = await makeRequestFetch('getFaultLogData', null, undefined, true);
+        const cr = await ApiClient.call(API_URL, 'getFaultLogData', { lean: 1 });
         const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
 
         // Split programmed works out into their own pool
@@ -1238,7 +1140,7 @@ async function ensureLegacyData() {
     setDataStatus('loading', 'Loading legacy data...');
     legacyLoadPromise = (async () => {
         try {
-            const lr = await makeRequest('getLegacyLogData', null, undefined, true);
+            const lr = await ApiClient.call(API_URL, 'getLegacyLogData', { lean: 1 });
             const rawLegacy = (lr && lr.success) ? (lr.data || []) : [];
             legacyData = rawLegacy.filter(p => !isProgrammed(p));
             allData = [...currentData, ...legacyData];
