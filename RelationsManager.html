@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.20
+  Frontend Version: V1.1.0
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,29 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.1.0 (Oct 2026): MIGRATED TO SHARED ApiClient.js -- part of the API
+    reliability work (one hardened transport instead of ~40 hand-rolled
+    copies). The local jsonp() helper is now a thin wrapper over
+    ApiClient.call(), keeping its (params, onSuccess, onError) signature
+    so none of the ~15 call sites change. Previously every request here
+    was a single attempt with no retry; now READS (getRelations,
+    getRelationByRef, getEvents) retry up to 3 times (4 attempts, 30s
+    each, backoff 2s/4s/6s). WRITES (triageMatter, updateRelation) are
+    deliberately NEVER auto-retried: a retried triage or closure can
+    re-send the party-facing notification bundle, and these actions are
+    not idempotent. Any action not on the explicit READ_ACTIONS list is
+    treated as a write (fail-safe). loadResidentList() (Party B lookup
+    data, ManagementCentral backend) also goes through the client now, so
+    it gains the same read retries; it still fails silently as before.
+    ONE VISIBLE WORDING CHANGE: when a write gets no response, the old
+    message was "Server did not respond. Please try again." -- which
+    invited a retry of an action that may already have succeeded
+    server-side (Tony saw exactly this in V1.0.10: the retry reported
+    "already registered"). That case now says the action may have gone
+    through and to refresh and check before trying again. A request too
+    long to send (URL over the Apps Script GET limit) now gets its own
+    clear message instead of a silent failure. Requires ApiClient.js
+    deployed alongside this file. No layout, workflow or backend change.
   V1.0.20 (Aug 2026): Deep-link (?ref=) refined -- shows ONLY the
     target dispute (renderList([rel]), filter bar and summary strip
     hidden, replaced by a small banner) rather than the full filtered
@@ -441,6 +464,7 @@ VERSION HISTORY:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Relations Manager - Lake Illawong</title>
+<script src="ApiClient.js"></script>
 <script src="VerificationModal_V1_0.js"></script>
 <script src="EventEntryModal_V1_4.js"></script>
 <style>
@@ -882,45 +906,40 @@ VERSION HISTORY:
         VerificationModal.show();
     }
 
-    // ── JSONP HELPER ──────────────────────────────────────────────────────
+    // ── API HELPER (via shared ApiClient.js, v1.1.0) ──────────────────────
+    // Keeps the old jsonp(params, onSuccess, onError, timeoutMs) signature
+    // so every call site below is unchanged; transport (timeout, retries,
+    // callback cleanup, settled-guard) is owned by ApiClient.
+    //
+    // Only actions listed here are treated as reads and auto-retried.
+    // EVERYTHING ELSE IS A WRITE and is never retried -- triageMatter and
+    // updateRelation fire party-facing notification bundles and are not
+    // idempotent, so a blind retry could notify twice. If a new action is
+    // added, it is safe-by-default (write) until added to this list.
+    const READ_ACTIONS = ['getRelations', 'getRelationByRef', 'getEvents'];
+
+    function transportMessage(err) {
+        if (err && err.reason === 'url-too-long') {
+            return 'That text is too long to send. Please shorten it and try again.';
+        }
+        if (err && err.outcomeUnknown) {
+            // A write that got no response may still have reached the
+            // backend -- never tell the user to simply try again.
+            return 'No confirmation received from the server -- this may have gone through. Refresh and check the dispute before trying again.';
+        }
+        return (err && err.reason === 'network') ? 'Could not reach the server.' : 'Server did not respond. Please try again.';
+    }
 
     function jsonp(params, onSuccess, onError, timeoutMs) {
-        const callbackName = 'rm_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-        const qs = Object.keys(params).map(function(k) {
-            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-        }).join('&');
-        const url = CONFIG.BACKEND_URL + '?' + qs + '&callback=' + callbackName;
-
-        let settled = false;
-        const s = document.createElement('script');
-
-        function cleanup() {
-            window[callbackName] = function () {};
-            try { document.head.removeChild(s); } catch (e) {}
-        }
-
-        const timer = setTimeout(function () {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            if (onError) onError('Server did not respond. Please try again.');
-        }, timeoutMs || 30000);
-
-        window[callbackName] = function (data) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer); cleanup();
-            if (onSuccess) onSuccess(data);
-        };
-
-        s.onerror = function () {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer); cleanup();
-            if (onError) onError('Could not reach the server.');
-        };
-        s.src = url;
-        document.head.appendChild(s);
+        const action = params.action;
+        const rest = {};
+        Object.keys(params).forEach(function (k) { if (k !== 'action') rest[k] = params[k]; });
+        const isWrite = READ_ACTIONS.indexOf(action) === -1;
+        ApiClient.call(CONFIG.BACKEND_URL, action, rest, { write: isWrite, timeout: timeoutMs })
+            .then(
+                function (data) { if (onSuccess) onSuccess(data); },
+                function (err)  { if (onError) onError(transportMessage(err)); }
+            );
     }
 
     // ── LOAD RELATIONS ────────────────────────────────────────────────────
@@ -1546,25 +1565,16 @@ VERSION HISTORY:
     // principle in the Build Log).
 
     function loadResidentList() {
-        var callbackName = 'rm_mgmt_' + Date.now();
-        var url = CONFIG.MGMT_URL + '?action=getUnitListData&callback=' + callbackName;
-        var s = document.createElement('script');
-        var settled = false;
-        function cleanup() { window[callbackName] = function() {}; try { document.head.removeChild(s); } catch (e) {} }
-        var timer = setTimeout(function() {
-            if (settled) return;
-            settled = true; cleanup();
-            console.warn('loadResidentList timed out');
-        }, 30000);
-        window[callbackName] = function(data) {
-            if (settled) return;
-            settled = true; clearTimeout(timer); cleanup();
-            if (data.success && data.residents) {
+        // Read via ApiClient (gains read retries, v1.1.0). Still fails
+        // silently -- searchTriagePartyB already tells the user the list
+        // is "still loading" if allResidents hasn't populated yet.
+        ApiClient.call(CONFIG.MGMT_URL, 'getUnitListData').then(function(data) {
+            if (data && data.success && data.residents) {
                 allResidents = data.residents.filter(function(r) { return r.stage === 'Stage 1' || r.stage === 1; });
             }
-        };
-        s.src = url;
-        document.head.appendChild(s);
+        }, function(err) {
+            console.warn('loadResidentList failed', err && err.reason);
+        });
     }
 
     function searchTriagePartyB(ref) {
