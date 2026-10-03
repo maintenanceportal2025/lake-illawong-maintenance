@@ -7,13 +7,29 @@ DOCUMENT INFORMATION:
   File Name:        ManagementCentral.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module (Admin Portal)
-  Frontend Version: V1.4.2
+  Frontend Version: V1.5.0
   Backend:          ManagementCentral.js
   Status:           PRODUCTION
   Created:          2025
-  Last Modified:    Aug 2026
+  Last Modified:    Oct 2026
 
 VERSION HISTORY:
+  V1.5.0 (Oct 2026): Migrated to the shared ApiClient.js. makeAPICall() had a
+                     single 15s attempt with no retry, so any cold start or
+                     lost response on load surfaced as "Request timeout" for
+                     contacts, dropdowns and roles (3 Oct 2026). Reads now go
+                     through ApiClient: 30s timeout, up to 3 automatic retries
+                     with 2s/4s/6s backoff, no-op callback replacement and a
+                     settled-guard. Every write (addResident, updateResident,
+                     deleteResident, add/update/delete of categories,
+                     sub-categories, assigned-to and roles) is sent exactly
+                     once and never retried; if no reply arrives the message
+                     says the change may have gone through and to reload before
+                     trying again. Read/write split is an explicit allowlist
+                     (READ_ACTIONS); unlisted actions are treated as writes.
+                     makeAPICall() keeps its signature and error contract, so
+                     no caller changed. Requires ApiClient.js alongside this
+                     file. Also corrected the stale <title> (said V1.4.0).
   V1.4.2 (Aug 2026): Removed two entire orphaned tabs left over from an
                      earlier iteration -- "users-tab" (Add User /
                      Activate-Deactivate, old password-account tooling
@@ -108,7 +124,7 @@ TECHNICAL:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Management Central V1.4.0 - Lake Illawong</title>
+    <title>Management Central V1.5.0 - Lake Illawong</title>
     <style>
         :root {
             /* Primary */
@@ -1140,6 +1156,7 @@ TECHNICAL:
         </div>
     </div>
 
+    <script src="ApiClient.js"></script>
     <script>
 
 		// SESSION GUARD
@@ -1160,44 +1177,28 @@ TECHNICAL:
 	window.currentStageFilter = '';
 
 
-        // JSONP API call function -- fixed Aug 2026, see changelog
+        // Shared API client (ApiClient.js) -- V1.5.0. Reads retry automatically;
+        // writes are sent exactly once and are NEVER retried (see below).
+        // Anything not listed here is treated as a write, so a new action added
+        // later fails safe (no automatic retry) until it is deliberately listed.
+        // getCategories / getSubCategories / getAssignedBy re-sort their sheet
+        // range as they read, which is idempotent, so they are safe to retry.
+        const READ_ACTIONS = ['getUnitListData', 'getCategories', 'getSubCategories',
+                              'getAssignedBy', 'getRoles', 'testConnection'];
+
+        function transportMessage(err) {
+            if (err && err.reason === 'url-too-long') return 'That text is too long to send.';
+            if (err && err.outcomeUnknown) return 'No confirmation received from the server -- this may have gone through. Reload the data and check before trying again.';
+            if (err && err.reason === 'network') return 'Could not reach the server.';
+            return 'Server did not respond. Please try again.';
+        }
+
+        // Same contract as before: resolves with the backend response object,
+        // rejects with an Error whose message is shown in the toast.
         function makeAPICall(action, params = {}) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-                const script = document.createElement('script');
-                const queryParams = new URLSearchParams({ action, callback: callbackName, ...params });
-                let settled = false;
-
-                function cleanup() {
-                    window[callbackName] = function() {};
-                    try { document.head.removeChild(script); } catch (e) {}
-                }
-
-                script.src = API_URL + '?' + queryParams.toString();
-                
-                window[callbackName] = function(response) {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    resolve(response);
-                };
-                
-                script.onerror = function() {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Network request failed'));
-                };
-                
-                document.head.appendChild(script);
-                
-                setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Request timeout'));
-                }, 15000);
-            });
+            const isWrite = READ_ACTIONS.indexOf(action) === -1;
+            return ApiClient.call(API_URL, action, params, { write: isWrite })
+                .catch(err => { throw new Error(transportMessage(err)); });
         }
 
         // CHANGED: Use V1.1 action names
