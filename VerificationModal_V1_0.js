@@ -5,13 +5,34 @@
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
  * VERSION: 1.0
  * CREATED: February 16, 2026
- * LAST UPDATED: September 2026
+ * LAST UPDATED: October 2026
  * DESIGN: Glass effect modal from Unified Design System V2.4
  *
  * CHANGE LOG (version number intentionally stays fixed at 1.0 -- this
  * file is shared across ~15+ modules by filename, so version-in-filename
  * doesn't apply here the way it does elsewhere. Track what changed by
  * date instead.):
+ * - Oct 2026: _sendCode() no longer re-sends on its own. The 3 Oct
+ *   Executions log showed every duplicate verification email was one of
+ *   this file's automatic retries (10s timeout + 2s pause = runs exactly
+ *   12s apart), each firing a full server-side send, while the first send
+ *   was often still running (32s cold-start run) with the email already
+ *   delivered -- hence "code arrived but screen stuck on Sending". Now:
+ *   the send request is made ONCE (45s ceiling, never repeated). If no
+ *   reply has arrived after 15s the modal stops guessing and asks the
+ *   server what happened via the new read-only checkVerificationStatus
+ *   action (every 4s; read-only, sends nothing, never returns the code):
+ *   'sent' -> carry on to code entry; 'failed' -> say so and let the user
+ *   try again; 'pending'/'none' -> keep waiting. If still unconfirmed at
+ *   45s the message tells the user to check their email before pressing
+ *   Send again. A genuine second send is now only ever the user's own
+ *   action. verifyCode keeps its existing retry (_callAPI) unchanged --
+ *   the backend already treats a repeat within 60s as a re-confirmation.
+ *   Requires ManagementCentral V1.5.5 or later (EmailStatus column,
+ *   no-re-email on a live code, checkVerificationStatus). Deliberately
+ *   does NOT use ApiClient.js: this file is shared by ~15+ modules by
+ *   filename and not every one of them loads ApiClient.js, so a dependency
+ *   here would break the pages that don't.
  * - Sep 2026: _callAPI() gets retry-with-backoff (3 retries, 10s timeout,
  *   2s delay) -- previously the only JSONP caller anywhere in this system
  *   with none at all, despite being the single most-used path (every
@@ -129,6 +150,12 @@ const VerificationModal = (function() {
         verificationId: null
     };
     
+    // V Oct 2026: send handling -- see change log
+    const SEND_QUIET_MS = 15000;    // no reply by now -> start asking the server what happened
+    const SEND_CEILING_MS = 45000;  // stop waiting entirely
+    const STATUS_POLL_MS = 4000;    // how often to ask while waiting
+    let sendToken = 0;              // bumped by show()/hide() so a stale send can't touch the UI
+
     let modalInjected = false;
     let expiryTimerInterval = null;
     let resendTimerInterval = null;
@@ -180,6 +207,9 @@ const VerificationModal = (function() {
         // step 2's elements once it's reached again.
         if (expiryTimerInterval) { clearInterval(expiryTimerInterval); expiryTimerInterval = null; }
         if (resendTimerInterval) { clearInterval(resendTimerInterval); resendTimerInterval = null; }
+        sendToken++;   // abandon any send still in flight from a previous attempt
+        const sendBtnEl = document.getElementById('vmSendBtn');
+        if (sendBtnEl) { sendBtnEl.textContent = 'Send Verification Code \u2192'; _validateStep1(); }
         const step1El = document.getElementById('vmStep1');
         const step2El = document.getElementById('vmStep2');
         if (step1El && step2El) {
@@ -209,6 +239,7 @@ const VerificationModal = (function() {
     
     // Hide modal
     function hide() {
+        sendToken++;   // abandon any send still in flight
         // Clear all timers
         if (expiryTimerInterval) {
             clearInterval(expiryTimerInterval);
@@ -762,12 +793,16 @@ const VerificationModal = (function() {
         
         btn.disabled = true;
         btn.textContent = 'Sending...';
+
+        const token = ++sendToken;
+        const isCurrent = () => token === sendToken;
         
         try {
-            const response = await _callAPI('sendVerificationCode', { method, identifier });
+            const outcome = await _sendWithStatusCheck(method, identifier, isCurrent);
+            if (!isCurrent()) return;
             
-            if (response.success) {
-                verificationData = { method, identifier, verificationId: response.verificationId };
+            if (outcome.success) {
+                verificationData = { method, identifier, verificationId: outcome.verificationId };
                 
                 // Show step 2
                 document.getElementById('vmStep1').classList.remove('active');
@@ -781,17 +816,105 @@ const VerificationModal = (function() {
                 _startExpiryTimer();
                 _startResendTimer();
             } else {
-                errorEl.textContent = response.error || 'Failed to send code. Please try again.';
+                errorEl.textContent = outcome.error || 'Failed to send code. Please try again.';
                 errorEl.classList.remove('hidden');
             }
         } catch (error) {
             console.error('Send code error:', error);
+            if (!isCurrent()) return;
             errorEl.textContent = 'Connection error. Please try again.';
             errorEl.classList.remove('hidden');
         } finally {
-            btn.disabled = false;
-            btn.textContent = 'Send Verification Code →';
+            if (isCurrent()) {
+                btn.disabled = false;
+                btn.textContent = 'Send Verification Code →';
+            }
         }
+    }
+
+    // Oct 2026: sends the code request exactly ONCE and never repeats it.
+    // If the reply is slow or lost, asks the server (read-only) what became of
+    // it instead of sending again. Resolves { success, verificationId } or
+    // { success:false, error }.
+    function _sendWithStatusCheck(method, identifier, isCurrent) {
+        return new Promise((resolve) => {
+            const startedAt = Date.now();
+            let done = false;
+            let polling = false;
+            let statusInFlight = false;
+            let quietTimer = null;
+            let ceilingTimer = null;
+            let pollTimer = null;
+
+            function finish(result) {
+                if (done) return;
+                done = true;
+                clearTimeout(quietTimer);
+                clearTimeout(ceilingTimer);
+                clearInterval(pollTimer);
+                resolve(result);
+            }
+
+            const UNCONFIRMED = 'We could not confirm the code was sent. Please check your email (and spam folder) first -- if nothing arrives within a minute, press Send again.';
+
+            // Ask the server what happened. final=true is the last look before giving up.
+            function checkStatus(final) {
+                if (done) return;
+                if (!isCurrent()) { finish({ success: false, error: '' }); return; }
+                if (statusInFlight && !final) return;
+                statusInFlight = true;
+                _callOnce('checkVerificationStatus', { method, identifier }, 10000)
+                    .then((r) => {
+                        statusInFlight = false;
+                        if (done) return;
+                        if (r && r.success) {
+                            if (r.state === 'sent') {
+                                finish({ success: true, verificationId: r.verificationId });
+                                return;
+                            }
+                            // Only believe 'failed' if that code was created since THIS click --
+                            // an older failed row must not mask a send that is still in progress.
+                            const elapsedSec = (Date.now() - startedAt) / 1000;
+                            if (r.state === 'failed' && r.ageSeconds <= elapsedSec + 2) {
+                                finish({ success: false, error: 'The code could not be sent. Please try again.' });
+                                return;
+                            }
+                        }
+                        if (final) finish({ success: false, error: UNCONFIRMED });
+                    })
+                    .catch(() => {
+                        statusInFlight = false;
+                        if (final) finish({ success: false, error: UNCONFIRMED });
+                    });
+            }
+
+            function startPolling() {
+                if (done || polling) return;
+                polling = true;
+                const btn = document.getElementById('vmSendBtn');
+                if (btn && isCurrent()) btn.textContent = 'Still working...';
+                pollTimer = setInterval(() => checkStatus(false), STATUS_POLL_MS);
+                checkStatus(false);
+            }
+
+            // The one and only send.
+            _callOnce('sendVerificationCode', { method, identifier }, SEND_CEILING_MS)
+                .then((r) => {
+                    if (r && r.success) {
+                        finish({ success: true, verificationId: r.verificationId });
+                    } else {
+                        finish({ success: false, error: (r && r.error) || 'Failed to send code. Please try again.' });
+                    }
+                })
+                .catch(() => {
+                    // No usable reply (network error / timeout). Do NOT re-send:
+                    // find out what the server actually did.
+                    startPolling();
+                });
+
+            quietTimer = setTimeout(startPolling, SEND_QUIET_MS);
+            ceilingTimer = setTimeout(() => { startPolling(); checkStatus(true); }, SEND_CEILING_MS);
+        });
     }
     
     // Validate code input
@@ -937,6 +1060,51 @@ const VerificationModal = (function() {
         }, 1000);
     }
     
+    // Single-attempt JSONP call (Oct 2026): same settled-guard / no-op callback
+    // replacement pattern as _callAPI, but NO retry -- used for the send request
+    // (must never repeat) and the read-only status check (the caller polls).
+    function _callOnce(action, params, timeoutMs) {
+        return new Promise((resolve, reject) => {
+            const cb = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+            const script = document.createElement('script');
+            let settled = false;
+            let timeoutId = null;
+
+            function cleanup() {
+                window[cb] = function() {};
+                try { document.head.removeChild(script); } catch (e) {}
+            }
+
+            window[cb] = function(r) {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeoutId);
+                cleanup();
+                resolve(r);
+            };
+
+            script.onerror = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeoutId);
+                cleanup();
+                reject(new Error('Network failed'));
+            };
+
+            const query = new URLSearchParams({ action, callback: cb, ...params });
+            script.src = MGMT_CENTRAL_URL + '?' + query.toString();
+            console.log('📡 API Call (single attempt):', action);
+            document.head.appendChild(script);
+
+            timeoutId = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(new Error('Timeout'));
+            }, timeoutMs);
+        });
+    }
+
     // API call (JSONP) - Using exact working code from QuickTest
     // Retry-with-backoff added (v1.0, Sep 2026 -- see header) -- this function had none at all
     // before now, unlike every other module's JSONP caller in this
