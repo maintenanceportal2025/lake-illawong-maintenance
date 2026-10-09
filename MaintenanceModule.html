@@ -7,13 +7,23 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.3.0
+  Frontend Version: V1.3.1
   Backend:          MaintenancePortal V1.6.6
   Status:           PRODUCTION
   Created:          September 2025
   Last Modified:    Oct 2026
 
 VERSION HISTORY:
+  V1.3.1 (Oct 2026): The dropdown lists now show their progress in the
+                     status pill again (V1.3.0 loaded them silently).
+                     "Loading dropdown lists..." while they load, then the
+                     pill goes back to the problem count; if they cannot be
+                     loaded it reads "N active problems loaded - using
+                     default dropdown lists" so the fallback lists are not
+                     used unnoticed. Retry text shows for this call too.
+                     Same after Refresh. The pill is only touched if nothing
+                     else (e.g. a save message) has taken it over meanwhile.
+                     No other change.
   V1.3.0 (Oct 2026): Reliability. (1) Transport moved onto the shared
                      ApiClient.js (new <script> include) -- reads retry
                      3x (4 attempts), 30s per attempt; updateProblem is a
@@ -1948,8 +1958,11 @@ let sortNewestFirst = false; // Default: Oldest first (current behavior)
             applyPendingSearch();
         }
         
-        // Dropdown lists load in the background; failure uses the fallback lists
-        await loadDropdownOptions(true);
+        // Dropdown lists load next (progress shown in the pill); failure uses the fallback lists
+        await loadDropdownOptions({
+            okText: `${activeProblems.length} active problems loaded successfully`,
+            failText: `${activeProblems.length} active problems loaded - using default dropdown lists`
+        });
         
     } catch (error) {
         console.error('❌ Error initializing system:', error);
@@ -2147,14 +2160,22 @@ if (activityReportBtn) {
         }
         
         // V1.3.0: never throws. A failure keeps the built-in fallback lists.
-        // silent = true: no status-pill messages (used after the problems list
-        // is already on screen so the pill keeps showing the problem count).
-        async function loadDropdownOptions(silent) {
+        // V1.3.1: shows progress in the status pill. pillText = { okText, failText }
+        // is what the pill reads afterwards (the caller knows what it should
+        // say). The pill is only changed while it still shows this call's own
+        // message, so a save message arriving meanwhile is never overwritten.
+        async function loadDropdownOptions(pillText) {
+    pillText = pillText || {};
+    const loadingText = 'Loading dropdown lists...';
+    function pillIsOurs() {
+        const el = document.getElementById('dataStatus');
+        return !!el && (el.textContent === loadingText || el.textContent.indexOf('Connection slow') === 0);
+    }
     try {
-        if (!silent) updateConnectionStatus('Loading dropdown options...', 'loading');
+        updateConnectionStatus(loadingText, 'loading');
         console.log('🎛️ Loading dropdown options from Categories TAB...');
         
-        const response = await makeRequest('getDropdownOptions', {}, { silent: silent });
+        const response = await makeRequest('getDropdownOptions');
         
         if (response && response.success && response.data) {
             const d = response.data;
@@ -2167,7 +2188,7 @@ if (activityReportBtn) {
             };
             console.log('✅ Dropdown data loaded:', dynamicDropdownData);
             updateAllDropdowns();
-            if (!silent) updateConnectionStatus('Dropdowns loaded', 'success');
+            if (pillIsOurs()) updateConnectionStatus(pillText.okText || 'Dropdown lists loaded', 'success');
             return dynamicDropdownData;
         } else {
             throw new Error((response && response.error) || 'Failed to load dropdown options');
@@ -2175,7 +2196,7 @@ if (activityReportBtn) {
         
     } catch (error) {
         console.warn('⚠️ Dropdown options not loaded - using fallback values:', error);
-        if (!silent) updateConnectionStatus('Using fallback dropdown values', 'loading');
+        if (pillIsOurs()) updateConnectionStatus(pillText.failText || 'Using default dropdown lists', 'loading');
         try { updateAllDropdowns(); } catch (e) { console.warn('Fallback dropdown update failed:', e); }
         return null;
     }
@@ -3693,6 +3714,13 @@ async function reopenProblem() {
             if (ACTION_TIMEOUTS[action]) opts.timeout = ACTION_TIMEOUTS[action];
             if (!callOpts.silent) {
                 opts.onRetry = function (info) {
+                    // V1.3.1: the dropdown call runs in the background -- show its retry
+                    // text only while the pill still shows that call's own message.
+                    if (action === 'getDropdownOptions') {
+                        const el = document.getElementById('dataStatus');
+                        const t = el ? el.textContent : '';
+                        if (t !== 'Loading dropdown lists...' && t.indexOf('Connection slow') !== 0) return;
+                    }
                     showRetryNotification(info.attempt + 1, info.maxAttempts);
                 };
             }
@@ -3804,7 +3832,10 @@ function showRetryNotification(attempt, maxAttempts) {
                 }
                 
                 console.log('🔄 Refreshing dropdown options...');
-                await loadDropdownOptions(true);
+                await loadDropdownOptions({
+                    okText: 'Data refreshed successfully',
+                    failText: 'Data refreshed - using default dropdown lists'
+                });
                 
             } catch (error) {
                 console.error('❌ Error refreshing data:', error);
