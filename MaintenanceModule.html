@@ -7,13 +7,46 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.2.12
+  Frontend Version: V1.3.0
   Backend:          MaintenancePortal V1.6.6
   Status:           PRODUCTION
   Created:          September 2025
-  Last Modified:    Sep 2026
+  Last Modified:    Oct 2026
 
 VERSION HISTORY:
+  V1.3.0 (Oct 2026): Reliability. (1) Transport moved onto the shared
+                     ApiClient.js (new <script> include) -- reads retry
+                     3x (4 attempts), 30s per attempt; updateProblem is a
+                     WRITE and is never re-sent automatically (the old
+                     private makeRequest() re-sent it on timeout, so a
+                     slow first request could race its own retry); the
+                     three AI calls (classification, framework chat,
+                     resident explanation) are not auto-retried either.
+                     (2) Start-up order: active problems load FIRST, then
+                     the dropdown lists. Previously the dropdown call came
+                     first and its failure was fatal (the catch block set
+                     up the fallback lists and then rethrew, so the
+                     problems list was never requested -- the "stuck on
+                     loading dropdowns" refresh). Dropdown failure is now
+                     non-fatal everywhere (start-up and Refresh); the
+                     built-in fallback lists are used. Dropdown call has a
+                     15s timeout. The artificial 1s pause is removed.
+                     (3) A problem's existing Status/Priority/Category/
+                     Sub-Category/Assignee is always kept in its dropdown
+                     even if the loaded list lacks it (needed because the
+                     form can now open before the lists arrive; without
+                     it a save could blank the field). (4) The status
+                     pill shows "Connection slow, retrying... (n/4)"
+                     during retries. (5) Save/Reopen: no reply from the
+                     server is reported as "outcome unknown" (not as a
+                     plain failure); a failed list refresh after a save
+                     that DID succeed is reported as "Saved, but the list
+                     could not refresh" instead of a save error; a
+                     request too long for the Apps Script URL limit is
+                     reported clearly instead of failing silently.
+                     No layout, CSS or design changes. Requires
+                     ApiClient.js V1.0.0 in the same folder. Backend
+                     unchanged (MaintenancePortal V1.6.6).
   V1.2.12 (Sep 2026): MERGE. This file and a separate chat's reopen-fix work
                      had independently numbered unrelated changes V1.2.10 and
                      V1.2.11 -- this version reconciles both branches into one
@@ -140,9 +173,10 @@ AUTHENTICATION:
   FieldOperationsPortal.html.
 
 SYSTEM CONNECTIONS:
-  Backend API:      MaintenancePortal V1.5.js
+  Backend API:      MaintenancePortal V1.6.6
+  Shared client:    ApiClient.js V1.0.0 (JSONP transport, retry, timeout)
   Data Source:      FaultLog sheet (columns A-W)
-  Notifications:    NotificationServer V3.2.0 (completion and cancellation)
+  Notifications:    NotificationServer, sent by the backend (completion and cancellation)
   Dropdowns:        Dynamic from Dropdowns sheet via backend
   URL Parameters:   ?search=XXX supported for direct problem lookup
 
@@ -153,7 +187,7 @@ PRIMARY FEATURES:
   Activity Timeline:    Full audit trail of all changes and actions
   Report Generation:    Copy/print reports for management records
   Programmed Work:      Toggle to load and display scheduled maintenance items
-  Completed Work:       Toggle to load completed/cancelled items (last 90 days)
+  Completed Work:       Toggle to load completed/cancelled items (last 365 days)
   Reopen Problems:      Restore completed/cancelled problems to active queue
 
 TECHNICAL:
@@ -1345,6 +1379,7 @@ Padding: 10px;
         
     </style>
     <script src="VerificationModal_V1_0.js"></script>
+    <script src="ApiClient.js"></script>
 </head>
 <body style="display:none">
    
@@ -1898,25 +1933,23 @@ let sortNewestFirst = false; // Default: Oldest first (current behavior)
     try {
         updateDataStatus('Starting system initialization...', 'loading');
         
-        // Sequential loading to avoid rate limits
-        updateLoadingPhase('Loading dropdown options...', 20, 'Fetching categories and assignments');
-        await loadDropdownOptions();
-        
-        updateLoadingPhase('Loading problems data...', 60, 'Retrieving maintenance requests');
+        // V1.3.0: problems FIRST (that is what the person is waiting for),
+        // dropdown lists second and non-fatal. Calls stay sequential.
+        updateLoadingPhase('Loading problems data...', 30, 'Retrieving maintenance requests');
         await loadActiveProblems();
-        
-        updateLoadingPhase('Finalizing display...', 90, 'Preparing user interface');
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Brief pause
         
         updateLoadingPhase('Complete!', 100, 'System ready for use');
         updateDataStatus(`${activeProblems.length} active problems loaded successfully`, 'success');
         console.log('✅ System initialization complete');
         
-        // Apply pending search after full initialization
+        // Apply pending search after the problems have loaded
         if (pendingSearchParam) {
-            console.log('🔒 System ready - applying pending search:', pendingSearchParam);
+            console.log('🔒 System ready - applying pending search:', pendingSearchParam);
             applyPendingSearch();
         }
+        
+        // Dropdown lists load in the background; failure uses the fallback lists
+        await loadDropdownOptions(true);
         
     } catch (error) {
         console.error('❌ Error initializing system:', error);
@@ -2113,38 +2146,71 @@ if (activityReportBtn) {
             });
         }
         
-        async function loadDropdownOptions() {
+        // V1.3.0: never throws. A failure keeps the built-in fallback lists.
+        // silent = true: no status-pill messages (used after the problems list
+        // is already on screen so the pill keeps showing the problem count).
+        async function loadDropdownOptions(silent) {
     try {
-        updateConnectionStatus('Loading dropdown options...', 'loading');
+        if (!silent) updateConnectionStatus('Loading dropdown options...', 'loading');
         console.log('🎛️ Loading dropdown options from Categories TAB...');
         
-        const response = await makeRequest('getDropdownOptions');
+        const response = await makeRequest('getDropdownOptions', {}, { silent: silent });
         
-        if (response.success) {
-            dynamicDropdownData = response.data;
+        if (response && response.success && response.data) {
+            const d = response.data;
+            dynamicDropdownData = {
+                categories: Array.isArray(d.categories) ? d.categories : [],
+                subCategories: Array.isArray(d.subCategories) ? d.subCategories : [],
+                priorities: Array.isArray(d.priorities) ? d.priorities : [],
+                statuses: Array.isArray(d.statuses) ? d.statuses : [],
+                assignedTo: Array.isArray(d.assignedTo) ? d.assignedTo : []
+            };
             console.log('✅ Dropdown data loaded:', dynamicDropdownData);
             updateAllDropdowns();
-            updateConnectionStatus('Dropdowns loaded', 'success');
-            return response.data;
+            if (!silent) updateConnectionStatus('Dropdowns loaded', 'success');
+            return dynamicDropdownData;
         } else {
-            throw new Error(response.error || 'Failed to load dropdown options');
+            throw new Error((response && response.error) || 'Failed to load dropdown options');
         }
         
     } catch (error) {
-        console.error('❌ Error loading dropdown options:', error);
-        updateConnectionStatus('Using fallback dropdown values', 'loading');
-        console.log('⚠️ Using fallback dropdown values');
-        updateAllDropdowns();
-        throw error;
+        console.warn('⚠️ Dropdown options not loaded - using fallback values:', error);
+        if (!silent) updateConnectionStatus('Using fallback dropdown values', 'loading');
+        try { updateAllDropdowns(); } catch (e) { console.warn('Fallback dropdown update failed:', e); }
+        return null;
     }
 }
         
+        // V1.3.0: add the value to the select if its list does not contain it,
+        // then select it. Stops a problem's existing Category/Priority/etc.
+        // being blanked (and then saved blank) when the loaded or fallback list
+        // lacks it -- possible now that the form can open before the lists load.
+        function ensureOption(select, value) {
+            if (!select || value === undefined || value === null || value === '') return;
+            const v = String(value);
+            const exists = Array.from(select.options).some(o => o.value === v);
+            if (!exists) {
+                const option = document.createElement('option');
+                option.value = v;
+                option.textContent = v;
+                select.appendChild(option);
+            }
+            select.value = v;
+        }
+        
+        function setSelectValue(id, value) {
+            ensureOption(document.getElementById(id), value);
+        }
+        
         function updateAllDropdowns() {
+            const ids = ['detailStatus', 'detailPriority', 'detailCategory', 'detailSubCategory', 'detailAssignedTo'];
+            const prior = ids.map(id => { const el = document.getElementById(id); return el ? el.value : ''; });
             updateStatusDropdowns();
             updatePriorityDropdowns();
             updateCategoryDropdowns();
             updateSubCategoryDropdowns();
             updateAssignedToDropdowns();
+            ids.forEach((id, i) => ensureOption(document.getElementById(id), prior[i]));
         }
         
         function updateStatusDropdowns() {
@@ -2863,9 +2929,9 @@ if (sortToggleBtn) {
     updateAllDropdowns();
     
     // Management Details (editable)
-    document.getElementById('detailStatus').value = problem.problemStatus || 'Reported';
+    setSelectValue('detailStatus', problem.problemStatus || 'Reported');
 
-document.getElementById('detailStatus').value = problem.problemStatus || 'Reported';
+setSelectValue('detailStatus', problem.problemStatus || 'Reported');
 
 // Show/hide reopen button based on status
 const reopenContainer = document.getElementById('reopenButtonContainer');
@@ -2875,14 +2941,14 @@ if (problem.problemStatus === 'Completed' || problem.problemStatus === 'Cancelle
     reopenContainer.style.display = 'none';
 }
 
-document.getElementById('detailPriority').value = problem.problemPriority || 'Medium';
+setSelectValue('detailPriority', problem.problemPriority || 'Medium');
 
 
-    document.getElementById('detailPriority').value = problem.problemPriority || 'Medium';
-    document.getElementById('detailCategory').value = problem.category || '';
-    document.getElementById('detailSubCategory').value = problem.subCategory || '';
+    setSelectValue('detailPriority', problem.problemPriority || 'Medium');
+    setSelectValue('detailCategory', problem.category || '');
+    setSelectValue('detailSubCategory', problem.subCategory || '');
     document.getElementById('detailCostResponsibility').value = problem.costResponsibility || '';
-    document.getElementById('detailAssignedTo').value = problem.assignedTo || 'Ben';
+    setSelectValue('detailAssignedTo', problem.assignedTo || 'Ben');
     
     // Clear any classification suggestion left over from a previously viewed problem
     hideClassificationSuggestion();
@@ -3187,7 +3253,15 @@ async function saveDetailsFromPage(e) {
             saveBtn.textContent = '⏳ Refreshing...';
             
             // V1.2.0 - Re-fetch active problems to get fresh activity timeline
-            await loadActiveProblems();
+            // V1.3.0: the save already succeeded -- a failed refresh must not
+            // be reported as a failed save.
+            try {
+                await loadActiveProblems();
+            } catch (refreshError) {
+                console.error('Refresh after save failed:', refreshError);
+                updateDataStatus('Saved, but the list could not refresh. Press Refresh.', 'error');
+                return;
+            }
             
             // Find the updated problem in the refreshed cache
             const updatedProblem = activeProblems.find(p => p.internalId === currentProblem.internalId);
@@ -3212,7 +3286,29 @@ async function saveDetailsFromPage(e) {
         
     } catch (error) {
         console.error('Error saving problem:', error);
-        updateDataStatus('Error: ' + error.message, 'error');
+        if (error && error.reason === 'url-too-long') {
+            updateDataStatus('Not saved: too much text to send. Shorten Internal Comments or Description.', 'error');
+        } else if (error && error.outcomeUnknown) {
+            // V1.3.0: the request may have reached the server. Never re-sent
+            // automatically. Refresh the list and the open timeline (the form
+            // fields are left exactly as typed) so the person can check.
+            updateDataStatus('No confirmation from the server. Check the Activity Timeline before saving again.', 'error');
+            alert('No confirmation was received from the server, so the save may or may not have gone through.\n\nCheck the Activity Timeline below before saving again.');
+            try {
+                await loadActiveProblems();
+                const fresh = currentProblem && activeProblems.find(p => p.internalId === currentProblem.internalId);
+                if (fresh) {
+                    currentProblem = fresh;
+                    displayActivityTimeline(fresh);
+                }
+            } catch (refreshError) {
+                console.error('Refresh after unconfirmed save failed:', refreshError);
+            }
+            // the refresh above overwrites the status pill -- put the warning back
+            updateDataStatus('No confirmation from the server. Check the Activity Timeline before saving again.', 'error');
+        } else {
+            updateDataStatus('Error: ' + error.message, 'error');
+        }
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = originalText;
@@ -3266,7 +3362,12 @@ async function reopenProblem() {
             // Refresh data and return to list
             programmedProblems = [];
             completedProblems = [];
-            await loadActiveProblems();
+            try {
+                await loadActiveProblems();
+            } catch (refreshError) {
+                console.error('Refresh after reopen failed:', refreshError);
+                alert('The problem was reopened, but the list could not refresh. Press Refresh.');
+            }
             showListView();
         } else {
             throw new Error(response.message || 'Failed to reopen problem');
@@ -3274,7 +3375,11 @@ async function reopenProblem() {
         
     } catch (error) {
         console.error('❌ Error reopening problem:', error);
-        alert('Failed to reopen problem: ' + error.message);
+        if (error && error.outcomeUnknown) {
+            alert('No confirmation was received from the server, so the reopen may or may not have gone through.\n\nPress Refresh and check the problem before trying again.');
+        } else {
+            alert('Failed to reopen problem: ' + error.message);
+        }
     } finally {
         if (reopenBtnEl) reopenBtnEl.disabled = false;
     }
@@ -3330,9 +3435,9 @@ async function reopenProblem() {
 
                 // Only pre-fill fields the model returned a valid (dropdown-matching) value for --
                 // an invalid suggestion comes back as null from the backend and is left alone here.
-                if (suggestion.category) document.getElementById('detailCategory').value = suggestion.category;
-                if (suggestion.subCategory) document.getElementById('detailSubCategory').value = suggestion.subCategory;
-                if (suggestion.priority) document.getElementById('detailPriority').value = suggestion.priority;
+                if (suggestion.category) setSelectValue('detailCategory', suggestion.category);
+                if (suggestion.subCategory) setSelectValue('detailSubCategory', suggestion.subCategory);
+                if (suggestion.priority) setSelectValue('detailPriority', suggestion.priority);
                 if (suggestion.costResponsibility) document.getElementById('detailCostResponsibility').value = suggestion.costResponsibility;
 
                 showClassificationSuggestion(suggestion);
@@ -3557,7 +3662,11 @@ async function reopenProblem() {
             } catch (error) {
                 thinkingBubble.remove();
                 console.error('❌ Error in framework chat:', error);
-                appendFrameworkChatMessage('assistant', '⚠️ Failed to get a response: ' + error.message);
+                if (error && error.reason === 'url-too-long') {
+                    appendFrameworkChatMessage('assistant', '⚠️ This conversation has become too long to continue. Close the chat and reopen it to start a fresh assessment.');
+                } else {
+                    appendFrameworkChatMessage('assistant', '⚠️ Failed to get a response: ' + error.message);
+                }
             } finally {
                 input.disabled = false;
                 sendBtn.disabled = false;
@@ -3565,82 +3674,31 @@ async function reopenProblem() {
             }
         }
 
-        async function makeRequest(action, additionalData = {}, retryCount = 0) {
-    const MAX_RETRIES = 2;
-    const TIMEOUT_DURATION = 30000; // 30 seconds
-
-    return new Promise((resolve, reject) => {
-        const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+        // V1.3.0: transport is the shared ApiClient.js (30s per attempt).
+        // Reads retry (3 retries = 4 attempts). Writes are NEVER re-sent
+        // automatically: a failed write rejects with error.outcomeUnknown = true.
+        const WRITE_ACTIONS = ['updateProblem'];
+        // User-triggered AI calls: costly, and the person can simply press again.
+        const NO_AUTO_RETRY_ACTIONS = ['getClassificationSuggestion', 'getDecisionJustification', 'askFrameworkQuestion'];
+        const ACTION_TIMEOUTS = { getDropdownOptions: 15000 };
         
-        console.log(`🔒 Making request (attempt ${retryCount + 1}):`, action);
-        
-        const script = document.createElement('script');
-        const params = new URLSearchParams({
-            action: action,
-            callback: callbackName,
-            ...additionalData
-        });
-        
-        script.src = `${WEB_APP_URL}?${params.toString()}`;
-        console.log('* Request URL:', script.src);
-
-        let settled = false;
-
-        // Success handler
-        window[callbackName] = function(response) {
-            if (settled) return;
-            settled = true;
-            console.log('✅ Received JSONP response:', response);
-            cleanup();
-            resolve(response);
-        };
-        
-        // Error handler
-        script.onerror = function(error) {
-            if (settled) return;
-            settled = true;
-            console.error(`❌ Script loading error (attempt ${retryCount + 1}):`, error);
-            cleanup();
-            
-            if (retryCount < MAX_RETRIES) {
-                console.log(`🔒" Retrying request (${retryCount + 1}/${MAX_RETRIES})...`);
-                setTimeout(() => {
-                    resolve(makeRequest(action, additionalData, retryCount + 1));
-                }, 2000 * (retryCount + 1)); // Progressive backoff
-            } else {
-                reject(new Error(`Network request failed after ${MAX_RETRIES + 1} attempts`));
+        function makeRequest(action, additionalData, callOpts) {
+            callOpts = callOpts || {};
+            const opts = {};
+            if (WRITE_ACTIONS.indexOf(action) !== -1) {
+                opts.write = true;
+            } else if (NO_AUTO_RETRY_ACTIONS.indexOf(action) !== -1) {
+                opts.retries = 0;
             }
-        };
-        
-        // Timeout handler
-        const timeoutId = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            console.error(`⏰ Request timeout (${TIMEOUT_DURATION}ms) on attempt ${retryCount + 1}`);
-            cleanup();
-            
-            if (retryCount < MAX_RETRIES) {
-                console.log(`🔒" Retrying after timeout (${retryCount + 1}/${MAX_RETRIES})...`);
-                setTimeout(() => {
-                    resolve(makeRequest(action, additionalData, retryCount + 1));
-                }, 2000 * (retryCount + 1));
-            } else {
-                reject(new Error(`Request timeout after ${MAX_RETRIES + 1} attempts`));
+            if (ACTION_TIMEOUTS[action]) opts.timeout = ACTION_TIMEOUTS[action];
+            if (!callOpts.silent) {
+                opts.onRetry = function (info) {
+                    showRetryNotification(info.attempt + 1, info.maxAttempts);
+                };
             }
-        }, TIMEOUT_DURATION);
-        
-        // Cleanup function
-        function cleanup() {
-            clearTimeout(timeoutId);
-            if (script.parentNode) {
-                document.head.removeChild(script);
-            }
-            window[callbackName] = function() {};
+            console.log('🔒 Making request:', action);
+            return ApiClient.call(WEB_APP_URL, action, additionalData || {}, opts);
         }
-        
-        document.head.appendChild(script);
-    });
-}
         
         function updateDataStatus(message, type) {
             const indicator = document.getElementById('dataStatus');
@@ -3671,7 +3729,7 @@ function updateConnectionStatus(message, type = 'loading') {
 function showRetryNotification(attempt, maxAttempts) {
     const status = document.getElementById('dataStatus');
     if (status) {
-        status.textContent = `🔒" Connection slow, retrying... (${attempt}/${maxAttempts})`;
+        status.textContent = `Connection slow, retrying... (${attempt}/${maxAttempts})`;
         status.className = 'data-indicator loading';
     }
 }
@@ -3719,9 +3777,7 @@ function showRetryNotification(attempt, maxAttempts) {
             }
             
             try {
-                console.log('🔄 Refreshing dropdown options...');
-                await loadDropdownOptions();
-                
+                // V1.3.0: problems first; dropdown lists afterwards, non-fatal.
                 // V1.1.0 - Clear caches and reload active only
                 programmedProblems = [];
                 completedProblems = [];
@@ -3746,6 +3802,9 @@ function showRetryNotification(attempt, maxAttempts) {
                         openProblemDetailsPage(updatedProblem);
                     }
                 }
+                
+                console.log('🔄 Refreshing dropdown options...');
+                await loadDropdownOptions(true);
                 
             } catch (error) {
                 console.error('❌ Error refreshing data:', error);
