@@ -2,14 +2,51 @@
 =====================================================================
 FIELD NOTIFICATIONS - UNIFIED EMAIL + SMS SYSTEM
 =====================================================================
+DOCUMENT INFORMATION:
+  File Name:        FieldAlerts.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Staff Module
+  Frontend Version: V3.5.0
+  Backend:          NotificationServer (V3.12.0 or later required)
+  Status:           PRODUCTION
+  Created:          Not recorded in earlier header
+  Last Modified:    Oct 2026
+
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.4.2 - Immediate grey-out feedback on click, breathing room
-  below the Send button
-LAST UPDATED: Sep 2026
-DESIGN SYSTEM: Lake Illawong Unified V2.0 (glass-morphism, confirmed against
-  actual CSS -- corrected from a stale "v1.4" that contradicted this file's
-  own VERSION line above, which already correctly noted the V2.0 conversion)
+VERSION: V3.5.0 - Optional custom salutation (e.g. "Hi All,")
+LAST UPDATED: Oct 2026
+DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
+  built to v2.4; existing elements unchanged from the V2.0 glass-morphism
+  conversion)
+
+TECHNICAL:
+  Technology: HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol: fetch() POST, form-encoded (NotificationServer)
+  Design System: Lake Illawong Unified Design System v2.4
+  Hosting: Netlify
+
+NEW IN V3.5.0:
+✅ New "Custom Salutation" checkbox in the notification options. Unticked
+   (the default) = no change: NotificationServer adds "Hi [First Name],"
+   per recipient exactly as before. Ticked = a salutation box appears above
+   the message; whatever is typed there (e.g. "Hi All,") is used as the
+   greeting for EVERY recipient instead, so residents can see the message
+   went to everyone. Typed text is used exactly as entered -- include the
+   comma yourself. Email only; SMS text is unchanged.
+✅ Ticking Custom Salutation also applies to the quick-fill templates, which
+   normally get no greeting (skipGreeting) -- ticking it is an explicit
+   choice, so it wins.
+✅ If Custom Salutation is ticked with Email on but the box left empty,
+   Send is stopped with a message rather than silently falling back to
+   "Hi [First Name],".
+✅ The checkbox and typed salutation reset after a successful send and on
+   Clear Selections, so a "Hi All," never carries into the next alert by
+   accident (same reasoning as the V3.3.3 selectedTemplate reset).
+✅ New param customGreeting sent to sendFieldAlert -- REQUIRES
+   NotificationServer V3.12.0+. Against an older NotificationServer the
+   parameter is ignored and recipients would silently get "Hi [First Name],"
+   -- deploy NotificationServer first.
 
 NEW IN V3.4.2:
 ✅ Send button now visibly greys out and reads "Sending..." the instant
@@ -309,7 +346,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
     min-height: 44px;
     font-family: inherit;
 }
-.portal-back-btn:hover { background: rgba(255,255,255,0.25); }        
+.portal-back-btn:hover { background: rgba(255,255,255,0.25); }
 
         .logo-container {
             flex-shrink: 0;
@@ -320,8 +357,8 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             height: 90px;
             border-radius: 50%;
             object-fit: cover;
-           
-           
+
+
         }
 
         .header-text {
@@ -353,16 +390,16 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 flex-direction: column;
                 gap: 15px;
             }
-            
+
             .header-text {
                 align-items: center;
                 text-align: center;
             }
-            
+
             .header-title {
                 font-size: 1.8rem;
             }
-            
+
             .logo-image {
                 width: 70px;
                 height: 70px;
@@ -619,6 +656,41 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 
         .char-count.error {
             color: #ef4444;
+        }
+
+        /* CUSTOM SALUTATION (V3.5.0) - glass input per Design System v2.4 */
+        .salutation-field {
+            margin-bottom: 15px;
+        }
+
+        .salutation-label {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.70);
+            margin-bottom: 8px;
+        }
+
+        .salutation-input {
+            width: 100%;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 2px;
+            color: #ffffff;
+            padding: 10px 16px;
+            font-family: inherit;
+            font-size: 0.875rem;
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            min-height: 44px;
+        }
+
+        .salutation-input::placeholder { color: rgba(255,255,255,0.50); }
+
+        .salutation-input:focus {
+            outline: none;
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.30);
         }
 
         /* SMART SEND BUTTON */
@@ -883,19 +955,19 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             .container {
                 padding: 15px;
             }
-            
+
             .template-grid {
                 grid-template-columns: 1fr;
             }
-            
+
             .zone-grid {
                 grid-template-columns: 1fr 1fr;
             }
-            
+
             .template-card {
                 min-height: 80px;
             }
-            
+
             .send-btn {
                 width: 100%;
                 min-width: auto;
@@ -1505,25 +1577,25 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
         <div class="distribution-title">📋 E-Copy Distribution List</div>
         <button class="distribution-refresh" onclick="loadECopyList()">🔄 Refresh</button>
     </div>
-    
+
     <div class="distribution-summary" id="distributionSummary">
         <div style="color: #6b7280;"><span class="spinner"></span>Loading recipients...</div>
     </div>
-    
+
     <div class="distribution-list" id="distributionList">
         <!-- Recipients loaded here -->
     </div>
-    
+
     <div class="distribution-actions">
         <button class="view-all" onclick="toggleFullList()">
             <span id="viewAllText">View All</span>
         </button>
-        
+
     </div>
 </div>
 
 
-            
+
             <!-- Clear Selections Button -->
             <div style="text-align: center; margin-top: 15px;">
                 <button class="clear-btn" onclick="clearAllSelections()">
@@ -1535,7 +1607,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 <!-- Notification Options -->
 <div class="notification-options">
     <div class="options-title">Choose Notification Method(s)</div>
-    
+
     <div class="options-grid">
         <div class="option-item">
             <input type="checkbox" id="emailEnabled" class="option-checkbox" checked onchange="toggleSubjectField(); updateSendButton(); updateCharCount();">
@@ -1551,13 +1623,21 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
     </label>
     <div class="option-help">Includes header/footer for formal alerts</div>
 </div>
-        
+
         <div class="option-item">
             <input type="checkbox" id="smsEnabled" class="option-checkbox">
             <label for="smsEnabled" class="option-label">
                 📱 Send SMS
             </label>
             <div class="option-help">Only SMS-Alerts tagged residents</div>
+        </div>
+
+        <div class="option-item">
+            <input type="checkbox" id="customSalutation" class="option-checkbox" onchange="toggleSalutationField();">
+            <label for="customSalutation" class="option-label">
+                ✏️ Custom Salutation
+            </label>
+            <div class="option-help">Email only. Replaces "Hi [First Name]," (e.g. Hi All,)</div>
         </div>
     </div>
 </div>
@@ -1566,22 +1646,36 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 <!-- Message Composition -->
 <div class="compose-section">
     <div class="compose-title">Compose Message</div>
-    
+
     <!-- Subject line (only for plain emails) -->
     <div id="subjectField" style="display: none; margin-bottom: 15px;">
         <label for="emailSubject" style="display: block; font-weight: 500; margin-bottom: 5px; color: #1f2937;">
             Email Subject:
         </label>
-        <input 
+        <input
             type="text"
             id="emailSubject"
             placeholder="Enter email subject..."
             style="width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 8px; font-family: inherit; font-size: 1rem;">
     </div>
-    
-    <textarea 
-        class="message-input" 
-        id="messageText" 
+
+    <!-- Custom salutation (only when Custom Salutation is ticked) -- V3.5.0 -->
+    <div id="salutationField" class="salutation-field hidden">
+        <label for="salutationText" class="salutation-label">
+            Salutation (sent to every recipient instead of "Hi [First Name],")
+        </label>
+        <input
+            type="text"
+            id="salutationText"
+            class="salutation-input"
+            placeholder="e.g. Hi All,"
+            maxlength="100"
+            autocomplete="off">
+    </div>
+
+    <textarea
+        class="message-input"
+        id="messageText"
         placeholder="The greeting (&quot;Hi [First Name],&quot;) is added automatically per recipient — just select a template or enter your custom message here..."
         maxlength="5000"></textarea>
     <div class="char-count" id="charCount">0/5000 characters</div>
@@ -1595,25 +1689,25 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             PDF, DOC, DOCX, JPG, PNG, TXT • Max 10MB per file, 20MB total
         </span>
     </label>
-    
+
     <div class="file-input-wrapper">
-        <input 
-    type="file" 
-    id="fileAttachment" 
+        <input
+    type="file"
+    id="fileAttachment"
     class="file-input"
     accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.txt"
     multiple
     onchange="handleFileSelect(event)">
     </div>
-    
+
     <!-- One .attachment-preview row per selected file, built by displayAttachmentPreviews() -- V3.4.0, was a single fixed row -->
     <div id="attachmentPreviewList"></div>
     <div class="attachment-total" id="attachmentTotal" style="display:none; margin-top: 8px; font-size: 0.85rem; color: #6b7280;"></div>
-</div>        
+</div>
 
 <!-- SMS Options -->
-      
-            
+
+
             <div id="smsCostEstimate" class="sms-cost-estimate">
     <div class="cost-breakdown">
         <div class="cost-item">
@@ -1621,7 +1715,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             <div class="cost-value" id="smsCount">...</div>
         </div>
     </div>
-    
+
     <!-- SMS Recipient Details List -->
     <div id="smsRecipientList" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.15);">
         <div style="font-size: 12px; color: #666; margin-bottom: 8px; font-weight: 500;">
@@ -1652,11 +1746,11 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 <h2 class="modal-title">Select Individual Units</h2>
                 <button class="close-btn" onclick="closeUnitSelector()">&times;</button>
             </div>
-            
+
             <div class="units-grid" id="unitsGrid">
                 <!-- Units 1-44 will be generated here -->
             </div>
-            
+
             <div class="modal-actions">
                 <button class="btn btn-secondary" onclick="clearAllUnits()">Clear All</button>
                 <button class="btn btn-secondary" onclick="selectAllUnits()">Select All</button>
@@ -1675,9 +1769,9 @@ function checkSession() {
                 'portalSysAdminVerified',
                 'lakeIllawongVerified'
             ];
-            
+
             const hasSession = validKeys.some(key => sessionStorage.getItem(key) === 'true' || localStorage.getItem(key) === 'true');
-        
+
         if (hasSession) {
             document.body.style.display = '';
         } else {
@@ -1694,7 +1788,7 @@ function checkSession() {
             }
         }
         checkSession();
-        
+
 function goBackToPortal() {
             const params = new URLSearchParams(window.location.search);
             const portal = params.get('portal');
@@ -1707,11 +1801,11 @@ function goBackToPortal() {
             };
             window.location.href = destinations[portal] || 'FieldOperationsPortal.html';
         }
-        
-        
+
+
 // NotificationServer V3.0.1
-        const NOTIFICATION_SERVER_URL = 'https://script.google.com/macros/s/AKfycbzXdhhzLllsFMlPQ2Q3Hdv7iTzTGvDq9Zk3ttXKW_6OSmil4Pg_IA1WoL7da3UQghiL/exec'; 
-        
+        const NOTIFICATION_SERVER_URL = 'https://script.google.com/macros/s/AKfycbzXdhhzLllsFMlPQ2Q3Hdv7iTzTGvDq9Zk3ttXKW_6OSmil4Pg_IA1WoL7da3UQghiL/exec';
+
         // Global state
         let selectedTemplate = null;
         let selectedZones = [];
@@ -1729,17 +1823,17 @@ let attachments = [];
 const MAX_SINGLE_ATTACHMENT_BYTES = 10 * 1024 * 1024;   // 10MB per file
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;    // 20MB combined
 
-        
+
         let currentFilter = 'all';
-        
+
         // =====================================================================
         // INITIALIZATION
         // =====================================================================
-        
+
         document.addEventListener('DOMContentLoaded', function() {
             setupEventListeners();
             generateUnitsGrid();
-            
+
             // Pre-warm the NotificationServer Apps Script container in the
             // background. GAS cold-starts can take several seconds on the
             // first real request; firing a cheap, silent testConnection call
@@ -1749,11 +1843,11 @@ const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;    // 20MB combined
             // -- this is an optimisation attempt, not a required step.
             callNotificationAPI('testConnection', {}).catch(() => {});
         });
-        
+
         // =====================================================================
         // EVENT LISTENERS
         // =====================================================================
-        
+
         function setupEventListeners() {
             // Template selection
             document.querySelectorAll('.template-card').forEach(card => {
@@ -1761,7 +1855,7 @@ const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;    // 20MB combined
                     selectTemplate(this.dataset.template);
                 });
             });
-            
+
             // Zone selection
             document.querySelectorAll('.zone-btn').forEach(btn => {
                 if (!btn.onclick) { // Don't override the special button
@@ -1770,29 +1864,29 @@ const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;    // 20MB combined
                     });
                 }
             });
-            
+
             // Template filtering
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     setTemplateFilter(this.dataset.filter);
                 });
             });
-            
-         
+
+
             // Character counter and button update
 const messageInput = document.getElementById('messageText');
 messageInput.addEventListener('input', updateCharCount);
-messageInput.addEventListener('input', updateSendButton); 
+messageInput.addEventListener('input', updateSendButton);
 
 // Alert format toggle - show/hide subject field
 const alertFormatCheckbox = document.getElementById('useAlertFormat');
 if (alertFormatCheckbox) {
     alertFormatCheckbox.addEventListener('change', toggleSubjectField);
 }
-            
+
             // Send button
             document.getElementById('sendBtn').addEventListener('click', sendFieldAlert);
-            
+
             // Keyboard shortcuts
             document.addEventListener('keydown', function(e) {
                 if (e.ctrlKey && e.shiftKey && e.key === 'E') {
@@ -1804,33 +1898,33 @@ if (alertFormatCheckbox) {
                 }
             });
         }
-        
+
         // =====================================================================
         // TEMPLATE MANAGEMENT
         // =====================================================================
-        
+
         function selectTemplate(templateType) {
             selectedTemplate = templateType;
-            
+
             // Update visual selection
             document.querySelectorAll('.template-card').forEach(card => {
                 card.classList.remove('selected');
             });
             document.querySelector(`[data-template="${templateType}"]`).classList.add('selected');
-            
+
             // Load template message
             loadTemplate(templateType);
             updateSendButton();
         }
-        
+
         function setTemplateFilter(filter) {
             currentFilter = filter;
-            
+
             // Update filter buttons
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.filter === filter);
             });
-            
+
             // Filter templates
             document.querySelectorAll('.template-card').forEach(card => {
                 const category = card.dataset.category;
@@ -1838,7 +1932,7 @@ if (alertFormatCheckbox) {
                 card.style.display = show ? 'flex' : 'none';
             });
         }
-        
+
         function loadTemplate(type) {
             const templates = {
                 emergency: " EMERGENCY ALERT \n\nImmediate action required. Please follow safety protocols and contact management if needed.\n\nTime: [TIME]\nLake Illawong Management",
@@ -1847,14 +1941,14 @@ if (alertFormatCheckbox) {
                 announcement: " COMMUNITY ANNOUNCEMENT\n\n[YOUR MESSAGE HERE]\n\nThank you,\nLake Illawong Management",
                 general: " GENERAL NOTICE\n\n[YOUR MESSAGE HERE]\n\nPlease contact management if you have any questions.\n\nRegards,\nLake Illawong Management"
             };
-            
+
             if (templates[type]) {
                 const messageInput = document.getElementById('messageText');
                 messageInput.value = templates[type];
                 updateCharCount();
             }
         }
-        
+
         // =====================================================================
         // ZONE MANAGEMENT
         // =====================================================================
@@ -1871,17 +1965,17 @@ if (alertFormatCheckbox) {
         // E-Copy Recipients - exclusive selection
         const allBtn = document.querySelector('[data-zone="all"]');
         allBtn.classList.remove('selected');
-        
+
         // Clear all other zones
         document.querySelectorAll('.zone-btn').forEach(btn => {
             if (btn.dataset.zone && btn.dataset.zone !== 'ecopy') {
                 btn.classList.remove('selected');
             }
         });
-        
+
         const btn = document.querySelector('[data-zone="ecopy"]');
         const preview = document.getElementById('distributionPreview');
-        
+
         if (selectedZones.includes('ecopy')) {
             // Deselect E-Copy
             selectedZones = [];
@@ -1902,24 +1996,24 @@ if (alertFormatCheckbox) {
         // Individual zone selected
         const allBtn = document.querySelector('[data-zone="all"]');
         allBtn.classList.remove('selected');
-        
+
         // Clear E-Copy if selected
         const ecopyBtn = document.querySelector('[data-zone="ecopy"]');
         if (ecopyBtn) {
             ecopyBtn.classList.remove('selected');
         }
         selectedZones = selectedZones.filter(z => z !== 'ecopy');
-        
+
         // Hide E-Copy distribution preview only -- attachments are available
         // for every recipient type (Zone/All Units/Individual/E-Copy), not
         // E-Copy exclusively, so the attachment section itself is left alone
         // here now -- V3.4.0.
         const preview = document.getElementById('distributionPreview');
         if (preview) preview.classList.remove('show');
-        
+
         const btn = document.querySelector(`[data-zone="${zone}"]`);
         btn.classList.toggle('selected');
-        
+
         if (btn.classList.contains('selected')) {
             if (!selectedZones.includes(zone)) {
                 selectedZones = selectedZones.filter(z => z !== 'all');
@@ -1928,32 +2022,32 @@ if (alertFormatCheckbox) {
         } else {
             selectedZones = selectedZones.filter(z => z !== zone);
         }
-        
+
         // If no zones selected, default to all
         if (selectedZones.length === 0) {
             allBtn.classList.add('selected');
             selectedZones = ['all'];
         }
-        
+
         selectedUnits = []; // Clear individual selections
         selectedResidentEmails = [];
     }
-    
+
     updateSendButton();
 }
-        
+
         // =====================================================================
         // INDIVIDUAL UNIT SELECTION
         // =====================================================================
-        
+
         function openUnitSelector() {
             document.getElementById('unitModal').classList.add('show');
         }
-        
+
         function closeUnitSelector() {
             document.getElementById('unitModal').classList.remove('show');
         }
-        
+
         // V3.3.0: units with more than one resident now show a checkbox per
         // resident (name + own email) instead of one checkbox for the whole
         // unit, so a specific person can be included/excluded from a send.
@@ -1962,7 +2056,7 @@ if (alertFormatCheckbox) {
         // getAllResidents endpoint (already a FieldAlerts dependency) and
         // cached for the rest of the session.
         let residentsCache = null;
-        
+
         async function loadResidentsCache() {
             if (residentsCache) return residentsCache;
             try {
@@ -1975,11 +2069,11 @@ if (alertFormatCheckbox) {
             }
             return residentsCache;
         }
-        
+
         async function generateUnitsGrid() {
             const grid = document.getElementById('unitsGrid');
             grid.innerHTML = '<div class="units-loading">Loading residents…</div>';
-            
+
             const residents = await loadResidentsCache();
             const residentsByUnit = {};
             residents.forEach(r => {
@@ -1987,12 +2081,12 @@ if (alertFormatCheckbox) {
                 if (!unitNum) return;
                 (residentsByUnit[unitNum] = residentsByUnit[unitNum] || []).push(r);
             });
-            
+
             grid.innerHTML = '';
-            
+
             for (let i = 1; i <= 44; i++) {
                 const unitResidents = residentsByUnit[i.toString()] || [];
-                
+
                 if (unitResidents.length >= 2) {
                     // Multi-resident unit: one row per resident
                     const groupDiv = document.createElement('div');
@@ -2039,21 +2133,21 @@ if (alertFormatCheckbox) {
                 }
             }
         }
-        
+
         function selectAllUnits() {
             document.querySelectorAll('#unitsGrid input:not(:disabled)').forEach(input => {
                 input.checked = true;
                 input.closest('.unit-checkbox, .resident-row').classList.add('selected');
             });
         }
-        
+
         function clearAllUnits() {
             document.querySelectorAll('#unitsGrid input').forEach(input => {
                 input.checked = false;
                 input.closest('.unit-checkbox, .resident-row').classList.remove('selected');
             });
         }
-        
+
         function confirmUnitSelection() {
             const checked = Array.from(document.querySelectorAll('#unitsGrid input:checked'));
             selectedResidentEmails = checked.map(input => ({
@@ -2062,7 +2156,7 @@ if (alertFormatCheckbox) {
                 email: input.value
             }));
             selectedUnits = [...new Set(selectedResidentEmails.map(r => r.unit))];
-            
+
             if (selectedUnits.length > 0) {
                 // Clear zone selections
                 selectedZones = [];
@@ -2070,23 +2164,23 @@ if (alertFormatCheckbox) {
                     btn.classList.remove('selected');
                 });
             }
-            
+
             closeUnitSelector();
             updateSendButton();
         }
-        
+
         // =====================================================================
         // SMART BUTTON MANAGEMENT
         // =====================================================================
-        
+
         function updateSendButton() {
     const sendBtn = document.getElementById('sendBtn');
     const messageText = document.getElementById('messageText').value;
     const hasMessage = messageText && messageText.trim().length > 0;
-    
+
     // Reset classes
     sendBtn.classList.remove('template-selected', 'ready-to-send');
-    
+
     if (selectedZones.length === 0 && selectedUnits.length === 0) {
         sendBtn.textContent = 'Select Zone or Units';
         sendBtn.disabled = true;
@@ -2102,7 +2196,7 @@ if (alertFormatCheckbox) {
         sendBtn.classList.add('ready-to-send');
     }
 }
-        
+
         function getTemplateName(template) {
             const names = {
                 'emergency': 'Emergency',
@@ -2113,26 +2207,26 @@ if (alertFormatCheckbox) {
             };
             return names[template] || 'Message';
         }
-        
+
         function getTargetText() {
             if (selectedUnits.length > 0) {
                 if (selectedUnits.length === 1) return `Unit ${selectedUnits[0]}`;
                 if (selectedUnits.length <= 3) return selectedUnits.map(u => `Unit ${u}`).join(', ');
                 return `${selectedUnits.length} units`;
             }
-            
+
             if (selectedZones.includes('all')) return 'All Units';
             if (selectedZones.includes('ecopy')) return 'E-Copy Recipients';
-            
+
             // Map zone codes to display names
             const zoneNames = {
                 'zone1': 'Zone 1',
-                'zone2': 'Zone 2', 
+                'zone2': 'Zone 2',
                 'zone3': 'Zone 3',
                 'zone4': 'Zone 4',
                 'zone5': 'Zone 5'
             };
-            
+
             if (selectedZones.length === 1) {
                 return zoneNames[selectedZones[0]] || selectedZones[0];
             }
@@ -2141,32 +2235,32 @@ if (alertFormatCheckbox) {
             }
             return `${selectedZones.length} zones`;
         }
-        
-       
-        
+
+
+
         // =====================================================================
         // CHARACTER COUNTER
         // =====================================================================
-        
+
         function updateCharCount() {
     const messageInput = document.getElementById('messageText');
     const charCount = document.getElementById('charCount');
     const smsCheckbox = document.getElementById('smsEnabled');
     const smsEnabled = smsCheckbox && smsCheckbox.checked;
     const length = messageInput.value.length;
-    
+
     if (smsEnabled) {
         // SMS mode - account for "Lake Illawong Alert: " prefix (21 chars)
         const prefix = 21;
         const totalLength = length + prefix;
-        
+
         // Calculate SMS parts and cost
         let parts, cost;
         if (totalLength <= 160) {
             parts = 1;
             cost = 0.037;
             const remaining = 160 - totalLength;
-            
+
             if (remaining < 20) {
                 charCount.textContent = `${totalLength}/160 chars (${remaining} left)`;
                 charCount.className = 'char-count warning';
@@ -2194,7 +2288,7 @@ function toggleSubjectField() {
     const useAlertFormat = document.getElementById('useAlertFormat');
     const emailEnabled = document.getElementById('emailEnabled');
     const subjectField = document.getElementById('subjectField');
-    
+
     // Only show subject field if:
     // 1. Email is enabled
     // 2. AND Alert format is NOT checked (plain email mode)
@@ -2206,7 +2300,25 @@ function toggleSubjectField() {
         subjectField.style.display = 'none';
     }
 }
-        
+
+// V3.5.0: show/hide the custom salutation box to match its checkbox
+function toggleSalutationField() {
+    const checkbox = document.getElementById('customSalutation');
+    const field = document.getElementById('salutationField');
+    if (!checkbox || !field) return;
+    field.classList.toggle('hidden', !checkbox.checked);
+}
+
+// V3.5.0: untick Custom Salutation and clear what was typed, so a "Hi All,"
+// can't carry into the next alert by accident
+function resetSalutation() {
+    const checkbox = document.getElementById('customSalutation');
+    const input = document.getElementById('salutationText');
+    if (checkbox) checkbox.checked = false;
+    if (input) input.value = '';
+    toggleSalutationField();
+}
+
         function getMimeType(filename) {
             const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
             const mimeTypes = {
@@ -2220,14 +2332,14 @@ function toggleSubjectField() {
             };
             return mimeTypes[ext] || 'application/octet-stream';
         }
-        
+
         function showNoEmailModal(residents) {
             console.log('showNoEmailModal called with:', residents);
             console.log('Number of residents:', residents ? residents.length : 'undefined');
-            
+
             const modal = document.getElementById('noEmailModal');
             const listContainer = document.getElementById('noEmailList');
-            
+
             // Build list HTML
             listContainer.innerHTML = residents.map(function(resident) {
                 console.log('Processing resident:', resident);
@@ -2236,13 +2348,13 @@ function toggleSubjectField() {
                     '<span>' + resident.unit + ' - ' + resident.phone + '</span>' +
                     '</div>';
             }).join('');
-            
+
             console.log('List HTML:', listContainer.innerHTML);
-            
+
             // Show modal
             modal.classList.remove('hidden');
         }
-        
+
         function cancelSend() {
             const modal = document.getElementById('noEmailModal');
             modal.classList.add('hidden');
@@ -2250,43 +2362,43 @@ function toggleSubjectField() {
             updateSendButton();
             showNotification('Send cancelled', 'info');
         }
-        
+
         async function confirmAndSend() {
     const modal = document.getElementById('noEmailModal');
     modal.classList.add('hidden');
-    
+
     // User confirmed - proceed with SMS-enabled send
     await executeFieldAlertSend();
 }
-        
-        
+
+
         // =====================================================================
         // UTILITY FUNCTIONS
         // =====================================================================
-        
+
         function clearAllSelections() {
             // Clear state variables
             selectedTemplate = null;
             selectedZones = [];
             selectedUnits = [];
             selectedResidentEmails = [];
-            
+
             // Clear template selections
             document.querySelectorAll('.template-card').forEach(card => {
                 card.classList.remove('selected');
             });
-            
+
             // Clear zone selections
             document.querySelectorAll('.zone-btn').forEach(btn => {
                 btn.classList.remove('selected');
             });
-            
+
             // Clear individual unit/resident selections
             document.querySelectorAll('#unitsGrid input').forEach(input => {
                 input.checked = false;
                 input.closest('.unit-checkbox, .resident-row').classList.remove('selected');
             });
-            
+
             // Hide E-Copy distribution preview
             const preview = document.getElementById('distributionPreview');
             if (preview) preview.classList.remove('show');
@@ -2295,27 +2407,30 @@ function toggleSubjectField() {
             // previously left a staged file in place despite clearing
             // everything else.
             clearAttachment();
-            
+
+            // Clear the custom salutation too -- V3.5.0
+            resetSalutation();
+
             // Clear message text
             const messageInput = document.getElementById('messageText');
             messageInput.value = '';
             messageInput.placeholder = 'Select a template or enter your custom message here...';
             updateCharCount();
-            
+
             // Update send button
             updateSendButton();
-            
+
             // Show confirmation
             showNotification('All selections cleared', 'success');
         }
-        
+
         function showNotification(message, type = 'success') {
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
             notification.innerHTML = message;
-            
+
             document.body.appendChild(notification);
-            
+
             // Auto remove after 4 seconds
             setTimeout(() => {
                 notification.remove();
@@ -2338,19 +2453,19 @@ function cleanUnitNumber(unit) {
 async function loadECopyList(retryCount = 0) {
     const MAX_RETRIES = 2; // matches the retry idiom used elsewhere (MaintenanceModule's makeRequest)
     console.log(`📋 Loading E-Copy distribution list (attempt ${retryCount + 1})...`);
-    
+
     const summaryDiv = document.getElementById('distributionSummary');
     const listDiv = document.getElementById('distributionList');
-    
+
     summaryDiv.className = 'distribution-summary';
     summaryDiv.innerHTML = retryCount === 0
         ? '<span class="spinner"></span>Loading recipients...'
         : `<span class="spinner"></span>Connection slow, retrying... (${retryCount}/${MAX_RETRIES})`;
     listDiv.innerHTML = '';
-    
+
     try {
         const response = await callNotificationAPI('getECopyRecipients', {});
-        
+
         if (response.success) {
             ecopyRecipients = response.recipients || [];
             displayECopyList();
@@ -2374,10 +2489,10 @@ async function loadECopyList(retryCount = 0) {
 function displayECopyList() {
     const summaryDiv = document.getElementById('distributionSummary');
     const listDiv = document.getElementById('distributionList');
-    
+
     const total = ecopyRecipients.length;
     const missingEmails = ecopyRecipients.filter(r => !r.email || r.email.trim() === '');
-    
+
     // Update summary
     if (missingEmails.length > 0) {
         summaryDiv.className = 'distribution-summary warning';
@@ -2389,16 +2504,16 @@ function displayECopyList() {
         summaryDiv.className = 'distribution-summary';
         summaryDiv.innerHTML = `✅ ${total} recipients found`;
     }
-    
+
     // Display list
     const displayCount = showFullList ? ecopyRecipients.length : Math.min(3, ecopyRecipients.length);
     listDiv.className = showFullList ? 'distribution-list' : 'distribution-list collapsed';
-    
+
     let html = '';
     for (let i = 0; i < displayCount; i++) {
         const r = ecopyRecipients[i];
         const hasEmail = r.email && r.email.trim() !== '';
-        
+
         html += `
             <div class="recipient-item ${hasEmail ? '' : 'no-email'}">
                 <div class="recipient-unit">Unit ${cleanUnitNumber(r.unit)}</div>
@@ -2409,7 +2524,7 @@ function displayECopyList() {
             </div>
         `;
     }
-    
+
     if (!showFullList && ecopyRecipients.length > 3) {
         html += `
             <div style="text-align: center; padding: 10px; color: #6b7280; font-size: 0.9rem;">
@@ -2417,9 +2532,9 @@ function displayECopyList() {
             </div>
         `;
     }
-    
+
     listDiv.innerHTML = html;
-    
+
     // Update button
     const viewAllBtn = document.getElementById('viewAllText');
     if (ecopyRecipients.length <= 3) {
@@ -2495,26 +2610,26 @@ function validateFile(file) {
     'image/png': '.png',
     'text/plain': '.txt'
 };
-    
+
     // Check file type
     if (!allowedTypes[file.type]) {
         showNotification('Invalid file type. Please use: PDF, DOC, DOCX, JPG, PNG', 'error');
         return false;
     }
-    
+
     // Check file size
     if (file.size > MAX_SINGLE_ATTACHMENT_BYTES) {
         const fileSizeMB = (file.size / 1024 / 1024).toFixed(1);
         showNotification(`File too large (${fileSizeMB}MB). Maximum size: 10MB per file`, 'error');
         return false;
     }
-    
+
     // Check filename length
     if (file.name.length > 100) {
         showNotification('Filename too long. Please rename to less than 100 characters.', 'error');
         return false;
     }
-    
+
     return true;
 }
 
@@ -2524,17 +2639,17 @@ function validateFile(file) {
 function convertFileToBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        
+
         reader.onload = () => {
             // Remove the data:mime;base64, prefix to get just the base64 data
             const base64 = reader.result.split(',')[1];
             resolve(base64);
         };
-        
+
         reader.onerror = () => {
             reject(new Error('Failed to read file'));
         };
-        
+
         reader.readAsDataURL(file);
     });
 }
@@ -2623,16 +2738,16 @@ function escapeHtml(text) {
         // =====================================================================
         // SMS FUNCTIONS
         // =====================================================================
-        
+
         async function updateSMSCostEstimate() {
     const checkbox = document.getElementById('smsEnabled');
-    
+
     // Update character counter when SMS toggled
     updateCharCount();
-    
+
     const costDiv = document.getElementById('smsCostEstimate');
     const smsCountEl = document.getElementById('smsCount');
-    
+
     if (!checkbox.checked) {
         costDiv.classList.remove('visible');
         // Hide recipient list when SMS disabled
@@ -2640,28 +2755,28 @@ function escapeHtml(text) {
         if (listDiv) listDiv.style.display = 'none';
         return;
     }
-    
+
     costDiv.classList.add('visible');
     smsCountEl.textContent = 'Loading...';
-    
+
     try {
         const response = await callNotificationAPI('getAllResidents', {});
-        
+
         if (response.success) {
             const smsRecipients = response.residents.filter(r => {
                 return hasSMSAlertsTag(r.tags) && r.mobile && r.mobile.trim() !== '';
             });
-            
+
             smsCountEl.textContent = smsRecipients.length;
-            
+
             // Show detailed recipient list
             const listDiv = document.getElementById('smsRecipientList');
             const detailsDiv = document.getElementById('smsRecipientDetails');
-            
+
             if (listDiv && detailsDiv) {
                 if (smsRecipients.length > 0) {
                     // Build list of recipients with names and numbers
-                    detailsDiv.innerHTML = smsRecipients.map(r => 
+                    detailsDiv.innerHTML = smsRecipients.map(r =>
                         `<div style="padding: 4px 0; color: #1e40af;">
                             <strong>${r.name}</strong> (${r.unit}) - ${r.mobile}
                         </div>`
@@ -2679,24 +2794,24 @@ function escapeHtml(text) {
         smsCountEl.textContent = 'Error';
     }
 }
-        
+
         function hasSMSAlertsTag(tagsString) {
             if (!tagsString) return false;
             const tags = tagsString.split(',').map(t => t.trim());
             return tags.includes('SMS-Alerts');
         }
-        
+
         function callNotificationAPI(action, params) {
     return new Promise((resolve, reject) => {
         // Build form data for POST request
         const formData = new URLSearchParams();
         formData.append('action', action);
-        
+
         // Add all parameters
         Object.keys(params).forEach(key => {
             formData.append(key, params[key]);
         });
-        
+
         // Make POST request
         fetch(NOTIFICATION_SERVER_URL, {
             method: 'POST',
@@ -2720,13 +2835,13 @@ function escapeHtml(text) {
         });
     });
 }
-        
+
        // Global variables to store send parameters
 let pendingSendParams = null;
 
 async function sendFieldAlert() {
     const sendBtn = document.getElementById('sendBtn');
-    
+
     // Guard against duplicate/concurrent sends -- V3.4.1. Previously the
     // button wasn't actually disabled until deep inside
     // executeFieldAlertSend(), after an async getNoEmailResidents round
@@ -2755,35 +2870,45 @@ async function sendFieldAlert() {
     // a first click unmistakable.
     sendBtn.classList.remove('template-selected', 'ready-to-send');
     sendBtn.textContent = 'Sending...';
-    
+
     const messageText = document.getElementById('messageText').value;
     const emailEnabled = document.getElementById('emailEnabled').checked;
     const smsEnabled = document.getElementById('smsEnabled').checked;
-    
+
     if (!messageText || messageText.trim() === '') {
         showNotification('Please enter a message', 'error');
         updateSendButton();
         return;
     }
-    
+
     // Must select at least email OR SMS
     if (!emailEnabled && !smsEnabled) {
         showNotification('Please select Email and/or SMS', 'error');
         updateSendButton();
         return;
     }
-    
+
+    // Custom Salutation ticked (email only) but nothing typed -- V3.5.0.
+    // Stop rather than silently falling back to "Hi [First Name],".
+    const customSalutationOn = document.getElementById('customSalutation').checked;
+    const salutationValue = document.getElementById('salutationText').value.trim();
+    if (emailEnabled && customSalutationOn && !salutationValue) {
+        showNotification('Please enter a salutation, or untick Custom Salutation', 'error');
+        updateSendButton();
+        return;
+    }
+
     // Warn about multi-part SMS cost
     if (smsEnabled) {
         const prefix = 21; // "Lake Illawong Alert: "
         const totalLength = messageText.length + prefix;
-        
+
         if (totalLength > 160) {
             const parts = Math.ceil(totalLength / 153);
             const smsCountText = document.getElementById('smsCount').textContent || '0';
             const smsCount = parseInt(smsCountText);
             const costPerRecipient = (parts * 0.037).toFixed(3);
-            
+
             // Handle case where count isn't loaded yet
             let totalCostLine;
             if (!isNaN(smsCount) && smsCount > 0) {
@@ -2792,7 +2917,7 @@ async function sendFieldAlert() {
             } else {
                 totalCostLine = `Total: calculating...`;
             }
-            
+
             const confirmed = confirm(
                 `⚠️ Multi-part SMS Alert\n\n` +
                 `Message: ${totalLength} chars\n` +
@@ -2801,7 +2926,7 @@ async function sendFieldAlert() {
                 `${totalCostLine}\n\n` +
                 `Continue?`
             );
-            
+
             if (!confirmed) {
                 showNotification('Cancelled', 'info');
                 updateSendButton();
@@ -2809,13 +2934,13 @@ async function sendFieldAlert() {
             }
         }
     }
-    
+
     if (selectedZones.length === 0 && selectedUnits.length === 0) {
         showNotification('Please select recipients', 'error');
         updateSendButton();
         return;
     }
-    
+
     // BUILD RECIPIENT FILTER - MATCH EMAIL SERVER FORMAT
     let recipientFilter;
     if (selectedZones.includes('ecopy')) {
@@ -2830,27 +2955,27 @@ async function sendFieldAlert() {
     } else if (selectedZones.includes('all')) {
         recipientFilter = 'all_units';
     } else if (selectedZones.length === 1) {
-        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3', 
+        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3',
                           'zone4': 'zone_4', 'zone5': 'zone_5' };
         recipientFilter = zoneMap[selectedZones[0]] || 'all_units';
     } else {
         // Multiple zones
-        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3', 
+        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3',
                           'zone4': 'zone_4', 'zone5': 'zone_5' };
         recipientFilter = selectedZones.map(z => zoneMap[z]).filter(Boolean).join(',');
     }
-    
+
     // Store parameters for confirmAndSend
     pendingSendParams = { recipientFilter, messageText, emailEnabled, smsEnabled, sendBtn };
-    
+
 // CHECK FOR NO-EMAIL RESIDENTS (unless E-Copy or SMS-only mode)
 if (!selectedZones.includes('ecopy') && emailEnabled) {
     try {
-        const noEmailResponse = await callNotificationAPI('getNoEmailResidents', { 
+        const noEmailResponse = await callNotificationAPI('getNoEmailResidents', {
             recipientFilter: recipientFilter,
             smsEnabled: smsEnabled ? 'true' : 'false'  // Tell backend if SMS is enabled
         });
-        
+
         if (noEmailResponse.success && noEmailResponse.count > 0) {
             // Button stays disabled while the modal is up -- cancelSend()
             // restores it via updateSendButton() if the user backs out;
@@ -2863,7 +2988,7 @@ if (!selectedZones.includes('ecopy') && emailEnabled) {
             console.error('Error checking no-email:', error);
         }
     }
-    
+
     // No issues, proceed
     await executeFieldAlertSend();
 }
@@ -2876,13 +3001,13 @@ async function executeFieldAlertSend() {
         updateSendButton();
         return;
     }
-    
+
     const { recipientFilter, messageText, emailEnabled, smsEnabled, sendBtn } = pendingSendParams;
-    
+
     // Build confirmation message
     let confirmMsg = 'Send ';
     let methods = [];
-    
+
     if (emailEnabled) {
         methods.push('Email');
     }
@@ -2890,31 +3015,31 @@ async function executeFieldAlertSend() {
         const smsCount = document.getElementById('smsCount').textContent;
         methods.push(`SMS to ${smsCount} recipients`);
     }
-    
+
     confirmMsg += methods.join(' + ');
-    
+
     // Add attachment info to confirmation
     if (attachments.length > 0) {
         const names = attachments.map(a => a.filename).join(', ');
         confirmMsg += `\n\nWith attachment${attachments.length !== 1 ? 's' : ''}: ${names}`;
     }
-    
+
     confirmMsg += '\n\nContinue?';
-    
+
     if (!confirm(confirmMsg)) {
         showNotification('Cancelled', 'info');
         pendingSendParams = null;
         updateSendButton();
         return;
     }
-    
+
     sendBtn.disabled = true;
     sendBtn.textContent = 'Sending...';
-    
+
     try {
         const useAlertFormat = document.getElementById('useAlertFormat').checked;
         const emailSubject = document.getElementById('emailSubject').value;
-        
+
         // Build API parameters
         const params = {
             message: messageText,
@@ -2926,9 +3051,14 @@ async function executeFieldAlertSend() {
             // Template messages (EMERGENCY ALERT, MAINTENANCE NOTICE, etc.) already
             // carry their own heading/structure, so the personalised "Hi [Name],"
             // greeting is skipped for them -- only custom-typed messages get it.
-            skipGreeting: selectedTemplate ? 'true' : 'false'
+            skipGreeting: selectedTemplate ? 'true' : 'false',
+            // Custom salutation (e.g. "Hi All,") -- V3.5.0. Blank = automatic
+            // "Hi [First Name]," as before. Requires NotificationServer V3.12.0+.
+            customGreeting: document.getElementById('customSalutation').checked
+                ? document.getElementById('salutationText').value.trim()
+                : ''
         };
-        
+
         // Add attachments if present -- V3.4.0, params.attachments (plural,
         // a JSON array) replaces the old singular params.attachment.
         // Requires NotificationServer V3.10.0+.
@@ -2939,9 +3069,9 @@ async function executeFieldAlertSend() {
                 mimeType: a.mimeType
             })));
         }
-        
+
         const response = await callNotificationAPI('sendFieldAlert', params);
-        
+
         if (response.success) {
             let message = '✅ Alert sent!\n';
             if (emailEnabled) {
@@ -2952,9 +3082,9 @@ async function executeFieldAlertSend() {
                 message += '\n';
             }
             if (smsEnabled) message += `📱 SMS: ${response.sms.sent} ($${response.sms.cost})`;
-            
+
             showNotification(message, 'success');
-            
+
             // Clear form including attachment
             document.getElementById('messageText').value = '';
             clearAttachment(); // Clear attachment after successful send
@@ -2969,6 +3099,9 @@ async function executeFieldAlertSend() {
             document.querySelectorAll('.template-card').forEach(card => {
                 card.classList.remove('selected');
             });
+
+            // Same reasoning for the custom salutation -- V3.5.0
+            resetSalutation();
 
             updateCharCount();
             updateSendButton();
@@ -2997,11 +3130,11 @@ async function executeFieldAlertSend() {
                 <p style="font-weight: 600; margin-bottom: 10px; color: rgba(255,255,255,0.85);">
                     The following residents do NOT have email and will NOT receive this alert:
                 </p>
-                
+
                 <div id="noEmailList" class="no-email-list">
                     <!-- Populated dynamically from backend -->
                 </div>
-                
+
                 <div class="no-email-warning">
                     WARNING: You must contact these residents separately by phone.
                 </div>
