@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.5.0
+  Frontend Version: V3.5.1
   Backend:          NotificationServer (V3.12.0 or later required)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
@@ -14,7 +14,7 @@ DOCUMENT INFORMATION:
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.5.0 - Optional custom salutation (e.g. "Hi All,")
+VERSION: V3.5.1 - Full form reset after a successful send
 LAST UPDATED: Oct 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -25,6 +25,20 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.5.1:
+✅ After a successful send the whole form now returns to how it looks when
+   the module is first opened: zone/unit/resident/E-Copy selections, template,
+   message, email subject, staged attachments and custom salutation are
+   cleared, and the notification options go back to their defaults (Send
+   Email ticked, Use Alert Format ticked, Send SMS and Custom Salutation
+   unticked). Previously only the message, attachment, template and
+   salutation were cleared, so the recipients (and the subject / option
+   ticks) stayed set for the next alert. A FAILED send changes nothing, so
+   the message can be corrected and re-sent.
+✅ Clear Selections behaves exactly as before (no new reset of the
+   subject or option ticks).
+✅ Frontend only -- no NotificationServer change.
 
 NEW IN V3.5.0:
 ✅ New "Custom Salutation" checkbox in the notification options. Unticked
@@ -2376,7 +2390,7 @@ function resetSalutation() {
         // UTILITY FUNCTIONS
         // =====================================================================
 
-        function clearAllSelections() {
+        function clearAllSelections(silent = false) {
             // Clear state variables
             selectedTemplate = null;
             selectedZones = [];
@@ -2420,8 +2434,32 @@ function resetSalutation() {
             // Update send button
             updateSendButton();
 
-            // Show confirmation
-            showNotification('All selections cleared', 'success');
+            // Show confirmation (skipped when called from resetFormAfterSend,
+            // which follows the "Alert sent" notification) -- V3.5.1
+            if (!silent) showNotification('All selections cleared', 'success');
+        }
+
+        // V3.5.1: return the whole form to its just-opened state after a
+        // successful send -- selections, template, message, attachment and
+        // salutation (via clearAllSelections), plus the email subject and
+        // the notification option ticks, which Clear Selections leaves alone.
+        function resetFormAfterSend() {
+            clearAllSelections(true);
+
+            const subject = document.getElementById('emailSubject');
+            if (subject) subject.value = '';
+
+            // Defaults as in the markup: Email ticked, Alert Format ticked, SMS unticked
+            document.getElementById('emailEnabled').checked = true;
+            document.getElementById('useAlertFormat').checked = true;
+            document.getElementById('smsEnabled').checked = false;
+            toggleSubjectField();
+
+            // Template filter back to "all"
+            setTemplateFilter('all');
+
+            updateCharCount();
+            updateSendButton();
         }
 
         function showNotification(message, type = 'success') {
@@ -3085,26 +3123,12 @@ async function executeFieldAlertSend() {
 
             showNotification(message, 'success');
 
-            // Clear form including attachment
-            document.getElementById('messageText').value = '';
-            clearAttachment(); // Clear attachment after successful send
-
-            // Reset the template flag so the next message (even if typed
-            // fresh, no template picked) doesn't inherit skipGreeting from
-            // this send. Was previously only cleared by the manual Clear
-            // Selections button -- a template send left it stuck until a
-            // page refresh, silently skipping the greeting on whatever was
-            // sent next too.
-            selectedTemplate = null;
-            document.querySelectorAll('.template-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-
-            // Same reasoning for the custom salutation -- V3.5.0
-            resetSalutation();
-
-            updateCharCount();
-            updateSendButton();
+            // V3.5.1: reset everything to the just-opened state. This covers
+            // what used to be done piecemeal here (message, attachment, the
+            // V3.3.3 selectedTemplate/skipGreeting reset, the V3.5.0
+            // salutation reset) plus recipient selections, subject and the
+            // option ticks.
+            resetFormAfterSend();
         } else {
             throw new Error(response.error || 'Failed to send');
         }
