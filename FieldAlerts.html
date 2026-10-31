@@ -6,15 +6,15 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.5.1
-  Backend:          NotificationServer (V3.12.0 or later required)
+  Frontend Version: V3.6.0
+  Backend:          NotificationServer (V3.13.0 or later required)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
   Last Modified:    Oct 2026
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.5.1 - Full form reset after a successful send
+VERSION: V3.6.0 - Staff group in the individual-unit picker
 LAST UPDATED: Oct 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -25,6 +25,20 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.6.0:
+✅ "Select Individual Units" now ends with a "Staff" group listing staff
+   who have no unit number (e.g. Ben): UnitList rows with a Name, an Email,
+   no Unit and the Staff-Alerts tag in Role Tags. They can be ticked or
+   unticked like any resident, and Select All includes them. Sent by email
+   address (the existing emails: filter), so both Email and SMS work -- SMS
+   still needs the SMS-Alerts tag and a mobile.
+✅ The send button reads "Staff" (not "Unit Staff") when staff are picked.
+✅ If NotificationServer returns no staff list (older server, or nobody is
+   tagged) the group simply does not appear and nothing else changes.
+✅ REQUIRES NotificationServer V3.13.0+ for the staff list and for staff to
+   be sent to (the same release also fixes SMS on multi-zone sends and
+   includes staff on All Units sends).
 
 NEW IN V3.5.1:
 ✅ After a successful send the whole form now returns to how it looks when
@@ -2070,6 +2084,7 @@ if (alertFormatCheckbox) {
         // getAllResidents endpoint (already a FieldAlerts dependency) and
         // cached for the rest of the session.
         let residentsCache = null;
+        let staffCache = []; // V3.6.0: staff with no unit number (from getAllResidents)
 
         async function loadResidentsCache() {
             if (residentsCache) return residentsCache;
@@ -2077,6 +2092,9 @@ if (alertFormatCheckbox) {
                 const response = await callNotificationAPI('getAllResidents', {});
                 residentsCache = (response.success && Array.isArray(response.residents))
                     ? response.residents : [];
+                // V3.6.0: staff list (NotificationServer V3.13.0+); absent on older servers
+                staffCache = (response.success && Array.isArray(response.staff))
+                    ? response.staff : [];
             } catch (error) {
                 console.error('Error loading residents for unit selector:', error);
                 residentsCache = [];
@@ -2145,6 +2163,32 @@ if (alertFormatCheckbox) {
                     });
                     grid.appendChild(unitDiv);
                 }
+            }
+
+            // V3.6.0: Staff group (no unit number), same look as a
+            // multi-resident unit group
+            if (staffCache.length > 0) {
+                const staffDiv = document.createElement('div');
+                staffDiv.className = 'unit-checkbox-group';
+                staffDiv.innerHTML = '<div class="unit-group-label">Staff</div>' +
+                    staffCache.map((r, idx) => `
+                        <div class="resident-row">
+                            <input type="checkbox" id="staff_${idx}"
+                                value="${escapeHtml(r.email)}"
+                                data-unit="Staff" data-name="${escapeHtml(r.name)}">
+                            <label for="staff_${idx}">${escapeHtml(r.name)}</label>
+                        </div>
+                    `).join('');
+                staffDiv.querySelectorAll('.resident-row').forEach(row => {
+                    row.addEventListener('click', function(e) {
+                        if (e.target.type !== 'checkbox') {
+                            const checkbox = this.querySelector('input');
+                            checkbox.checked = !checkbox.checked;
+                        }
+                        this.classList.toggle('selected', this.querySelector('input').checked);
+                    });
+                });
+                grid.appendChild(staffDiv);
             }
         }
 
@@ -2224,8 +2268,10 @@ if (alertFormatCheckbox) {
 
         function getTargetText() {
             if (selectedUnits.length > 0) {
-                if (selectedUnits.length === 1) return `Unit ${selectedUnits[0]}`;
-                if (selectedUnits.length <= 3) return selectedUnits.map(u => `Unit ${u}`).join(', ');
+                // V3.6.0: 'Staff' is not a unit number
+                const unitLabel = u => (u === 'Staff' ? 'Staff' : `Unit ${u}`);
+                if (selectedUnits.length === 1) return unitLabel(selectedUnits[0]);
+                if (selectedUnits.length <= 3) return selectedUnits.map(unitLabel).join(', ');
                 return `${selectedUnits.length} units`;
             }
 
