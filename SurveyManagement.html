@@ -14,6 +14,8 @@ ENHANCEMENTS:
 - Branching rules editor
 - Enhanced preview with branching simulation
 
+CHANGES IN V2.3.4: FIXED: Duplicate Survey now remaps skip-logic targets to the new survey's question IDs (previously pointed at the original's); also carries rating labels.
+
 CHANGES IN V2.3.3 (found by Tony testing V2.3.2, confirmed in a second
 browser -- ruled out the paint-timing theory from V2.3.2):
 - FIXED: The actual root cause of the missing "Working..." badge --
@@ -4022,7 +4024,16 @@ function renderResults(data) {
 
                     buttonElement.innerHTML = '⏳ Copying questions...';
 
-                    // Strip question IDs so backend generates fresh ones
+                    // Strip question IDs so backend generates fresh ones.
+                    // Skip-logic targets can hold the ORIGINAL survey's question IDs, so
+                    // remap them to the new survey's IDs (assigned in order as
+                    // <newSurveyId>_Q<position>, matching addSurveyQuestions).
+                    const idMap = {};
+                    survey.questions.forEach((q, i) => {
+                        idMap[q.questionId] = newSurveyId + '_Q' + (i + 1);
+                    });
+                    const remapTarget = t => (t && idMap[t]) ? idMap[t] : t;
+
                     const questions = survey.questions.map(q => ({
                         questionText: q.questionText,
                         questionType: q.questionType,
@@ -4031,9 +4042,10 @@ function renderResults(data) {
                         options: q.optionsArray || q.options || [],
                         ratingMin: q.ratingMin,
                         ratingMax: q.ratingMax,
+                        ratingLabels: (q.ratingLabels && q.ratingLabels.length) ? q.ratingLabels : undefined,
                         conditionalLogic: q.conditionalLogic || 'none',
-                        conditionRules: q.conditionRules || [],
-                        skipTarget: q.skipTarget || ''
+                        conditionRules: (q.conditionRules || []).map(r => ({ ...r, target: remapTarget(r.target) })),
+                        skipTarget: remapTarget(q.skipTarget || '')
                     }));
 
                     addQuestionsInBatches(newSurveyId, questions, 8, function(batchResult) {
