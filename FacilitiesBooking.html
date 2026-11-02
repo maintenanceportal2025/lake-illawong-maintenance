@@ -6,15 +6,35 @@ DOCUMENT INFORMATION:
   File Name:        FacilitiesBooking.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.9.5
+  Frontend Version: V2.10.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
                      launch timing)
   Created:          date unknown (V1.0)
-  Last Modified:    August 2026
+  Last Modified:    November 2026
 
 VERSION HISTORY:
+  V2.10.0 (Nov 2026): Transport migrated to the shared ApiClient.js.
+    callAPI() no longer carries its own hand-rolled JSONP code (a single
+    attempt, 15s timeout -- 30s for getBookings -- and no retry); it is
+    now a thin wrapper over ApiClient.call(), keeping the same
+    callAPI(action, data, callback) signature and the same
+    {success:false, error:'Timeout' | 'Network error'} failure shape, so
+    no call site needed to change for the transport itself.
+    - READS (getBookings, checkAvailability, getBookingDetails, getBooking,
+      testConnection) now retry automatically (3 retries, 2s/4s/6s
+      backoff, 30s timeout per attempt). While a retry is pending the
+      loading overlay reads "Connection slow, retrying... (n/4)".
+    - WRITES (createBooking, cancelBooking, updateBooking, and any action
+      not on the read list) are NEVER resent automatically. If no reply
+      arrives, the failure carries outcomeUnknown:true and the page says
+      the change "may have been saved", refreshes the bookings list, and
+      leaves it to the resident to check -- instead of the old generic
+      failure message, which implied nothing had happened.
+    - Requires ApiClient.js in the same folder (already deployed).
+    - Layout, styling and booking logic are unchanged. No backend change
+      (backend stays V2.6.2).
   V2.9.5 (Aug 2026): Week/Month calendar view switcher, ported unchanged
     from CalendarManager V2.0.0 -- same segmented pill toggle (reusing
     this file's own filter-pill visual language rather than a dropdown),
@@ -267,6 +287,7 @@ AUTHENTICATION:
   role required for booking/calendar/my-bookings.
 
 SYSTEM CONNECTIONS:
+  Transport: ApiClient.js (shared JSONP client; reads retry, writes never)
   Backend API: FacilitiesBooking backend (JSONP) — getBookings,
     createBooking, cancelBooking, updateBooking, checkAvailability,
     getBookingDetails, getBooking, testConnection
@@ -292,6 +313,7 @@ TECHNICAL:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Book Facilities - Lake Illawong</title>
+<script src="ApiClient.js"></script>
 <script src="VerificationModal_V1_0.js"></script>
 <style>
     :root {
@@ -1753,6 +1775,11 @@ function submitBooking() {
             // required.
             currentUserEmail = userEmail.toLowerCase();
             if (userPhone) currentUserPhone = normalizePhoneForMatch(userPhone);
+        } else if (response && response.outcomeUnknown) {
+            // V2.10.0: no reply arrived, but the request may well have reached
+            // the backend. Do not claim failure, and do not resubmit for them.
+            showMessage('\u26A0\uFE0F No reply from the server &mdash; your booking may have been saved. Please check <strong>My Bookings</strong> before trying again.', 'warning', 15000);
+            setTimeout(() => loadBookings(true), 1000);
         } else {
             const errorMsg = response ? (response.message || response.error || 'Unknown error') : 'No response from server';
 
@@ -1981,6 +2008,10 @@ function cancelUserBooking(bookingId) {
             showMessage('\u2705 Booking cancelled', 'success', 8000);
             loadBookings(true);
             setTimeout(() => renderMyBookings(), 500);
+        } else if (response && response.outcomeUnknown) {
+            // V2.10.0: see submitBooking() -- the cancellation may have gone through.
+            showMessage('\u26A0\uFE0F No reply from the server &mdash; the booking may have been cancelled. The list has been refreshed; please check <strong>My Bookings</strong>.', 'warning', 15000);
+            setTimeout(() => loadBookings(true), 1000);
         } else {
             showMessage('\u274C Failed to cancel booking', 'error', 8000);
         }
@@ -2164,6 +2195,12 @@ function performBookingUpdate(facility, date, startTime, endTime, purpose) {
                 `&bull; ${c.time || 'unknown time'}${c.title ? ' (' + c.title + ')' : ''}`
             ).join('<br>');
             showMessage(`\u26D4 Not available &mdash; this time conflicts with an existing booking:<br>${conflictLines}`, 'error', 10000);
+        } else if (response && response.outcomeUnknown) {
+            // V2.10.0: see submitBooking() -- the update may have been saved.
+            // Close the form so the refreshed list shows the true state.
+            closeEditBookingModal();
+            showMessage('\u26A0\uFE0F No reply from the server &mdash; your changes may have been saved. The list has been refreshed; please check <strong>My Bookings</strong> before editing again.', 'warning', 15000);
+            setTimeout(() => loadBookings(true), 1000);
         } else {
             showMessage('\u274C Failed to update: ' + (response ? response.error || 'Unknown error' : 'No response'), 'error', 8000);
         }
@@ -2281,20 +2318,18 @@ function showMessage(text, type, duration = 5000) {
     return messageEl;
 }
 
-// ===== API CALL (JSONP) =====
-// V2.4.0: rewritten to fix "callback_X is not defined" console errors and
-// the "network fail" symptom Tony hit. Root cause: on timeout, the old code
-// deleted window[callbackName] to "give up" -- but that doesn't cancel the
-// underlying <script> request. If the backend eventually did respond (Apps
-// Script cold-starts can take 10-30+ seconds), the browser tried to call a
-// callback function that no longer existed, throwing a ReferenceError. The
-// request may well have succeeded server-side; the frontend just errored on
-// its own already-abandoned callback. Fix: never delete the callback -- on
-// timeout/error/success, replace it with a harmless no-op instead, so any
-// late response is silently ignored rather than throwing. Also now removes
-// the <script> tag from the DOM once done (was leaking one per call), and
-// guards against the callback firing more than once (e.g. a genuine late
-// success arriving just after a timeout already reported failure).
+// ===== API CALL (JSONP via shared ApiClient) =====
+// V2.10.0: the hand-rolled JSONP code that used to live here (single
+// attempt, 15s timeout / 30s for getBookings, no retry; its V2.4.0
+// callback-lifecycle fix now lives in ApiClient itself) is replaced by a
+// thin wrapper over ApiClient.call(). Signature and failure shape are
+// unchanged: callback receives the backend's response, or
+// {success:false, error:'Timeout'|'Network error'|'Request too long'}.
+// Failed writes additionally carry outcomeUnknown:true.
+// Actions on this list are safe to repeat and are retried automatically;
+// anything else is treated as a write and is never auto-resent.
+const READ_ACTIONS = ['getBookings', 'checkAvailability', 'getBookingDetails', 'getBooking', 'testConnection'];
+
 function callAPI(action, data, callback) {
     const callKey = action + JSON.stringify(data);
     if (window.activeAPICalls && window.activeAPICalls[callKey]) return;
@@ -2302,49 +2337,36 @@ function callAPI(action, data, callback) {
     if (!window.activeAPICalls) window.activeAPICalls = {};
     window.activeAPICalls[callKey] = true;
 
-    let url = BACKEND_URL + '?action=' + encodeURIComponent(action);
-
-    Object.keys(data).forEach(key => {
-        if (data[key] !== undefined && data[key] !== null) {
-            url += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(data[key]);
-        }
-    });
-
-    url += '&_t=' + Date.now();
-    const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2);
-    let settled = false;
-    let script;
+    const isWrite = READ_ACTIONS.indexOf(action) === -1;
+    const params = Object.assign({}, data, { _t: Date.now() });
+    let done = false;
 
     function finish(response) {
-        if (settled) return; // already handled (e.g. timeout already fired)
-        settled = true;
+        if (done) return;
+        done = true;
         if (window.activeAPICalls) delete window.activeAPICalls[callKey];
-        if (script && script.parentNode) script.parentNode.removeChild(script);
         if (callback) callback(response);
-        // Replace with a no-op rather than deleting -- if the backend
-        // responds late after we've already given up, this swallows the
-        // call silently instead of throwing "callback_X is not defined".
-        window[callbackName] = function () {};
     }
 
-    window[callbackName] = function (response) {
+    ApiClient.call(BACKEND_URL, action, params, {
+        write: isWrite,
+        onRetry: function (info) {
+            // Only touch the overlay while it is actually showing.
+            const overlay = document.getElementById('loading');
+            const text = document.getElementById('loadingText');
+            if (overlay && text && overlay.classList.contains('active')) {
+                text.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+            }
+        }
+    }).then(function (response) {
         finish(response);
-    };
-
-    url += '&callback=' + callbackName;
-    script = document.createElement('script');
-    script.src = url;
-
-    script.onerror = function () {
-        finish({success: false, error: 'Network error'});
-    };
-
-    const timeoutDuration = action === 'getBookings' ? 30000 : 15000;
-    setTimeout(() => {
-        finish({success: false, error: 'Timeout'});
-    }, timeoutDuration);
-
-    document.head.appendChild(script);
+    }, function (err) {
+        finish({
+            success: false,
+            error: err.reason === 'timeout' ? 'Timeout' : (err.reason === 'url-too-long' ? 'Request too long' : 'Network error'),
+            outcomeUnknown: !!err.outcomeUnknown
+        });
+    });
 }
 </script>
 </body>
