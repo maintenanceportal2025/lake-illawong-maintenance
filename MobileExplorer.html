@@ -7,10 +7,10 @@ DOCUMENT INFORMATION:
 • File Name: MobileExplorer.html
 • System: Lake Illawong Maintenance Portal
 • Component Type: Mobile Problem Data Analytics Interface
-• Frontend Version: v1.0.3 (this file)
+• Frontend Version: v1.1.0 (this file)
 • Backend: EXPLORER V1.0.js (shared with DesktopExplorer.html)
 • Status: Active
-• Created: August 2025 | Last Modified: Aug 2026
+• Created: August 2025 | Last Modified: Nov 2026
 • Backup Location: MyDrive/MaintenancePortal/Backups/holden-mobile-explorer/
 
 PURPOSE:
@@ -22,6 +22,18 @@ Session-gated (see checkSession() below) -- the header's earlier "No
 authentication (public read-only)" line was stale and has been removed.
 
 VERSION HISTORY:
+• v1.1.0 (Nov 2026): Transport migrated to the shared ApiClient.js.
+  makeRequest() was a single JSONP attempt with a 10s timeout (shorter than
+  a normal Apps Script cold start) and no retry, so one slow or lost reply
+  failed the whole load. It is now a thin wrapper over ApiClient.call()
+  with the same signature and the same rejection behaviour (Error
+  'Request timeout' / 'Network request failed'), so no caller changed.
+  Every call here is a read: 3 automatic retries, 2s/4s/6s backoff, 30s per
+  attempt, and the loading text reads "Connection slow, retrying... (n/4)".
+  The non-essential getDropdownOptions call (which has built-in fallback
+  lists) is limited to 1 retry / 15s so a failing dropdown call cannot
+  delay the problem list by minutes. Call order, payloads, filters, paging
+  and styling are unchanged. Requires ApiClient.js in the same folder.
 • v1.0.3 (Aug 2026): checkSession() now also checks localStorage for each
   valid key, not just sessionStorage. Field Ops sessions
   (portalFieldOpsVerified) moved to a persistent localStorage-backed
@@ -715,6 +727,7 @@ background: #f5f5f5;
 }
 
     </style>
+    <script src="ApiClient.js"></script>
 </head>
 <body style="display:none">
     <!-- Main View -->
@@ -840,7 +853,7 @@ background: #f5f5f5;
                     <div class="progress-container">
                         <div class="progress-bar" id="progressBar" style="width: 0%"></div>
                     </div>
-                    <div>Loading problems...</div>
+                    <div id="loadingText">Loading problems...</div>
                 </div>
             </div>
         </div>
@@ -1046,7 +1059,7 @@ document.getElementById('legacyBtn').addEventListener('click', () => switchDatas
         async function loadDynamicDropdowns() {
             try {
                 console.log('📋 Loading dynamic dropdown options...');
-                const response = await makeRequest('getDropdownOptions');
+                const response = await makeRequest('getDropdownOptions', {}, { retries: 1, timeout: 15000 });
                 
                 if (response && response.success && response.data) {
                     dynamicDropdownData = {
@@ -1724,7 +1737,7 @@ async function loadAllData() {
             document.getElementById('problemsList').innerHTML = `
                 <div class="loading">
                     <div class="loading-spinner"></div>
-                    <div>Loading problems...</div>
+                    <div id="loadingText">Loading problems...</div>
                 </div>
             `;
         }
@@ -1765,47 +1778,24 @@ async function loadAllData() {
             };
         }
         
-        async function makeRequest(action, additionalData = {}) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-                const script = document.createElement('script');
-                const params = new URLSearchParams({
-                    action: action,
-                    callback: callbackName,
-                    ...additionalData
+        // v1.1.0: thin wrapper over the shared ApiClient (see header). Every
+        // call on this page is a read, so all are retried. `opts` can limit
+        // retries/timeout for the non-essential dropdown call. Rejects with
+        // an Error exactly as the old hand-rolled version did.
+        async function makeRequest(action, additionalData = {}, opts = {}) {
+            try {
+                return await ApiClient.call(WEB_APP_URL, action, additionalData, {
+                    write: false,
+                    retries: typeof opts.retries === 'number' ? opts.retries : undefined,
+                    timeout: opts.timeout,
+                    onRetry: function(info) {
+                        const el = document.getElementById('loadingText');
+                        if (el) el.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+                    }
                 });
-                let settled = false;
-
-                function cleanup() {
-                    window[callbackName] = function() {};
-                    try { document.head.removeChild(script); } catch (e) {}
-                }
-
-                script.src = `${WEB_APP_URL}?${params.toString()}`;
-                
-                window[callbackName] = function(response) {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    resolve(response);
-                };
-                
-                script.onerror = function() {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Network request failed'));
-                };
-                
-                setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Request timeout'));
-                }, 10000);
-                
-                document.head.appendChild(script);
-            });
+            } catch (err) {
+                throw new Error(err.reason === 'timeout' ? 'Request timeout' : 'Network request failed');
+            }
         }
         
         console.log('📱 Mobile Problem Explorer - Ready!');
