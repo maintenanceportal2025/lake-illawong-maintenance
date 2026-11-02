@@ -5,7 +5,27 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.11 - Added 'Developer' to CONFIG.ALLOWED_ROLES (was missing;
+VERSION: V2.12.0 - Transport migrated to the shared ApiClient.js.
+         callMgmt()/callDocLib() were single JSONP attempts with NO timeout
+         and no retry, so one lost reply left "Loading documents..." (or a
+         Save button stuck on "Saving...") spinning forever. They are now
+         thin wrappers over ApiClient.call() with unchanged signatures and
+         the same {success:false, error} failure shape.
+         READS (getDocRoles, getDocCategories, getAllDocuments) retry 3x
+         (2s/4s/6s backoff, 30s per attempt); the loading spinner reads
+         "Connection slow, retrying... (n/4)" meanwhile.
+         WRITES (addDocument, updateDocument, deleteDocument,
+         addDocCategory, updateDocCategory, deleteDocCategory) are never
+         resent automatically; if no reply arrives the page says the
+         change "may have been saved", refreshes, and (for document
+         add/edit/delete) closes the form so the true state is visible.
+         getLastUpload is deliberately treated as a WRITE: the backend
+         clears the staged file ID as it reads it, so an automatic retry
+         after a lost reply would find nothing. A failed hand-off now
+         tells the user to upload again instead of hanging.
+         showToast() gained an optional duration. Requires ApiClient.js in
+         the same folder. No other change.
+         (Prior: V2.11 - Added 'Developer' to CONFIG.ALLOWED_ROLES (was missing;
          all other modules include it). No other functional change.
          (Prior: V2.10 -- System-wide JSONP audit fix: callMgmt/callDocLib
          deleted their callback on success/onerror instead of replacing it
@@ -14,7 +34,7 @@ VERSION: V2.11 - Added 'Developer' to CONFIG.ALLOWED_ROLES (was missing;
          response and throw "jmgmt_.../jcb_... is not defined" in console.
          No functional change to document management. Prior: V2.9 -- long
          filename display, wraps in doc list and edit modal)
-LAST UPDATED: September 2026
+LAST UPDATED: November 2026
 BACKEND API: DocumentLibrary.js V2.1
 DESIGN SYSTEM: Lake Illawong Unified V2.4
 - Header: Transparent with logo (V1.4 standard)
@@ -26,6 +46,7 @@ AUTHENTICATION: VerificationModal V1.0 (OTP via ManagementCentral)
 - Allowed roles: Doc Manager, Developer
 - Session: sessionStorage (cleared on browser close)
 DEPENDENCIES:
+- ApiClient.js (shared JSONP transport)
 - VerificationModal_V1_0.js (OTP authentication)
 - DocumentLibrary.js backend (getAllDocuments, addDocument,
   updateDocument, deleteDocument endpoints)
@@ -42,6 +63,9 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>📚 Document Library Manager</title>
+
+    <!-- ApiClient - shared JSONP transport (V2.12.0) -->
+    <script src="ApiClient.js"></script>
 
     <!-- VerificationModal V1.0 - handles OTP auth flow -->
     <script src="VerificationModal_V1_0.js"></script>
@@ -887,7 +911,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         <div class="table-container">
             <div class="table-loading" id="tableLoading">
                 <div class="loading-spinner"></div>
-                <div>Loading documents…</div>
+                <div id="tableLoadingText">Loading documents…</div>
             </div>
             <div id="tableContent" class="hidden"></div>
         </div>
@@ -1194,38 +1218,70 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     }
 
     // ================================================================
-    // JSONP UTILITY — ManagementCentral
+    // TRANSPORT — shared ApiClient (V2.12.0)
     // ================================================================
-    function callMgmt(action, params, callback) {
-        const cbName = 'jmgmt_' + Date.now() + '_' + Math.floor(Math.random() * 99999);
-        let script;
-        let settled = false;
+    // Both backends take a single JSON-encoded `data` parameter. Actions on
+    // READ_ACTIONS are safe to repeat and are retried automatically; every
+    // other action is treated as a write and is NEVER resent (a lost reply
+    // may still have changed the sheet). getLastUpload is deliberately NOT
+    // listed: the backend clears the staged file ID as it reads it, so a
+    // retry after a lost reply would come back empty.
+    const READ_ACTIONS = ['getDocRoles', 'getDocCategories', 'getAllDocuments', 'testConnection'];
 
-        window[cbName] = function(response) {
-            if (settled) return;
-            settled = true;
-            try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            window[cbName] = function() {};
+    function apiCall(baseUrl, action, params, callback) {
+        const isWrite = READ_ACTIONS.indexOf(action) === -1;
+        const apiParams = (params && Object.keys(params).length > 0)
+            ? { data: JSON.stringify(params) } : {};
+        let done = false;
+
+        function finish(response) {
+            if (done) return;
+            done = true;
             callback(response);
-        };
-
-        const url = new URL(CONFIG.MGMT_URL);
-        url.searchParams.append('action',   action);
-        url.searchParams.append('callback', cbName);
-        if (params && Object.keys(params).length > 0) {
-            url.searchParams.append('data', JSON.stringify(params));
         }
 
-        script = document.createElement('script');
-        script.src = url.toString();
-        script.onerror = function() {
-            if (settled) return;
-            settled = true;
-            try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            window[cbName] = function() {};
-            callback({ success: false, error: 'Connection failed' });
-        };
-        document.head.appendChild(script);
+        ApiClient.call(baseUrl, action, apiParams, {
+            write: isWrite,
+            onRetry: function(info) {
+                // Only touch the spinner while it is actually showing.
+                const box  = document.getElementById('tableLoading');
+                const text = document.getElementById('tableLoadingText');
+                if (box && text && !box.classList.contains('hidden')) {
+                    text.textContent = 'Connection slow, retrying… (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+                }
+            }
+        }).then(function(response) {
+            finish(response);
+        }, function(err) {
+            finish({
+                success: false,
+                error: err.reason === 'timeout' ? 'Request timed out'
+                     : (err.reason === 'url-too-long' ? 'Request too long' : 'Connection failed'),
+                transportFailure: true,
+                outcomeUnknown: !!err.outcomeUnknown
+            });
+        });
+    }
+
+    function callMgmt(action, params, callback) {
+        apiCall(CONFIG.MGMT_URL, action, params, callback);
+    }
+
+    function callDocLib(action, params, callback) {
+        apiCall(CONFIG.BACKEND_URL, action, params, callback);
+    }
+
+    const UNKNOWN_MSG = 'No reply from the server — it may have been saved. The list has been refreshed; please check before trying again.';
+
+    // After a write whose reply never arrived: reload what the write may have changed.
+    function refreshCategories(alsoFilter) {
+        callDocLib('getDocCategories', {}, function(r) {
+            if (r.success) {
+                docCategories = (r.categories || []).map(c => c.value || c);
+                buildCategoryDropdowns();
+                if (alsoFilter) filterDocuments();
+            }
+        });
     }
 
     // ================================================================
@@ -1267,43 +1323,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         });
     }
 
-    
-    function callDocLib(action, params, callback) {
-        const cbName = 'jcb_' + Date.now() + '_' + Math.floor(Math.random() * 99999);
-        let script;
-        let settled = false;
-
-        window[cbName] = function(response) {
-            if (settled) return;
-            settled = true;
-            try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            window[cbName] = function() {};
-            callback(response);
-        };
-
-        const url = new URL(CONFIG.BACKEND_URL);
-        url.searchParams.append('action',   action);
-        url.searchParams.append('callback', cbName);
-        if (params && Object.keys(params).length > 0) {
-            url.searchParams.append('data', JSON.stringify(params));
-        }
-
-        script = document.createElement('script');
-        script.src = url.toString();
-        script.onerror = function() {
-            if (settled) return;
-            settled = true;
-            try { if (script && script.parentNode) script.parentNode.removeChild(script); } catch(e) {}
-            window[cbName] = function() {};
-            callback({ success: false, error: 'Connection failed' });
-        };
-        document.head.appendChild(script);
-    }
-
     // ================================================================
     // LOAD DOCUMENTS
     // ================================================================
     function loadDocuments() {
+        document.getElementById('tableLoadingText').textContent = 'Loading documents…';
         document.getElementById('tableLoading').classList.remove('hidden');
         document.getElementById('tableContent').classList.add('hidden');
 
@@ -1313,8 +1337,9 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
             if (!response.success) {
                 showToast('error', '❌ Failed to load: ' + (response.error || 'Unknown error'));
-                document.getElementById('tableContent').innerHTML =
-                    '<div class="no-results"><div class="no-results-icon">⚠️</div><div>Backend connection failed. Check that the admin endpoints have been added to DocumentLibrary.js.</div></div>';
+                document.getElementById('tableContent').innerHTML = response.transportFailure
+                    ? '<div class="no-results"><div class="no-results-icon">⚠️</div><div>Could not reach the server after several attempts. Please reload the page to try again.</div></div>'
+                    : '<div class="no-results"><div class="no-results-icon">⚠️</div><div>Backend connection failed. Check that the admin endpoints have been added to DocumentLibrary.js.</div></div>';
                 return;
             }
 
@@ -1582,6 +1607,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                                 b.textContent = '☁️ Upload to Drive';
                                 b.disabled = false;
                             }
+                            // V2.12.0: the reply (and with it the staged file ID) may
+                            // have been lost -- say so rather than failing silently.
+                            if (response && response.transportFailure) {
+                                showToast('error', '❌ Could not confirm the upload. If the file name does not appear below, please upload again.', 8000);
+                            }
                         }
                     });
                 }, 800);
@@ -1747,7 +1777,13 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             btn.textContent = editingId ? '💾 Save Changes' : '💾 Add Document';
             document.getElementById('modalStatus').textContent = '';
 
-            if (response.success) {
+            if (response.outcomeUnknown) {
+                // V2.12.0: no reply -- the save may have landed. Close the form
+                // (a second Save could create a duplicate) and show the true state.
+                showToast('info', '⚠️ ' + UNKNOWN_MSG, 10000);
+                closeEditModal();
+                loadDocuments();
+            } else if (response.success) {
                 showToast('success', editingId
                     ? '✅ Document updated'
                     : '✅ ' + (response.documentId || 'Document') + ' added successfully');
@@ -1785,7 +1821,10 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             btn.textContent = '🗑️ Delete';
             closeDeleteModal();
 
-            if (response.success) {
+            if (response.outcomeUnknown) {
+                showToast('info', '⚠️ No reply from the server — the document may have been deleted. The list has been refreshed; please check.', 10000);
+                loadDocuments();
+            } else if (response.success) {
                 showToast('success', '✅ Document deleted');
                 loadDocuments();
             } else {
@@ -1853,7 +1892,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         if (!newValue || newValue === oldValue) { cancelRename(safeKey); return; }
 
         callDocLib('updateDocCategory', { oldValue: oldValue, newValue: newValue }, function(response) {
-            if (response.success) {
+            if (response.outcomeUnknown) {
+                showToast('info', '⚠️ ' + UNKNOWN_MSG, 10000);
+                refreshCategories(true);
+                loadDocuments();
+            } else if (response.success) {
                 showToast('success', '✅ Renamed to "' + newValue + '"' +
                     (response.docsUpdated ? ' — ' + response.docsUpdated + ' document(s) updated' : ''));
                 // Refresh categories and rebuild all dropdowns
@@ -1883,7 +1926,10 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         callDocLib('addDocCategory', { value: value }, function(response) {
             btn.disabled = false;
             btn.textContent = '+ Add';
-            if (response.success) {
+            if (response.outcomeUnknown) {
+                showToast('info', '⚠️ ' + UNKNOWN_MSG, 10000);
+                refreshCategories(false);
+            } else if (response.success) {
                 input.value = '';
                 showToast('success', '✅ ' + response.message);
                 callDocLib('getDocCategories', {}, function(r) {
@@ -1900,7 +1946,10 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
     function deleteCategory(value) {
         callDocLib('deleteDocCategory', { value: value }, function(response) {
-            if (response.success) {
+            if (response.outcomeUnknown) {
+                showToast('info', '⚠️ No reply from the server — the category may have been deleted. The list has been refreshed; please check.', 10000);
+                refreshCategories(true);
+            } else if (response.success) {
                 showToast('success', '✅ ' + response.message);
                 callDocLib('getDocCategories', {}, function(r) {
                     if (r.success) {
@@ -1916,7 +1965,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     }
 
     
-    function showToast(type, message) {
+    function showToast(type, message, duration) {
         const t = document.createElement('div');
         t.className   = 'toast toast-' + type;
         t.textContent = message;
@@ -1925,7 +1974,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             t.style.transition = 'opacity 0.4s';
             t.style.opacity    = '0';
             setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 400);
-        }, 3500);
+        }, duration || 3500);
     }
 
     // ================================================================
