@@ -10,8 +10,8 @@
     =====================================================================
     PURPOSE: Activity history and problem tracking for Field Ops
     PORTAL: Field Operations Portal
-    VERSION: V1.1.2
-    LAST UPDATED: August 2026
+    VERSION: V1.2.0
+    LAST UPDATED: November 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from white card design)
     - CSS variables remapped to glass equivalents so JS-generated
@@ -21,6 +21,21 @@
     BACKEND: Explorer V1.2.1 (getFaultLogData)
 
     CHANGE LOG
+    - V1.2.0 (Nov 2026): Transport migrated to the shared ApiClient.js.
+                         makeAPICall() was a single JSONP attempt with a
+                         15s timeout and no retry, so one slow or lost
+                         reply meant "Failed to load problem data" until
+                         the page was reloaded. It is now a thin wrapper
+                         over ApiClient.call() (read: 3 automatic retries,
+                         2s/4s/6s backoff, 30s timeout per attempt) with
+                         the same signature and the same rejection
+                         behaviour, so loadAllProblems() is unchanged. While
+                         a retry is pending the results panel reads
+                         "Connection slow, retrying... (n/4)". Read-only
+                         page, so no write handling is needed. Requires
+                         ApiClient.js in the same folder. No change to
+                         search, filters, timeline display, export or
+                         styling.
     - V1.1.2 (Aug 2026): Persistent session, matching FieldOperationsPortal
                          V2.1.2 and MaintenanceModule V1.2.5 -- this file
                          previously read the portalFieldOpsVerified session
@@ -242,6 +257,7 @@
             .filters-grid { grid-template-columns: 1fr; }
         }
     </style>
+    <script src="ApiClient.js"></script>
     <script src="VerificationModal_V1_0.js"></script>
 </head>
 <body style="display:none">
@@ -378,39 +394,21 @@
             }
         }
 
+        // V1.2.0: thin wrapper over the shared ApiClient (see header). This
+        // page only ever reads, so every call is a retried read. Rejects
+        // with an Error exactly as the old hand-rolled version did.
         async function makeAPICall(action, params = {}) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-                const script = document.createElement('script');
-                const queryParams = new URLSearchParams({ action, callback: callbackName, ...params });
-                script.src = `${API_URL}?${queryParams}`;
-                let settled = false;
-
-                function cleanup() {
-                    window[callbackName] = function() {};
-                    try { document.head.removeChild(script); } catch (e) {}
-                }
-
-                window[callbackName] = function(response) {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    resolve(response);
-                };
-                script.onerror = function() {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Network request failed'));
-                };
-                document.head.appendChild(script);
-                setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Request timeout'));
-                }, 15000);
-            });
+            try {
+                return await ApiClient.call(API_URL, action, params, {
+                    write: false,
+                    onRetry: function(info) {
+                        document.getElementById('resultsContent').innerHTML =
+                            `<div class="empty-state"><div class="empty-state-icon">&#8987;</div><h3>Connection slow, retrying... (${info.attempt + 1}/${info.maxAttempts})</h3><p>Loading problem history</p></div>`;
+                    }
+                });
+            } catch (err) {
+                throw new Error(err.reason === 'timeout' ? 'Request timeout' : 'Network request failed');
+            }
         }
 
         function performSearch() {
