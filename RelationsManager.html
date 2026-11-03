@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.1.1
+  Frontend Version: V1.1.2
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -61,6 +61,15 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.1.2 (Nov 2026): FIX -- after Add Event on a Resident-to-Management
+    dispute, an event tagged Resident was not added to the Resident Events
+    pane until the list was refreshed and the card reopened (reported by
+    Tony; Resident-to-Resident disputes were fine). Cause: handleNewEvent()
+    only ever checked the 'Party A' tag when updating the first party's
+    pane, but Management disputes tag that party 'Resident' -- the tag
+    loadAllEvents() already uses for the same pane. handleNewEvent() now
+    picks the tag the same way (Party A for Resident-to-Resident,
+    Resident otherwise). No other change.
   V1.1.1 (Nov 2026): Paired with EventEntryModal.js V1.5.0 (the modal now
     uses ApiClient and has a generic filename). (1) Script tag changed
     from EventEntryModal_V1_4.js to EventEntryModal.js. (2) openEventEntry()
@@ -1893,8 +1902,13 @@ VERSION HISTORY:
             container.insertBefore(div.firstChild, container.firstChild);
         }
 
+        // First-party pane tag must match loadAllEvents(): 'Party A' for
+        // Resident-to-Resident disputes, 'Resident' for Management / untriaged.
+        const relForTag = allRelations.find(function(x) { return x.referenceNumber === ref; });
+        const residentTag = (relForTag && relForTag.matterType === 'Resident') ? 'Party A' : 'Resident';
+
         prependTo('events-all-' + ref);
-        if (visMatch(event.visibility, 'Party A')) prependTo('events-partyA-' + ref);
+        if (visMatch(event.visibility, residentTag)) prependTo('events-partyA-' + ref);
         if (visMatch(event.visibility, 'Party B')) prependTo('events-partyB-' + ref);
         if (visMatch(event.visibility, 'Board'))   prependTo('events-board-' + ref);
     }
