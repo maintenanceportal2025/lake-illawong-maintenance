@@ -6,8 +6,8 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.2.0
-LAST UPDATED: October 2026
+VERSION: V1.2.1
+LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: Shares Admin Portal's "portalAdminVerified" session
                  (SSO -- verified there or here, either counts), plus its
@@ -41,6 +41,22 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.2.1 (Nov 2026): OPEN PROBLEMS -- two changes, both raised by Tony.
+                     (1) BUG FIX: the priority sort was wrong. The old
+                     comparator was (po[priority] || 3) with
+                     po = {High:0, Medium:1, Low:2}. High is 0, which is
+                     falsy, so it fell through to 3 and sorted AFTER Medium
+                     and Low; Urgent wasn't in the lookup at all, so it also
+                     landed on 3. Net order was Medium, Low, then High and
+                     Urgent mixed together. Now Urgent, High, Medium, Low,
+                     with any unrecognised or blank priority last. (2) NEW:
+                     Oldest First / Newest First toggle button, same idea as
+                     Maintenance Module's. Priority stays the primary sort;
+                     the toggle controls date order within each priority
+                     (so with a single Priority selected, it simply flips
+                     the whole list). Default is Oldest First, matching how
+                     the list already behaved. PDF export follows the
+                     on-screen order. Other reports untouched.
   V1.2.0 (Oct 2026): MIGRATED TO SHARED ApiClient.js -- first module moved
                      onto the new shared API client (part of the API
                      reliability work: one hardened transport instead of
@@ -50,8 +66,8 @@ VERSION HISTORY:
                      JSONP), are removed; all three API calls
                      (getFaultLogData, getLegacyLogData, getDropdownOptions)
                      now go through ApiClient.call(). Behaviour kept the
-                     same: reads retry 3x (4 attempts) with 30s timeout,
-                     the initial load stays sequential and current-data-first
+                     same: reads retry 3x (4 attempts) with 30s timeout, the
+                     initial load stays sequential and current-data-first
                      (legacy on demand, dropdowns fire-and-forget), lean=1
                      on both Explorer data calls. Retry backoff is now
                      2s/4s/6s (was fixed 2s). The fetch path is retired, so
@@ -1557,6 +1573,7 @@ function renderOpenProblems() {
                 </select>
             </div>
             <button class="run-btn" onclick="runOpenProblems()">Run Report</button>
+            <button class="pdf-btn" id="opSortBtn" onclick="toggleOpSort()">${opSortNewestFirst ? '&#128197; Newest First' : '&#128197; Oldest First'}</button>
             <button class="pdf-btn" id="opPdfBtn" onclick="exportOpenPDF()" style="display:none;">&#8595; PDF</button>
         </div>
         <div class="results-area" id="opResults">
@@ -1566,6 +1583,26 @@ function renderOpenProblems() {
 }
 
 let opData = [];
+let opSortNewestFirst = false;   // v1.2.1 -- default Oldest First, as before
+
+const OP_PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
+function opPriorityRank(p) {
+    const r = OP_PRIORITY_RANK[(p || '').toString().trim().toLowerCase()];
+    return r === undefined ? 4 : r;
+}
+function opTime(ts) {
+    const t = new Date(ts).getTime();
+    return isNaN(t) ? 0 : t;
+}
+
+// Oldest First / Newest First toggle (v1.2.1) -- same idea as
+// Maintenance Module's sort button; button text shows the current order.
+function toggleOpSort() {
+    opSortNewestFirst = !opSortNewestFirst;
+    const btn = document.getElementById('opSortBtn');
+    if (btn) btn.innerHTML = opSortNewestFirst ? '&#128197; Newest First' : '&#128197; Oldest First';
+    runOpenProblems();
+}
 
 function runOpenProblems() {
     if (!dataLoaded) return;
@@ -1583,8 +1620,17 @@ function runOpenProblems() {
         if (person !== 'all' && person !== 'unassigned' && p.assignedTo !== person) return false;
         return true;
     }).sort((a,b) => {
-        const po = {High:0, Medium:1, Low:2};
-        return (po[a.problemPriority]||3) - (po[b.problemPriority]||3);
+        // Priority first: Urgent, High, Medium, Low, anything else last
+        // (v1.2.1 -- the old (po[x]||3) lookup treated High's 0 as falsy
+        // and had no Urgent entry, so the order came out Medium, Low,
+        // then High/Urgent mixed). Within a priority, date order follows
+        // the Oldest/Newest toggle.
+        const pa = opPriorityRank(a.problemPriority);
+        const pb = opPriorityRank(b.problemPriority);
+        if (pa !== pb) return pa - pb;
+        const ta = opTime(a.timestamp);
+        const tb = opTime(b.timestamp);
+        return opSortNewestFirst ? tb - ta : ta - tb;
     });
 
     const el = document.getElementById('opResults');
