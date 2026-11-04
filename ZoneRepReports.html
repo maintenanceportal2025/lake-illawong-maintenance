@@ -6,8 +6,8 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          8 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.1.0
-LAST UPDATED: October 2026
+VERSION: V1.1.1
+LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: Shares Zone Rep Portal's "portalZoneRepVerified" session
                  (SSO -- verified there or here, either counts), gated on
@@ -42,6 +42,25 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.1.1 (Nov 2026): OPEN PROBLEMS -- same two changes as ReportsHub V1.2.1.
+                     (1) BUG FIX: the priority sort was wrong. The old
+                     comparator was (po[priority] || 3) with
+                     po = {High:0, Medium:1, Low:2}. High is 0, which is
+                     falsy, so it fell through to 3 and sorted AFTER Medium
+                     and Low; Urgent wasn't in the lookup at all, so it also
+                     landed on 3. Net order was Medium, Low, then High and
+                     Urgent mixed together. Now Urgent, High, Medium, Low,
+                     with any unrecognised or blank priority last. (2) NEW:
+                     Oldest First / Newest First toggle button, same idea as
+                     Maintenance Module's. Priority stays the primary sort;
+                     the toggle controls date order within each priority
+                     (so with a single Priority selected, it simply flips
+                     the whole list). Default is Oldest First, matching how
+                     the list already behaved. PDF export follows the
+                     on-screen order. Other reports untouched.
+                     Also: VerificationModal script reference changed from
+                     VerificationModal_V1_0.js to the standardised, unversioned
+                     VerificationModal.js (GitHub file naming standardisation).
   V1.1.0 (Oct 2026): MIGRATED TO SHARED ApiClient.js -- same change as
                      ReportsHub V1.2.0 (this file's reliability work has
                      tracked ReportsHub's throughout). The private
@@ -742,7 +761,7 @@ VERSION HISTORY:
         }
     </style>
 <script src="ApiClient.js"></script>
-<script src="VerificationModal_V1_0.js"></script>
+<script src="VerificationModal.js"></script>
 </head>
 <body>
 <div class="container">
@@ -1381,6 +1400,7 @@ function renderOpenProblems() {
                 </select>
             </div>
             <button class="run-btn" onclick="runOpenProblems()">Run Report</button>
+            <button class="pdf-btn" id="opSortBtn" onclick="toggleOpSort()">${opSortNewestFirst ? '&#128197; Newest First' : '&#128197; Oldest First'}</button>
             <button class="pdf-btn" id="opPdfBtn" onclick="exportOpenPDF()" style="display:none;">&#8595; PDF</button>
         </div>
         <div class="results-area" id="opResults">
@@ -1390,6 +1410,26 @@ function renderOpenProblems() {
 }
 
 let opData = [];
+let opSortNewestFirst = false;   // v1.1.1 -- default Oldest First, as before
+
+const OP_PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
+function opPriorityRank(p) {
+    const r = OP_PRIORITY_RANK[(p || '').toString().trim().toLowerCase()];
+    return r === undefined ? 4 : r;
+}
+function opTime(ts) {
+    const t = new Date(ts).getTime();
+    return isNaN(t) ? 0 : t;
+}
+
+// Oldest First / Newest First toggle (v1.1.1) -- same idea as
+// Maintenance Module's sort button; button text shows the current order.
+function toggleOpSort() {
+    opSortNewestFirst = !opSortNewestFirst;
+    const btn = document.getElementById('opSortBtn');
+    if (btn) btn.innerHTML = opSortNewestFirst ? '&#128197; Newest First' : '&#128197; Oldest First';
+    runOpenProblems();
+}
 
 function runOpenProblems() {
     if (!dataLoaded) return;
@@ -1407,8 +1447,16 @@ function runOpenProblems() {
         if (person !== 'all' && person !== 'unassigned' && p.assignedTo !== person) return false;
         return true;
     }).sort((a,b) => {
-        const po = {High:0, Medium:1, Low:2};
-        return (po[a.problemPriority]||3) - (po[b.problemPriority]||3);
+        // Priority first: Urgent, High, Medium, Low, anything else last
+        // (v1.1.1 -- the old (po[x]||3) lookup treated High's 0 as falsy
+        // and had no Urgent entry). Within a priority, date order follows
+        // the Oldest/Newest toggle.
+        const pa = opPriorityRank(a.problemPriority);
+        const pb = opPriorityRank(b.problemPriority);
+        if (pa !== pb) return pa - pb;
+        const ta = opTime(a.timestamp);
+        const tb = opTime(b.timestamp);
+        return opSortNewestFirst ? tb - ta : ta - tb;
     });
 
     const el = document.getElementById('opResults');
