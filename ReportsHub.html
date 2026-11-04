@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.2.1
+VERSION: V1.2.2
 LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: Shares Admin Portal's "portalAdminVerified" session
@@ -41,6 +41,17 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.2.2 (Nov 2026): TOP UNITS -- click-through to Unit Problem History, raised
+                     by Tony. Clicking a unit in the Top Units table now opens
+                     Unit Problem History with that unit already entered and
+                     the report run, instead of having to go back to the
+                     sidebar and retype it. Dataset follows what Top Units
+                     was showing (so Current only does not trigger a legacy
+                     fetch); Period does not carry across, because Unit
+                     Problem History shows the unit's full history. Rows show
+                     a small "-> history" cue and a pointer cursor; the
+                     "Unknown" unit bucket is not clickable. Nothing else
+                     changed.
   V1.2.1 (Nov 2026): OPEN PROBLEMS -- two changes, both raised by Tony.
                      (1) BUG FIX: the priority sort was wrong. The old
                      comparator was (po[priority] || 3) with
@@ -2003,7 +2014,7 @@ function renderTopUnits() {
 
     showPanel(`
         <div class="report-heading">🏘️ Top Units</div>
-        <div class="report-subheading">Units with the most problem reports in the selected period -- useful for spotting recurring issues at a specific unit.</div>
+        <div class="report-subheading">Units with the most problem reports in the selected period -- useful for spotting recurring issues at a specific unit. Click a unit in the table to open its full problem history.</div>
         <div class="filter-row">
             <div class="filter-group">
                 <span class="filter-label">Zone</span>
@@ -2037,6 +2048,26 @@ function renderTopUnits() {
 }
 
 let topUnitsData = {};
+
+// Top Units -> Unit Problem History click-through (V1.2.2). Clicking a unit in
+// the Top Units table switches to Unit Problem History with that unit already
+// entered and the report run, so there's no need to go back to the sidebar
+// and retype it. The Dataset follows whatever Top Units was showing
+// (Current only / Current + Legacy / Legacy only), which also avoids an
+// unnecessary legacy fetch when Top Units was on Current only. Period does
+// not carry across -- Unit Problem History has no Period filter and shows
+// the unit's full history for the chosen dataset.
+function openUnitHistoryFromTopUnits(unit) {
+    const dsEl = document.getElementById('tuDataset');
+    const dataset = dsEl ? dsEl.value : 'current';
+    selectReport('unit-history');
+    const unitEl = document.getElementById('uhUnit');
+    const dsSel  = document.getElementById('uhDataset');
+    if (!unitEl || !dsSel) return;
+    unitEl.value = unit;
+    dsSel.value  = dataset;
+    runUnitHistory();
+}
 
 function runTopUnits() {
     if (!dataLoaded) return;
@@ -2088,8 +2119,8 @@ function runTopUnits() {
         <div class="table-wrap" style="margin-top:16px;"><table class="data-table">
             <thead><tr><th>Unit</th><th>Count</th><th>% of Period Total</th></tr></thead>
             <tbody>
-                ${sorted.map(([u,c])=>`<tr>
-                    <td><strong>${u}</strong></td>
+                ${sorted.map(([u,c])=>`<tr${u === 'Unknown' ? '' : ` style="cursor:pointer;" title="Open Unit Problem History for this unit" data-unit="${String(u).replace(/"/g,'&quot;')}" onclick="openUnitHistoryFromTopUnits(this.dataset.unit)"`}>
+                    <td><strong>${u}</strong>${u === 'Unknown' ? '' : ' <span style="color:#9ca3af;font-size:0.75rem;">&rarr; history</span>'}</td>
                     <td>${c}</td>
                     <td>${total?Math.round(c/total*100):0}%</td>
                 </tr>`).join('')}
