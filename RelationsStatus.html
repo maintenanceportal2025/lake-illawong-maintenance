@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsStatus.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.0.3
+  Frontend Version: V1.1.0
   Backend:          RelationsManager V1.0.10 -- getRelationsByUnit
   Status:           DEVELOPMENT
   Created:          Aug 2026
@@ -38,6 +38,17 @@ PRIVACY RULE (from RelationsManager.js's own design, not invented here):
   as Resident-to-Resident.
 
 VERSION HISTORY:
+  V1.1.0 (Nov 2026): Transport moved to the shared ApiClient.js (API
+    reliability initiative). jsonp() keeps its name and (params, onSuccess,
+    onError) signature but now calls ApiClient. getRelationsByUnit is a
+    READ: a lost reply is retried automatically (3 retries, 2s/4s/6s
+    backoff, 30s per attempt) and the list shows "Connection slow,
+    retrying... (n/4)"; previously ONE 15s attempt, then "Server did not
+    respond". A rapid second Refresh can no longer let an older, slower
+    reply overwrite a newer one. Script tag changed from
+    VerificationModal_V1_0.js to the generic VerificationModal.js
+    (identical code). Requires ApiClient.js in the same folder. Wording,
+    layout and field scope unchanged.
   V1.0.3 (Sep 2026): Session key reverted portalAdminVerified ->
     lakeIllawongVerified, per Tony -- decided against sharing a key with
     RelationsForm.html after all (that form is genuinely dual-audience,
@@ -120,7 +131,8 @@ TECHNICAL:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Disputes - Lake Illawong</title>
-    <script src="VerificationModal_V1_0.js"></script>
+    <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -335,60 +347,48 @@ TECHNICAL:
 
     // ── JSONP HELPER ──────────────────────────────────────────────────────
 
-    function jsonp(params, onSuccess, onError) {
-        const callbackName = 'rs_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-        const qs = Object.keys(params).map(function(k) {
-            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-        }).join('&');
-        const url = CONFIG.BACKEND_URL + '?' + qs + '&callback=' + callbackName;
-
-        let settled = false;
-        const s = document.createElement('script');
-
-        function cleanup() {
-            window[callbackName] = function () {};
-            try { document.head.removeChild(s); } catch (e) {}
-        }
-
-        const timer = setTimeout(function () {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            if (onError) onError('Server did not respond. Please try refreshing.');
-        }, 15000);
-
-        window[callbackName] = function (data) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            cleanup();
-            if (onSuccess) onSuccess(data);
-        };
-
-        s.onerror = function () {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            cleanup();
+    // V1.1.0: thin wrapper over the shared ApiClient. Only read actions are
+    // used on this page, so every call is treated as a READ (retried).
+    function jsonp(params, onSuccess, onError, onRetry) {
+        if (typeof ApiClient === 'undefined') {
             if (onError) onError('Could not reach the server.');
-        };
-        s.src = url;
-        document.head.appendChild(s);
+            return;
+        }
+        const p = Object.assign({}, params);
+        const action = p.action;
+        delete p.action;
+        ApiClient.call(CONFIG.BACKEND_URL, action, p, {
+            write: false,
+            timeout: 30000,
+            onRetry: onRetry
+        }).then(function (data) {
+            if (onSuccess) onSuccess(data);
+        }, function () {
+            if (onError) onError('Could not reach the server. Please try refreshing.');
+        });
     }
 
     // ── LOAD DISPUTES ────────────────────────────────────────────────────
 
+    var loadSeq = 0;
     function loadDisputes() {
+        const mySeq = ++loadSeq;
         jsonp(
             { action: 'getRelationsByUnit', unit: currentUnit },
             function(data) {
+                if (mySeq !== loadSeq) return;   // a newer load is in flight
                 if (!data.success) {
                     showListError(data.error || 'Could not load your disputes.');
                     return;
                 }
                 renderDisputes(data.relations || []);
             },
-            function(err) { showListError(err); }
+            function(err) { if (mySeq === loadSeq) showListError(err); },
+            function(info) {
+                if (mySeq !== loadSeq) return;
+                const t = document.querySelector('#disputeList .loading-state .state-text');
+                if (t) t.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+            }
         );
     }
 
