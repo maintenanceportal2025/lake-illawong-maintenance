@@ -4,13 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lake Illawong - Zone Rep Problem Submission</title>
+    <script src="ApiClient.js"></script>
     <!--
     =====================================================================
     LAKE ILLAWONG - ZONE REP SUBMISSION FORM
     =====================================================================
     PURPOSE: Zone Rep problem submission with zone-filtered selection
-    VERSION: V1.1.1
-    LAST UPDATED: August 2026
+    VERSION: V1.2.0
+    LAST UPDATED: November 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from V1.4 white card design)
     - Back button: portal-back-btn standard
@@ -26,6 +27,32 @@
     6. Everything else works exactly like normal submission
 
     CHANGE LOG
+    - V1.2.0 (Nov 2026): Transport migrated to the shared ApiClient.js, the
+                         same change as ResidentSubmissionForm V1.12.0 (this
+                         form shares that backend). callScript() was a single
+                         JSONP attempt with no timeout and no retry: one lost
+                         reply left "Submitting your report..." spinning
+                         forever, and a failed unit-list load left the Zone
+                         Rep unable to submit at all. callScript() keeps its
+                         name and one-argument form and now calls
+                         ApiClient.call().
+                         - READ (getZoneUnits): 3 automatic retries (2s/4s/6s
+                           backoff, 30s per attempt); the unit dropdown reads
+                           "Connection slow, retrying... (n/4)" meanwhile.
+                           Failure behaviour unchanged.
+                         - WRITE (submitFault): never resent automatically,
+                           so the form cannot create a duplicate record by
+                           itself. If no reply arrives within 30s the page
+                           says the report MAY have been received and to check
+                           for the confirmation email before submitting
+                           again. Entries stay on the form and Submit stays
+                           available.
+                         - A description too long to send (ApiClient rejects
+                           URLs over 7500 characters) shows "shorten the
+                           description" instead of failing silently.
+                         Requires ApiClient.js in the same folder. Zone
+                         filtering, session guard, wording and backend
+                         unchanged.
     - V1.1.1 (Aug 2026): System-wide JSONP audit fix -- callScript() deleted
                          its callback on completion/onerror instead of
                          replacing it with a no-op (onerror/redirect-chain
@@ -473,7 +500,11 @@
             unitSelect.innerHTML = '<option value="">Loading units...</option>';
 
             try {
-                const response = await callScript({ action: 'getZoneUnits', zone: zone });
+                const response = await callScript({ action: 'getZoneUnits', zone: zone }, {
+                    onRetry: function(info) {
+                        unitSelect.innerHTML = '<option value="">Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')</option>';
+                    }
+                });
                 if (response.success && response.units && response.units.length > 0) {
                     populateUnitDropdown(response.units);
                     unitSelect.disabled = false;
@@ -506,33 +537,25 @@
             document.getElementById('submitBtn').disabled = true;
         }
 
-        async function callScript(data) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-                const script = document.createElement('script');
-                const params = new URLSearchParams(data);
-                params.append('callback', callbackName);
-                script.src = `${WEB_APP_URL}?${params.toString()}`;
+        // V1.2.0: thin wrapper over the shared ApiClient (see change log).
+        // getZoneUnits is a READ (retried); everything else is a WRITE and is
+        // never resent -- so a new action is safe by default. The ApiClient
+        // error is passed through untouched so the submit handler can tell
+        // the Zone Rep the truth.
+        const READ_ACTIONS = ['getZoneUnits'];
 
-                let settled = false;
-                function cleanup() {
-                    window[callbackName] = function() {};
-                    try { document.head.removeChild(script); } catch (e) {}
-                }
-
-                window[callbackName] = function(response) {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    resolve(response);
-                };
-                script.onerror = function() {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Script loading failed'));
-                };
-                document.head.appendChild(script);
+        async function callScript(data, opts) {
+            if (typeof ApiClient === 'undefined') {
+                throw new Error('ApiClient.js is not loaded');
+            }
+            const params = Object.assign({}, data);
+            const action = params.action;
+            delete params.action;
+            const isRead = READ_ACTIONS.indexOf(action) !== -1;
+            return ApiClient.call(WEB_APP_URL, action, params, {
+                write: !isRead,
+                timeout: 30000,
+                onRetry: opts && opts.onRetry
             });
         }
 
@@ -590,9 +613,23 @@
                 loading.style.display = 'none';
                 result.className = 'result error';
                 result.style.display = 'block';
-                resultMessage.innerHTML = `
-                    <strong>Network Error</strong><br><br>
-                    Please check your connection and try again.`;
+                if (error && error.reason === 'url-too-long') {
+                    // V1.2.0 - the request can never be sent as written
+                    resultMessage.innerHTML = `
+                        <strong>Description Too Long</strong><br><br>
+                        The description is too long to send. Please shorten it and try again.`;
+                } else if (error && error.outcomeUnknown) {
+                    // V1.2.0 - no reply, but the report may have been received
+                    resultMessage.innerHTML = `
+                        <strong>No Confirmation Received</strong><br><br>
+                        Your report may have been received. Please check your email for a confirmation
+                        before submitting again. Your details are still on this form.`;
+                } else {
+                    resultMessage.innerHTML = `
+                        <strong>Network Error</strong><br><br>
+                        Please check your connection and try again.`;
+                }
+                result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
 
             submitBtn.disabled = false;
