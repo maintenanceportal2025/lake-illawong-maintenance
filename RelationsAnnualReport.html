@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsAnnualReport.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Portal Module
-  Frontend Version: V1.1.5
+  Frontend Version: V1.2.0
   Backend:          RelationsManager V1.0.12
   Status:           DEVELOPMENT
   Created:          Aug 2026
@@ -66,6 +66,21 @@ PURPOSE:
   dialog handles Save as PDF).
 
 VERSION HISTORY:
+  V1.2.0 (Nov 2026): Transport moved to the shared ApiClient.js (API
+    reliability initiative). jsonpPromise() keeps its name and signature
+    but now calls ApiClient. READS (getAnnualReportData, getAnnualNarrative,
+    getRelationByRef) are retried automatically (3 retries, 2s/4s/6s
+    backoff, 30s per attempt) with "Connection slow, retrying... (n/4)"
+    shown while generating the report; previously one 20s attempt. WRITES
+    (saveAnnualNarrative, saveAnnualReportEntry) are sent once and never
+    resent; if no reply arrives the message says the save MAY have gone
+    through and to regenerate the report to check (the Save Narrative
+    button re-enables; the entry modal stays open with its text intact).
+    A narrative or entry too long to send (URL limit) is now reported
+    clearly instead of failing silently. Script tag changed from
+    VerificationModal_V1_0.js to the generic VerificationModal.js
+    (identical code). Requires ApiClient.js in the same folder. Report
+    content, print/export output, wording and layout unchanged.
   V1.1.5 (Aug 2026): Peer review fixes.
       - Print header's "Confidential" label replaced with "Anonymised —
         No Parties Identified" -- missed when the export was built;
@@ -235,7 +250,8 @@ TECHNICAL:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Relations Annual Report - Lake Illawong</title>
-<script src="VerificationModal_V1_0.js"></script>
+<script src="ApiClient.js"></script>
+<script src="VerificationModal.js"></script>
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -722,49 +738,45 @@ TECHNICAL:
 
     // ── JSONP ─────────────────────────────────────────────────────────────
 
-    function jsonp(baseUrl, params, onSuccess, onError, timeoutMs) {
-        const callbackName = 'rar_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-        const qs = Object.keys(params).map(function(k) {
-            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-        }).join('&');
-        const url = baseUrl + '?' + qs + '&callback=' + callbackName;
+    // V1.2.0: thin wrapper over the shared ApiClient. Same name and
+    // arguments as before; an optional 4th argument onRetry gives the
+    // "Connection slow" hint. The two save actions are WRITES (never
+    // resent); everything else is a READ (retried).
+    const WRITE_ACTIONS = ['saveAnnualNarrative', 'saveAnnualReportEntry'];
 
-        let settled = false;
-        const s = document.createElement('script');
-
-        function cleanup() {
-            window[callbackName] = function () {};
-            try { document.head.removeChild(s); } catch (e) {}
+    function jsonpPromise(baseUrl, params, timeoutMs, onRetry) {
+        if (typeof ApiClient === 'undefined') {
+            return Promise.reject(new Error('ApiClient.js is not loaded'));
         }
-
-        const timer = setTimeout(function () {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            if (onError) onError(new Error('Server did not respond. Please try again.'));
-        }, timeoutMs || 20000);
-
-        window[callbackName] = function (data) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer); cleanup();
-            if (onSuccess) onSuccess(data);
-        };
-
-        s.onerror = function () {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer); cleanup();
-            if (onError) onError(new Error('Could not reach the server.'));
-        };
-        s.src = url;
-        document.head.appendChild(s);
+        const p = Object.assign({}, params);
+        const action = p.action;
+        delete p.action;
+        return ApiClient.call(baseUrl, action, p, {
+            write: WRITE_ACTIONS.indexOf(action) !== -1,
+            timeout: Math.max(timeoutMs || 0, 30000),
+            onRetry: onRetry
+        });
     }
 
-    function jsonpPromise(baseUrl, params, timeoutMs) {
-        return new Promise(function(resolve, reject) {
-            jsonp(baseUrl, params, resolve, reject, timeoutMs);
-        });
+    // V1.2.0: plain-English text for a failed call. verb = 'save' for writes.
+    function apiErrorText(err, verb) {
+        if (err && err.reason === 'url-too-long') {
+            return 'The text is too long to send. Please shorten it and try again.';
+        }
+        if (err && err.outcomeUnknown) {
+            return 'No confirmation was received, so the save may have gone through. ' +
+                   'Generate the report again to check before saving again.';
+        }
+        if (!err || err.name === 'ApiError' || !err.message) {
+            return 'Could not reach the server. Please try again.';
+        }
+        return err.message;
+    }
+
+    function retryHint(el, label) {
+        return function(info) {
+            el.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+        };
     }
 
     // ── GENERATE REPORT ───────────────────────────────────────────────────
@@ -785,8 +797,8 @@ TECHNICAL:
 
         try {
             const results = await Promise.all([
-                jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualReportData', fyStart: range.fyStart, fyEnd: range.fyEnd, fyLabel: fyLabel }, 20000),
-                jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualNarrative',  fyLabel: fyLabel }, 20000)
+                jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualReportData', fyStart: range.fyStart, fyEnd: range.fyEnd, fyLabel: fyLabel }, 20000, retryHint(statusEl)),
+                jsonpPromise(CONFIG.BACKEND_URL, { action: 'getAnnualNarrative',  fyLabel: fyLabel }, 20000, retryHint(statusEl))
             ]);
             const relRes = results[0], narrRes = results[1];
 
@@ -805,7 +817,7 @@ TECHNICAL:
             document.getElementById('reportResults').classList.remove('hidden');
 
         } catch (err) {
-            statusEl.textContent = 'Error: ' + (err && err.message ? err.message : err);
+            statusEl.textContent = 'Error: ' + apiErrorText(err, 'report');
         } finally {
             genBtn.disabled = false;
             genBtn.textContent = 'Generate Report';
@@ -951,7 +963,7 @@ TECHNICAL:
             if (!res.success) throw new Error(res.error || 'Save failed');
             document.getElementById('narrativeMeta').textContent = 'Last updated by ' + userName + ' just now';
         } catch (err) {
-            alert('Could not save narrative: ' + (err && err.message ? err.message : err));
+            alert('Could not save narrative: ' + apiErrorText(err, 'narrative save'));
         } finally {
             btn.disabled = false;
             btn.textContent = 'Save Narrative';
@@ -979,7 +991,9 @@ TECHNICAL:
 
         document.getElementById('rarModalOverlay').style.display = 'flex';
 
-        jsonpPromise(CONFIG.BACKEND_URL, { action: 'getRelationByRef', ref: r.referenceNumber }, 20000)
+        jsonpPromise(CONFIG.BACKEND_URL, { action: 'getRelationByRef', ref: r.referenceNumber }, 20000, function(info) {
+            if (currentModalIndex === idx) document.getElementById('rarPanelBody').textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+        })
             .then(function(res) {
                 if (currentModalIndex !== idx) return; // modal moved on / closed
                 if (!res.success) {
@@ -990,7 +1004,7 @@ TECHNICAL:
             })
             .catch(function(err) {
                 if (currentModalIndex !== idx) return;
-                document.getElementById('rarPanelBody').textContent = 'Could not load case detail: ' + (err && err.message ? err.message : err);
+                document.getElementById('rarPanelBody').textContent = 'Could not load case detail: ' + apiErrorText(err);
             });
     }
 
@@ -1064,7 +1078,7 @@ TECHNICAL:
             closeReportEntryModal();
 
         } catch (err) {
-            feedback.textContent = 'Could not save: ' + (err && err.message ? err.message : err);
+            feedback.textContent = 'Could not save: ' + apiErrorText(err, 'entry save');
             feedback.className = 'rar-feedback rar-error';
         } finally {
             btn.disabled = false;
