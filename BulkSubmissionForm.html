@@ -7,13 +7,51 @@
       File Name:        BulkSubmissionForm.html
       System:           Lake Illawong Management Central System
       Component Type:   Staff Module
-      Frontend Version: V2.3.1
+      Frontend Version: V2.4.0
       Backend:          BulkSubmissionForm V2.0.2
       Status:           PRODUCTION
       Created:          Nov 2025
-      Last Modified:    Sep 2026
+      Last Modified:    Nov 2026
 
     VERSION HISTORY:
+      V2.4.0 (Nov 2026): Transport migrated to the shared ApiClient.js.
+                         callScript() was a single JSONP attempt with NO
+                         timeout and no retry, used for every call including
+                         bulkSubmitWithDelays -- the one call in the system
+                         that creates dozens of records and (by default)
+                         emails residents. A lost reply left the page on
+                         "Creating problem reports..." indefinitely, and the
+                         only recovery was to submit again, which duplicates
+                         every record and every email. callScript() keeps its
+                         name and single-argument form; it now decides
+                         read/write by action and calls ApiClient.call().
+                         - READS (getAdminBulkDropdowns, getSMSRecipientCount):
+                           getAdminBulkDropdowns retries 3x (2s/4s/6s, 30s per
+                           attempt) with "Connection slow, retrying... (n/4)"
+                           on the loading screen; getSMSRecipientCount (a
+                           nicety) retries once, 15s, and a stale reply from an
+                           earlier selection can no longer overwrite the
+                           count. Failure behaviour unchanged.
+                         - WRITE (bulkSubmitWithDelays): never resent
+                           automatically. The backend deliberately waits 2.5s
+                           between units, so the wait limit scales with the
+                           number of units (45s + 5s per unit, max 5 min)
+                           instead of a fixed 30s that would cry wolf on a
+                           large batch. If no reply arrives in that time the
+                           page says reports MAY already have been created
+                           and emails sent, lists the selected units, tells
+                           the user to check before doing anything, and LOCKS
+                           the Submit button until the page is reloaded --
+                           a second submit could duplicate every record and
+                           email. The form is not reset in that case.
+                         - A request too large to send (ApiClient rejects URLs
+                           over 7500 characters; units and priorities travel in
+                           the URL) now shows "shorten the description or
+                           select fewer units"; nothing was sent, Submit stays
+                           available.
+                         Requires ApiClient.js in the same folder. Fields,
+                         validation, confirmation prompt, success display and
+                         backend are unchanged.
       V2.3.1 (Sep 2026): Program Mode priority fix. (1) Select Affected
                          Units moved up to directly follow Submission
                          Type, with Program Mode Editor and Advanced
@@ -87,6 +125,7 @@
     SYSTEM CONNECTIONS:
       Backend API:      BulkSubmissionForm V2.0.1
       Static Data:      lake-illawong-locations.js (unit and location list)
+      Transport:        ApiClient.js (shared JSONP client, same folder)
       Data Source:      Dropdowns sheet (reportedBy, category, subCategory,
                         status, priority, assignedTo), FaultLog sheet
       Notifications:    NotificationServer V3.2
@@ -113,6 +152,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lake Illawong - Bulk Problem Submission</title>
 	<script src="lake-illawong-locations.js"></script>
+	<script src="ApiClient.js"></script>
    
     
     <style>
@@ -1107,7 +1147,12 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
             setupEventListeners();
 
             // Fetch remaining dropdowns from API
-            const dropdownsResult = await callScript({ action: 'getAdminBulkDropdowns' });
+            const dropdownsResult = await callScript({ action: 'getAdminBulkDropdowns' }, {
+                onRetry: function(info) {
+                    const sub = document.querySelector('#loadingOverlay .loading-subtext');
+                    if (sub) sub.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+                }
+            });
 
             if (!dropdownsResult.success) {
                 throw new Error('Failed to load dropdowns: ' + dropdownsResult.message);
@@ -1382,6 +1427,7 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
             document.getElementById('confirmEmails').textContent = emailOptions.length > 0 ? emailOptions.join(', ') : 'None';
         }
 
+ let smsCountSeq = 0;
  async function updateSMSRecipientCount() {
     const smsCheckbox = document.getElementById('smsNotifications');
     const selectedUnits = getSelectedUnits();
@@ -1395,11 +1441,13 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
         return;
     }
     
+    const mySeq = ++smsCountSeq;   // V2.4.0: a slow reply for an earlier selection must not overwrite a newer count
     try {
         const result = await callScript({
             action: 'getSMSRecipientCount',
             units: JSON.stringify(selectedUnits)
         });
+        if (mySeq !== smsCountSeq) return;
         
         if (result.success && smsCountElement) {
             const count = result.count || 0;
@@ -1700,52 +1748,79 @@ formData.consolidateEmails = true;
             } catch (error) {
                 loading.style.display = 'none';
                 result.className = 'result error';
-                result.innerHTML = `
-                    <strong>Network Error</strong><br><br>
-                    Please check your connection and try again.<br>
-                    ${error.toString()}
-                `;
+                if (error && error.reason === 'url-too-long') {
+                    // V2.4.0 - nothing was sent; the request is simply too big
+                    result.innerHTML = `
+                        <strong>Submission Too Large</strong><br><br>
+                        The description is too long to send for this many units.
+                        Please shorten the description, or select fewer units and submit in batches.
+                    `;
+                } else if (error && error.outcomeUnknown) {
+                    // V2.4.0 - no reply: reports may exist already. Lock Submit
+                    // (isLoading stays true, button stays disabled) until reload,
+                    // so a second submit cannot duplicate records and emails.
+                    result.innerHTML = `
+                        <strong>No Confirmation Received</strong><br><br>
+                        The server did not confirm this submission. Some or all of these
+                        ${selectedUnits.length} reports may already have been created, and emails may
+                        have been sent.<br><br>
+                        <strong>Do not submit again yet.</strong> Check the Problem Queue for these units,
+                        then reload this page and submit only any that are missing.<br><br>
+                        <strong>Units:</strong> ${selectedUnits.join(', ')}
+                    `;
+                    result.style.display = 'block';
+                    result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    return;
+                } else {
+                    result.innerHTML = `
+                        <strong>Network Error</strong><br><br>
+                        Please check your connection and try again.<br>
+                        ${error.toString()}
+                    `;
+                }
                 result.style.display = 'block';
+                result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
             
             isLoading = false;
             submitBtn.disabled = false;
         }
 
-        async function callScript(data) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-                const script = document.createElement('script');
-                const params = new URLSearchParams(data);
-                params.append('callback', callbackName);
-                
-                script.src = `${WEB_APP_URL}?${params.toString()}`;
+        // V2.4.0: thin wrapper over the shared ApiClient (see header). Same name
+        // and one-argument form as before; `data.action` is split out and the
+        // rest travels as parameters. Only actions listed here are READS (and
+        // retried). EVERYTHING ELSE IS A WRITE and is never resent -- so a new
+        // action is safe by default until it is added to this list.
+        const READ_ACTIONS = ['getAdminBulkDropdowns', 'getSMSRecipientCount'];
 
-                let settled = false;
-                function cleanup() {
-                    window[callbackName] = function() {};
-                    try { document.head.removeChild(script); } catch (e) {}
-                }
-
-                window[callbackName] = function(response) {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    resolve(response);
-                };
-                
-                script.onerror = function() {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Script loading failed'));
-                };
-                
-                document.head.appendChild(script);
-            });
+        // bulkSubmitWithDelays waits 2.5s between units on the server, so the
+        // time to wait for its reply scales with the number of units.
+        function bulkTimeoutMs(unitCount) {
+            return Math.min(300000, 45000 + 5000 * unitCount);
         }
 
-        console.log('🚀 Bulk Submission Form V2.3.1 loaded');
+        async function callScript(data, opts) {
+            if (typeof ApiClient === 'undefined') {
+                throw new Error('ApiClient.js is not loaded');
+            }
+            const params = Object.assign({}, data);
+            const action = params.action;
+            delete params.action;
+            const isRead = READ_ACTIONS.indexOf(action) !== -1;
+            const o = opts || {};
+            const callOpts = { write: !isRead, onRetry: o.onRetry };
+            if (action === 'getSMSRecipientCount') {
+                callOpts.retries = 1;        // best-effort display only
+                callOpts.timeout = 15000;
+            } else if (action === 'bulkSubmitWithDelays') {
+                let n = 0;
+                try { n = JSON.parse(params.units || '[]').length; } catch (e) {}
+                callOpts.timeout = bulkTimeoutMs(n);
+            }
+            return ApiClient.call(WEB_APP_URL, action, params, callOpts);
+        }
+
+        console.log('🚀 Bulk Submission Form V2.4.0 loaded');
 
     </script>
 </body>
