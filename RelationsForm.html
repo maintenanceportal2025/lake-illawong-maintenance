@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident/Admin Shared Module
-  Frontend Version: V1.0.11
+  Frontend Version: V1.1.0
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -66,6 +66,30 @@ SUCCESS SCREEN:
   explanation only ever reaches the submitter at triage.
 
 VERSION HISTORY:
+  V1.1.0 (Nov 2026): Transport migrated to the shared ApiClient.js, and the
+    OTP script tag moved to the generic VerificationModal.js.
+    jsonpCall() and loadResidentList() were hand-rolled single JSONP attempts
+    (30s timeout, no retry). That was the cause of the V1.0.6 report of a
+    lodgement that "timed out client-side while actually succeeding
+    server-side": the page then said "network error, try again" and a second
+    press of Submit would have logged the same dispute twice. Both now go
+    through ApiClient.call(); jsonpCall() keeps its name and (params, baseUrl)
+    signature so every call site is unchanged.
+      - READS (getRelationsCategories, getUnitListData for the Board resident
+        search): up to 3 automatic retries (2s/4s/6s backoff, 30s per attempt).
+        The Category list shows "Connection slow, retrying... (n/4)" meanwhile.
+        Failure behaviour is unchanged.
+      - WRITE (submitMatter): never resent automatically. If no reply arrives
+        within 30s the page now says the dispute MAY have been logged and asks
+        the user to check before submitting again, instead of "network error,
+        try again". Entries stay on the form and Submit stays available.
+      - Text too long to send (ApiClient rejects URLs over 7500 characters;
+        the long text boxes travel in the URL): shows a clear "shorten your
+        text" message instead of failing silently.
+    <script src> changed from VerificationModal_V1_0.js to VerificationModal.js
+    (identical code; Nov 2026 rename). Requires ApiClient.js in the same
+    folder, loaded before VerificationModal.js. Fields, validation, modes,
+    layout, wording and backend are unchanged.
   V1.0.11 (Sep 2026): Wording changes per Tony -- page header h1 "Relations"
     -> "Dispute Form"; form-title "Log a Dispute" -> "Lodge a Dispute";
     VerificationModal moduleName 'Relations' -> 'Disputes' (changes the
@@ -186,7 +210,8 @@ VERSION HISTORY:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Log a Dispute - Lake Illawong</title>
-<script src="VerificationModal_V1_0.js"></script>
+<script src="ApiClient.js"></script>
+<script src="VerificationModal.js"></script>
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -523,19 +548,13 @@ VERSION HISTORY:
     // old Log Dispute modal used for its party search.
 
     function loadResidentList() {
-        var callbackName = 'rf_mgmt_' + Date.now();
-        var url = CONFIG.MGMT_URL + '?action=getUnitListData&callback=' + callbackName;
-        var s = document.createElement('script');
-        var settled = false;
-        function cleanup() { window[callbackName] = function() {}; try { document.head.removeChild(s); } catch (e) {} }
-        var timer = setTimeout(function() {
-            if (settled) return;
-            settled = true; cleanup();
-            console.warn('loadResidentList timed out');
-        }, 30000);
-        window[callbackName] = function(data) {
-            if (settled) return;
-            settled = true; clearTimeout(timer); cleanup();
+        // V1.1.0: via the shared ApiClient (read -> 3 automatic retries).
+        // Same success handling and same quiet failure as before.
+        if (typeof ApiClient === 'undefined') {
+            console.warn('loadResidentList: ApiClient.js is not loaded');
+            return;
+        }
+        ApiClient.call(CONFIG.MGMT_URL, 'getUnitListData', {}, { write: false }).then(function(data) {
             console.log('loadResidentList: raw response', data);
             console.log('loadResidentList: success=' + data.success + ', residents count=' + (data.residents ? data.residents.length : 'none'));
             if (data.residents && data.residents.length > 0) {
@@ -548,9 +567,9 @@ VERSION HISTORY:
             if (allResidents.length > 0) {
                 console.log('loadResidentList: first filtered resident', allResidents[0]);
             }
-        };
-        s.src = url;
-        document.head.appendChild(s);
+        }).catch(function(err) {
+            console.warn('loadResidentList failed:', err && err.message);
+        });
     }
 
     function searchResident() {
@@ -610,7 +629,12 @@ VERSION HISTORY:
 
     function loadRelationsCategories() {
         var select = document.getElementById('category');
-        jsonpCall({ action: 'getRelationsCategories' }).then(function(data) {
+        // V1.1.0: read -> retried by ApiClient; show progress in the dropdown meanwhile.
+        jsonpCall({ action: 'getRelationsCategories' }, null, {
+            onRetry: function(info) {
+                select.innerHTML = '<option value="">Connection slow, retrying… (' + (info.attempt + 1) + '/' + info.maxAttempts + ')</option>';
+            }
+        }).then(function(data) {
             select.innerHTML = '<option value="">Select a category…</option>';
             select.disabled = false;
             var cats = (data.success && data.categories && data.categories.length)
@@ -667,7 +691,7 @@ VERSION HISTORY:
             submissionMethod:  isBoardMode ? document.getElementById('submissionMethod').value : 'Digital'
         };
 
-        jsonpCall(formData).then(function(response) {
+        jsonpCall(formData, null, { write: true }).then(function(response) {
             if (response.success) {
                 document.getElementById('referenceNumber').textContent = response.referenceNumber;
                 document.getElementById('successText').textContent = isBoardMode
@@ -683,8 +707,18 @@ VERSION HISTORY:
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Log Dispute';
             }
-        }).catch(function() {
-            alert('A network error occurred. Please check your connection and try again.');
+        }).catch(function(err) {
+            if (err && err.reason === 'url-too-long') {
+                // V1.1.0 - the request can never be sent as written
+                alert('Your text is too long to send. Please shorten the description, outcome or what has been tried, and try again.');
+            } else if (err && err.outcomeUnknown) {
+                // V1.1.0 - no reply, but the dispute may have been logged
+                alert(isBoardMode
+                    ? 'No confirmation was received from the server. This dispute may have been logged. Please check Relations Manager for this resident before logging it again. Your entries are still on this form.'
+                    : 'No confirmation was received. Your dispute may have been logged. Please contact the Board before submitting again, to avoid a duplicate. Your entries are still on this form.');
+            } else {
+                alert('A network error occurred. Please check your connection and try again.');
+            }
             submitBtn.disabled = false;
             submitBtn.textContent = 'Log Dispute';
         });
@@ -706,40 +740,22 @@ VERSION HISTORY:
 
     // ── JSONP HELPER ──────────────────────────────────────────────────────
 
-    function jsonpCall(params, baseUrl) {
-        return new Promise(function(resolve, reject) {
-            const callbackName = 'rf_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-            const script = document.createElement('script');
-            const urlParams = new URLSearchParams(params);
-            urlParams.append('callback', callbackName);
-            var completed = false;
-
-            script.src = (baseUrl || CONFIG.BACKEND_URL) + '?' + urlParams.toString();
-
-            var timer = setTimeout(function() {
-                if (completed) return;
-                completed = true; cleanup();
-                reject(new Error('Request timed out'));
-            }, 30000);
-
-            window[callbackName] = function(response) {
-                if (completed) return;
-                completed = true; clearTimeout(timer); cleanup();
-                resolve(response);
-            };
-
-            script.onerror = function() {
-                if (completed) return;
-                completed = true; clearTimeout(timer); cleanup();
-                reject(new Error('Could not reach the server.'));
-            };
-
-            function cleanup() {
-                window[callbackName] = function() {};
-                setTimeout(function() { if (script.parentNode) script.parentNode.removeChild(script); }, 100);
-            }
-
-            document.head.appendChild(script);
+    // V1.1.0: thin wrapper over the shared ApiClient (see header). Same name
+    // and (params, baseUrl) signature as before; opts = { write, onRetry }.
+    // `params.action` is split out; everything else travels as parameters.
+    // Rejects with the ApiClient error untouched (reason, outcomeUnknown).
+    function jsonpCall(params, baseUrl, opts) {
+        if (typeof ApiClient === 'undefined') {
+            return Promise.reject(new Error('ApiClient.js is not loaded'));
+        }
+        var p = Object.assign({}, params);
+        var action = p.action;
+        delete p.action;
+        var o = opts || {};
+        return ApiClient.call(baseUrl || CONFIG.BACKEND_URL, action, p, {
+            write: o.write === true,
+            timeout: 30000,
+            onRetry: o.onRetry
         });
     }
 
