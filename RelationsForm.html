@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident/Admin Shared Module
-  Frontend Version: V1.1.0
+  Frontend Version: V1.2.0
   Status:           DEVELOPMENT
   Created:          Aug 2026
 
@@ -66,6 +66,21 @@ SUCCESS SCREEN:
   explanation only ever reaches the submitter at triage.
 
 VERSION HISTORY:
+  V1.2.0 (Nov 2026): Board members can now lodge their OWN dispute as a
+    resident. Previously anyone holding an ADMIN_ROLES tag (Relations-Manager
+    or Developer) was always put straight into Board Direct-Entry, so a Board
+    member who is also a resident (and the Developer, testing) had no way to
+    use the resident form. After verification, anyone with an admin role now
+    sees one short choice: "For myself (as a resident)" or "On behalf of a
+    resident (Board entry)". "For myself" runs the existing resident mode
+    (name and unit from their own verification, good-faith checkbox,
+    submission method Digital, back to the Resident Portal); "On behalf of a
+    resident" is the existing Board Direct-Entry, unchanged. People without
+    an admin role see no choice and go straight to the resident form, exactly
+    as before. The choice is made on each page open and is not stored.
+    Frontend only: same submitMatter call, no backend change. Who may triage
+    or manage a dispute (e.g. not one's own) is a Board matter handled in
+    Relations Manager, not enforced here.
   V1.1.0 (Nov 2026): Transport migrated to the shared ApiClient.js, and the
     OTP script tag moved to the generic VerificationModal.js.
     jsonpCall() and loadResidentList() were hand-rolled single JSONP attempts
@@ -354,7 +369,19 @@ VERSION HISTORY:
 
     <div class="content-card">
 
-        <div id="formView">
+        <!-- V1.2.0: shown only to people with an admin role, after verification -->
+        <div id="modeChoiceView" class="hidden">
+            <div class="form-header">
+                <div class="form-title">How are you lodging this dispute?</div>
+                <p class="form-description">You have Board access, so this form can be used in two ways.</p>
+            </div>
+            <div class="form-actions" style="flex-direction:column;margin-top:0;">
+                <button type="button" class="btn btn-primary" id="chooseSelfBtn">For myself (as a resident)</button>
+                <button type="button" class="btn btn-secondary" id="chooseBoardBtn">On behalf of a resident (Board entry)</button>
+            </div>
+        </div>
+
+        <div id="formView" class="hidden">
             <div class="form-header">
                 <div id="boardModeBadge" class="board-mode-badge hidden">Board Direct-Entry</div>
                 <div class="form-title">Lodge a Dispute</div>
@@ -514,14 +541,32 @@ VERSION HISTORY:
         currentUserData = userData;
         const roles = userData.roleTags || [];
         console.log('RelationsForm: verified as', userData.name, '| roleTags:', roles);
-        isBoardMode = CONFIG.ADMIN_ROLES.some(function(r) { return roles.indexOf(r) !== -1; });
+        const hasAdminRole = CONFIG.ADMIN_ROLES.some(function(r) { return roles.indexOf(r) !== -1; });
+        console.log('RelationsForm: hasAdminRole =', hasAdminRole);
+
+        if (hasAdminRole) {
+            // V1.2.0: Board members choose how they are lodging.
+            document.getElementById('modeChoiceView').classList.remove('hidden');
+            document.getElementById('chooseSelfBtn').onclick  = function() { startForm(false); };
+            document.getElementById('chooseBoardBtn').onclick = function() { startForm(true); };
+        } else {
+            startForm(false);
+        }
+    }
+
+    // Applies the chosen mode and shows the form (V1.2.0: split out of
+    // handleVerified so an admin can pick the mode).
+    function startForm(boardMode) {
+        isBoardMode = boardMode;
         console.log('RelationsForm: isBoardMode =', isBoardMode);
+        document.getElementById('modeChoiceView').classList.add('hidden');
+        document.getElementById('formView').classList.remove('hidden');
 
         if (isBoardMode) {
             enterBoardMode();
         } else {
-            document.getElementById('partyAName').value = userData.name;
-            document.getElementById('partyAUnit').value = userData.unit;
+            document.getElementById('partyAName').value = currentUserData.name;
+            document.getElementById('partyAUnit').value = currentUserData.unit;
             document.getElementById('backBtn').href = CONFIG.RESIDENT_PORTAL;
             document.getElementById('backBtn').textContent = '\u2190 Back to Portal';
         }
