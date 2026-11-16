@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        CalendarManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V2.0.2
+  Frontend Version: V2.1.0
   Status:           COLD STORAGE (facility not yet open for online
                      booking - module brought up to system standards
                      as part of the wider audit pass regardless of
@@ -14,6 +14,27 @@ DOCUMENT INFORMATION:
   Created:          August 2026
 
 VERSION HISTORY:
+  V2.1.0 (Nov 2026): Transport moved to the shared ApiClient.js (API
+    reliability initiative; same read/write split as FacilitiesBooking
+    V2.10.0, which shares this backend). _jsonpCall() keeps its name and
+    (targetUrl, action, data, callback) contract, and still ignores an
+    identical call already in flight, but now calls ApiClient.
+    - READS (getBookings, checkAvailability, getUnitListData) retry
+      automatically (3 retries, 2s/4s/6s backoff, 30s per attempt); the
+      loading overlay reads "Connection slow, retrying... (n/4)".
+    - WRITES (createBooking, createRecurringBooking, cancelBooking,
+      cancelSeries, updateBooking, and any action not listed as a read)
+      are sent once and never resent, so a slow reply can no longer
+      create a duplicate booking or series. If no reply arrives the
+      message says the change MAY have been saved, the bookings list is
+      refreshed so the admin can see what happened, and the booking form
+      is left as it was.
+    - A request too long to send (URL limit) is reported instead of
+      failing silently.
+    Script tag changed from VerificationModal_V1_0.js to the generic
+    VerificationModal.js (identical code). Requires ApiClient.js in the
+    same folder. Booking rules, wording, layout and calendar views
+    unchanged.
   V2.0.2 (Aug 2026): Fixed re-verification bug -- SESSION_KEY was
     'calendarManagerVerified', a module-specific key that never matched
     AdminPortal's own session key ('portalAdminVerified'), so an admin
@@ -360,7 +381,8 @@ TECHNICAL:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Calendar Manager - Lake Illawong</title>
-<script src="VerificationModal_V1_0.js"></script>
+<script src="ApiClient.js"></script>
+<script src="VerificationModal.js"></script>
 <style>
     :root {
         --primary-blue: #667eea;
@@ -1108,7 +1130,7 @@ function loadResidentList() {
         if (response && response.success && response.residents) {
             allResidents = response.residents;
         }
-    });
+    }, { silent: true });
 }
 
 // ===== CACHE STATE =====
@@ -1800,6 +1822,7 @@ function createAdminBooking() {
             clearAdminForm();
             loadBookings(true);
         } else {
+            if (response && response.outcomeUnknown) loadBookings(true);   // V2.1.0: show what actually happened
             const msg = response && response.message;
 
             if (response && response.conflicts && response.conflicts.length > 0) {
@@ -1926,6 +1949,7 @@ function createRecurringSeriesBooking() {
             clearAdminForm();
             loadBookings(true);
         } else {
+            if (response && response.outcomeUnknown) loadBookings(true);   // V2.1.0
             const msg = response && (response.message || response.error);
             showMessage('\u274C Failed to create recurring booking: ' + (msg || 'Unknown error'), 'error', 10000);
         }
@@ -2170,7 +2194,8 @@ function adminCancelBooking(bookingId) {
             showMessage('\u2705 Booking cancelled by admin', 'success', 8000);
             loadBookings(true);
         } else {
-            showMessage('\u274C Failed to cancel booking', 'error', 8000);
+            if (response && response.outcomeUnknown) loadBookings(true);   // V2.1.0
+            showMessage('\u274C Failed to cancel booking' + (response && response.outcomeUnknown ? ': ' + response.error : ''), 'error', 8000);
         }
     });
 }
@@ -2191,7 +2216,8 @@ function adminCancelSeries(seriesId) {
             closeBookingModal();
             loadBookings(true);
         } else {
-            showMessage('\u274C Failed to cancel series', 'error', 8000);
+            if (response && response.outcomeUnknown) loadBookings(true);   // V2.1.0
+            showMessage('\u274C Failed to cancel series' + (response && response.outcomeUnknown ? ': ' + response.error : ''), 'error', 8000);
         }
     });
 }
@@ -2358,6 +2384,7 @@ function submitAdminEditBooking(event) {
                 ).join('<br>');
                 showMessage(`\u26D4 Not available &mdash; this time conflicts with an existing booking:<br>${conflictLines}`, 'error', 10000);
             } else {
+                if (response && response.outcomeUnknown) loadBookings(true);   // V2.1.0
                 showMessage('\u274C Failed to update: ' + ((response && response.message) || (response && response.error) || 'Unknown error'), 'error', 8000);
             }
         });
@@ -2484,61 +2511,65 @@ function showMessage(text, type, duration = 5000) {
     return messageEl;
 }
 
-// ===== API CALL (JSONP) =====
-// V1.5.0: shared JSONP core, fixing the same "callback_X is not defined"
-// bug fixed in FacilitiesBooking V2.4.0 -- on timeout, the callback is now
-// replaced with a no-op instead of deleted, so a late response from a slow
-// backend is silently ignored instead of throwing. Also removes each
-// <script> tag from the DOM once done (was leaking one per call).
-function _jsonpCall(targetUrl, action, data, callback) {
+// ===== API CALL (ApiClient) =====
+// V2.1.0: thin wrapper over the shared ApiClient (see version history).
+// Same name and contract as the old JSONP core: callback(response) is
+// called exactly once, with {success:false, error} on any transport
+// failure. An identical call already in flight is still ignored. Only the
+// actions below are READS (retried); everything else is a WRITE and is
+// never resent, so a new action is safe by default.
+const READ_ACTIONS = ['getBookings', 'checkAvailability', 'getUnitListData'];
+
+function _jsonpCall(targetUrl, action, data, callback, opts) {
     const callKey = targetUrl + action + JSON.stringify(data);
     if (window.activeAPICalls && window.activeAPICalls[callKey]) return;
 
     if (!window.activeAPICalls) window.activeAPICalls = {};
     window.activeAPICalls[callKey] = true;
 
-    let url = targetUrl + '?action=' + encodeURIComponent(action);
-
+    const params = {};
     Object.keys(data).forEach(key => {
-        if (data[key] !== undefined && data[key] !== null) {
-            url += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(data[key]);
-        }
+        if (data[key] !== undefined && data[key] !== null) params[key] = data[key];
     });
 
-    url += '&_t=' + Date.now();
-    const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2);
-    let settled = false;
-    let script;
-
     function finish(response) {
-        if (settled) return;
-        settled = true;
         if (window.activeAPICalls) delete window.activeAPICalls[callKey];
-        if (script && script.parentNode) script.parentNode.removeChild(script);
         if (callback) callback(response);
-        window[callbackName] = function () {};
     }
 
-    window[callbackName] = function (response) { finish(response); };
+    if (typeof ApiClient === 'undefined') {
+        finish({success: false, error: 'ApiClient.js is not loaded'});
+        return;
+    }
 
-    url += '&callback=' + callbackName;
-    script = document.createElement('script');
-    script.src = url;
-
-    script.onerror = function () { finish({success: false, error: 'Network error'}); };
-
-    const timeoutDuration = action === 'getBookings' ? 30000 : 15000;
-    setTimeout(() => { finish({success: false, error: 'Timeout'}); }, timeoutDuration);
-
-    document.head.appendChild(script);
+    const isRead = READ_ACTIONS.indexOf(action) !== -1;
+    ApiClient.call(targetUrl, action, params, {
+        write: !isRead,
+        timeout: 30000,
+        onRetry: (opts && opts.silent) ? undefined : function (info) {
+            const el = document.getElementById('loading');
+            if (el && el.classList.contains('active')) {
+                showLoading(true, 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')');
+            }
+        }
+    }).then(finish, function (err) {
+        if (err && err.reason === 'url-too-long') {
+            finish({success: false, urlTooLong: true, error: 'The request is too long to send. Please shorten the text and try again.'});
+        } else if (err && err.outcomeUnknown) {
+            finish({success: false, outcomeUnknown: true,
+                    error: 'No confirmation was received, so the change may have been saved. Check the bookings list before trying again.'});
+        } else {
+            finish({success: false, error: 'Network error'});
+        }
+    });
 }
 
-function callAPI(action, data, callback) {
-    _jsonpCall(BACKEND_URL, action, data, callback);
+function callAPI(action, data, callback, opts) {
+    _jsonpCall(BACKEND_URL, action, data, callback, opts);
 }
 
-function callAPI2(targetUrl, action, data, callback) {
-    _jsonpCall(targetUrl, action, data, callback);
+function callAPI2(targetUrl, action, data, callback, opts) {
+    _jsonpCall(targetUrl, action, data, callback, opts);
 }
 </script>
 </body>
