@@ -4,14 +4,14 @@ LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - RESIDENTS DIRECTORY
 =====================================================================
 PURPOSE: Searchable contact directory for all residents
 PORTAL: Residents Portal, Zone Rep Portal, Admin Portal
-VERSION: 3.6
-LAST UPDATED: August 2026
+VERSION: 3.7
+LAST UPDATED: November 2026
 ARCHITECTURE: V5.2
 
 DESIGN SYSTEM: Lake Illawong Unified V2.4
 BACKEND API: Explorer V1.2.1 (getResidents with privacy filtering)
 
-AUTHENTICATION: Standalone OTP via VerificationModal_V1_0.js
+AUTHENTICATION: Standalone OTP via VerificationModal.js
 - VerificationModal.init() fires on DOMContentLoaded
 - Verification method: email or mobile (smsOnly: false)
 - No session -> OTP modal displays immediately
@@ -32,10 +32,28 @@ KNOWN LIMITATIONS:
 
 RELATED FILES:
 - ResidentPortal.html (navigates here directly)
-- VerificationModal_V1_0.js (OTP component)
+- VerificationModal.js (OTP component), ApiClient.js (shared API transport)
 - ResidentDetailsUpdate.html (shares lakeIllawongVerified session)
 
 CHANGELOG:
+- V3.7 (Nov 2026): Transport moved to the shared ApiClient.js (API
+                   reliability initiative). makeApiCall(url) kept its name
+                   and signature but now calls ApiClient: getResidents is
+                   a READ and is retried automatically (3 retries, 2s/4s/6s
+                   backoff, 30s per attempt) with "Connection slow,
+                   retrying... (n/4)" on the loading screen; previously a
+                   single 15s attempt, so one lost reply meant "Unable to
+                   load resident directory". logDirectoryAccess() is a
+                   WRITE (sent once, never resent; failure ignored as
+                   before). Script tag changed from VerificationModal_V1_0.js
+                   to the generic VerificationModal.js (identical code).
+                   Also fixed (found in testing): a failed load never showed
+                   its error -- showError() wrote to a non-existent element
+                   and the catch called an undefined hideLoading(), so the
+                   spinner just ran forever. It now shows the error with a
+                   "Try again" button.
+                   Requires ApiClient.js in the same folder. Search,
+                   filtering, privacy rules, PDF export and layout unchanged.
 - V3.6 (Aug 2026): Design System compliance pass, raised by Tony ("only
                    partially glass"). Back to Portal button was still the
                    old superseded purple gradient (.btn-back-to-portal
@@ -88,7 +106,8 @@ CHANGELOG:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Residents Directory - Lake Illawong</title>
-    <script src="VerificationModal_V1_0.js"></script>
+    <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <style>
@@ -1489,24 +1508,14 @@ function logDirectoryAccess(name, unit) {
     var params = new URLSearchParams(window.location.search);
     var portal = params.get('portal') || 'Resident Portal';
     var detail = 'Resident Directory via ' + portal;
-    var cbName = 'logcb_' + Date.now();
-    var script = document.createElement('script');
-    var settled = false;
-    function finish() {
-        if (settled) return;
-        settled = true;
-        window[cbName] = function() {};
-        try { document.head.removeChild(script); } catch(e){}
-    }
-    window[cbName] = function() { finish(); };
-    script.onerror = function() { finish(); };
-    script.src = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
-        + '?action=logAccess&callback=' + cbName
-        + '&type=Directory-Access'
-        + '&name=' + encodeURIComponent(name || '')
-        + '&unit=' + encodeURIComponent(unit || '')
-        + '&detail=' + encodeURIComponent(detail);
-    document.head.appendChild(script);
+    // V3.7: WRITE via ApiClient (sent once, never resent). Fire-and-forget.
+    if (typeof ApiClient === 'undefined') return;
+    ApiClient.call('https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec', 'logAccess', {
+        type: 'Directory-Access',
+        name: name || '',
+        unit: unit || '',
+        detail: detail
+    }, { write: true, timeout: 15000 }).catch(function() {});
 }
 
 
@@ -1579,7 +1588,12 @@ async function loadResidents() {
     try {
         console.log('Loading residents from API...');
         
-        const data = await makeApiCall(API_URL + '?action=getResidents&_=' + Date.now());
+        const data = await makeApiCall(API_URL + '?action=getResidents', {
+            onRetry: function(info) {
+                const lt = document.querySelector('#loadingScreen .loading-text');
+                if (lt) lt.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+            }
+        });
         
         if (data && data.success) {
             // Filter to include proper units AND external entries
@@ -1632,8 +1646,7 @@ console.log('✅ Directory interactive elements initialized');
         
     } catch (error) {
         console.error('Error loading residents:', error);
-        showError('Unable to load resident directory. Please try again later.');
-        hideLoading();
+        showError('Unable to load resident directory. Please check your connection and try again.');
     }
 }
        // Setup filter buttons
@@ -2309,49 +2322,34 @@ function downloadPDF() {
 
         // Show error state
         function showError(message) {
-            const loadingState = document.getElementById('loadingState');
+            // V3.7: target was 'loadingState', an id that does not exist on this
+            // page, so a failed load threw inside the catch and the spinner ran
+            // forever. The loading screen is the real element.
+            const loadingState = document.getElementById('loadingScreen');
+            loadingState.style.display = 'flex';
             loadingState.innerHTML = `
                 <div style="color: #ef4444; font-weight: 600;">❌ Error</div>
                 <p>${escapeHtml(message)}</p>
+                <button type="button" class="filter-btn" onclick="window.location.reload()">Try again</button>
             `;
         }
 
-        // Make API call with JSONP
-        function makeApiCall(url) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'callback_' + Date.now();
-                const script = document.createElement('script');
-                let settled = false;
-
-                function cleanup() {
-                    window[callbackName] = function() {};
-                    try { document.head.removeChild(script); } catch (e) {}
-                }
-                
-                window[callbackName] = function(data) {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    resolve(data);
-                };
-                
-                script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
-                script.onerror = () => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Network error'));
-                };
-                
-                document.head.appendChild(script);
-                
-                // Timeout after 15 seconds
-                setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Request timeout'));
-                }, 15000);
+        // V3.7: thin wrapper over the shared ApiClient. Same name and
+        // argument as before (a full URL with ?action=...). getResidents
+        // is a READ (retried); the cache-busting _ param is dropped.
+        function makeApiCall(url, opts) {
+            if (typeof ApiClient === 'undefined') {
+                return Promise.reject(new Error('ApiClient.js is not loaded'));
+            }
+            const u = new URL(url);
+            const params = {};
+            u.searchParams.forEach(function(v, k) {
+                if (k !== 'action' && k !== 'callback' && k !== '_') params[k] = v;
+            });
+            return ApiClient.call(u.origin + u.pathname, u.searchParams.get('action'), params, {
+                write: false,
+                timeout: 30000,
+                onRetry: opts && opts.onRetry
             });
         }
 
