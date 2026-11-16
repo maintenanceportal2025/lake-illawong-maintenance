@@ -6,7 +6,7 @@ PURPOSE: Cut-down on-demand report generation for ZoneRep audience.
          8 reports relevant to zone representative role.
 PORTAL: ZoneRep Portal
 FILE: ZoneRepReports.html
-VERSION: V1.1.2
+VERSION: V1.2.0
 LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: Shares Zone Rep Portal's "portalZoneRepVerified" session
@@ -42,6 +42,22 @@ Tony's explicit call). See V1.0.14 changelog for the corresponding dead-
 code cleanup.
 
 VERSION HISTORY:
+  V1.2.0 (Nov 2026): LOCATION FILTER -- raised by Tony. New "Location" selector at
+                     the top of the sidebar (All locations / Units only /
+                     Clubhouse &amp; Common Areas only) that applies to every
+                     report at once, instead of a filter on each. Default is
+                     All locations, so nothing changes until it is used.
+                     Clubhouse and Common Areas are identified by the same two
+                     unit values CommonAreasQueue uses. Implemented once, at
+                     the data layer: the loaded records are kept whole and the
+                     working pools are rebuilt from them whenever the selector
+                     changes, so no individual report was edited. While a
+                     filter is active each report shows a note at the top, and
+                     the PDF footer states the Location setting. The sidebar
+                     load status still shows what was loaded, not what the
+                     filter leaves. Changing the filter re-draws the current
+                     report (its own filters reset). Note: Unit Problem History
+                     for "Clubhouse" returns nothing while Units only is set.
   V1.1.2 (Nov 2026): TOP UNITS -- click-through to Unit Problem History, raised
                      by Tony. Clicking a unit in the Top Units table now opens
                      Unit Problem History with that unit already entered and
@@ -804,6 +820,13 @@ VERSION HISTORY:
                 <span id="dataStatusText">Loading data...</span>
             </div>
 
+            <div class="catalogue-title">Location</div>
+            <select id="locationFilter" class="glass-select" style="width:100%;margin-bottom:16px;" onchange="setLocationFilter(this.value)">
+                <option value="all">All locations</option>
+                <option value="units">Units only</option>
+                <option value="common">Clubhouse &amp; Common Areas only</option>
+            </select>
+
             <div class="report-item active" onclick="selectReport('unit-history')" id="cat-unit-history">
                 <span class="report-icon">🏠</span>Unit Problem History
             </div>
@@ -873,6 +896,55 @@ let currentData    = [];    // FaultLog records — Programmed excluded
 let legacyData     = [];    // LegacyLog records — Programmed excluded — loaded on demand
 let allData        = [];    // currentData alone until legacy loads, then currentData+legacyData
 let programmedData = [];    // Programmed + Programmed-Completed (current only)
+
+// Location filter (V1.2.0) -- one setting for every report. The three raw pools
+// below hold everything as loaded; currentData/legacyData/allData/
+// programmedData above are always the filtered view of them, rebuilt by
+// applyLocationFilter(), so no individual report needed to change.
+let rawCurrentAll    = [];
+let rawLegacyAll     = [];
+let rawProgrammedAll = [];
+let locationFilter   = 'all';   // 'all' | 'units' | 'common' -- default as before
+
+// Clubhouse and Common Areas are the two non-residential locations
+// (same two values CommonAreasQueue filters on).
+function isClubOrCommon(p) {
+    return /^(clubhouse|common areas?)$/i.test(String((p && p.unitNumber) || '').trim());
+}
+function locationKeep(p) {
+    if (locationFilter === 'all') return true;
+    return locationFilter === 'units' ? !isClubOrCommon(p) : isClubOrCommon(p);
+}
+function applyLocationFilter() {
+    currentData    = rawCurrentAll.filter(locationKeep);
+    legacyData     = rawLegacyAll.filter(locationKeep);
+    programmedData = rawProgrammedAll.filter(locationKeep);
+    allData        = [...currentData, ...legacyData];
+}
+function locationLabel() {
+    return locationFilter === 'units' ? 'Units only'
+         : locationFilter === 'common' ? 'Clubhouse & Common Areas only'
+         : 'All locations';
+}
+function setLocationFilter(v) {
+    locationFilter = v;
+    if (!dataLoaded) return;
+    applyLocationFilter();
+    runCurrentReport();
+}
+// Shown at the top of every report while a filter is active, so a filtered
+// screen can't be mistaken for the full picture; exported PDFs say it in
+// their footer.
+function locationNoteHtml() {
+    if (locationFilter === 'all') return '';
+    const what = locationFilter === 'units'
+        ? 'Units only &mdash; Clubhouse and Common Areas are excluded.'
+        : 'Clubhouse &amp; Common Areas only &mdash; residential units are excluded.';
+    return `<div style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:2px;padding:8px 12px;margin-bottom:16px;font-size:0.8rem;color:var(--glass-text-muted);">&#128205; Location filter active: ${what} Change it in the sidebar.</div>`;
+}
+function pdfLocationNote() {
+    return locationFilter === 'all' ? '' : '  |  Locations: ' + locationLabel();
+}
 let dataLoaded     = false; // true once CURRENT data has loaded (see legacyDataLoaded for legacy)
 let legacyDataLoaded = false;
 let legacyLoadPromise = null;
@@ -969,13 +1041,14 @@ async function loadAllData() {
         const rawCurrent = (cr && cr.success) ? (cr.data || []) : [];
 
         // Split programmed works out into their own pool
-        programmedData = rawCurrent.filter(isProgrammed);
-        currentData    = rawCurrent.filter(p => !isProgrammed(p));
-        allData        = [...currentData];  // legacy folded in once ensureLegacyData() resolves
-        dataLoaded     = true;
+        rawProgrammedAll = rawCurrent.filter(isProgrammed);
+        rawCurrentAll    = rawCurrent.filter(p => !isProgrammed(p));
+        dataLoaded       = true;
+        applyLocationFilter();  // legacy folded in once ensureLegacyData() resolves
 
+        // Status always reports what was loaded, not what the Location filter shows
         setDataStatus('loaded',
-            `&#10003; ${currentData.length} current + ${programmedData.length} programmed loaded &middot; legacy loads on request`);
+            `&#10003; ${rawCurrentAll.length} current + ${rawProgrammedAll.length} programmed loaded &middot; legacy loads on request`);
 
         // Auto-run the default report
         runCurrentReport();
@@ -1001,14 +1074,14 @@ async function ensureLegacyData() {
         try {
             const lr = await ApiClient.call(API_URL, 'getLegacyLogData', { lean: 1 });
             const rawLegacy = (lr && lr.success) ? (lr.data || []) : [];
-            legacyData = rawLegacy.filter(p => !isProgrammed(p));
-            allData = [...currentData, ...legacyData];
+            rawLegacyAll = rawLegacy.filter(p => !isProgrammed(p));
             legacyDataLoaded = true;
+            applyLocationFilter();
             setDataStatus('loaded',
-                `&#10003; ${currentData.length} current + ${legacyData.length} legacy + ${programmedData.length} programmed loaded`);
+                `&#10003; ${rawCurrentAll.length} current + ${rawLegacyAll.length} legacy + ${rawProgrammedAll.length} programmed loaded`);
         } catch (err) {
             setDataStatus('loaded',
-                `&#10003; ${currentData.length} current + ${programmedData.length} programmed loaded &middot; legacy unavailable`);
+                `&#10003; ${rawCurrentAll.length} current + ${rawProgrammedAll.length} programmed loaded &middot; legacy unavailable`);
             throw err;
         }
     })();
@@ -1111,7 +1184,7 @@ function runCurrentReport() {
 }
 
 function showPanel(html) {
-    document.getElementById('reportPanel').innerHTML = html;
+    document.getElementById('reportPanel').innerHTML = locationNoteHtml() + html;
 }
 
 // =====================================================================
@@ -1577,7 +1650,7 @@ async function exportOpenPDF() {
         y += rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.text('Lake Illawong Management Central System — Confidential' + pdfLocationNote(), pw/2, ph-5, {align:'center'});
     pdf.save(`Open_Problems_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -1821,7 +1894,7 @@ async function exportBacklogAgingPDF() {
     });
 
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.text('Lake Illawong Management Central System — Confidential' + pdfLocationNote(), pw/2, ph-5, {align:'center'});
     pdf.save(`Backlog_Aging_${zone==='all'?'AllZones':'Zone'+zone}_${minDays>0?minDays+'plus_days_':''}${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -2014,7 +2087,7 @@ async function exportMoMPDF(mode) {
         y+=6;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.text('Lake Illawong Management Central System — Confidential' + pdfLocationNote(), pw/2, ph-5, {align:'center'});
     pdf.save(`MoM_${mode}_${zoneLabel === 'all' ? 'AllZones' : 'Zone' + zoneLabel}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -2336,7 +2409,7 @@ async function exportPrioritiesPDF() {
     }
 
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.text('Lake Illawong Management Central System — Confidential' + pdfLocationNote(), pw/2, ph-5, {align:'center'});
     pdf.save(`Priorities_${view}_${view!=='open' && priority!=='all' ? priority+'_' : ''}${zone === 'all' ? 'AllZones' : 'Zone' + zone}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -2519,7 +2592,7 @@ async function exportTopUnitsPDF() {
         pdf.text(`${total?Math.round(c/total*100):0}%`,140,y+4.2); y+=6;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.text('Lake Illawong Management Central System — Confidential' + pdfLocationNote(), pw/2, ph-5, {align:'center'});
     pdf.save(`Top_Units_${zone==='all'?'AllZones':'Zone'+zone}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -2723,7 +2796,7 @@ async function exportZonePDF() {
         pdf.text(rate(v) === null ? '—' : rate(v)+'%',180,y+4.2); y+=6;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.text('Lake Illawong Management Central System — Confidential' + pdfLocationNote(), pw/2, ph-5, {align:'center'});
     pdf.save(`By_Zone_${monthsSel === 'all' ? 'AllTime' : 'Last' + monthsSel + 'mo'}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -2861,7 +2934,7 @@ async function exportKeywordPDF() {
         y+=rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.text('Lake Illawong Management Central System — Confidential' + pdfLocationNote(), pw/2, ph-5, {align:'center'});
     pdf.save(`Keyword_${kwTerm.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -3040,7 +3113,7 @@ async function exportProgrammedPDF() {
         y+=rowHeight;
     });
     pdf.setFontSize(7); pdf.setTextColor(150,150,150);
-    pdf.text('Lake Illawong Management Central System — Confidential', pw/2, ph-5, {align:'center'});
+    pdf.text('Lake Illawong Management Central System — Confidential' + pdfLocationNote(), pw/2, ph-5, {align:'center'});
     pdf.save(`Programmed_Works_${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
