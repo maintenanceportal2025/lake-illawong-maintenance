@@ -1,19 +1,37 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V1.0
+ * VERIFICATION MODAL COMPONENT V2.1.0
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 1.0
+ * VERSION: 2.1.0
  * CREATED: February 16, 2026
  * LAST UPDATED: November 2026
  * FILE: VerificationModal.js (generic name, no version in the filename)
  * DESIGN: Glass effect modal from Unified Design System V2.4
  *
- * CHANGE LOG (version number intentionally stays fixed at 1.0 -- this
- * file is shared across ~15+ modules by filename, so version-in-filename
- * doesn't apply here the way it does elsewhere. Track what changed by
- * date instead.):
- * - Nov 2026 (rename): file renamed from VerificationModal_V1_0.js to the
+ * CHANGE LOG (version is tracked here in the header, not in the filename:
+ * this file is shared by ~15+ modules by its generic name, same convention
+ * as ApiClient.js and EventEntryModal.js. The frozen predecessor
+ * VerificationModal_V1_0.js keeps the old "1.0" numbering and must not be
+ * changed; ALL changes go in this file only.):
+ * - V2.1.0 (Nov 2026, warm-up): when the modal is first shown on a page, it now makes
+ *   one quiet, read-only call (checkVerificationStatus for a dummy address,
+ *   via the same relay path a real send uses) so the Netlify function and
+ *   ManagementCentral are already awake by the time the user has typed an
+ *   email address and pressed Send. Prompted by intermittent slow first
+ *   sends (17 Nov: the VerificationCodes row was created seconds before the
+ *   email arrived, i.e. the wait was a cold start BEFORE the server began
+ *   work; residents then press Send again and get two codes). The reply is
+ *   ignored and any failure is swallowed -- if the first ping times out it is
+ *   tried once more 2s later, because a timed-out request still wakes the
+ *   backend. Sends nothing, issues no code, writes nothing, and changes no
+ *   UI. Once per page load. Kill switch: set USE_WARMUP to false below.
+ * - V2.0.0 (Nov 2026, rename -- baseline for this filename): the file was renamed
+ *   from VerificationModal_V1_0.js and takes the number 2.0.0 because it already
+ *   carries the whole Sep-Oct 2026 OTP rework (retry, status polling, requestId,
+ *   Netlify relay), none of which was ever given a version number under the old
+ *   fixed "1.0". The notes under "Sep/Oct 2026" below are that history.
+ *   Original note for the rename itself: file renamed from VerificationModal_V1_0.js to the
  *   generic VerificationModal.js, matching ApiClient.js and EventEntryModal.js,
  *   so a consumer's <script src> never needs editing again when this file
  *   changes. NO CODE CHANGE: the code below is identical to
@@ -207,6 +225,11 @@ const VerificationModal = (function() {
     const RELAY_URL = '/.netlify/functions/otp-relay';
     const RELAY_TIMEOUT_MS = 13000;                  // the relay's own budget is ~8.5s
 
+    // Nov 2026 (warm-up): see change log. false = no warm-up call.
+    const USE_WARMUP = true;
+    const WARMUP_IDENTIFIER = 'warmup@lakeillawong.invalid';
+    let warmUpDone = false;
+
     let modalInjected = false;
     let expiryTimerInterval = null;
     let resendTimerInterval = null;
@@ -234,8 +257,27 @@ const VerificationModal = (function() {
         return false; // Need to verify
     }
 
+    // Nov 2026 (warm-up): quiet read-only ping so the relay + ManagementCentral are
+    // awake before the first real send. Fire-and-forget; never throws, never
+    // touches the UI, once per page load.
+    function _warmUp() {
+        if (!USE_WARMUP || !USE_RELAY || warmUpDone) return;
+        warmUpDone = true;
+        const params = { method: 'email', identifier: WARMUP_IDENTIFIER };
+        _relayCall('checkVerificationStatus', params, 6000).then(
+            function () { console.log('Warm-up ping answered'); },
+            function () {
+                // A timed-out request still wakes the backend; one more try shortly after.
+                setTimeout(function () {
+                    _relayCall('checkVerificationStatus', params, 6000).catch(function () {});
+                }, 2000);
+            }
+        );
+    }
+
     // Show modal
     function show() {
+        _warmUp();
         if (!modalInjected) {
             injectModal();
             modalInjected = true;
