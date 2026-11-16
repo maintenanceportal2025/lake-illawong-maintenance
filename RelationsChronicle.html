@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.0.2
+  Frontend Version: V1.1.0
   Backend:          RelationsManager V1.0.10 -- getRelationByRef /
                      getRelationsByUnit / getRelationsByName / getEvents
   Status:           DEVELOPMENT
@@ -55,6 +55,19 @@ SEARCH MODES:
                return several.
 
 VERSION HISTORY:
+  V1.1.0 (Nov 2026): Transport moved to the shared ApiClient.js (API
+    reliability initiative). jsonp() keeps its name and signature
+    (params, onSuccess, onError, timeoutMs) and gains an optional fifth
+    argument onRetry. Every call on this page is a READ (getRelationByRef,
+    getRelationsByName, getRelationsByUnit, getEvents), so all are retried
+    automatically (3 retries, 2s/4s/6s backoff, 30s per attempt) and a
+    search shows "Connection slow, retrying... (n/4)". Previously one
+    attempt only. FIX: if the events could not be loaded for a print, the
+    old code silently printed the record WITHOUT its events; it now tells
+    the user and does not print an incomplete record. Script tag changed
+    from VerificationModal_V1_0.js to the generic VerificationModal.js
+    (identical code). Requires ApiClient.js in the same folder. Wording,
+    layout and print output unchanged.
   V1.0.2 (Aug 2026): REAL FIX for the "Access Denied" Tony was seeing --
     the V1.0.1 diagnostic confirmed hasAccess was correctly computing
     true, ruling out an auth/role/data problem entirely. Actual cause:
@@ -100,7 +113,8 @@ TECHNICAL:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Relations Chronicle - Lake Illawong</title>
-<script src="VerificationModal_V1_0.js"></script>
+<script src="ApiClient.js"></script>
+<script src="VerificationModal.js"></script>
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -329,43 +343,30 @@ TECHNICAL:
 
     // ── JSONP HELPER -- ported verbatim from RelationsManager.html ────────
 
-    function jsonp(params, onSuccess, onError, timeoutMs) {
-        const callbackName = 'rc_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-        const qs = Object.keys(params).map(function(k) {
-            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-        }).join('&');
-        const url = CONFIG.BACKEND_URL + '?' + qs + '&callback=' + callbackName;
-
-        let settled = false;
-        const s = document.createElement('script');
-
-        function cleanup() {
-            window[callbackName] = function () {};
-            try { document.head.removeChild(s); } catch (e) {}
-        }
-
-        const timer = setTimeout(function () {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            if (onError) onError('Server did not respond. Please try again.');
-        }, timeoutMs || 30000);
-
-        window[callbackName] = function (data) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer); cleanup();
-            if (onSuccess) onSuccess(data);
-        };
-
-        s.onerror = function () {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer); cleanup();
+    function jsonp(params, onSuccess, onError, timeoutMs, onRetry) {
+        if (typeof ApiClient === 'undefined') {
             if (onError) onError('Could not reach the server.');
-        };
-        s.src = url;
-        document.head.appendChild(s);
+            return;
+        }
+        const p = Object.assign({}, params);
+        const action = p.action;
+        delete p.action;
+        // V1.1.0: all actions on this page are reads, so all are retried.
+        ApiClient.call(CONFIG.BACKEND_URL, action, p, {
+            write: false,
+            timeout: timeoutMs || 30000,
+            onRetry: onRetry
+        }).then(function (data) {
+            if (onSuccess) onSuccess(data);
+        }, function () {
+            if (onError) onError('Could not reach the server. Please try again.');
+        });
+    }
+
+    // V1.1.0: retry hint shown in the results area while a search retries
+    function searchRetryHint(info) {
+        const t = document.querySelector('#resultsArea .loading-state .state-text');
+        if (t) t.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
     }
 
     // ── SEARCH ───────────────────────────────────────────────────────────
@@ -390,7 +391,7 @@ TECHNICAL:
                     return;
                 }
                 renderResults([data.relation]);
-            }, function(err) { btn.disabled = false; btn.textContent = 'Search'; showEmpty(err); });
+            }, function(err) { btn.disabled = false; btn.textContent = 'Search'; showEmpty(err); }, null, searchRetryHint);
         } else {
             const action = mode === 'name' ? 'getRelationsByName' : 'getRelationsByUnit';
             const param  = mode === 'name' ? { name: query } : { unit: query };
@@ -398,7 +399,7 @@ TECHNICAL:
                 btn.disabled = false; btn.textContent = 'Search';
                 if (!data.success) { showEmpty(data.error || 'Search failed.'); return; }
                 renderResults(data.relations || []);
-            }, function(err) { btn.disabled = false; btn.textContent = 'Search'; showEmpty(err); });
+            }, function(err) { btn.disabled = false; btn.textContent = 'Search'; showEmpty(err); }, null, searchRetryHint);
         }
     }
 
@@ -535,8 +536,8 @@ TECHNICAL:
             _eventCache[ref] = (data.success && data.events) ? data.events : [];
             doRelationsPrint(ref, printType);
         }, function() {
-            _eventCache[ref] = [];
-            doRelationsPrint(ref, printType);
+            // V1.1.0: do not print a record that is missing its events
+            alert('Could not load the dispute events, so the record was not printed. Please try again.');
         });
     }
 
