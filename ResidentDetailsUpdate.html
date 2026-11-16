@@ -3,8 +3,8 @@
 LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - UPDATE MY DETAILS
 =====================================================================
 PURPOSE: Self-service contact details update for residents
-VERSION: 3.4
-LAST UPDATED: August 2026
+VERSION: 3.5
+LAST UPDATED: November 2026
 ARCHITECTURE: V5.6
 
 DESIGN SYSTEM: Lake Illawong Unified v2.0
@@ -14,7 +14,7 @@ DESIGN SYSTEM: Lake Illawong Unified v2.0
 - API Protocol: JSONP with proper callback cleanup (fixed V3.4, Aug 2026 --
   previously deleted the callback rather than replacing it with a no-op)
 
-AUTHENTICATION: Standalone OTP via VerificationModal_V1_0.js
+AUTHENTICATION: Standalone OTP via VerificationModal.js
 - VerificationModal.init() fires on DOMContentLoaded
 - Session key: lakeIllawongVerified (shared with ResidentDirectory,
   DocumentLibrary, ComplaintForm, ComplaintStatus)
@@ -25,7 +25,7 @@ AUTHENTICATION: Standalone OTP via VerificationModal_V1_0.js
   No second verifyIdentity call — userData is sufficient
 
 SECURITY:
-- OTP verification via VerificationModal_V1_0.js
+- OTP verification via VerificationModal.js
 - Resident can only update own unit (unit from OTP session)
 - Cannot update Stage or Role Tags (admin-controlled)
 - Session-based (sessionStorage clears on browser close)
@@ -36,11 +36,38 @@ BACKEND DEPENDENCIES:
 
 RELATED FILES:
 - ResidentPortal.html (navigates here)
-- VerificationModal_V1_0.js (OTP component)
+- VerificationModal.js (OTP component)
+- ApiClient.js (shared JSONP transport)
 - ResidentDirectory.html, DocumentLibrary.html,
   ComplaintForm.html, ComplaintStatus.html (share session)
 
 CHANGE LOG
+- V3.5 (Nov 2026): Transport migrated to the shared ApiClient.js, and the OTP
+                   script tag moved to the generic VerificationModal.js
+                   (identical code; Nov 2026 rename). fetchCurrentValue()
+                   and submitUpdate() were single JSONP attempts with no
+                   timeout and no retry, so one lost reply left the Save
+                   button on "Saving..." with the page unable to say whether
+                   the change had been made. Both now go through
+                   ApiClient.call().
+                   - getUnitResidents (best-effort lookup of the current
+                     value for the audit log): a READ, 1 automatic retry, 15s
+                     per attempt; still non-fatal, an empty old value is
+                     recorded if it fails.
+                   - updateContactDetails: a WRITE, never resent
+                     automatically. If no reply arrives within 30s the page
+                     says the change may or may not have been saved, to look
+                     for the confirmation email, and that pressing Save again
+                     is safe (the update sets the same value; the only side
+                     effect is a second confirmation email and log row).
+                   Fixed as found: (1) a slow reply for the old-value lookup
+                   could land after the person had switched between Email and
+                   Phone and record the wrong old value; late/stale replies
+                   are now ignored. (2) Pressing Enter while a save was
+                   already in progress sent a second save; ignored now.
+                   Requires ApiClient.js in the same folder, loaded before
+                   VerificationModal.js. Layout, validation, wording of
+                   success and backend unchanged.
 - V3.4 (Aug 2026): System-wide JSONP audit fix -- fetchCurrentValue() and
                    submitUpdate() both deleted their callback on
                    completion/onerror instead of replacing it with a
@@ -64,7 +91,8 @@ CHANGE LOG
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Update My Details - Lake Illawong</title>
-    <script src="VerificationModal_V1_0.js"></script>
+    <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <style>
         :root {
             --primary-blue: #667eea;
@@ -500,7 +528,7 @@ CHANGE LOG
 
     <script>
 // =====================================================================
-// UPDATE MY DETAILS V3.3
+// UPDATE MY DETAILS V3.5
 // =====================================================================
 // Authentication: VerificationModal V1.0, session key lakeIllawongVerified
 // No second API call post-OTP — unit and name come from userData directly.
@@ -576,40 +604,27 @@ function selectOption(type) {
     fetchCurrentValue(type);
 }
 
-function fetchCurrentValue(type) {
-    const callbackName = 'jsonp_cur_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-    const script = document.createElement('script');
-    let settled = false;
+let currentLookupSeq = 0;   // V3.5: ignores a late reply for a superseded lookup
 
-    window[callbackName] = function(response) {
-        if (settled) return;
-        settled = true;
-        window[callbackName] = function() {};
-        try { document.head.removeChild(script); } catch(e) {}
+function fetchCurrentValue(type) {
+    // V3.5: via the shared ApiClient (read, 1 retry). Non-fatal as before.
+    const mySeq = ++currentLookupSeq;
+    if (typeof ApiClient === 'undefined') return;
+
+    ApiClient.call(API_URL, 'getUnitResidents', { unitNumber: currentUnit },
+        { write: false, retries: 1, timeout: 15000 }
+    ).then(function(response) {
+        // Ignore if the person has since switched option or reset the form
+        if (mySeq !== currentLookupSeq || selectedOption !== type) return;
         if (response.success && response.residents && response.residents.length > 0) {
             const resident = response.residents.find(function(r) {
                 return r.name === currentName;
             }) || response.residents[0];
             currentOldValue = type === 'email' ? (resident.email || '') : (resident.phone || '');
         }
-    };
-
-    script.onerror = function() {
-        if (settled) return;
-        settled = true;
-        window[callbackName] = function() {};
-        try { document.head.removeChild(script); } catch(e) {}
+    }).catch(function() {
         // Non-fatal — oldValue will be empty string if fetch fails
-    };
-
-    const params = new URLSearchParams({
-        action: 'getUnitResidents',
-        unitNumber: currentUnit,
-        callback: callbackName
     });
-
-    script.src = API_URL + '?' + params.toString();
-    document.head.appendChild(script);
 }
 
 // ---------------------------------------------------------------
@@ -620,7 +635,10 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && selectedOption) submitUpdate();
 });
 
+let saveInProgress = false;   // V3.5: a second save cannot start while one is running
+
 function submitUpdate() {
+    if (saveInProgress) return;
     const newValue = document.getElementById('newValue').value.trim();
 
     if (!selectedOption) {
@@ -648,15 +666,23 @@ function submitUpdate() {
     btnSubmit.textContent = 'Saving...';
     clearStatus();
 
-    const callbackName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-    const script = document.createElement('script');
-    let settled = false;
+    if (typeof ApiClient === 'undefined') {
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = 'Save Changes';
+        showStatus('Cannot save: ApiClient.js is not loaded on this page.', 'error');
+        return;
+    }
+    saveInProgress = true;
 
-    window[callbackName] = function(response) {
-        if (settled) return;
-        settled = true;
-        window[callbackName] = function() {};
-        try { document.head.removeChild(script); } catch(e) {}
+    // V3.5: a WRITE -- never resent automatically (see change log).
+    ApiClient.call(API_URL, 'updateContactDetails', {
+        unitNumber: currentUnit,
+        residentName: currentName,
+        detailType: selectedOption,
+        newValue: newValue,
+        oldValue: currentOldValue || ''
+    }, { write: true, timeout: 30000 }).then(function(response) {
+        saveInProgress = false;
         btnSubmit.disabled = false;
         btnSubmit.textContent = 'Save Changes';
 
@@ -668,30 +694,18 @@ function submitUpdate() {
         } else {
             showStatus('Unable to save changes: ' + (response.error || 'Please try again.'), 'error');
         }
-    };
-
-    script.onerror = function() {
-        if (settled) return;
-        settled = true;
-        window[callbackName] = function() {};
-        try { document.head.removeChild(script); } catch(e) {}
+    }).catch(function(err) {
+        saveInProgress = false;
         btnSubmit.disabled = false;
         btnSubmit.textContent = 'Save Changes';
-        showStatus('Connection error. Please try again.', 'error');
-    };
-
-    const params = new URLSearchParams({
-        action: 'updateContactDetails',
-        unitNumber: currentUnit,
-        residentName: currentName,
-        detailType: selectedOption,
-        newValue: newValue,
-        oldValue: currentOldValue || '',
-        callback: callbackName
+        if (err && err.outcomeUnknown) {
+            showStatus('No confirmation was received, so your change may or may not have been saved. ' +
+                'Please check your email for a confirmation. If none arrives within a few minutes, ' +
+                'press Save Changes again - saving the same details twice is safe.', 'error');
+        } else {
+            showStatus('Connection error. Please try again.', 'error');
+        }
     });
-
-    script.src = API_URL + '?' + params.toString();
-    document.head.appendChild(script);
 }
 
 // ---------------------------------------------------------------
