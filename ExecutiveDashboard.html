@@ -1,8 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    Executive Dashboard V1.2.1
-    Updated: August 2026
+    Executive Dashboard V1.3.0
+    Updated: November 2026
+    Changes: API reliability -- makeRequest() now uses the shared ApiClient.js
+             (add <script src="ApiClient.js"> alongside this page). The
+             dashboard only reads (getFaultLogData, getLegacyLogData), so each
+             request retries automatically (3 retries, 2s/4s/6s, 30s per
+             attempt) instead of one attempt failing the whole load. Data,
+             charts, filters and exports unchanged.
+    Prior: V1.2.1 Aug 2026
     Changes: System-wide JSONP audit fix -- makeRequest() deleted its callback
              on timeout/success instead of replacing it with a no-op, and had
              no settled-guard, so a genuinely late cold-start response past
@@ -19,6 +26,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lake Illawong - Executive Dashboard</title>
+    <script src="ApiClient.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/html2canvas@latest/dist/html2canvas.min.js"></script>
@@ -1485,36 +1493,10 @@ let initialLoad = true;
 
         // API Request Function
         async function makeRequest(action) {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'callback_' + Math.random().toString(36).substr(2, 9);
-                const script = document.createElement('script');
-                let settled = false;
-
-                function cleanup() {
-                    window[callbackName] = () => {};
-                    if (script.parentNode) {
-                        script.parentNode.removeChild(script);
-                    }
-                }
-
-                const timeout = setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Request timeout'));
-                }, 30000);
-
-                window[callbackName] = (data) => {
-                    if (settled) return;
-                    settled = true;
-                    clearTimeout(timeout);
-                    cleanup();
-                    resolve(data);
-                };
-
-                script.src = API_URL + '?action=' + action + '&callback=' + callbackName;
-                document.body.appendChild(script);
-            });
+            if (typeof ApiClient === 'undefined') {
+                throw new Error('ApiClient.js is not loaded');
+            }
+            return ApiClient.call(API_URL, action, {}, { timeout: 30000 });
         }
 
         // Load Data
