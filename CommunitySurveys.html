@@ -4,10 +4,31 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - COMMUNITY SURVEYS
 =====================================================================
 PURPOSE: Resident interface for viewing and completing community surveys
 PORTAL: Residents Portal (Public Access)
-VERSION: 2.3.3 (documentation fix)
-LAST UPDATED: August 2026
+VERSION: 2.4.0
+LAST UPDATED: November 2026
 BACKEND API: SurveyModule V1.2.1 (JSONP only)
 DESIGN SYSTEM: Lake Illawong Unified v2.4
+
+CHANGES IN V2.4.0:
+- CHANGED: Transport moved to the shared ApiClient.js (API reliability
+  initiative). callAPI() keeps its name and (action, params, callback)
+  contract but now calls ApiClient. It was one JSONP attempt with no
+  timeout and no retry, so one lost reply left "Loading surveys..." (or a
+  Submit button reading "Submitting...") waiting for a reply that never
+  came.
+  - READS (getSurveys, getSurveyDetails) retry automatically (3 retries,
+    2s/4s/6s backoff, 30s per attempt); the loading text reads "Connection
+    slow, retrying... (n/4)".
+  - WRITE (submitResponse) is sent once and never resent, so a slow reply
+    cannot record a response twice. If no reply arrives the resident is
+    told the response MAY have been received (and that a repeat attempt
+    saying they have already responded means it was); their answers stay
+    on the form. Answers too long to send are reported instead of failing
+    silently.
+  - FIXED: a failed survey-details load displayed "Error: undefined";
+    failures now carry a readable message.
+  Requires ApiClient.js in the same folder. Questions, scoring, test mode,
+  unit collection, wording and layout unchanged.
 
 CHANGES IN V2.3.3:
 - FIXED: Header DESIGN SYSTEM label was stale at "v1.4 + Mockup Design"
@@ -985,6 +1006,7 @@ CHANGES IN V2.0:
         </div>
     </div>
 
+    <script src="ApiClient.js"></script>
     <script>
         // CONFIGURATION
         const SURVEY_API_URL = 'https://script.google.com/macros/s/AKfycby4CGaQHZbNwQZTv1t4zFnZ8L8opU0jqpAOWBzstfTqA7oTAN-oPykOhWjdZAxJrLazFA/exec';
@@ -1017,47 +1039,43 @@ CHANGES IN V2.0:
             });
         });
 
-        // JSONP HELPER
-        function callAPI(action, params, callback) {
-            const callbackName = 'surveyCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-            
-            console.log('🔍 Calling API:', action, params);
+        // API HELPER (V2.4.0: thin wrapper over the shared ApiClient)
+        // Same name and contract as the old JSONP helper: callback(response) is
+        // called exactly once; a transport failure arrives as
+        // {success:false, error, message}. getSurveys and getSurveyDetails are
+        // READS (retried); anything else (submitResponse) is a WRITE, sent once.
+        const SURVEY_READ_ACTIONS = ['getSurveys', 'getSurveyDetails'];
 
-            let settled = false;
-            const script = document.createElement('script');
-
-            function cleanup() {
-                window[callbackName] = function() {};
-                if (script.parentNode) script.parentNode.removeChild(script);
+        function callAPI(action, params, callback, onRetry) {
+            function fail(text, extra) {
+                callback(Object.assign({ success: false, error: text, message: text }, extra || {}));
             }
+            if (typeof ApiClient === 'undefined') { fail('ApiClient.js is not loaded'); return; }
 
-            window[callbackName] = function(response) {
-                if (settled) return;
-                settled = true;
-                console.log('✅ API Response received:', response);
-                cleanup();
+            const isRead = SURVEY_READ_ACTIONS.indexOf(action) !== -1;
+            ApiClient.call(SURVEY_API_URL, action, params || {}, {
+                write: !isRead,
+                timeout: 30000,
+                onRetry: onRetry
+            }).then(function(response) {
                 callback(response);
+            }, function(err) {
+                if (err && err.reason === 'url-too-long') {
+                    fail('Your answers are too long to send. Please shorten the longer text answers and try again.', { urlTooLong: true });
+                } else if (err && err.outcomeUnknown) {
+                    fail('No confirmation was received, so your response may have been received. If you try again and the survey says you have already responded, it was received. Your answers are still on this page.', { outcomeUnknown: true });
+                } else {
+                    fail('Could not reach the server. Please check your connection and try again.');
+                }
+            });
+        }
+
+        // Shows "Connection slow, retrying... (n/4)" in a loading message
+        function surveyRetryHint(container) {
+            return function(info) {
+                const el = container.querySelector('.loading-message > div:last-child');
+                if (el) el.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
             };
-            
-            let url = `${SURVEY_API_URL}?action=${action}&callback=${callbackName}`;
-            
-            // Add additional parameters
-            for (let key in params) {
-                url += `&${key}=${encodeURIComponent(params[key])}`;
-            }
-            
-            console.log('🔍 Request URL:', url);
-            
-            script.src = url;
-            script.onerror = function(e) {
-                if (settled) return;
-                settled = true;
-                console.error('❌ Script load error:', e);
-                cleanup();
-                callback({ success: false, error: 'Network error - unable to load script' });
-            };
-            
-            document.head.appendChild(script);
         }
 
         // VIEW MANAGEMENT
@@ -1095,7 +1113,7 @@ CHANGES IN V2.0:
                     console.error('❌ Error:', errorMsg);
                     container.innerHTML = `<div class="error-message">❌ Error loading surveys: ${errorMsg}</div>`;
                 }
-            });
+            }, surveyRetryHint(container));
         }
 
         // RENDER SURVEYS
@@ -1196,9 +1214,9 @@ CHANGES IN V2.0:
                         renderSurvey();
                     }
                 } else {
-                    container.innerHTML = '<div class="error-message">Error: ' + data.message + '</div>';
+                    container.innerHTML = '<div class="error-message">Error: ' + (data.message || data.error || 'Unknown error') + '</div>';
                 }
-            });
+            }, surveyRetryHint(container));
         }
 
 // UNIT MODAL FUNCTIONS
