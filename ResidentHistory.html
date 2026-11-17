@@ -4,18 +4,36 @@ LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - MY PROBLEM HISTORY
 =====================================================================
 PURPOSE: Resident self-service view of their own problem history
 PORTAL: Resident Portal
-VERSION: V1.1.0
-LAST UPDATED: May 2026
+VERSION: V1.2.0
+LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Glass-morphism throughout (converted from V1.4 white card design)
 - Input section, stats, results, request cards all glass panels
 - Modal retains white background (popup detail view)
 - Back button: portal-back-btn standard, above all panels
 AUTHENTICATION: None (public module)
-DEPENDENCIES: Explorer backend (getFaultLogData, getLegacyLogData actions)
+DEPENDENCIES: Explorer backend (getFaultLogData, getLegacyLogData actions), ApiClient.js
 RELATED FILES: ResidentPortal.html, ProblemQueue.html
 
 CHANGE LOG
+- V1.2.0 (Nov 2026): Transport moved to the shared ApiClient.js (API
+                     reliability initiative). makeAPIRequest() was one JSONP
+                     attempt with a 30s timeout and no retry, and a single
+                     search fired up to FIVE large Explorer requests (the
+                     search itself, the unit statistics -- which asked for
+                     current AND legacy again -- and the queue-position
+                     lookup, which fetched the current log a third time),
+                     several at once. Now: (1) every call is a READ and is
+                     retried automatically (3 retries, 2s/4s/6s backoff, 30s
+                     per attempt) with "Connection slow, retrying... (n/4)"
+                     on the loading panel; (2) each dataset is fetched at
+                     most ONCE per search and shared by the results, the unit
+                     statistics and the queue positions; (3) "All Data" now
+                     fetches current then legacy one after the other instead
+                     of at the same time (large Explorer payloads are the
+                     known cause of lost replies). Results, statistics,
+                     queue positions, wording and layout unchanged.
+                     Requires ApiClient.js in the same folder.
 - V1.1.0 (May 2026): Glass-morphism conversion. Design System V2.0
                      applied throughout. All JS unchanged.
 - V1.0.0 (Jan 2026): Initial release.
@@ -772,6 +790,7 @@ CHANGE LOG
         </div>
     </div>
 
+    <script src="ApiClient.js"></script>
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
 
@@ -809,20 +828,20 @@ CHANGE LOG
             }
             const normalizedUnit = unitInput.toUpperCase().replace(/^UNIT\s*/i, '').trim();
             currentUnit = normalizedUnit;
+            datasetCache = {};   // V1.2.0: fresh data for every search
             showLoading();
             try {
                 let allProblemsData = [];
                 if (selectedDataset === 'current') {
-                    const response = await makeAPIRequest('getFaultLogData');
+                    const response = await makeAPIRequest('getFaultLogData', historyRetryHint);
                     if (response && response.success && response.data) allProblemsData = response.data;
                 } else if (selectedDataset === 'legacy') {
-                    const response = await makeAPIRequest('getLegacyLogData');
+                    const response = await makeAPIRequest('getLegacyLogData', historyRetryHint);
                     if (response && response.success && response.data) allProblemsData = response.data;
                 } else {
-                    const [currentResponse, legacyResponse] = await Promise.all([
-                        makeAPIRequest('getFaultLogData'),
-                        makeAPIRequest('getLegacyLogData')
-                    ]);
+                    // V1.2.0: one after the other (large payloads); each is shared with the stats/queue lookups
+                    const currentResponse = await makeAPIRequest('getFaultLogData', historyRetryHint);
+                    const legacyResponse = await makeAPIRequest('getLegacyLogData', historyRetryHint);
                     if (currentResponse && currentResponse.success && currentResponse.data)
                         allProblemsData = allProblemsData.concat(currentResponse.data);
                     if (legacyResponse && legacyResponse.success && legacyResponse.data)
@@ -853,30 +872,25 @@ CHANGE LOG
             }
         }
 
-        async function makeAPIRequest(action) {
-            return new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                window[callbackName] = function(data) {
-                    document.body.removeChild(script);
-                    delete window[callbackName];
-                    resolve(data);
-                };
-                script.onerror = function() {
-                    document.body.removeChild(script);
-                    delete window[callbackName];
-                    reject(new Error('Failed to load data'));
-                };
-                script.src = `${WEB_APP_URL}?action=${action}&callback=${callbackName}`;
-                document.body.appendChild(script);
-                setTimeout(() => {
-                    if (window[callbackName]) {
-                        document.body.removeChild(script);
-                        delete window[callbackName];
-                        reject(new Error('Request timeout'));
-                    }
-                }, 30000);
-            });
+        // V1.2.0: thin wrapper over the shared ApiClient. Every call on this page
+        // is a READ (retried). A dataset is fetched at most once per search: the
+        // promise is cached, so the results, the unit statistics and the queue
+        // positions all share one request per dataset (a failure is shared too,
+        // rather than being retried three more times by each consumer).
+        let datasetCache = {};
+
+        function makeAPIRequest(action, onRetry) {
+            if (datasetCache[action]) return datasetCache[action];
+            const p = (typeof ApiClient === 'undefined')
+                ? Promise.reject(new Error('ApiClient.js is not loaded'))
+                : ApiClient.call(WEB_APP_URL, action, {}, { write: false, timeout: 30000, onRetry: onRetry });
+            datasetCache[action] = p;
+            return p;
+        }
+
+        function historyRetryHint(info) {
+            const el = document.querySelector('#loadingSection > div:nth-child(2)');
+            if (el) el.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
         }
 
         async function displayResults(problems, unitNumber) {
@@ -1024,6 +1038,8 @@ CHANGE LOG
 
         function showLoading() {
             document.getElementById('loadingSection').style.display = 'block';
+            const loadingTextEl = document.querySelector('#loadingSection > div:nth-child(2)');
+            if (loadingTextEl) loadingTextEl.textContent = 'Loading your problem history...';
             document.getElementById('resultsSection').style.display = 'none';
             document.getElementById('loadButton').disabled = true;
         }
