@@ -6,16 +6,16 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.6.0
-  Backend:          NotificationServer (V3.13.0 or later required)
+  Frontend Version: V3.7.0
+  Backend:          NotificationServer (separate SMS text needs the SMS-text support added in NotificationServer V3.14.0)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
-  Last Modified:    Oct 2026
+  Last Modified:    Nov 2026
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.6.0 - Staff group in the individual-unit picker
-LAST UPDATED: Oct 2026
+VERSION: V3.7.0 - Separate SMS text for document sends
+LAST UPDATED: Nov 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
   conversion)
@@ -25,6 +25,29 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.7.0:
+✅ Optional "SMS text" box, shown only when BOTH Send Email and Send SMS are
+   ticked. Left blank = no change at all (the message above goes out as the
+   SMS too, with the "Lake Illawong Alert:" prefix, exactly as before).
+   Filled in = the SMS carries only this short text (prefix "Lake Illawong:"),
+   while the email carries the full message and any attachments. Built for
+   document sends, e.g. emailing the AGM minutes to the E-Copy recipients and
+   texting "Please check your inbox for a new message from Lake Illawong" in
+   the same send. SMS still goes only to residents with the SMS-Alerts tag
+   and a mobile number.
+✅ With a separate SMS text the character counter under the message box
+   counts the email message only (the 160-character SMS limit no longer
+   applies to it); the SMS text has its own counter, and the multi-part SMS
+   cost warning is worked out from the SMS text.
+✅ The SMS box is cleared after a send and on Clear Selections.
+✅ Ticking Send SMS now updates the character counter straight away (it
+   previously only refreshed when the message was typed in or Email was
+   toggled).
+✅ REQUIRES NotificationServer V3.14.0+ for the separate text. DEPLOY
+   NotificationServer FIRST. Against an older NotificationServer the SMS
+   would carry the email message instead of the short text, so do not use
+   the box until V3.14.0 is deployed.
 
 NEW IN V3.6.0:
 ✅ "Select Individual Units" now ends with a "Staff" group listing staff
@@ -1653,7 +1676,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 </div>
 
         <div class="option-item">
-            <input type="checkbox" id="smsEnabled" class="option-checkbox">
+            <input type="checkbox" id="smsEnabled" class="option-checkbox" onchange="updateCharCount();">
             <label for="smsEnabled" class="option-label">
                 📱 Send SMS
             </label>
@@ -1707,6 +1730,21 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
         placeholder="The greeting (&quot;Hi [First Name],&quot;) is added automatically per recipient — just select a template or enter your custom message here..."
         maxlength="5000"></textarea>
     <div class="char-count" id="charCount">0/5000 characters</div>
+
+    <!-- Separate SMS text (only when Email and SMS are both ticked) -- V3.7.0 -->
+    <div id="smsTextField" class="salutation-field hidden" style="margin-top: 15px;">
+        <label for="smsCustomText" class="salutation-label">
+            SMS text (optional) - leave blank to send the message above as the SMS too
+        </label>
+        <textarea
+            id="smsCustomText"
+            class="salutation-input"
+            rows="2"
+            maxlength="300"
+            placeholder="e.g. Please check your inbox for a new message from Lake Illawong."
+            oninput="updateCharCount();"></textarea>
+        <div class="char-count" id="smsCustomCount"></div>
+    </div>
 </div>
 
 <!-- File Attachment Section -->
@@ -2309,7 +2347,11 @@ if (alertFormatCheckbox) {
     const smsEnabled = smsCheckbox && smsCheckbox.checked;
     const length = messageInput.value.length;
 
-    if (smsEnabled) {
+    // V3.7.0: a separate SMS text (Email + SMS both ticked) takes the SMS
+    // limit off the main message, which then counts as an ordinary email.
+    const separateSms = updateSmsTextField();
+
+    if (smsEnabled && !separateSms) {
         // SMS mode - account for "Lake Illawong Alert: " prefix (21 chars)
         const prefix = 21;
         const totalLength = length + prefix;
@@ -2342,6 +2384,43 @@ if (alertFormatCheckbox) {
     if (length > 4500) charCount.classList.add('warning');
     if (length > 4800) charCount.classList.add('error');
 }
+}
+
+// V3.7.0: show the separate SMS text box only when Email AND SMS are both
+// ticked; returns true when it is shown and has text, i.e. when the SMS will
+// carry that text instead of the main message. Updates its own counter.
+function updateSmsTextField() {
+    const field = document.getElementById('smsTextField');
+    const box = document.getElementById('smsCustomText');
+    const counter = document.getElementById('smsCustomCount');
+    const emailOn = document.getElementById('emailEnabled').checked;
+    const smsOn = document.getElementById('smsEnabled').checked;
+    const show = emailOn && smsOn;
+    if (!field || !box) return false;
+    field.classList.toggle('hidden', !show);
+    const text = box.value.trim();
+    if (!show || !text) {
+        if (counter) counter.textContent = '';
+        return false;
+    }
+    // "Lake Illawong: " prefix = 15 chars
+    const total = text.length + 15;
+    const parts = total <= 160 ? 1 : Math.ceil(total / 153);
+    if (counter) {
+        counter.textContent = total <= 160
+            ? `${total}/160 chars (1 SMS)`
+            : `${total} chars (${parts} SMS, $${(parts * 0.037).toFixed(3)})`;
+        counter.className = total > 160 ? 'char-count warning' : 'char-count';
+    }
+    return true;
+}
+
+// V3.7.0: the separate SMS text to send, or '' when not in use
+function getSeparateSmsText() {
+    const box = document.getElementById('smsCustomText');
+    const emailOn = document.getElementById('emailEnabled').checked;
+    const smsOn = document.getElementById('smsEnabled').checked;
+    return (box && emailOn && smsOn) ? box.value.trim() : '';
 }
 
 function toggleSubjectField() {
@@ -2470,6 +2549,10 @@ function resetSalutation() {
 
             // Clear the custom salutation too -- V3.5.0
             resetSalutation();
+
+            // Clear the separate SMS text too -- V3.7.0
+            const smsTextBox = document.getElementById('smsCustomText');
+            if (smsTextBox) smsTextBox.value = '';
 
             // Clear message text
             const messageInput = document.getElementById('messageText');
@@ -2984,8 +3067,11 @@ async function sendFieldAlert() {
 
     // Warn about multi-part SMS cost
     if (smsEnabled) {
-        const prefix = 21; // "Lake Illawong Alert: "
-        const totalLength = messageText.length + prefix;
+        // V3.7.0: a separate SMS text uses the shorter "Lake Illawong: "
+        // prefix (15) and is the text that is actually sent as the SMS.
+        const separateSmsText = getSeparateSmsText();
+        const prefix = separateSmsText ? 15 : 21; // "Lake Illawong: " / "Lake Illawong Alert: "
+        const totalLength = (separateSmsText ? separateSmsText.length : messageText.length) + prefix;
 
         if (totalLength > 160) {
             const parts = Math.ceil(totalLength / 153);
@@ -3102,6 +3188,12 @@ async function executeFieldAlertSend() {
 
     confirmMsg += methods.join(' + ');
 
+    // V3.7.0: show the SMS text that will be sent when it is separate
+    const separateSmsForConfirm = getSeparateSmsText();
+    if (smsEnabled && separateSmsForConfirm) {
+        confirmMsg += `\n\nSMS text: "${separateSmsForConfirm}"`;
+    }
+
     // Add attachment info to confirmation
     if (attachments.length > 0) {
         const names = attachments.map(a => a.filename).join(', ');
@@ -3142,6 +3234,13 @@ async function executeFieldAlertSend() {
                 ? document.getElementById('salutationText').value.trim()
                 : ''
         };
+
+        // Separate SMS text -- V3.7.0. Only sent when Email and SMS are both
+        // ticked and the box has text. Requires NotificationServer V3.14.0+.
+        const separateSms = getSeparateSmsText();
+        if (separateSms) {
+            params.smsMessage = separateSms;
+        }
 
         // Add attachments if present -- V3.4.0, params.attachments (plural,
         // a JSON array) replaces the old singular params.attachment.
