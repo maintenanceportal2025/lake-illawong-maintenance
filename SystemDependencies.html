@@ -10,8 +10,8 @@
     =====================================================================
     PURPOSE: Dynamic architecture mapping and dependency tracking
     PORTAL: SysAdmin Portal
-    VERSION: V1.1.2
-    LAST UPDATED: August 2026
+    VERSION: V1.2.0
+    LAST UPDATED: November 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from white card design)
     - JS-generated inline styles updated to glass equivalents
@@ -21,6 +21,15 @@
     from "SystemDependencies backend", confirmed via direct inspection.
     SystemServices.js was renamed from PasswordManager V1.1 (May 2026)
     and is also the backend behind SystemLogs.html.
+
+    CHANGES IN V1.2.0 (Nov 2026):
+    - CHANGED: API reliability -- transport moved to the shared
+      ApiClient.js (add <script src="ApiClient.js"> alongside this page).
+      getCompleteDependencyMap is a read, so it now retries automatically
+      (3 retries, 2s/4s/6s, 30s per attempt) and the loading text shows
+      "Connection slow, retrying... (n/4)". Previously a single attempt
+      with a 10-second limit, which a cold-starting backend could miss.
+      Map display and wording unchanged.
 
     CHANGES IN V1.1.2 (Aug 2026):
     - Removed all Version and Quota display (backend cards' badges, the
@@ -419,6 +428,7 @@
 
     </div>
 
+    <script src="ApiClient.js"></script>
     <script>
         // SESSION GUARD
         if (!sessionStorage.getItem('portalSysAdminVerified')) {
@@ -429,7 +439,7 @@
 
         const CONFIG = {
             BACKEND_URL: 'https://script.google.com/macros/s/AKfycbyu0RdVfmlQEnr1wi5tfkPi-tGNLzKcs5H3R9DAnKXzZROwqEPhnCvpNq3CsjKGeaxXwA/exec',
-            TIMEOUT: 10000
+            TIMEOUT: 30000
         };
 
         let systemData = null;
@@ -441,39 +451,30 @@
 
         function loadSystemDependencies() {
             showLoading(true);
-            const script = document.createElement('script');
-            const callbackName = 'handleDependencyData';
-            let settled = false;
+            const loadingText = document.querySelector('#loading-indicator p');
+            const originalText = loadingText ? loadingText.textContent : '';
 
-            function cleanup() {
-                try { document.head.removeChild(script); } catch (e) {}
+            if (typeof ApiClient === 'undefined') {
+                showError('ApiClient.js is not loaded.');
+                showLoading(false);
+                return;
             }
 
-            script.src = `${CONFIG.BACKEND_URL}?action=getCompleteDependencyMap&callback=${callbackName}`;
-            script.onerror = function() {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                showError('Failed to load system dependencies. Please check your connection and try again.');
-                showLoading(false);
-            };
-            const timeout = setTimeout(() => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                showError('Request timed out. Please refresh the page and try again.');
-                showLoading(false);
-            }, CONFIG.TIMEOUT);
-            window[callbackName] = function(response) {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timeout);
-                cleanup();
+            ApiClient.call(CONFIG.BACKEND_URL, 'getCompleteDependencyMap', {}, {
+                timeout: CONFIG.TIMEOUT,
+                onRetry: function(info) {
+                    if (loadingText) loadingText.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+                }
+            }).then(function(response) {
+                if (loadingText) loadingText.textContent = originalText;
                 if (response.success) { systemData = response; initializeUI(); }
                 else { showError('Error loading dependencies: ' + response.error); }
                 showLoading(false);
-            };
-            document.head.appendChild(script);
+            }, function() {
+                if (loadingText) loadingText.textContent = originalText;
+                showError('Failed to load system dependencies after several attempts. Please check your connection and refresh the page to try again.');
+                showLoading(false);
+            });
         }
 
         function showLoading(show) {
