@@ -4,8 +4,8 @@ LAKE ILLAWONG MANAGEMENT SYSTEM - SURVEY MANAGEMENT
 =====================================================================
 PURPOSE: Administrative survey creation, management, and results analysis
 PORTAL: Admin Portal Module
-VERSION: 2.3.4 (Badge lookup actually fixed)
-LAST UPDATED: August 2026
+VERSION: 2.4.0 (ApiClient migration)
+LAST UPDATED: November 2026
 BACKEND API: SurveyModule.js V1.4.2
 ENHANCEMENTS:
 - Custom rating labels support
@@ -13,6 +13,32 @@ ENHANCEMENTS:
 - Question flow visualization
 - Branching rules editor
 - Enhanced preview with branching simulation
+
+CHANGES IN V2.4.0 (API reliability initiative):
+- CHANGED: Transport moved to the shared ApiClient.js. Every request was one
+  JSONP attempt with no timeout and no retry, so one lost reply left a
+  loading message, a "Working..." badge or a Save button waiting forever.
+  callAPI() keeps its (action, data, callback) contract; a new apiCall()
+  helper handles the simple-parameter actions.
+  - READS (getSurveys, getSurveyDetails, getSurveyResults) retry
+    automatically (3 retries, 2s/4s/6s backoff, 30s per attempt); loading
+    text reads "Connection slow, retrying... (n/4)".
+  - WRITES (createSurvey, updateSurvey, clearSurveyQuestions,
+    addSurveyQuestions, toggleSurveyStatus, deleteSurvey) are sent once and
+    never resent, so a slow reply cannot create a survey twice or add
+    questions twice. If no reply arrives the message says the change MAY
+    have been saved; the survey list is refreshed after a lost status or
+    delete reply so the screen shows what actually happened.
+  - Multi-step saves now say where they stopped: a new survey whose
+    questions did not all go through is reported as created-but-incomplete;
+    an edit that stopped after the old questions were cleared tells you to
+    Save again.
+  - A question batch too long for one request is split in half and sent as
+    two smaller batches instead of failing.
+  - FIXED: failures showed "Error: undefined" style text; they now carry a
+    readable message.
+  Requires ApiClient.js in the same folder. Layout, wording of normal
+  results, survey logic and branching unchanged.
 
 CHANGES IN V2.3.4: FIXED: Duplicate Survey now remaps skip-logic targets to the new survey's question IDs (previously pointed at the original's); also carries rating labels.
 
@@ -1632,6 +1658,7 @@ CHANGES IN V1.8.0 (glass-morphism base):
         </div>
     </div>
 
+    <script src="ApiClient.js"></script>
     <script>
 
 // SESSION GUARD
@@ -1679,21 +1706,14 @@ CHANGES IN V1.8.0 (glass-morphism base):
             const container = document.getElementById('surveyList');
             container.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div><div>Loading surveys...</div></div>';
 
-            // JSONP request
-            const callbackName = 'handleSurveysResponse_' + Date.now();
-            window[callbackName] = function(data) {
+            apiCall('getSurveys', { includeArchived: 'true', isAdmin: 'true' }, function(data) {
                 if (data.success) {
                     allSurveys = data.surveys;
                     renderSurveys();
                 } else {
                     container.innerHTML = `<div class="error-message">❌ Error loading surveys: ${data.message}</div>`;
                 }
-                delete window[callbackName];
-            };
-
-            const script = document.createElement('script');
-            script.src = `${SURVEY_API_URL}?action=getSurveys&includeArchived=true&isAdmin=true&callback=${callbackName}`;
-            document.head.appendChild(script);
+            }, retryHint(container));
         }
 
         // RENDER SURVEYS
@@ -2682,41 +2702,53 @@ CHANGES IN V1.8.0 (glass-morphism base):
             flowDiagram.innerHTML = flowHTML;
         }
 
-        // JSONP HELPER FUNCTION
-        function callAPI(action, data, callback) {
-            const callbackName = 'apiCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-            let settled = false;
+        // API HELPERS (ApiClient.js)
+        // Reads retry automatically; everything else is a write and is sent once.
+        const SURVEY_READ_ACTIONS = ['getSurveys', 'getSurveyDetails', 'getSurveyResults'];
 
-            function cleanup() {
-                window[callbackName] = function() {};
-                const s = document.querySelector(`script[src*="${callbackName}"]`);
-                if (s) s.remove();
+        // apiCall(action, params, callback, onRetry) -- flat URL parameters.
+        // callback always receives an object with .success; failures also carry
+        // .message/.error plus .outcomeUnknown / .urlTooLong where relevant.
+        function apiCall(action, params, callback, onRetry) {
+            function fail(text, extra) {
+                callback(Object.assign({ success: false, error: text, message: text }, extra || {}));
             }
+            if (typeof ApiClient === 'undefined') { fail('ApiClient.js is not loaded'); return; }
 
-            window[callbackName] = function(response) {
-                if (settled) return;
-                settled = true;
-                cleanup();
+            const isRead = SURVEY_READ_ACTIONS.indexOf(action) !== -1;
+            ApiClient.call(SURVEY_API_URL, action, params || {}, {
+                write: !isRead,
+                timeout: 30000,
+                onRetry: onRetry
+            }).then(function(response) {
                 callback(response);
+            }, function(err) {
+                if (err && err.reason === 'url-too-long') {
+                    fail('Too much text to send in one request. Please shorten the longer text and try again.', { urlTooLong: true });
+                } else if (err && err.outcomeUnknown) {
+                    fail('No confirmation was received from the server, so the change may have been saved. Refresh the survey list to check before trying again.', { outcomeUnknown: true });
+                } else {
+                    fail('Could not reach the server. Please check your connection and try again.');
+                }
+            });
+        }
+
+        // callAPI(action, data, callback) -- write actions that carry a JSON payload
+        function callAPI(action, data, callback) {
+            apiCall(action, data ? { data: JSON.stringify(data) } : {}, callback);
+        }
+
+        // Shows "Connection slow, retrying... (n/4)" inside a loading message
+        function retryHint(el) {
+            return function(info) {
+                if (!el) return;
+                const text = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+                const target = el.querySelector('.loading-message > div:last-child') ||
+                               el.querySelector('.loading-container p');
+                if (target) { target.textContent = text; return; }
+                const lm = el.querySelector('.loading-message');
+                if (lm && lm.lastChild && lm.lastChild.nodeType === 3) lm.lastChild.textContent = ' ' + text;
             };
-            
-            const script = document.createElement('script');
-            let url = `${SURVEY_API_URL}?action=${action}&callback=${callbackName}`;
-            
-            // Add data as JSON string parameter for write operations
-            if (data) {
-                url += `&data=${encodeURIComponent(JSON.stringify(data))}`;
-            }
-            
-            script.src = url;
-            script.onerror = function() {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                callback({ success: false, error: 'Network error' });
-            };
-            
-            document.head.appendChild(script);
         }
 
         // SAVE SURVEY
@@ -2877,7 +2909,9 @@ CHANGES IN V1.8.0 (glass-morphism base):
                             if (batchResult.success) {
                                 onSaveSuccess(saveBtn, messageDiv, false);
                             } else {
-                                onSaveError(saveBtn, messageDiv, originalBtnText, batchResult.message || batchResult.error);
+                                onSaveError(saveBtn, messageDiv, originalBtnText,
+                                    'The survey was created but its questions may be incomplete (' +
+                                    (batchResult.message || batchResult.error) + '). Check the survey list before creating it again.');
                             }
                         });
                     } else {
@@ -2899,14 +2933,11 @@ CHANGES IN V1.8.0 (glass-morphism base):
 
                 updateSaveStatus(messageDiv, saveBtn, 'saving', 'Clearing old questions...');
 
-                const callbackName = 'clearCallback_' + Date.now();
-                let settled = false;
-                window[callbackName] = function(clearResult) {
-                    if (settled) return;
-                    settled = true;
-                    window[callbackName] = function() {};
+                apiCall('clearSurveyQuestions', { surveyId: surveyData.surveyId }, function(clearResult) {
                     if (!clearResult.success) {
-                        onSaveError(saveBtn, messageDiv, originalBtnText, clearResult.message || clearResult.error);
+                        onSaveError(saveBtn, messageDiv, originalBtnText,
+                            'The survey details were saved but the questions were not updated (' +
+                            (clearResult.message || clearResult.error) + '). Open this survey and Save again to make sure the questions are complete.');
                         return;
                     }
 
@@ -2915,20 +2946,12 @@ CHANGES IN V1.8.0 (glass-morphism base):
                         if (batchResult.success) {
                             onSaveSuccess(saveBtn, messageDiv, true);
                         } else {
-                            onSaveError(saveBtn, messageDiv, originalBtnText, batchResult.message || batchResult.error);
+                            onSaveError(saveBtn, messageDiv, originalBtnText,
+                                'The old questions were cleared but the new ones may not all have been added (' +
+                                (batchResult.message || batchResult.error) + '). Open this survey and Save again to restore the questions.');
                         }
                     });
-                };
-
-                const script = document.createElement('script');
-                script.src = `${SURVEY_API_URL}?action=clearSurveyQuestions&surveyId=${encodeURIComponent(surveyData.surveyId)}&callback=${callbackName}`;
-                script.onerror = function() {
-                    if (settled) return;
-                    settled = true;
-                    window[callbackName] = function() {};
-                    onSaveError(saveBtn, messageDiv, originalBtnText, 'Network error clearing questions');
-                };
-                document.head.appendChild(script);
+                });
             });
         }
 
@@ -2940,6 +2963,7 @@ CHANGES IN V1.8.0 (glass-morphism base):
             }
 
             let batchIndex = 0;
+            let nextOrder = 1;
 
             function sendNextBatch() {
                 if (batchIndex >= batches.length) {
@@ -2948,8 +2972,7 @@ CHANGES IN V1.8.0 (glass-morphism base):
                 }
 
                 const batch = batches[batchIndex];
-                const startOrder = batchIndex * batchSize + 1;
-                batchIndex++;
+                const startOrder = nextOrder;
 
                 callAPI('addSurveyQuestions', {
                     surveyId: surveyId,
@@ -2957,6 +2980,13 @@ CHANGES IN V1.8.0 (glass-morphism base):
                     startOrder: startOrder
                 }, function(result) {
                     if (result.success) {
+                        batchIndex++;
+                        nextOrder += batch.length;
+                        sendNextBatch();
+                    } else if (result.urlTooLong && batch.length > 1) {
+                        // Never left the browser, so splitting and sending is safe
+                        const half = Math.ceil(batch.length / 2);
+                        batches.splice(batchIndex, 1, batch.slice(0, half), batch.slice(half));
                         sendNextBatch();
                     } else {
                         onComplete({ success: false, message: result.message || result.error });
@@ -3037,36 +3067,16 @@ CHANGES IN V1.8.0 (glass-morphism base):
                 }
             }
 
-            // Call via JSONP (simple parameters, no complex data)
-            const callbackName = 'statusCallback_' + Date.now();
-            let settled = false;
-            
-            window[callbackName] = function(result) {
-                if (settled) return;
-                settled = true;
-                window[callbackName] = function() {};
-                const s = document.querySelector(`script[src*="${callbackName}"]`);
-                if (s) s.remove();
+            apiCall('toggleSurveyStatus', { surveyId: surveyId, newStatus: newStatus }, function(result) {
                 if (result.success) {
                     alert(`✅ Survey ${statusText}d successfully!`);
                     loadSurveys();
                 } else {
                     if (statusBadge) statusBadge.textContent = originalBadgeText;
                     alert(`❌ Error: ${result.message || result.error}`);
+                    if (result.outcomeUnknown) loadSurveys();
                 }
-            };
-
-            const script = document.createElement('script');
-            script.src = `${SURVEY_API_URL}?action=toggleSurveyStatus&surveyId=${surveyId}&newStatus=${newStatus}&callback=${callbackName}`;
-            script.onerror = function() {
-                if (settled) return;
-                settled = true;
-                window[callbackName] = function() {};
-                if (statusBadge) statusBadge.textContent = originalBadgeText;
-                alert('❌ Error changing status');
-            };
-            
-            document.head.appendChild(script);
+            });
         }
 // FUNCTION TO SHOW DETAILED RESPONSES MODAL - UPDATED WITH REAL DATA
 function showDetailedResponsesModal(questionIndex) {
@@ -3112,9 +3122,7 @@ function loadDetailedResponses(questionIndex, surveyId) {
     const contentDiv = document.getElementById('detailedModalContent');
     
     // First, load the survey results
-    const callbackName = 'simpleDetails_' + Date.now();
-    
-    window[callbackName] = function(data) {
+    apiCall('getSurveyResults', { surveyId: surveyId }, function(data) {
         if (data.success && data.results && data.results.length > questionIndex) {
             const result = data.results[questionIndex];
             const questionText = result.questionText;
@@ -3345,12 +3353,7 @@ function loadDetailedResponses(questionIndex, surveyId) {
             `;
         }
         
-        delete window[callbackName];
-    };
-    
-    const script = document.createElement('script');
-    script.src = `${SURVEY_API_URL}?action=getSurveyResults&surveyId=${surveyId}&callback=${callbackName}`;
-    document.head.appendChild(script);
+    }, retryHint(contentDiv));
 }
 
 
@@ -3378,20 +3381,14 @@ function loadDetailedResponses(questionIndex, surveyId) {
             document.body.appendChild(modal);
             
             // Load survey details for preview
-            const callbackName = 'previewCallback_' + Date.now();
-            window[callbackName] = function(data) {
+            apiCall('getSurveyDetails', { surveyId: surveyId }, function(data) {
                 if (data.success) {
                     renderPreview(data.survey);
                 } else {
                     document.getElementById('previewContent').innerHTML = 
                         `<div class="error-message">❌ Error loading preview: ${data.message}</div>`;
                 }
-                delete window[callbackName];
-            };
-            
-            const script = document.createElement('script');
-            script.src = `${SURVEY_API_URL}?action=getSurveyDetails&surveyId=${surveyId}&callback=${callbackName}`;
-            document.head.appendChild(script);
+            }, retryHint(document.getElementById('previewContent')));
         }
 
         // RENDER PREVIEW WITH FIXED RATING DISPLAY
@@ -3667,9 +3664,7 @@ function loadDetailedResponses(questionIndex, surveyId) {
     summaryDiv.innerHTML = '<div class="loading-message"><div class="loading-spinner"></div> Loading results...</div>';
     contentDiv.innerHTML = '';
 
-    // JSONP request
-    const callbackName = 'handleResultsResponse_' + Date.now();
-    window[callbackName] = function(data) {
+    apiCall('getSurveyResults', { surveyId: surveyId }, function(data) {
         console.log('📊 RESULTS DATA RECEIVED:', data); // ADD THIS LINE
         
         if (data.success) {
@@ -3689,12 +3684,7 @@ function loadDetailedResponses(questionIndex, surveyId) {
             console.error('❌ Error loading results:', data);
             summaryDiv.innerHTML = `<div class="error-message">❌ Error loading results: ${data.message}</div>`;
         }
-        delete window[callbackName];
-    };
-
-    const script = document.createElement('script');
-    script.src = `${SURVEY_API_URL}?action=getSurveyResults&surveyId=${surveyId}&callback=${callbackName}`;
-    document.head.appendChild(script);
+    }, retryHint(summaryDiv));
 }
 
        
@@ -3968,12 +3958,7 @@ function renderResults(data) {
             buttonElement.innerHTML = '⏳ Duplicating...';
 
             // Step 1: Fetch full survey details
-            const callbackName = 'duplicateLoadCallback_' + Date.now();
-            let settled = false;
-            window[callbackName] = function(data) {
-                if (settled) return;
-                settled = true;
-                window[callbackName] = function() {};
+            apiCall('getSurveyDetails', { surveyId: surveyId }, function(data) {
 
                 if (!data.success) {
                     buttonElement.disabled = false;
@@ -4060,19 +4045,7 @@ function renderResults(data) {
                         }
                     });
                 });
-            };
-
-            const script = document.createElement('script');
-            script.src = `${SURVEY_API_URL}?action=getSurveyDetails&surveyId=${encodeURIComponent(surveyId)}&callback=${callbackName}`;
-            script.onerror = function() {
-                if (settled) return;
-                settled = true;
-                window[callbackName] = function() {};
-                buttonElement.disabled = false;
-                buttonElement.innerHTML = originalText;
-                alert('❌ Network error loading survey');
-            };
-            document.head.appendChild(script);
+            });
         }
 
         function confirmDeleteSurvey(surveyId, surveyTitle, status) {
@@ -4095,13 +4068,7 @@ function renderResults(data) {
                 deleteBtn.innerHTML = '⏳ Deleting...';
             }
             
-            const callbackName = 'deleteCallback_' + Date.now();
-            let settled = false;
-            
-            window[callbackName] = function(result) {
-                if (settled) return;
-                settled = true;
-                window[callbackName] = function() {};
+            apiCall('deleteSurvey', { surveyId: surveyId }, function(result) {
                 if (result.success) {
                     alert(`✅ Survey "${surveyTitle}" deleted successfully!`);
                     loadSurveys();
@@ -4111,23 +4078,9 @@ function renderResults(data) {
                         deleteBtn.disabled = false;
                         deleteBtn.innerHTML = '🗑️ Delete';
                     }
+                    if (result.outcomeUnknown) loadSurveys();
                 }
-            };
-            
-            const script = document.createElement('script');
-            script.src = `${SURVEY_API_URL}?action=deleteSurvey&surveyId=${surveyId}&callback=${callbackName}`;
-            script.onerror = function() {
-                if (settled) return;
-                settled = true;
-                window[callbackName] = function() {};
-                alert('❌ Network error deleting survey');
-                if (deleteBtn) {
-                    deleteBtn.disabled = false;
-                    deleteBtn.innerHTML = '🗑️ Delete';
-                }
-            };
-            
-            document.head.appendChild(script);
+            });
         }
 
         // EDIT SURVEY FUNCTIONS
@@ -4161,10 +4114,7 @@ function renderResults(data) {
                 </div>
             `;
             
-            // JSONP request to get survey details
-            const callbackName = 'editLoadCallback_' + Date.now();
-            
-            window[callbackName] = function(data) {
+            apiCall('getSurveyDetails', { surveyId: surveyId }, function(data) {
                 // Reset button if it exists
                 if (buttonElement) {
                     buttonElement.innerHTML = '✏️ Edit';
@@ -4190,12 +4140,7 @@ function renderResults(data) {
                         </div>
                     `;
                 }
-                delete window[callbackName];
-            };
-            
-            const script = document.createElement('script');
-            script.src = `${SURVEY_API_URL}?action=getSurveyDetails&surveyId=${surveyId}&callback=${callbackName}`;
-            document.head.appendChild(script);
+            }, retryHint(createView));
         }
 
         function populateEditForm(survey) {
