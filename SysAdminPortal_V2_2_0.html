@@ -1,0 +1,593 @@
+<!--
+=====================================================================
+SysAdminPortal.html - SYSTEM ADMINISTRATION PORTAL
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        SysAdminPortal.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Staff Portal
+  Frontend Version: V2.2.0
+  Status:           PRODUCTION
+  Created:          2025
+  Last Modified:    Aug 2026
+
+VERSION HISTORY:
+  V2.2.0 (Nov 2026): API reliability -- the portal-access log call (logAccess) now goes through the shared ApiClient.js (add <script src="ApiClient.js"> alongside this page). It is a write, so it is sent once and never resent (no duplicate Access Log rows); a lost or slow reply is ignored exactly as before, so it never delays or blocks sign-in. No other change.
+  V2.1.2 (Nov 2026): Script tag changed from VerificationModal_V1_0.js to the generic VerificationModal.js (identical code; V2.1.0 adds a quiet warm-up call that cuts slow first verification codes). No other change.
+  V1.0.0 (2025):     Initial release — white card design.
+  V2.0.0 (Apr 2026): Full glass-morphism redesign — Design System V2.0.
+                     Module cards, launch buttons and logout button converted
+                     to glass panels. All JS, authentication, and routing
+                     unchanged. Deployed to production Apr 2026.
+  V2.1.0 (Apr 2026): Portal access logging added. logPortalAccess()
+                     fires on successful authentication.
+  V2.1.1 (Aug 2026): System-wide JSONP audit fix -- logPortalAccess() was
+                     identical to AdminPortal/FieldOperationsPortal's
+                     same function, same bug: deleted its callback on
+                     completion/onerror instead of replacing it with a
+                     no-op. Also removed the dead 'passwords' routing
+                     entry (PasswordSettings.html retired -- confirmed
+                     during that investigation that no card ever
+                     triggered this route). No functional change to
+                     logging or navigation.
+
+AUTHENTICATION:
+  OTP via VerificationModal.js
+  Session Key: portalSysAdminVerified
+  Role required: SysAdmin-Portal or Developer
+
+MODULES (3 active, 1 future):
+  System Dependencies (active), System Logs (active),
+  System Configuration (future)
+
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛡️ SysAdmin Portal - Management Central</title>
+        <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* ── GLASS DESIGN SYSTEM V2.0 ─────────────────────────── */
+        :root {
+            --glass-bg:           rgba(255, 255, 255, 0.08);
+            --glass-bg-hover:     rgba(255, 255, 255, 0.13);
+            --glass-bg-strong:    rgba(255, 255, 255, 0.15);
+            --glass-border:       rgba(255, 255, 255, 0.15);
+            --glass-border-hover: rgba(255, 255, 255, 0.35);
+            --glass-blur:         blur(15px);
+            --glass-text:         #ffffff;
+            --glass-text-muted:   rgba(255, 255, 255, 0.70);
+            --glass-text-subtle:  rgba(255, 255, 255, 0.50);
+        }
+
+
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            color: #ffffff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        
+            
+
+        /* SIMPLE PAGE TITLE */
+        .page-title {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+        }
+
+.header-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 25px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+.header-text {
+    text-align: center;
+}
+
+.header-text h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 8px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+.header-text p {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1rem;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+.system-status {
+color: rgba(255, 255, 255, 0.8);
+            font-size: 1rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+Margin-botton: 15px;
+
+}
+
+        .page-title h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 8px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .page-title p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+
+.header-divider {
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+    margin: 20px 0 25px 0;
+    border-radius: 1.5px;
+}
+.logo-container {
+            flex-shrink: 0;
+        }
+
+        .logo-image {
+            width: 120px;
+            height: 120px;
+            object-fit: contain;
+
+        }
+
+
+        /* HIGH CONTRAST CARDS */
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .module-card {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            padding: 24px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .module-card:hover {
+            transform: translateY(-3px);
+            background: var(--glass-bg-hover);
+            border-color: var(--glass-border-hover);
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .card-icon-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .card-icon {
+            font-size: 2rem;
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--glass-text);
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 2px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.35);
+        }
+
+        .status-future {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+            border: 1px solid rgba(245, 158, 11, 0.35);
+        }
+
+        .card-description {
+            color: var(--glass-text-muted);
+            line-height: 1.5;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+        }
+
+        .feature-list {
+            list-style: none;
+            margin-bottom: 20px;
+            flex-grow: 1;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            color: var(--glass-text-muted);
+            font-size: 0.85rem;
+        }
+
+        .feature-icon {
+            color: #10b981;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .launch-button {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 10px 18px;
+            border-radius: 2px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+            width: 100%;
+            margin-top: auto;
+        }
+
+        .launch-button:hover {
+            background: var(--glass-bg-strong);
+            border-color: var(--glass-border-hover);
+            transform: translateY(-1px);
+        }
+
+        /* SIMPLE LOGOUT */
+        .logout-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .logout-btn {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            color: white;
+            border: 1px solid var(--glass-border);
+            padding: 10px 20px;
+            border-radius: 2px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+        }
+
+        .logout-btn:hover {
+            background: var(--glass-bg-strong);
+            border-color: var(--glass-border-hover);
+            transform: translateY(-1px);
+        }
+
+        /* RESPONSIVE DESIGN */
+        @media (max-width: 768px) {
+            .container { padding: 15px; }
+            .page-title h1 { font-size: 2rem; }
+            .modules-grid { grid-template-columns: 1fr; }
+            .login-card { margin: 20px; padding: 30px 25px; }
+            .card-header { flex-wrap: wrap; gap: 10px; }
+            .card-icon-title { flex: 1; min-width: 0; }
+            .card-title { font-size: 1rem; }
+            .card-icon { font-size: 1.6rem; }
+            .status-badge { font-size: 0.65rem; padding: 3px 7px; }
+        }
+    </style>
+<script src="ApiClient.js"></script>
+<script src="VerificationModal.js"></script>
+    
+</head>
+
+<body>
+    
+
+        <!-- DASHBOARD VIEW -->
+    <div id="dashboardView" class="container">
+        <!-- SIMPLE PAGE TITLE -->
+
+
+        <div class="page-title">
+    <div class="header-content">
+        <div class="logo-container">
+            <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+        </div>
+        <div class="header-text">
+            <h1>System Administration</h1>
+            <p>Technical system management and security oversight</p>
+        </div>
+    </div>
+    <div class="header-divider"></div>
+</div>
+
+<!-- System Status -->
+<div style="text-align: center; margin-bottom: 40px;">
+    <div class="system-status">🟢 All Systems Operational</div>
+</div>
+
+        <div class="modules-grid">
+            
+<!-- System Dependencies Module - ACTIVE -->
+<div class="module-card" onclick="openModule('dependencies')">
+    <div class="card-header">
+        <div class="card-icon-title">
+            <span class="card-icon">🔗</span>
+            <span class="card-title">System Dependencies</span>
+        </div>
+        <span class="status-badge status-active">ACTIVE</span>
+    </div>
+    <div class="card-description">
+        Monitor and manage system dependencies, integrations, 
+        and external service connections.
+    </div>
+    <div class="feature-list">
+        <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            Google Sheets integration
+        </div>
+        <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            Gmail API connections
+        </div>
+        <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            GitHub Pages hosting
+        </div>
+        <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            External service monitoring
+        </div>
+    </div>
+    <button class="launch-button" onclick="openModule('dependencies')">
+        🚀 Launch Module
+    </button>
+</div>            
+
+            <!-- System Logs Module -->
+            <div class="module-card" onclick="openModule('logs')">
+                <div class="card-header">
+                    <div class="card-icon-title">
+                        <span class="card-icon">📋</span>
+                        <span class="card-title">System Logs</span>
+                    </div>
+                    <span class="status-badge status-active">ACTIVE</span>
+                </div>
+                <div class="card-description">
+                    Monitor system activity, access logs, and security events.
+                    Complete audit trail of all system operations.
+                </div>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <span class="feature-icon">✓</span>
+                        Portal access logs
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">✓</span>
+                        Password change history
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">✓</span>
+                        Problem management activity
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">✓</span>
+                        Email notification logs
+                    </div>
+                </div>
+                <button class="launch-button" onclick="openModule('logs')">
+                    🚀 Launch Module
+                </button>
+            </div>
+
+            
+
+            <!-- Configuration Module -->
+            <div class="module-card" onclick="openModule('config')">
+                <div class="card-header">
+                    <div class="card-icon-title">
+                        <span class="card-icon">⚙️</span>
+                        <span class="card-title">System Configuration</span>
+                    </div>
+                    <span class="status-badge status-future">FUTURE</span>
+                </div>
+                <div class="card-description">
+                    Configure system-wide settings, manage external integrations,
+                    and control feature flags.
+                </div>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <span class="feature-icon">✓</span>
+                        Google Sheets configuration
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">✓</span>
+                        Email server settings
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">✓</span>
+                        Feature toggles
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">✓</span>
+                        Backup management
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logout Section (no footer, just button) -->
+<div class="logout-section" style="text-align: center; margin-top: 40px;">
+    <button class="logout-btn" onclick="logout()">
+        🔓 Logout from System Administration
+    </button>
+</div>
+
+    <script>
+      // SysAdmin Portal Configuration
+        const SYSADMIN_CONFIG = {
+            modules: {
+                'dependencies':  'SystemDependencies.html',
+                'logs':          'SystemLogs.html',
+                'health':        '#future-module',
+                'config':        '#future-module'
+            }
+        };
+
+        // Initialize portal
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🛡️ SysAdmin Portal - Initializing...');
+
+            const alreadyVerified = VerificationModal.init({
+    moduleName: 'SysAdmin Portal',
+    moduleIcon: '🛡️',
+    sessionKey: 'portalSysAdminVerified',
+    onSuccess: function(userData) {
+        console.log('✅ SysAdmin Portal OTP success:', userData.name);
+        const roles = userData.roleTags || [];
+        const allowed = roles.includes('SysAdmin-Portal') || roles.includes('Developer');
+        if (!allowed) {
+            VerificationModal.clearVerification();
+            document.body.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;
+                            background:linear-gradient(90deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">
+                    <div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);
+                                border:1px solid rgba(255,255,255,0.15);border-radius:2px;
+                                padding:40px;max-width:450px;width:100%;text-align:center;">
+                        <div style="font-size:3rem;margin-bottom:16px;">🚫</div>
+                        <h2 style="color:white;font-size:1.4rem;font-weight:600;margin-bottom:12px;">
+                            Access Not Authorised</h2>
+                        <p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">
+                            Verified as: <strong style="color:white;">${userData.name}</strong></p>
+                        <p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">
+                            Your account does not have access to the SysAdmin Portal.
+                            Please contact management if you believe this is an error.</p>
+                        <button onclick="window.location.href='SystemHub.html'"
+                                style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+                                       color:white;border:none;padding:12px 24px;border-radius:8px;
+                                       font-weight:600;cursor:pointer;font-size:0.95rem;">
+                            Back to System Hub
+                        </button>
+                    </div>
+                </div>`;
+          } else {
+        console.log('✅ SysAdmin Portal access granted:', userData.name);
+            logPortalAccess(userData.name, userData.unit);
+        }
+    }
+});
+
+            if (!alreadyVerified) {
+                VerificationModal.show();
+            }
+        });
+
+        
+
+        // Open module
+        function openModule(moduleType) {
+    const moduleUrl = SYSADMIN_CONFIG.modules[moduleType];
+    
+    if (moduleUrl === '#future-module') {
+        alert(`🚧 ${moduleType.charAt(0).toUpperCase() + moduleType.slice(1)} Module\n\nThis module is planned for future development.\n\nFeatures will include:\n${getFutureFeatures(moduleType)}`);
+        return;
+    }
+    
+    window.location.href = moduleUrl;
+}
+
+        // Get future features description
+        function getFutureFeatures(moduleType) {
+            const features = {
+                'logs': '• Portal access tracking\n• Security event monitoring\n• Activity audit trails\n• Export capabilities',
+                'health': '• API quota monitoring\n• Performance metrics\n• Error rate tracking\n• System status dashboard',
+                'config': '• Google Sheets settings\n• Email configuration\n• Feature toggles\n• Backup management'
+            };
+            
+            return features[moduleType] || 'Advanced system management features';
+        }
+
+        // Logout
+        function logout() {
+            if (confirm('Are you sure you want to log out?')) {
+                VerificationModal.clearVerification();
+                location.reload();
+            }
+        }
+
+        // Error handling
+        window.addEventListener('error', function(e) {
+            console.error('❌ SysAdmin Portal error:', e.error);
+        });
+
+        // Performance monitoring
+        window.addEventListener('load', function() {
+            const loadTime = (performance.now() / 1000).toFixed(2);
+            console.log(`⚡ SysAdmin Portal loaded in ${loadTime} seconds`);
+        });
+function logPortalAccess(name, unit) {
+    // Audit write: sent once via ApiClient (never resent); result ignored.
+    if (typeof ApiClient === 'undefined') return;
+    ApiClient.call('https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec', 'logAccess', {
+        type: 'Portal-Login',
+        name: name || '',
+        unit: unit || '',
+        detail: 'SysAdmin Portal'
+    }, { write: true, timeout: 15000 }).catch(function() {});
+}
+      
+    </script>
+</body>
+</html>
