@@ -4,8 +4,19 @@ PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
 PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: V1.4.2
-LAST UPDATED: August 2026
+VERSION: V1.5.0
+LAST UPDATED: November 2026
+
+CHANGELOG V1.5.0:
+ - CHANGED: Transport moved to the shared ApiClient.js (API reliability
+   initiative). fetchAllProblems() keeps its name and still returns a
+   Promise of the problem array, but was one JSONP attempt with a 30s
+   timeout and no retry, so one lost reply meant "Failed to load problem
+   queue" until the page was refreshed. It is a READ through ApiClient: 3
+   automatic retries (2s/4s/6s backoff, 30s per attempt), and while a retry
+   is pending the loading text reads "Connection slow, retrying... (n/4)".
+   Queue ordering, filters, search, display and wording unchanged. Requires
+   ApiClient.js in the same folder.
 
 CHANGELOG V1.4.2:
  - FIXED: System-wide JSONP audit -- fetchAllProblems() deleted its
@@ -35,7 +46,7 @@ DESIGN SYSTEM: Lake Illawong Unified V2.4
 - Layout: White content cards on gradient
 - Read-only display (no modifications)
 AUTHENTICATION: None (Accessed via authenticated portals)
-DEPENDENCIES: Explorer V1.0.js backend (getFaultLogData action)
+DEPENDENCIES: Explorer V1.0.js backend (getFaultLogData action), ApiClient.js
 RELATED FILES: MaintenanceModule.html, FieldOperationsPortal.html
 HIERARCHICAL POSITION: system_problem_queue
 
@@ -1027,6 +1038,7 @@ CHANGELOG V1.1:
         </div>
     </div>
 
+    <script src="ApiClient.js"></script>
     <script>
         // =====================================================================
         // GLOBAL STATE
@@ -1088,46 +1100,20 @@ function goBackToPortal() {
         // =====================================================================
         
         function fetchAllProblems() {
-            return new Promise((resolve, reject) => {
-                const callbackName = 'jsonpCallback_' + Math.random().toString(36).substring(7);
-                const script = document.createElement('script');
-                let settled = false;
-
-                const timeout = setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Request timeout'));
-                }, 30000);
-
-                window[callbackName] = (data) => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    if (data.success) {
-                        resolve(data.data || []);
-                    } else {
-                        reject(new Error(data.error || 'Unknown error'));
-                    }
-                };
-
-                function cleanup() {
-                    clearTimeout(timeout);
-                    window[callbackName] = () => {};
-                    if (script.parentNode) {
-                        script.parentNode.removeChild(script);
-                    }
+            // V1.5.0: read via the shared ApiClient (retried)
+            if (typeof ApiClient === 'undefined') {
+                return Promise.reject(new Error('ApiClient.js is not loaded'));
+            }
+            return ApiClient.call(API_URL, 'getFaultLogData', {}, {
+                write: false,
+                timeout: 30000,
+                onRetry: function (info) {
+                    const p = document.querySelector('#loadingState p');
+                    if (p) p.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
                 }
-
-                script.src = `${API_URL}?action=getFaultLogData&callback=${callbackName}`;
-                script.onerror = () => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('Network error'));
-                };
-                
-                document.head.appendChild(script);
+            }).then(function (data) {
+                if (data && data.success) return data.data || [];
+                throw new Error((data && data.error) || 'Unknown error');
             });
         }
 
