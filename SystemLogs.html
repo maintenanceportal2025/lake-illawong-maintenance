@@ -4,8 +4,8 @@
 =====================================================================
 PURPOSE: Centralized viewer for all system logging activities
 PORTAL: SysAdmin Portal Module
-VERSION: v1.3.10
-LAST UPDATED: August 2026
+VERSION: v1.4.0
+LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Glass-morphism applied to all UI panels, stats, filter bars, tab nav
 - Data tables retain white background per Design System rule
@@ -24,6 +24,16 @@ FEATURES:
 • Preset + date picker range filtering on all applicable tabs
 • Access log (Connections by Person summary removed)
 VERSION HISTORY:
+* v1.4.0 (Nov 2026): API reliability -- transport moved to the shared
+*   ApiClient.js (add <script src="ApiClient.js"> alongside this page).
+*   Every call here is a read, so each now retries automatically (3
+*   retries, 2s/4s/6s, 30s per attempt) and the loading text shows
+*   "Connection slow, retrying... (n/4)". Previously one lost reply
+*   left a tab on "Loading..." until the 30s timeout (Access Log had no
+*   timeout at all). callAPI() keeps its name and promise contract;
+*   loadAccessLog() now uses it, with a stale-reply guard so a slow
+*   earlier request cannot overwrite a newer filter choice. Display,
+*   filters and wording unchanged.
 * v1.3.10 (Aug 2026): Access Log tab -- added a Detail dropdown filter,
 *   populated dynamically from the detail values present in the currently
 *   loaded date range (no hardcoded portal list). Filtering is client-side
@@ -733,6 +743,7 @@ VERSION HISTORY:
         </div>
     </div>
 
+    <script src="ApiClient.js"></script>
     <script>
 
 // SESSION GUARD
@@ -800,50 +811,21 @@ VERSION HISTORY:
         // API CALLS WITH JSONP
         // =====================================================================
         
-        function callAPI(action, params = {}) {
-            return new Promise((resolve, reject) => {
-                const callbackName = `callback_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-                let settled = false;
+        // Reads only: retried automatically by ApiClient.js
+        function apiRetryHint(info) {
+            const text = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+            document.querySelectorAll('.loading > div:last-child').forEach(function(el) { el.textContent = text; });
+        }
 
-                function cleanup() {
-                    window[callbackName] = function() {};
-                    const s = document.getElementById(callbackName);
-                    if (s) s.remove();
-                }
-                
-                window[callbackName] = function(data) {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    resolve(data);
-                };
-                
-                const script = document.createElement('script');
-                script.id = callbackName;
-                
-                const queryParams = new URLSearchParams({
-                    action: action,
-                    callback: callbackName,
-                    ...params
-                });
-                
-                script.src = `${API_URL}?${queryParams.toString()}`;
-                script.onerror = () => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('API call failed'));
-                };
-                
-                document.body.appendChild(script);
-                
-                // Timeout after 30 seconds
-                setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanup();
-                    reject(new Error('API call timeout'));
-                }, 30000);
+        function callAPI(action, params = {}, baseUrl = API_URL) {
+            if (typeof ApiClient === 'undefined') {
+                return Promise.reject(new Error('ApiClient.js is not loaded'));
+            }
+            return ApiClient.call(baseUrl, action, params, {
+                timeout: 30000,
+                onRetry: apiRetryHint
+            }).catch(function(err) {
+                throw new Error('Could not reach the server after several attempts. Please check your connection and try again.');
             });
         }
 
@@ -1501,6 +1483,8 @@ VERSION HISTORY:
         // LOAD ACCESS LOG
         // =====================================================================
 
+        let accessLoadSeq = 0;
+
         function loadAccessLog() {
             const { from, to } = getDateRange('access-date-from', 'access-date-to');
             const days = getDays('access-date-from', 'access-date-to', 'access-range-select');
@@ -1512,19 +1496,9 @@ VERSION HISTORY:
                     <div>Loading access log...</div>
                 </div>`;
 
-            const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substring(7);
-            let settled = false;
-
-            function cleanup() {
-                window[callbackName] = function() {};
-                const s = document.getElementById(callbackName);
-                if (s) s.remove();
-            }
-
-            window[callbackName] = function(response) {
-                if (settled) return;
-                settled = true;
-                cleanup();
+            const seq = ++accessLoadSeq;
+            callAPI('getAccessLog', { days: days, type: type }, MGMT_URL).then(function(response) {
+                if (seq !== accessLoadSeq) return;
                 if (response.success) {
                     accessLogData = response.data || [];
                     populateAccessDetailFilter(accessLogData);
@@ -1537,25 +1511,15 @@ VERSION HISTORY:
                             <div class="empty-text">${response.error || 'Unknown error'}</div>
                         </div>`;
                 }
-            };
-
-            const script = document.createElement('script');
-            script.id  = callbackName;
-            script.src = MGMT_URL + '?action=getAccessLog&callback=' + callbackName
-                       + '&days=' + encodeURIComponent(days)
-                       + '&type=' + encodeURIComponent(type);
-            script.onerror = function() {
-                if (settled) return;
-                settled = true;
-                cleanup();
+            }, function() {
+                if (seq !== accessLoadSeq) return;
                 document.getElementById('access-log-container').innerHTML = `
                     <div class="empty-state">
                         <div class="empty-icon">&#9888;&#65039;</div>
                         <div class="empty-title">Connection Failed</div>
                         <div class="empty-text">Could not reach ManagementCentral backend.</div>
                     </div>`;
-            };
-            document.body.appendChild(script);
+            });
         }
 
         function populateAccessDetailFilter(entries) {
