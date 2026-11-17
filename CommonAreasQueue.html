@@ -4,19 +4,27 @@ COMMON AREAS QUEUE - FILTERED PROBLEM QUEUE FOR CLUBHOUSE & COMMON AREAS
 =====================================================================
 PURPOSE:  Simple queue display for residents to check existing Clubhouse/Common Areas problems
 PORTAL: Resident Portal - Accessed from Submission Form
-VERSION: v1.1.2
+VERSION: v1.2.0
 CREATED: January 3, 2026
-LAST UPDATED: August 2026
+LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.4
 - Glass-morphism throughout (converted from V1.4 white card design)
 - Shows only Clubhouse and Common Areas problems
 - Read-only display (no modifications)
 - Simple, resident-friendly interface
 AUTHENTICATION: None
-DEPENDENCIES: Explorer V1.0.js backend (getFaultLogData action)
+DEPENDENCIES: Explorer V1.0.js backend (getFaultLogData action), ApiClient.js
 RELATED FILES: ResidentSubmissionForm.html
 
 CHANGE LOG
+- V1.2.0 (Nov 2026): Transport moved to the shared ApiClient.js (API
+  reliability initiative). fetchProblems() was one JSONP attempt with a 30s
+  timeout and no retry, so one lost reply meant "Error loading problem
+  queue" until the page was reloaded. It is now a READ through ApiClient:
+  3 automatic retries (2s/4s/6s backoff, 30s per attempt), and while a
+  retry is pending the loading message reads "Connection slow, retrying...
+  (n/4)". Filtering, sorting, display and wording unchanged. Requires
+  ApiClient.js in the same folder.
 - V1.1.2 (Aug 2026): FIXED: Header DESIGN SYSTEM label was stale at
   "v2.0" -- confirmed the actual CSS (full --glass-bg/--glass-border/
   --glass-blur token system, 2px border-radius throughout) is genuinely
@@ -354,6 +362,7 @@ CHANGE LOG
         </div>
     </div>
 
+    <script src="ApiClient.js"></script>
     <script>
         // Backend URL
         const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
@@ -367,42 +376,27 @@ CHANGE LOG
         function fetchProblems() {
             showLoading();
 
-            const callbackName = 'jsonpCallback_' + Math.random().toString(36).substring(7);
-            const script = document.createElement('script');
-            let settled = false;
-
-            const timeout = setTimeout(() => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                onDataError(new Error('Request timeout'));
-            }, 30000);
-
-            window[callbackName] = (data) => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                if (data.success) {
+            // V1.2.0: read via the shared ApiClient (retried), same success/error handlers as before
+            if (typeof ApiClient === 'undefined') {
+                onDataError(new Error('ApiClient.js is not loaded'));
+                return;
+            }
+            ApiClient.call(API_URL, 'getFaultLogData', {}, {
+                write: false,
+                timeout: 30000,
+                onRetry: function (info) {
+                    const m = document.querySelector('#loadingState .state-message');
+                    if (m) m.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+                }
+            }).then(function (data) {
+                if (data && data.success) {
                     onDataLoaded(data.data || []);
                 } else {
-                    onDataError(new Error(data.error || 'Unknown error'));
+                    onDataError(new Error((data && data.error) || 'Unknown error'));
                 }
-            };
-
-            function cleanup() {
-                clearTimeout(timeout);
-                window[callbackName] = () => {};
-                if (script.parentNode) script.parentNode.removeChild(script);
-            }
-
-            script.src = `${API_URL}?action=getFaultLogData&callback=${callbackName}`;
-            script.onerror = () => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                onDataError(new Error('Network error'));
-            };
-            document.head.appendChild(script);
+            }, function () {
+                onDataError(new Error('Could not reach the server. Please try again.'));
+            });
         }
 
         function onDataLoaded(data) {
