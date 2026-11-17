@@ -7,12 +7,13 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepPortal.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Portal
-  Frontend Version: V2.4.4
+  Frontend Version: V2.5.0
   Status:           PRODUCTION
   Created:          2025
   Last Modified:    Nov 2026
 
 VERSION HISTORY:
+  V2.5.0 (Nov 2026): API reliability -- the portal-access log call (logAccess) now goes through the shared ApiClient.js (add <script src="ApiClient.js"> alongside this page). It is a write, so it is sent once and never resent (no duplicate Access Log rows); a lost or slow reply is ignored exactly as before, so it never delays or blocks sign-in. No other change.
   V2.4.4 (Nov 2026): Script tag changed from VerificationModal_V1_0.js to the generic VerificationModal.js (identical code; V2.1.0 adds a quiet warm-up call that cuts slow first verification codes). No other change.
   V2.4.3 (Nov 2026): Commented-out Zone Complaints card deleted, per Tony
                      -- ZoneRepComplaints.html is archived (Complaints
@@ -430,6 +431,7 @@ MODULES (6 active, 1 future):
             .status-badge { font-size: 0.65rem; padding: 3px 7px; }
         }
     </style>
+<script src="ApiClient.js"></script>
 <script src="VerificationModal.js"></script>
     
 </head>
@@ -807,24 +809,14 @@ MODULES (6 active, 1 future):
             console.log(`⚡ Zone Rep Portal V2.3 loaded in ${loadTime} seconds`);
         });
       function logPortalAccess(name, unit) {
-    var cbName = 'logcb_' + Date.now();
-    var script = document.createElement('script');
-    var settled = false;
-    function finish() {
-        if (settled) return;
-        settled = true;
-        window[cbName] = function() {};
-        try { document.head.removeChild(script); } catch(e){}
-    }
-    window[cbName] = function() { finish(); };
-    script.onerror = function() { finish(); };
-    script.src = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
-        + '?action=logAccess&callback=' + cbName
-        + '&type=Portal-Login'
-        + '&name=' + encodeURIComponent(name || '')
-        + '&unit=' + encodeURIComponent(unit || '')
-        + '&detail=' + encodeURIComponent('Zone Rep Portal');
-    document.head.appendChild(script);
+    // Audit write: sent once via ApiClient (never resent); result ignored.
+    if (typeof ApiClient === 'undefined') return;
+    ApiClient.call('https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec', 'logAccess', {
+        type: 'Portal-Login',
+        name: name || '',
+        unit: unit || '',
+        detail: 'Zone Rep Portal'
+    }, { write: true, timeout: 15000 }).catch(function() {});
 }
     </script>
 </body>
