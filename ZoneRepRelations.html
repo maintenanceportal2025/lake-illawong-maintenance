@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepRelations.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.0.3
+  Frontend Version: V1.1.0
   Backend:          RelationsManager V1.0.18 -- getRelationsByZone
   Status:           DEVELOPMENT
   Created:          Sep 2026
@@ -52,6 +52,17 @@ FIELD SCOPE -- DELIBERATELY LIMITED, NOT PARITY WITH ZoneRepComplaints:
   display choice a curious Zone Rep could bypass.
 
 VERSION HISTORY:
+  V1.1.0 (Nov 2026): Transport moved to the shared ApiClient.js (API
+    reliability initiative). jsonp() keeps its name and (params, onSuccess,
+    onError) signature but now calls ApiClient. getRelationsByZone is a
+    READ: a lost reply is retried automatically (3 retries, 2s/4s/6s
+    backoff, 30s per attempt) and the list shows "Connection slow,
+    retrying... (n/4)"; previously ONE 15s attempt, then "Server did not
+    respond". A rapid second Refresh can no longer let an older, slower
+    reply overwrite a newer one. Display name corrected to "Lake Illawong
+    Residential Village" (2 places; was "Retirement Village"). Requires
+    ApiClient.js in the same folder. Wording, layout, session guard and
+    Zone Rep visibility unchanged.
   V1.0.3 (Sep 2026): FIX -- card was rendering "Unit Unit 9" -- the
     stored unit value from the sheet already reads "Unit 9" (confirmed
     by screenshot), and buildRow was prepending its own "Unit " label
@@ -268,7 +279,7 @@ TECHNICAL:
             </div>
             <div class="header-text">
                 <h1 class="header-title">Zone Disputes</h1>
-                <p class="header-subtitle" id="headerSubtitle">Lake Illawong Retirement Village</p>
+                <p class="header-subtitle" id="headerSubtitle">Lake Illawong Residential Village</p>
             </div>
         </div>
         <div class="header-divider"></div>
@@ -317,6 +328,7 @@ TECHNICAL:
     </div>
 
 </div>
+<script src="ApiClient.js"></script>
 <script>
     const CONFIG = {
         BACKEND_URL: 'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
@@ -344,7 +356,7 @@ TECHNICAL:
         currentZone = zoneTag.replace('ZoneRep-', '');
 
         document.getElementById('headerSubtitle').textContent =
-            'Zone ' + currentZone + ' — Lake Illawong Retirement Village';
+            'Zone ' + currentZone + ' — Lake Illawong Residential Village';
         document.getElementById('infoNotice').style.display = 'block';
 
         loadRelations();
@@ -360,60 +372,48 @@ TECHNICAL:
     }
 
     // ── JSONP HELPER ──────────────────────────────────────────────────────
-    function jsonp(params, onSuccess, onError) {
-        const callbackName = 'zrr_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-        const qs = Object.keys(params).map(function(k) {
-            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-        }).join('&');
-        const url = CONFIG.BACKEND_URL + '?' + qs + '&callback=' + callbackName;
-
-        let settled = false;
-        const s = document.createElement('script');
-
-        function cleanup() {
-            window[callbackName] = function () {};
-            try { document.head.removeChild(s); } catch (e) {}
-        }
-
-        const timer = setTimeout(function () {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            if (onError) onError('Server did not respond. Please try refreshing.');
-        }, 15000);
-
-        window[callbackName] = function (data) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            cleanup();
-            if (onSuccess) onSuccess(data);
-        };
-
-        s.onerror = function () {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            cleanup();
+    // V1.1.0: thin wrapper over the shared ApiClient. Only read actions are
+    // used on this page, so every call is treated as a READ (retried).
+    function jsonp(params, onSuccess, onError, onRetry) {
+        if (typeof ApiClient === 'undefined') {
             if (onError) onError('Could not reach the server.');
-        };
-        s.src = url;
-        document.head.appendChild(s);
+            return;
+        }
+        const p = Object.assign({}, params);
+        const action = p.action;
+        delete p.action;
+        ApiClient.call(CONFIG.BACKEND_URL, action, p, {
+            write: false,
+            timeout: 30000,
+            onRetry: onRetry
+        }).then(function (data) {
+            if (onSuccess) onSuccess(data);
+        }, function () {
+            if (onError) onError('Could not reach the server. Please try refreshing.');
+        });
     }
 
     // ── LOAD ─────────────────────────────────────────────────────────────
+    var loadSeq = 0;
     function loadRelations() {
+        const mySeq = ++loadSeq;
         document.getElementById('relationList').innerHTML =
             '<div class="loading-state"><div class="spinner"></div><div class="state-text">Loading Zone ' + currentZone + ' disputes...</div></div>';
 
         jsonp(
             { action: 'getRelationsByZone', zone: currentZone },
             function(data) {
+                if (mySeq !== loadSeq) return;   // a newer load is in flight
                 if (!data.success) { showListError(data.error || 'Failed to load disputes.'); return; }
                 allRelations = data.relations || [];
                 applyFilters();
             },
-            function(err) { showListError(err); }
+            function(err) { if (mySeq === loadSeq) showListError(err); },
+            function(info) {
+                if (mySeq !== loadSeq) return;
+                const t = document.querySelector('#relationList .loading-state .state-text');
+                if (t) t.textContent = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
+            }
         );
     }
 
