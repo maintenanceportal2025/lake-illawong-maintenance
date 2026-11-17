@@ -4,7 +4,7 @@ LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - SYSTEM HUB
 =====================================================================
 PURPOSE:      Central navigation hub — entry point for all portals
 FILE:         SystemHub.html
-VERSION:      V2.0.2
+VERSION:      V2.1.0
 LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Full glass-morphism throughout using CSS variables
@@ -24,6 +24,18 @@ AUTHENTICATION: None — public landing page
 DEPENDENCIES:  Explorer V1.2.1 (loadSystemStats — optional)
 
 CHANGE LOG
+- V2.1.0 (Nov 2026): API reliability -- makeApiCall() now uses the shared
+                     ApiClient.js (add <script src="ApiClient.js"> alongside
+                     this page); name and (url) signature unchanged. Both
+                     calls on this page are reads. The System Online / System
+                     Check indicator now retries once before showing "System
+                     Check", so a cold-starting backend no longer shows a
+                     false warning on first visit. Also corrected the village
+                     name in the page description and footer ("Lake Illawong
+                     Residential Village"). No layout or styling change.
+                     NOTE: loadSystemStats() is dead code -- the hero stat
+                     elements were removed in V2.0.0, so it throws before it
+                     makes any request. Left as is.
 - V2.0.2 (Nov 2026): CONTENT REFRESH -- portal card descriptions and feature
                      lists brought up to date with the live system (Architecture
                      V6.2). Removed retired/hidden items (Zone Analytics, Mobile
@@ -73,7 +85,7 @@ CHANGE LOG
     <!-- Theme color for mobile browsers -->
     <meta name="theme-color" content="#1e40af">
     <title>Lake Illawong Problem Management - System Hub</title>
-    <meta name="description" content="Professional problem management system for Lake Illawong Retirement Village">
+    <meta name="description" content="Professional problem management system for Lake Illawong Residential Village">
     <style>
         * {
     margin: 0;
@@ -865,12 +877,13 @@ body {
         <!-- Footer -->
         
             <div class="footer-bottom">
-                <p>Illawong Residential Club System Hub V2.0.2 • November 2026</p>
+                <p>Lake Illawong Residential Village System Hub V2.1.0 • November 2026</p>
             </div>
         </footer>
     </main>
 
     <!-- ALL ORIGINAL JAVASCRIPT -->
+    <script src="ApiClient.js"></script>
     <script>
         // System configuration
         const SYSTEM_CONFIG = {
@@ -937,69 +950,18 @@ async function loadSystemStats() {
     }
 }
        
-        // Make API call with JSONP - Improved version
-function makeApiCall(url) {
-    return new Promise((resolve, reject) => {
-        const callbackName = 'callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        const script = document.createElement('script');
-        let completed = false;
-        
-        window[callbackName] = function(data) {
-            if (!completed) {
-                completed = true;
-                resolve(data);
-                // Cleanup after a short delay
-                setTimeout(() => {
-                    try {
-                        if (script.parentNode) {
-                            document.head.removeChild(script);
-                        }
-                        window[callbackName] = function() {};
-                    } catch (e) {
-                        console.warn('Cleanup warning:', e);
-                    }
-                }, 100);
-            }
-        };
-        
-        script.onerror = () => {
-            if (!completed) {
-                completed = true;
-                reject(new Error('Network error'));
-                setTimeout(() => {
-                    try {
-                        if (script.parentNode) {
-                            document.head.removeChild(script);
-                        }
-                        window[callbackName] = function() {};
-                    } catch (e) {
-                        console.warn('Cleanup warning:', e);
-                    }
-                }, 100);
-            }
-        };
-        
-        script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
-        document.head.appendChild(script);
-        
-        // Increased timeout and better cleanup
-        setTimeout(() => {
-            if (!completed) {
-                completed = true;
-                reject(new Error('Request timeout'));
-                setTimeout(() => {
-                    try {
-                        if (script.parentNode) {
-                            document.head.removeChild(script);
-                        }
-                        window[callbackName] = function() {};
-                    } catch (e) {
-                        console.warn('Cleanup warning:', e);
-                    }
-                }, 100);
-            }
-        }, 15000); // Increased to 15 seconds
-    });
+        // Make API call (ApiClient.js) -- reads only; retried automatically.
+        // url may carry its own ?action=...&k=v query, which is split back out.
+function makeApiCall(url, opts) {
+    if (typeof ApiClient === 'undefined') {
+        return Promise.reject(new Error('ApiClient.js is not loaded'));
+    }
+    const parts = url.split('?');
+    const params = {};
+    new URLSearchParams(parts[1] || '').forEach(function(v, k) { params[k] = v; });
+    const action = params.action;
+    delete params.action;
+    return ApiClient.call(parts[0], action, params, Object.assign({ timeout: 15000 }, opts || {}));
 }
 
         // Check system health
@@ -1007,7 +969,7 @@ function makeApiCall(url) {
             try {
                 console.log('🔍 Checking system health...');
                 
-                const healthCheck = await makeApiCall(SYSTEM_CONFIG.apiEndpoints.maintenance + '?action=healthCheck');
+                const healthCheck = await makeApiCall(SYSTEM_CONFIG.apiEndpoints.maintenance + '?action=healthCheck', { retries: 1 });
                 
                 const status = (healthCheck && healthCheck.success) ? 'online' : 'degraded';
                 updateSystemStatus(status);
