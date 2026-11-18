@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.7.0
+  Frontend Version: V3.8.1
   Backend:          NotificationServer (separate SMS text needs the SMS-text support added in NotificationServer V3.14.0)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
@@ -14,7 +14,7 @@ DOCUMENT INFORMATION:
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.7.0 - Separate SMS text for document sends
+VERSION: V3.8.1 - Email + SMS sends a fixed "check your email" text
 LAST UPDATED: Nov 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -26,28 +26,27 @@ TECHNICAL:
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
 
-NEW IN V3.7.0:
-✅ Optional "SMS text" box, shown only when BOTH Send Email and Send SMS are
-   ticked. Left blank = no change at all (the message above goes out as the
-   SMS too, with the "Lake Illawong Alert:" prefix, exactly as before).
-   Filled in = the SMS carries only this short text (prefix "Lake Illawong:"),
-   while the email carries the full message and any attachments. Built for
-   document sends, e.g. emailing the AGM minutes to the E-Copy recipients and
-   texting "Please check your inbox for a new message from Lake Illawong" in
-   the same send. SMS still goes only to residents with the SMS-Alerts tag
-   and a mobile number.
-✅ With a separate SMS text the character counter under the message box
-   counts the email message only (the 160-character SMS limit no longer
-   applies to it); the SMS text has its own counter, and the multi-part SMS
-   cost warning is worked out from the SMS text.
-✅ The SMS box is cleared after a send and on Clear Selections.
-✅ Ticking Send SMS now updates the character counter straight away (it
-   previously only refreshed when the message was typed in or Email was
-   toggled).
-✅ REQUIRES NotificationServer V3.14.0+ for the separate text. DEPLOY
-   NotificationServer FIRST. Against an older NotificationServer the SMS
-   would carry the email message instead of the short text, so do not use
-   the box until V3.14.0 is deployed.
+NEW IN V3.8.1 (layout only, no change to how sending works):
+✅ "Select Individual Units" button moved up beside Zone 5 (same purple colour).
+✅ Heading "Select Notification Zones" is now "Select Notification".
+✅ The E-Copy Distribution List now has a gap above it so it no longer sits
+   against the zone buttons.
+
+NEW IN V3.8.0 (replaces the optional SMS text box tried in V3.7.0):
+✅ When BOTH Send Email and Send SMS are ticked, the email carries the full
+   message and any attachments, and the SMS is a fixed alert: "Lake Illawong:
+   Please check your email for a new message." There is no SMS text box. Built
+   for document sends, e.g. emailing the AGM minutes to the E-Copy recipients
+   and texting them to check their inbox in the same send.
+✅ For a custom or urgent SMS, tick Send SMS only and type the message; that
+   works exactly as before. Email only is unchanged too.
+✅ With both ticked the character counter under the message box counts the
+   email message only (the 160-character SMS limit does not apply to it).
+✅ SMS still goes only to residents with the SMS-Alerts tag and a mobile.
+✅ Ticking Send SMS now updates the character counter straight away.
+✅ REQUIRES NotificationServer V3.14.0+ (the separate SMS text param), and
+   V3.14.1 so that E-Copy sends text only the role holders. DEPLOY
+   NotificationServer FIRST.
 
 NEW IN V3.6.0:
 ✅ "Select Individual Units" now ends with a "Staff" group listing staff
@@ -1189,6 +1188,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             border: 1px solid rgba(245,158,11,0.3);
             border-radius: 2px;
             padding: 20px;
+            margin-top: 20px;
             margin-bottom: 20px;
             display: none;
         }
@@ -1610,7 +1610,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 
         <!-- Zone Selection -->
         <div class="zone-selector">
-            <div class="zone-title">Select Notification Zones</div>
+            <div class="zone-title">Select Notification</div>
             <div class="zone-grid">
                 <button class="zone-btn all-units" data-zone="all">All Units</button>
                 <button class="zone-btn" data-zone="zone1">Zone 1 (1-8)</button>
@@ -1618,8 +1618,8 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 <button class="zone-btn" data-zone="zone3">Zone 3 (21-28)</button>
                 <button class="zone-btn" data-zone="zone4">Zone 4 (29-36)</button>
                 <button class="zone-btn" data-zone="zone5">Zone 5 (37-44)</button>
-<button class="zone-btn ecopy-btn" data-zone="ecopy" onclick="selectZone('ecopy')">📧 E-Copy Recipients</button>
 <button class="zone-btn special" onclick="openUnitSelector()">🔢 Select Individual Units</button>
+<button class="zone-btn ecopy-btn" data-zone="ecopy" onclick="selectZone('ecopy')">📧 E-Copy Recipients</button>
             </div>
 
 <!-- E-Copy Distribution List Preview -->
@@ -1730,21 +1730,6 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
         placeholder="The greeting (&quot;Hi [First Name],&quot;) is added automatically per recipient — just select a template or enter your custom message here..."
         maxlength="5000"></textarea>
     <div class="char-count" id="charCount">0/5000 characters</div>
-
-    <!-- Separate SMS text (only when Email and SMS are both ticked) -- V3.7.0 -->
-    <div id="smsTextField" class="salutation-field hidden" style="margin-top: 15px;">
-        <label for="smsCustomText" class="salutation-label">
-            SMS text (optional) - leave blank to send the message above as the SMS too
-        </label>
-        <textarea
-            id="smsCustomText"
-            class="salutation-input"
-            rows="2"
-            maxlength="300"
-            placeholder="e.g. Please check your inbox for a new message from Lake Illawong."
-            oninput="updateCharCount();"></textarea>
-        <div class="char-count" id="smsCustomCount"></div>
-    </div>
 </div>
 
 <!-- File Attachment Section -->
@@ -2386,41 +2371,20 @@ if (alertFormatCheckbox) {
 }
 }
 
-// V3.7.0: show the separate SMS text box only when Email AND SMS are both
-// ticked; returns true when it is shown and has text, i.e. when the SMS will
-// carry that text instead of the main message. Updates its own counter.
+// V3.8.0: when Email AND SMS are both ticked the SMS is a fixed "check your
+// email" alert and the email carries the real message. Prefix added by
+// NotificationServer ("Lake Illawong: ").
+const CHECK_EMAIL_SMS_TEXT = 'Please check your email for a new message.';
+
+// True when both are ticked, i.e. the SMS will be the fixed alert
 function updateSmsTextField() {
-    const field = document.getElementById('smsTextField');
-    const box = document.getElementById('smsCustomText');
-    const counter = document.getElementById('smsCustomCount');
-    const emailOn = document.getElementById('emailEnabled').checked;
-    const smsOn = document.getElementById('smsEnabled').checked;
-    const show = emailOn && smsOn;
-    if (!field || !box) return false;
-    field.classList.toggle('hidden', !show);
-    const text = box.value.trim();
-    if (!show || !text) {
-        if (counter) counter.textContent = '';
-        return false;
-    }
-    // "Lake Illawong: " prefix = 15 chars
-    const total = text.length + 15;
-    const parts = total <= 160 ? 1 : Math.ceil(total / 153);
-    if (counter) {
-        counter.textContent = total <= 160
-            ? `${total}/160 chars (1 SMS)`
-            : `${total} chars (${parts} SMS, $${(parts * 0.037).toFixed(3)})`;
-        counter.className = total > 160 ? 'char-count warning' : 'char-count';
-    }
-    return true;
+    return document.getElementById('emailEnabled').checked &&
+           document.getElementById('smsEnabled').checked;
 }
 
-// V3.7.0: the separate SMS text to send, or '' when not in use
+// The fixed SMS text to send, or '' when it is not an email + SMS send
 function getSeparateSmsText() {
-    const box = document.getElementById('smsCustomText');
-    const emailOn = document.getElementById('emailEnabled').checked;
-    const smsOn = document.getElementById('smsEnabled').checked;
-    return (box && emailOn && smsOn) ? box.value.trim() : '';
+    return updateSmsTextField() ? CHECK_EMAIL_SMS_TEXT : '';
 }
 
 function toggleSubjectField() {
@@ -2549,10 +2513,6 @@ function resetSalutation() {
 
             // Clear the custom salutation too -- V3.5.0
             resetSalutation();
-
-            // Clear the separate SMS text too -- V3.7.0
-            const smsTextBox = document.getElementById('smsCustomText');
-            if (smsTextBox) smsTextBox.value = '';
 
             // Clear message text
             const messageInput = document.getElementById('messageText');
@@ -3188,7 +3148,7 @@ async function executeFieldAlertSend() {
 
     confirmMsg += methods.join(' + ');
 
-    // V3.7.0: show the SMS text that will be sent when it is separate
+    // V3.8.0: show the SMS text that will be sent when Email + SMS are both ticked
     const separateSmsForConfirm = getSeparateSmsText();
     if (smsEnabled && separateSmsForConfirm) {
         confirmMsg += `\n\nSMS text: "${separateSmsForConfirm}"`;
@@ -3235,8 +3195,8 @@ async function executeFieldAlertSend() {
                 : ''
         };
 
-        // Separate SMS text -- V3.7.0. Only sent when Email and SMS are both
-        // ticked and the box has text. Requires NotificationServer V3.14.0+.
+        // Fixed "check your email" SMS -- V3.8.0. Only when Email and SMS are both
+        // ticked. Requires NotificationServer V3.14.0+.
         const separateSms = getSeparateSmsText();
         if (separateSms) {
             params.smsMessage = separateSms;
