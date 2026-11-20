@@ -6,15 +6,15 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.8.3
-  Backend:          NotificationServer (separate SMS text needs the SMS-text support added in NotificationServer V3.14.0)
+  Frontend Version: V3.9.0
+  Backend:          NotificationServer (Test Run and test copy need NotificationServer V3.16.0; the quota line needs V3.15.0)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
   Last Modified:    Nov 2026
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.8.3 - Email + SMS sends a fixed "check your email" text
+VERSION: V3.9.0 - Test Run, real test copy and email quota line
 LAST UPDATED: Nov 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -25,6 +25,37 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.9.0 (adds a rehearsal; the live Send behaves exactly as before):
+✅ New "Test Run" button beside Send. It runs the whole send through
+   NotificationServer's new simulateFieldAlert action: same recipients, same
+   greetings, same subject, attachments checked, same SMS rules -- but NOTHING
+   is emailed or texted, no quota is used and nothing is written to the
+   EmailLog / SMSLog. A results screen shows how many emails and SMS would go,
+   a sample of the email exactly as the first recipient would see it, each
+   recipient's greeting, the SMS text and numbers (masked), the residents who
+   would get neither (phone them), and whether the send fits in the email quota.
+✅ "Send me a real test copy" on that results screen sends ONE real email (and
+   ONE SMS if SMS is ticked) to the test address and mobile held on the server
+   (Script Properties NOTIFY_TEST_EMAIL / NOTIFY_TEST_MOBILE), never to a
+   resident. The subject starts "[TEST]". It uses 1 of the daily emails. It
+   sends exactly what was just tested.
+✅ New "Email quota" line above the Send button: how many emails have been
+   sent in the last 24 hours and how many are left. Shown only while Email is
+   ticked (SMS-only sends use no email quota). Refreshed after a send or a
+   test copy. NotificationServer V3.15.0+ also REFUSES a send that would not
+   fit, before anything goes out; the refusal message now stays on screen long
+   enough to read (notifications can take an optional duration; the default
+   is still 4 seconds).
+✅ The recipient filter and the send parameters are now built by two shared
+   functions (buildRecipientFilter, buildFieldAlertParams) used by BOTH the
+   live Send and the Test Run, so the rehearsal cannot differ from the real
+   send. The code inside them is the V3.8.3 code moved, not changed.
+✅ How to Use screen: new "Test Run (check before you send)" section.
+✅ REQUIRES NotificationServer V3.16.0 (simulateFieldAlert, testSendFieldAlert)
+   and V3.15.0 (quota). DEPLOY NOTIFICATIONSERVER FIRST. Against an older
+   server the Test Run reports that the action is unknown and the live Send is
+   unaffected.
 
 NEW IN V3.8.3 (help screen, no change to how sending works):
 ✅ New "How to Use" button beside Back to Portal opens a plain-language
@@ -760,6 +791,14 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             margin-bottom: 30px;
         }
 
+        /* V3.9.0: Send and Test Run side by side */
+        .send-row {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
         .send-btn {
             background: #9ca3af;
             color: white;
@@ -792,6 +831,52 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
         .send-btn:disabled {
             transform: none;
             box-shadow: none;
+        }
+
+        /* TEST RUN BUTTON -- V3.9.0 (glass button, same blue as the help button) */
+        .test-run-btn {
+            background: rgba(59,130,246,0.25);
+            border: 1px solid rgba(59,130,246,0.6);
+            color: white;
+            border-radius: 2px;
+            padding: 18px 28px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            min-width: 160px;
+            font-family: inherit;
+        }
+
+        .test-run-btn:hover:not(:disabled) { background: rgba(59,130,246,0.4); }
+
+        .test-run-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .test-run-help {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.55);
+            margin-top: 10px;
+        }
+
+        /* EMAIL QUOTA LINE -- V3.9.0 */
+        .quota-line {
+            background: rgba(59,130,246,0.15);
+            border: 1px solid rgba(59,130,246,0.4);
+            border-radius: 2px;
+            padding: 10px 14px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            color: white;
+            text-align: center;
+        }
+
+        .quota-line.empty {
+            background: rgba(239,68,68,0.15);
+            border-color: rgba(239,68,68,0.4);
+            color: #fca5a5;
         }
 
         /* HELP SCREEN -- V3.8.3 */
@@ -1006,7 +1091,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             border-radius: 2px;
             padding: 20px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            z-index: 1000;
+            z-index: 20000;
             animation: slideIn 0.3s ease;
             max-width: 300px;
             color: white;
@@ -1071,6 +1156,11 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             }
 
             .send-btn {
+                width: 100%;
+                min-width: auto;
+            }
+
+            .test-run-btn {
                 width: 100%;
                 min-width: auto;
             }
@@ -1206,6 +1296,101 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
         }
+
+        .modal-btn-confirm:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* TEST RUN RESULTS SCREEN -- V3.9.0 (reuses the modal glass above) */
+        .modal-container.test-run-container { max-width: 640px; }
+
+        .modal-header.test-run-header {
+            background: rgba(59,130,246,0.15);
+            border-bottom: 1px solid rgba(59,130,246,0.4);
+        }
+
+        .modal-header.test-run-header h2 { color: white; }
+
+        .test-summary {
+            background: rgba(59,130,246,0.15);
+            border: 1px solid rgba(59,130,246,0.4);
+            border-radius: 2px;
+            padding: 12px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: 600;
+            color: white;
+        }
+
+        .test-quota {
+            background: rgba(59,130,246,0.15);
+            border-left: 4px solid #3b82f6;
+            border-radius: 2px;
+            padding: 10px 12px;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+            color: rgba(255,255,255,0.9);
+        }
+
+        .test-quota.bad {
+            background: rgba(239,68,68,0.15);
+            border-left-color: #ef4444;
+            color: #fca5a5;
+            font-weight: 600;
+        }
+
+        .test-note {
+            background: rgba(245,158,11,0.15);
+            border-left: 4px solid #f59e0b;
+            border-radius: 2px;
+            padding: 10px 12px;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+            color: rgba(255,255,255,0.9);
+        }
+
+        .test-heading {
+            font-weight: 600;
+            color: white;
+            margin: 18px 0 8px 0;
+        }
+
+        .test-sample {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 2px;
+            padding: 12px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.85);
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .test-list {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 2px;
+            padding: 8px 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .test-row {
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.85);
+        }
+
+        .test-row:last-child { border-bottom: none; }
+
+        .test-row span { color: rgba(255,255,255,0.55); }
 
 /* ============================================= */
         /* E-COPY DISTRIBUTION - NEW V2.4 CSS */
@@ -1835,9 +2020,18 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 
         <!-- Smart Send Button -->
         <div class="send-section">
-            <button class="send-btn" id="sendBtn" disabled>
-                Select Template
-            </button>
+            <!-- Email quota line -- V3.9.0 (filled by loadQuotaLine) -->
+            <div class="quota-line hidden" id="quotaLine"></div>
+
+            <div class="send-row">
+                <button class="send-btn" id="sendBtn" disabled>
+                    Select Template
+                </button>
+                <button class="test-run-btn" id="testRunBtn" disabled onclick="runTestRun()">
+                    🧪 Test Run
+                </button>
+            </div>
+            <div class="test-run-help">Test Run shows exactly who would get this message. It sends nothing.</div>
         </div>
     </div>
 
@@ -1883,9 +2077,18 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 <li><strong>Attach Files</strong> (PDF, Word, JPG, PNG, TXT; 10MB per file, 20MB total) go with the email, not the SMS.</li>
             </ul>
 
+            <h3>Test Run (check before you send)</h3>
+            <ul>
+                <li>Once you have chosen who, how and written the message, press <strong>Test Run</strong>. <strong>Nothing is sent</strong> and nothing is counted against the email limit.</li>
+                <li>The results screen shows how many emails and texts would go, a sample of the email as the first person would see it, each person's greeting, the text message, and anyone who would get neither (so you can phone them).</li>
+                <li>It also says whether the send fits in the email limit. Gmail allows about 100 emails in 24 hours; if a send is too big for what is left, it is refused before anything goes out, and you can send to fewer zones and send the rest later.</li>
+                <li><strong>Send me a real test copy</strong> sends ONE real email (and one text, if SMS is ticked) to your own test address and mobile, never to a resident. The subject starts with [TEST]. It uses 1 of the daily emails. With attachments, the test can take a little while.</li>
+                <li>The line above the Send button shows how many emails have been sent in the last 24 hours and how many are left. Texts are not affected by it.</li>
+            </ul>
+
             <h3>Common situations</h3>
             <ul>
-                <li><strong>Send the AGM minutes to the E-Copy people:</strong> select E-Copy Recipients, tick Email and SMS, tick Custom Salutation if you want "Dear Residents,", write your covering note, attach the PDF, then send.</li>
+                <li><strong>Send the AGM minutes to the E-Copy people:</strong> select E-Copy Recipients, tick Email and SMS, tick Custom Salutation if you want "Dear Residents,", write your covering note, attach the PDF, press Test Run to check it, then send.</li>
                 <li><strong>Urgent alert to everyone:</strong> select All Units, tick SMS only, type the message, and send. Add Email as well only if you also want a fuller email (the SMS then becomes the fixed "check your email" text).</li>
                 <li><strong>A note to one person:</strong> Select Individual Units, tick just that person.</li>
             </ul>
@@ -1979,6 +2182,11 @@ let attachments = [];
 const MAX_SINGLE_ATTACHMENT_BYTES = 10 * 1024 * 1024;   // 10MB per file
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;    // 20MB combined
 
+// V3.9.0: Test Run / quota state
+let testRunInProgress = false;
+let lastTestParams = null;   // the exact params the last Test Run simulated
+let quotaInfo = null;        // last checkEmailQuota response, or null
+
 
         let currentFilter = 'all';
 
@@ -1998,6 +2206,9 @@ const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;    // 20MB combined
             // instance. Failure here is expected/harmless and silently ignored
             // -- this is an optimisation attempt, not a required step.
             callNotificationAPI('testConnection', {}).catch(() => {});
+
+            // V3.9.0: show how much of the daily email limit is left
+            loadQuotaLine();
         });
 
         // =====================================================================
@@ -2372,6 +2583,7 @@ if (alertFormatCheckbox) {
     const sendBtn = document.getElementById('sendBtn');
     const messageText = document.getElementById('messageText').value;
     const hasMessage = messageText && messageText.trim().length > 0;
+    let readyToSend = false;   // V3.9.0: drives the Test Run button too
 
     // Reset classes
     sendBtn.classList.remove('template-selected', 'ready-to-send');
@@ -2389,7 +2601,11 @@ if (alertFormatCheckbox) {
         sendBtn.textContent = `Send ${messageType} to ${targetText}`;
         sendBtn.disabled = false;
         sendBtn.classList.add('ready-to-send');
+        readyToSend = true;
     }
+
+    updateTestRunButton(readyToSend);
+    renderQuotaLine();
 }
 
         function getTemplateName(template) {
@@ -2671,17 +2887,19 @@ function resetSalutation() {
             updateSendButton();
         }
 
-        function showNotification(message, type = 'success') {
+        // V3.9.0: optional duration (ms). Default is still 4 seconds; a long
+        // message such as a quota refusal asks for longer so it can be read.
+        function showNotification(message, type = 'success', duration = 4000) {
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
             notification.innerHTML = message;
 
             document.body.appendChild(notification);
 
-            // Auto remove after 4 seconds
+            // Auto remove after the duration
             setTimeout(() => {
                 notification.remove();
-            }, 4000);
+            }, duration);
         }
 
 // =====================================================================
@@ -3083,6 +3301,85 @@ function escapeHtml(text) {
     });
 }
 
+// =====================================================================
+// V3.9.0: SHARED BUILDERS -- used by BOTH the live Send and the Test Run so
+// a rehearsal can never differ from the real send. The code in these two
+// functions is the V3.8.3 code moved out of sendFieldAlert() /
+// executeFieldAlertSend(), not changed.
+// =====================================================================
+
+// BUILD RECIPIENT FILTER - MATCH EMAIL SERVER FORMAT
+function buildRecipientFilter() {
+    let recipientFilter;
+    if (selectedZones.includes('ecopy')) {
+        recipientFilter = 'role:E-Copy';
+    } else if (selectedUnits.length > 0) {
+        // V3.3.0: the unit selector now resolves to the specific residents
+        // that were checked (see confirmUnitSelection()), not the whole
+        // unit -- so this always sends an explicit email list rather than
+        // a unit list. NotificationServer V3.8.0+ required.
+        const emailsList = selectedResidentEmails.map(r => r.email).filter(Boolean).join(',');
+        recipientFilter = `emails:${emailsList}`;
+    } else if (selectedZones.includes('all')) {
+        recipientFilter = 'all_units';
+    } else if (selectedZones.length === 1) {
+        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3',
+                          'zone4': 'zone_4', 'zone5': 'zone_5' };
+        recipientFilter = zoneMap[selectedZones[0]] || 'all_units';
+    } else {
+        // Multiple zones
+        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3',
+                          'zone4': 'zone_4', 'zone5': 'zone_5' };
+        recipientFilter = selectedZones.map(z => zoneMap[z]).filter(Boolean).join(',');
+    }
+    return recipientFilter;
+}
+
+// BUILD API PARAMETERS for sendFieldAlert / simulateFieldAlert / testSendFieldAlert
+function buildFieldAlertParams(recipientFilter, messageText, emailEnabled, smsEnabled) {
+    const useAlertFormat = document.getElementById('useAlertFormat').checked;
+    const emailSubject = document.getElementById('emailSubject').value;
+
+    // Build API parameters
+    const params = {
+        message: messageText,
+        recipientFilter: recipientFilter,
+        includeEmail: emailEnabled ? 'true' : 'false',
+        includeSMS: smsEnabled ? 'true' : 'false',
+        useAlertFormat: useAlertFormat ? 'true' : 'false',
+        emailSubject: emailSubject || '',
+        // Template messages (EMERGENCY ALERT, MAINTENANCE NOTICE, etc.) already
+        // carry their own heading/structure, so the personalised "Hi [Name],"
+        // greeting is skipped for them -- only custom-typed messages get it.
+        skipGreeting: selectedTemplate ? 'true' : 'false',
+        // Custom salutation (e.g. "Hi All,") -- V3.5.0. Blank = automatic
+        // "Hi [First Name]," as before. Requires NotificationServer V3.12.0+.
+        customGreeting: document.getElementById('customSalutation').checked
+            ? document.getElementById('salutationText').value.trim()
+            : ''
+    };
+
+    // Fixed "check your email" SMS -- V3.8.0. Only when Email and SMS are both
+    // ticked. Requires NotificationServer V3.14.0+.
+    const separateSms = getSeparateSmsText();
+    if (separateSms) {
+        params.smsMessage = separateSms;
+    }
+
+    // Add attachments if present -- V3.4.0, params.attachments (plural,
+    // a JSON array) replaces the old singular params.attachment.
+    // Requires NotificationServer V3.10.0+.
+    if (attachments.length > 0) {
+        params.attachments = JSON.stringify(attachments.map(a => ({
+            filename: a.filename,
+            data: a.data,
+            mimeType: a.mimeType
+        })));
+    }
+
+    return params;
+}
+
        // Global variables to store send parameters
 let pendingSendParams = null;
 
@@ -3107,6 +3404,8 @@ async function sendFieldAlert() {
         return;
     }
     sendBtn.disabled = true;
+    // V3.9.0: no Test Run while a send is under way (restored by updateSendButton)
+    document.getElementById('testRunBtn').disabled = true;
     // Immediate visual feedback -- V3.4.2. Previously the button stayed
     // in its full red "ready-to-send" styling right up until the confirm()
     // dialog was accepted, so a click gave no visible sign it had
@@ -3191,29 +3490,8 @@ async function sendFieldAlert() {
         return;
     }
 
-    // BUILD RECIPIENT FILTER - MATCH EMAIL SERVER FORMAT
-    let recipientFilter;
-    if (selectedZones.includes('ecopy')) {
-        recipientFilter = 'role:E-Copy';
-    } else if (selectedUnits.length > 0) {
-        // V3.3.0: the unit selector now resolves to the specific residents
-        // that were checked (see confirmUnitSelection()), not the whole
-        // unit -- so this always sends an explicit email list rather than
-        // a unit list. NotificationServer V3.8.0+ required.
-        const emailsList = selectedResidentEmails.map(r => r.email).filter(Boolean).join(',');
-        recipientFilter = `emails:${emailsList}`;
-    } else if (selectedZones.includes('all')) {
-        recipientFilter = 'all_units';
-    } else if (selectedZones.length === 1) {
-        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3',
-                          'zone4': 'zone_4', 'zone5': 'zone_5' };
-        recipientFilter = zoneMap[selectedZones[0]] || 'all_units';
-    } else {
-        // Multiple zones
-        const zoneMap = { 'zone1': 'zone_1', 'zone2': 'zone_2', 'zone3': 'zone_3',
-                          'zone4': 'zone_4', 'zone5': 'zone_5' };
-        recipientFilter = selectedZones.map(z => zoneMap[z]).filter(Boolean).join(',');
-    }
+    // BUILD RECIPIENT FILTER - MATCH EMAIL SERVER FORMAT (shared builder, V3.9.0)
+    const recipientFilter = buildRecipientFilter();
 
     // Store parameters for confirmAndSend
     pendingSendParams = { recipientFilter, messageText, emailEnabled, smsEnabled, sendBtn };
@@ -3293,45 +3571,8 @@ async function executeFieldAlertSend() {
     sendBtn.textContent = 'Sending...';
 
     try {
-        const useAlertFormat = document.getElementById('useAlertFormat').checked;
-        const emailSubject = document.getElementById('emailSubject').value;
-
-        // Build API parameters
-        const params = {
-            message: messageText,
-            recipientFilter: recipientFilter,
-            includeEmail: emailEnabled ? 'true' : 'false',
-            includeSMS: smsEnabled ? 'true' : 'false',
-            useAlertFormat: useAlertFormat ? 'true' : 'false',
-            emailSubject: emailSubject || '',
-            // Template messages (EMERGENCY ALERT, MAINTENANCE NOTICE, etc.) already
-            // carry their own heading/structure, so the personalised "Hi [Name],"
-            // greeting is skipped for them -- only custom-typed messages get it.
-            skipGreeting: selectedTemplate ? 'true' : 'false',
-            // Custom salutation (e.g. "Hi All,") -- V3.5.0. Blank = automatic
-            // "Hi [First Name]," as before. Requires NotificationServer V3.12.0+.
-            customGreeting: document.getElementById('customSalutation').checked
-                ? document.getElementById('salutationText').value.trim()
-                : ''
-        };
-
-        // Fixed "check your email" SMS -- V3.8.0. Only when Email and SMS are both
-        // ticked. Requires NotificationServer V3.14.0+.
-        const separateSms = getSeparateSmsText();
-        if (separateSms) {
-            params.smsMessage = separateSms;
-        }
-
-        // Add attachments if present -- V3.4.0, params.attachments (plural,
-        // a JSON array) replaces the old singular params.attachment.
-        // Requires NotificationServer V3.10.0+.
-        if (attachments.length > 0) {
-            params.attachments = JSON.stringify(attachments.map(a => ({
-                filename: a.filename,
-                data: a.data,
-                mimeType: a.mimeType
-            })));
-        }
+        // Build API parameters (shared builder, V3.9.0 -- same code as V3.8.3)
+        const params = buildFieldAlertParams(recipientFilter, messageText, emailEnabled, smsEnabled);
 
         const response = await callNotificationAPI('sendFieldAlert', params);
 
@@ -3359,15 +3600,275 @@ async function executeFieldAlertSend() {
         }
     } catch (error) {
         console.error('Send error:', error);
-        showNotification('❌ Send failed: ' + error.message, 'error');
+        // V3.9.0: a long server message (e.g. the email limit refusal) stays
+        // up long enough to read
+        showNotification('❌ Send failed: ' + error.message, 'error', error.message.length > 80 ? 15000 : 4000);
     } finally {
         sendBtn.disabled = false;
         updateSendButton();
         pendingSendParams = null;
+        loadQuotaLine();   // V3.9.0: refresh the "emails left" line
+    }
+}
+
+// =====================================================================
+// V3.9.0: EMAIL QUOTA LINE
+// =====================================================================
+
+async function loadQuotaLine() {
+    try {
+        const response = await callNotificationAPI('checkEmailQuota', {});
+        quotaInfo = (response && response.success) ? response : null;
+    } catch (error) {
+        console.error('Quota line unavailable:', error);
+        quotaInfo = null;
+    }
+    renderQuotaLine();
+}
+
+function renderQuotaLine() {
+    const el = document.getElementById('quotaLine');
+    if (!el) return;
+
+    // Only relevant while Email is ticked -- SMS-only sends use no email quota
+    const emailOn = document.getElementById('emailEnabled').checked;
+    if (!quotaInfo || !emailOn) {
+        el.classList.add('hidden');
+        return;
+    }
+
+    el.classList.remove('hidden');
+    el.classList.toggle('empty', quotaInfo.remaining <= 0);
+    el.textContent = `📊 Email limit: ${quotaInfo.used} of ${quotaInfo.dailyLimit} sent in the last 24 hours — ${quotaInfo.remaining} left. SMS-only alerts are not affected.`;
+}
+
+// =====================================================================
+// V3.9.0: TEST RUN (nothing is sent) AND REAL TEST COPY
+// =====================================================================
+
+// The Test Run button follows the Send button: ready when recipients and a
+// message are chosen, and at least one of Email / SMS is ticked.
+function updateTestRunButton(readyToSend) {
+    const btn = document.getElementById('testRunBtn');
+    if (!btn) return;
+    const methodChosen = document.getElementById('emailEnabled').checked ||
+                         document.getElementById('smsEnabled').checked;
+    btn.disabled = !(readyToSend && methodChosen) || testRunInProgress;
+}
+
+async function runTestRun() {
+    const btn = document.getElementById('testRunBtn');
+    if (testRunInProgress || btn.disabled) return;
+
+    const messageText = document.getElementById('messageText').value;
+    const emailEnabled = document.getElementById('emailEnabled').checked;
+    const smsEnabled = document.getElementById('smsEnabled').checked;
+
+    // Same checks as the live Send, so a Test Run never accepts anything Send would not
+    if (!messageText || messageText.trim() === '') {
+        showNotification('Please enter a message', 'error');
+        return;
+    }
+    if (!emailEnabled && !smsEnabled) {
+        showNotification('Please select Email and/or SMS', 'error');
+        return;
+    }
+    const customSalutationOn = document.getElementById('customSalutation').checked;
+    const salutationValue = document.getElementById('salutationText').value.trim();
+    if (emailEnabled && customSalutationOn && !salutationValue) {
+        showNotification('Please enter a salutation, or untick Custom Salutation', 'error');
+        return;
+    }
+    if (selectedZones.length === 0 && selectedUnits.length === 0) {
+        showNotification('Please select recipients', 'error');
+        return;
+    }
+
+    const recipientFilter = buildRecipientFilter();
+    const params = buildFieldAlertParams(recipientFilter, messageText, emailEnabled, smsEnabled);
+
+    testRunInProgress = true;
+    btn.disabled = true;
+    btn.textContent = 'Running test...';
+
+    try {
+        const response = await callNotificationAPI('simulateFieldAlert', params);
+        if (!response.success) {
+            throw new Error(response.error || 'Test Run failed');
+        }
+        lastTestParams = params;
+        showTestRunResult(response);
+    } catch (error) {
+        console.error('Test Run error:', error);
+        let text = error.message || 'Test Run failed';
+        if (text.indexOf('Unknown action') !== -1) {
+            text += ' (NotificationServer V3.16.0 needs to be deployed)';
+        }
+        showNotification('❌ Test Run failed: ' + text, 'error', 12000);
+    } finally {
+        testRunInProgress = false;
+        btn.textContent = '🧪 Test Run';
+        updateSendButton();
+    }
+}
+
+function showTestRunResult(r) {
+    const emailOn = lastTestParams && lastTestParams.includeEmail === 'true';
+    const smsOn = lastTestParams && lastTestParams.includeSMS === 'true';
+    const emailItems = (r.email && r.email.items) || [];
+    const smsItems = (r.sms && r.sms.items) || [];
+    const noContact = r.noContact || [];
+    const quota = r.quota;
+
+    let html = '';
+
+    // Summary line
+    const parts = [];
+    if (emailOn) parts.push(`📧 ${r.email.wouldSend} email${r.email.wouldSend !== 1 ? 's' : ''}`);
+    if (smsOn) parts.push(`📱 ${r.sms.wouldSend} SMS`);
+    if (emailOn) parts.push(`${noContact.length} get neither`);
+    html += `<div class="test-summary">${parts.join(' &nbsp;•&nbsp; ')}</div>`;
+
+    // Quota
+    if (emailOn && quota) {
+        html += `<div class="test-quota ${quota.wouldExceed ? 'bad' : ''}">` +
+            `📊 Email limit: ${quota.used} used in the last 24 hours, ${quota.remaining} left. ` +
+            `This send needs ${quota.requested}. ` +
+            (quota.wouldExceed
+                ? '⛔ It would be REFUSED. Choose fewer zones and send the rest later.'
+                : '✅ It fits.') +
+            `</div>`;
+    }
+
+    // Attachment problem
+    if (emailOn && r.email.attachmentFailed > 0) {
+        html += `<div class="test-note">⚠️ An attachment could not be read. The email would go WITHOUT it. Remove it and attach it again.</div>`;
+    }
+
+    if (emailOn) {
+        const first = emailItems[0];
+        html += `<div class="test-heading">📧 Email</div>`;
+        if (first) {
+            html += `<p style="margin-bottom:8px;color:rgba(255,255,255,0.85);font-size:0.95rem;">Subject: <strong>${escapeHtml(first.subject)}</strong></p>`;
+            if (first.attachments && first.attachments.length > 0) {
+                html += `<p style="margin-bottom:8px;color:rgba(255,255,255,0.85);font-size:0.95rem;">📎 ${escapeHtml(first.attachments.join(', '))}</p>`;
+            }
+            if (r.email.sampleBody) {
+                html += `<div class="test-sample">${escapeHtml(r.email.sampleBody)}</div>`;
+            }
+        }
+        html += `<div class="test-heading">Who gets the email (${emailItems.length})</div>`;
+        html += `<div class="test-list">` + (emailItems.length > 0
+            ? emailItems.map(e =>
+                `<div class="test-row"><strong>${escapeHtml(e.name)}</strong> <span>${escapeHtml(e.email)} • ${escapeHtml(e.greeting || '(no greeting)')}</span></div>`
+              ).join('')
+            : `<div class="test-row"><span>Nobody</span></div>`) + `</div>`;
+    }
+
+    if (smsOn) {
+        html += `<div class="test-heading">📱 SMS (${smsItems.length})</div>`;
+        if (smsItems.length > 0) {
+            html += `<p style="margin-bottom:8px;color:rgba(255,255,255,0.85);font-size:0.95rem;">Text: <strong>${escapeHtml(smsItems[0].text)}</strong></p>`;
+        }
+        html += `<div class="test-list">` + (smsItems.length > 0
+            ? smsItems.map(m =>
+                `<div class="test-row"><strong>${escapeHtml(m.name)}</strong> <span>${escapeHtml(m.mobile)} • ${m.parts} part${m.parts !== 1 ? 's' : ''}</span></div>`
+              ).join('')
+            : `<div class="test-row"><span>Nobody has the SMS-Alerts tag and a mobile in this selection</span></div>`) + `</div>`;
+        if (r.sms.skipped > 0) {
+            html += `<p style="margin-top:6px;color:rgba(255,255,255,0.55);font-size:0.85rem;">${r.sms.skipped} shared mobile number${r.sms.skipped !== 1 ? 's' : ''} counted once.</p>`;
+        }
+    }
+
+    // Residents who get neither
+    if (emailOn) {
+        html += `<div class="test-heading">Residents who would get neither</div>`;
+        if (noContact.length > 0) {
+            html += `<div class="no-email-list">` + noContact.map(n =>
+                `<div class="no-email-item"><strong>${escapeHtml(n.name)}</strong><span>Unit ${escapeHtml(cleanUnitNumber(n.unit))} - ${escapeHtml(n.phone || 'No phone')}</span></div>`
+            ).join('') + `</div><div class="no-email-warning">Contact these residents separately by phone.</div>`;
+        } else {
+            html += `<p style="color:rgba(255,255,255,0.85);font-size:0.95rem;">None. ✅</p>`;
+        }
+        if (r.noContactNote) {
+            html += `<p style="color:rgba(255,255,255,0.55);font-size:0.85rem;">${escapeHtml(r.noContactNote)}</p>`;
+        }
+    }
+
+    document.getElementById('testRunBody').innerHTML = html;
+
+    // Reset the real-test-copy button for this run
+    const copyBtn = document.getElementById('testCopyBtn');
+    copyBtn.disabled = false;
+    copyBtn.textContent = 'Send me a real test copy';
+
+    document.getElementById('testRunModal').classList.remove('hidden');
+}
+
+function closeTestRun() {
+    document.getElementById('testRunModal').classList.add('hidden');
+}
+
+// Sends ONE real email (and ONE SMS if ticked) to the test address / mobile
+// held on the server -- never to a resident -- using exactly the parameters
+// the Test Run just simulated.
+async function sendTestCopy() {
+    if (!lastTestParams) return;
+    const copyBtn = document.getElementById('testCopyBtn');
+    if (copyBtn.disabled) return;
+
+    const emailOn = lastTestParams.includeEmail === 'true';
+    const smsOn = lastTestParams.includeSMS === 'true';
+
+    let confirmMsg = 'Send a REAL test copy to yourself?\n\n';
+    if (emailOn) confirmMsg += '📧 1 email (uses 1 of the daily email limit)\n';
+    if (smsOn) confirmMsg += '📱 1 SMS to your own test mobile\n';
+    confirmMsg += '\nIt goes only to the test address and mobile set up on the server, not to any resident.\n\nContinue?';
+
+    if (!confirm(confirmMsg)) return;
+
+    copyBtn.disabled = true;
+    copyBtn.textContent = 'Sending test copy...';
+
+    try {
+        const response = await callNotificationAPI('testSendFieldAlert', lastTestParams);
+        if (!response.success) {
+            throw new Error(response.error || 'Test copy failed');
+        }
+
+        let message = '✅ Test copy sent to you\n';
+        if (emailOn) message += `📧 Email: ${response.email.sent}${response.email.failed ? ' (' + response.email.failed + ' failed)' : ''}\n`;
+        if (smsOn) message += `📱 SMS: ${response.sms.sent}${response.sms.failed ? ' (' + response.sms.failed + ' failed)' : ''}`;
+        showNotification(message, 'success', 8000);
+
+        // One test copy per Test Run (run again to send another)
+        copyBtn.textContent = 'Test copy sent';
+        loadQuotaLine();
+    } catch (error) {
+        console.error('Test copy error:', error);
+        showNotification('❌ Test copy failed: ' + error.message, 'error', 12000);
+        copyBtn.disabled = false;
+        copyBtn.textContent = 'Send me a real test copy';
     }
 }
 
     </script>
+
+    <!-- TEST RUN RESULTS -- V3.9.0 -->
+    <div id="testRunModal" class="modal-overlay hidden">
+        <div class="modal-container test-run-container">
+            <div class="modal-header test-run-header">
+                <h2>🧪 Test Run - nothing was sent</h2>
+            </div>
+            <div class="modal-body" id="testRunBody">
+                <!-- Populated by showTestRunResult() -->
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeTestRun()">Close</button>
+                <button class="modal-btn modal-btn-confirm" id="testCopyBtn" onclick="sendTestCopy()">Send me a real test copy</button>
+            </div>
+        </div>
+    </div>
 
     <!-- NO-EMAIL RESIDENTS REMINDER MODAL -->
     <div id="noEmailModal" class="modal-overlay hidden">
