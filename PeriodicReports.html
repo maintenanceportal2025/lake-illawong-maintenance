@@ -1,0 +1,593 @@
+<!--
+=====================================================================
+PeriodicReports.html - ON-DEMAND PROBLEM REPORTS (EMAILED PDF)
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        PeriodicReports.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Staff Module (Directors and Zone Representatives)
+  Frontend Version: V1.0.0
+  Backend:          MonthlyReports (web app)
+  Status:           PRODUCTION
+  Created:          Nov 2026
+  Last Modified:    Nov 2026
+
+VERSION HISTORY:
+  V1.0.0 (Nov 2026): Initial release. A Director can request the Board-style
+                     problem report and a Zone Rep the report for their own
+                     zone, for a month, quarter, half-year or year (calendar
+                     or financial, July to June). The report is built in the
+                     background and emailed to the requester's own address as
+                     a PDF; nothing is downloaded and the page never chooses
+                     the recipient. Requires MonthlyReports V1.6.0 or later,
+                     deployed as a web app, with the report queue trigger
+                     installed.
+
+AUTHENTICATION:
+  OTP via VerificationModal.js. Session key depends on how the page is opened:
+    PeriodicReports.html?portal=admin    -> portalAdminVerified (Admin Portal card)
+    PeriodicReports.html?portal=zonerep  -> portalZoneRepVerified (Zone Rep Portal card)
+    PeriodicReports.html                 -> periodicReportsVerified (direct link, own sign-in)
+  Who may request what is decided by the backend from the UnitList role tags
+  (Director, ZoneRep-1 to ZoneRep-5), not by this page.
+
+SYSTEM CONNECTIONS:
+  Backend API: MonthlyReports web app (getReportOptions, submitReportRequest,
+               getReportRequestStatus)
+  Notifications: the PDF is emailed by the backend through NotificationServer
+  URL Parameters: portal (admin | zonerep), optional
+
+PRIMARY FEATURES:
+  Quick picks (last month, last quarter, this or last financial year, this
+  calendar year); any period by type, year and number; request status shown
+  until the email has been sent.
+
+TECHNICAL:
+  Technology: HTML5 + CSS3 + Vanilla JavaScript
+  API Protocol: JSONP (via ApiClient.js)
+  Design System: Lake Illawong Unified Design System v2.4
+  Hosting: Netlify
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📄 Periodic Reports - Management Central</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --glass-bg:           rgba(255, 255, 255, 0.08);
+            --glass-bg-hover:     rgba(255, 255, 255, 0.12);
+            --glass-bg-strong:    rgba(255, 255, 255, 0.15);
+            --glass-border:       rgba(255, 255, 255, 0.15);
+            --glass-border-hover: rgba(255, 255, 255, 0.30);
+            --glass-blur:         blur(15px);
+            --glass-text:         #ffffff;
+            --glass-text-muted:   rgba(255, 255, 255, 0.70);
+            --glass-text-subtle:  rgba(255, 255, 255, 0.50);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            color: #ffffff;
+        }
+
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        .hidden { display: none !important; }
+
+        /* Header */
+        .header { background: transparent; text-align: center; margin-bottom: 30px; color: white; }
+        .header-content { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+        .logo-container { flex-shrink: 0; }
+        .logo-image { width: 120px; height: 120px; object-fit: contain; }
+        .header-text { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+        .header-title { font-size: 2.2rem; font-weight: 700; line-height: 1.1; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3); color: white; }
+        .header-subtitle { font-size: 1rem; font-weight: 500; color: rgba(255, 255, 255, 0.9); }
+        .header-divider {
+            height: 2px;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+            border-radius: 2px;
+            margin-top: 15px;
+        }
+
+        .btn-back-glass {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: white;
+            padding: 10px 22px;
+            border-radius: 2px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            min-height: 44px;
+            margin-bottom: 20px;
+        }
+        .btn-back-glass:hover { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.30); }
+
+        /* Glass panels */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            color: var(--glass-text);
+            padding: 20px 24px;
+            margin-bottom: 16px;
+        }
+        .panel-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; }
+        .muted { color: var(--glass-text-muted); font-size: 0.9rem; }
+
+        /* Quick picks */
+        .quick-row { display: flex; flex-wrap: wrap; gap: 10px; }
+
+        .glass-btn {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            color: var(--glass-text);
+            padding: 10px 20px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 44px;
+            font-size: 0.9rem;
+        }
+        .glass-btn:hover { background: var(--glass-bg-strong); border-color: var(--glass-border-hover); }
+        .glass-btn:disabled { opacity: 0.5; cursor: default; }
+
+        /* Form (inline label + control rows) */
+        .filter-group { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+        .filter-label {
+            font-size: 0.75rem;
+            color: var(--glass-text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            white-space: nowrap;
+            min-width: 120px;
+        }
+        .glass-select, .glass-input {
+            background: rgba(30, 64, 175, 0.7);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            color: var(--glass-text);
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            min-height: 44px;
+        }
+        .glass-select { cursor: pointer; min-width: 220px; }
+        .glass-select option { background: #1e3a8a; }
+        .glass-input { width: 110px; }
+        .glass-select:focus, .glass-input:focus { outline: none; border-color: var(--glass-border-hover); }
+        .hint { font-size: 0.8rem; color: var(--glass-text-subtle); margin: -6px 0 14px 132px; }
+
+        /* Status */
+        .status-line { padding: 14px 18px; border-radius: 2px; border-left: 4px solid; margin-top: 14px; font-size: 0.95rem; }
+        .status-line.working { background: rgba(255,255,255,0.08); border-left-color: #93c5fd; }
+        .status-line.ok      { background: rgba(16,185,129,0.2); border-left-color: #10b981; color: #d1fae5; }
+        .status-line.bad     { background: rgba(239,68,68,0.2);  border-left-color: #ef4444; color: #fecaca; }
+
+        .spinner {
+            display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px;
+            border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .denied-box { text-align: center; padding: 30px 10px; }
+        .denied-box h2 { font-size: 1.3rem; margin-bottom: 10px; }
+
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .filter-label { min-width: 0; width: 100%; }
+            .hint { margin-left: 0; }
+            .glass-select { min-width: 0; width: 100%; }
+        }
+        @media (max-width: 480px) {
+            .header-content { flex-direction: column; gap: 15px; }
+            .header-text { align-items: center; text-align: center; }
+            .header-title { font-size: 1.8rem; }
+            .logo-image { width: 70px; height: 70px; }
+        }
+    </style>
+    <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
+</head>
+<body>
+<div class="container">
+
+    <header class="header">
+        <div class="header-content">
+            <div class="logo-container">
+                <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+            </div>
+            <div class="header-text">
+                <h1 class="header-title">Periodic Reports</h1>
+                <p class="header-subtitle">Request a problem summary for any period. It is emailed to you as a PDF.</p>
+            </div>
+        </div>
+        <div class="header-divider"></div>
+    </header>
+
+    <button class="btn-back-glass" id="backBtn" onclick="goBack()">&larr; Back</button>
+
+    <!-- Loading -->
+    <div id="loadingView" class="glass-panel hidden">
+        <span class="spinner"></span><span id="loadingText">Checking your access...</span>
+    </div>
+
+    <!-- Not set up / error -->
+    <div id="deniedView" class="glass-panel hidden">
+        <div class="denied-box">
+            <div style="font-size:2.5rem;margin-bottom:10px;">🚫</div>
+            <h2 id="deniedTitle">Reports not available</h2>
+            <p class="muted" id="deniedText"></p>
+        </div>
+    </div>
+
+    <!-- Main -->
+    <div id="mainView" class="hidden">
+
+        <div class="glass-panel">
+            <div class="panel-title" id="whoLine"></div>
+            <div class="muted" id="whoDetail"></div>
+        </div>
+
+        <div class="glass-panel" id="quickPanel">
+            <div class="panel-title">Quick picks</div>
+            <div class="quick-row" id="quickRow"></div>
+        </div>
+
+        <div class="glass-panel">
+            <div class="panel-title">Choose a period</div>
+
+            <div class="filter-group" id="scopeGroup">
+                <span class="filter-label">Report for</span>
+                <select class="glass-select" id="scopeSelect"></select>
+            </div>
+
+            <div class="filter-group">
+                <span class="filter-label">Period type</span>
+                <select class="glass-select" id="typeSelect"></select>
+            </div>
+
+            <div class="filter-group">
+                <span class="filter-label" id="yearLabel">Year</span>
+                <input class="glass-input" id="yearInput" type="number" min="2026" max="2100" step="1">
+            </div>
+            <div class="hint" id="yearHint"></div>
+
+            <div class="filter-group" id="numberGroup">
+                <span class="filter-label" id="numberLabel">Month</span>
+                <select class="glass-select" id="numberSelect"></select>
+            </div>
+
+            <button class="glass-btn" id="sendBtn" onclick="submitRequest()">📧 Email me this report</button>
+            <div class="muted" style="margin-top:12px;" id="limitNote"></div>
+
+            <div id="statusBox" class="hidden"></div>
+        </div>
+
+        <div class="muted" style="text-align:center;margin-top:10px;">
+            Reports contain no resident names or problem descriptions. The monthly reports remain the standing record.
+        </div>
+    </div>
+</div>
+
+<script>
+    // ── CONFIG ────────────────────────────────────────────────────────────
+    const CONFIG = {
+        BACKEND_URL: 'https://script.google.com/macros/s/AKfycbwAdFlW1KjlnawVKbOXrTdqUgbIF6EMzSso5ORrMs8f3GzqgLzg7kunQnmvOPKLggYU-w/exec',
+        POLL_MS: 5000,
+        POLL_MAX_MS: 10 * 60 * 1000
+    };
+
+    const PORTAL = (new URLSearchParams(window.location.search).get('portal') || '').toLowerCase();
+    const SESSION_KEY = PORTAL === 'admin' ? 'portalAdminVerified'
+                      : PORTAL === 'zonerep' ? 'portalZoneRepVerified'
+                      : 'periodicReportsVerified';
+    const BACK_URL = PORTAL === 'admin' ? 'AdminPortal.html'
+                   : PORTAL === 'zonerep' ? 'ZoneRepPortal.html'
+                   : 'SystemHub.html';
+
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+    let user = null;           // from VerificationModal
+    let options = null;        // from getReportOptions
+    let busy = false;
+    let pollTimer = null;
+    let currentRequest = null; // { requestId }
+
+    // ── INIT ──────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function () {
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Periodic Reports',
+            moduleIcon: '📄',
+            sessionKey: SESSION_KEY,
+            onSuccess: handleVerified
+        });
+        if (!alreadyVerified) VerificationModal.show();
+    });
+
+    function goBack() { window.location.href = BACK_URL; }
+
+    function esc(v) {
+        return String(v === null || v === undefined ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function show(id) { document.getElementById(id).classList.remove('hidden'); }
+    function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function showDenied(title, text) {
+        hide('loadingView'); hide('mainView');
+        document.getElementById('deniedTitle').textContent = title;
+        document.getElementById('deniedText').textContent = text;
+        show('deniedView');
+    }
+
+    // ── API ───────────────────────────────────────────────────────────────
+    function api(action, params, opts) {
+        return ApiClient.call(CONFIG.BACKEND_URL, action, params, opts || {});
+    }
+
+    function handleVerified(userData) {
+        user = userData;
+        hide('deniedView'); hide('mainView'); show('loadingView');
+        if (!user.email) {
+            showDenied('No email address on file',
+                'Your sign-in has no email address on record, so a report cannot be sent to you. Please contact the Residents Committee.');
+            return;
+        }
+        api('getReportOptions', { email: user.email }, {
+            onRetry: function (i) {
+                document.getElementById('loadingText').textContent = 'Connection slow, retrying... (' + (i.attempt + 1) + '/' + i.maxAttempts + ')';
+            }
+        }).then(function (res) {
+            if (!res || !res.success) {
+                showDenied('Reports not available',
+                    (res && res.error) || 'This sign-in is not set up to request reports.');
+                return;
+            }
+            options = res;
+            buildForm();
+        }, function () {
+            showDenied('Could not reach the server', 'Please check your connection and try again in a moment.');
+        });
+    }
+
+    // ── FORM ──────────────────────────────────────────────────────────────
+    function scopeLabel(s) { return s === 'Board' ? 'Board report (whole village, all zones)' : s + ' report'; }
+
+    function buildForm() {
+        hide('loadingView'); show('mainView');
+        document.getElementById('whoLine').textContent = 'Signed in as ' + (options.name || user.name || '');
+        document.getElementById('whoDetail').textContent =
+            'The PDF will be emailed to ' + user.email + '.';
+
+        const scopeSel = document.getElementById('scopeSelect');
+        scopeSel.innerHTML = options.scopes.map(function (s) {
+            return '<option value="' + esc(s) + '">' + esc(scopeLabel(s)) + '</option>';
+        }).join('');
+        if (options.scopes.length < 2) document.getElementById('scopeGroup').classList.add('hidden');
+        else document.getElementById('scopeGroup').classList.remove('hidden');
+
+        const typeSel = document.getElementById('typeSelect');
+        typeSel.innerHTML = options.periodTypes.map(function (t) {
+            return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+        }).join('');
+        typeSel.addEventListener('change', onTypeChange);
+
+        const now = new Date();
+        document.getElementById('yearInput').value = now.getFullYear();
+        typeSel.value = 'Month';
+        onTypeChange();
+        document.getElementById('numberSelect').value = String(now.getMonth() === 0 ? 12 : now.getMonth()); // last month
+        if (now.getMonth() === 0) document.getElementById('yearInput').value = now.getFullYear() - 1;
+
+        document.getElementById('limitNote').textContent =
+            'Reports start from ' + MONTHS[parseInt(options.firstMonth.substring(5, 7), 10) - 1] + ' ' + options.firstMonth.substring(0, 4) +
+            ', when the system went live. A period still in progress is reported up to the end of this month. You can request up to ' +
+            options.maxPerDay + ' reports a day.';
+        buildQuickPicks();
+    }
+
+    function isFinancial(t) { return t.indexOf('Financial') === 0; }
+    function isYearType(t) { return t === 'Calendar year' || t === 'Financial year'; }
+
+    function onTypeChange() {
+        const t = document.getElementById('typeSelect').value;
+        const fin = isFinancial(t);
+        document.getElementById('yearLabel').textContent = fin ? 'Starting year' : 'Year';
+        document.getElementById('yearHint').textContent = fin
+            ? 'Financial years run July to June. 2026 means July 2026 to June 2027.'
+            : '';
+        document.getElementById('yearHint').classList.toggle('hidden', !fin);
+
+        const numGroup = document.getElementById('numberGroup');
+        const sel = document.getElementById('numberSelect');
+        let html = '', label = '';
+        if (t === 'Month') {
+            label = 'Month';
+            html = MONTHS.map(function (m, i) { return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('');
+        } else if (t === 'Calendar quarter') {
+            label = 'Quarter';
+            html = ['Quarter 1 (Jan - Mar)', 'Quarter 2 (Apr - Jun)', 'Quarter 3 (Jul - Sep)', 'Quarter 4 (Oct - Dec)']
+                .map(function (m, i) { return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('');
+        } else if (t === 'Financial quarter') {
+            label = 'Quarter';
+            html = ['Quarter 1 (Jul - Sep)', 'Quarter 2 (Oct - Dec)', 'Quarter 3 (Jan - Mar)', 'Quarter 4 (Apr - Jun)']
+                .map(function (m, i) { return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('');
+        } else if (t === 'Calendar half-year') {
+            label = 'Half';
+            html = ['First half (Jan - Jun)', 'Second half (Jul - Dec)']
+                .map(function (m, i) { return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('');
+        } else if (t === 'Financial half-year') {
+            label = 'Half';
+            html = ['First half (Jul - Dec)', 'Second half (Jan - Jun)']
+                .map(function (m, i) { return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('');
+        }
+        sel.innerHTML = html;
+        document.getElementById('numberLabel').textContent = label;
+        numGroup.classList.toggle('hidden', isYearType(t));
+    }
+
+    function setForm(type, year, number) {
+        document.getElementById('typeSelect').value = type;
+        onTypeChange();
+        document.getElementById('yearInput').value = year;
+        if (number) document.getElementById('numberSelect').value = String(number);
+    }
+
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+    function buildQuickPicks() {
+        const now = new Date();
+        const y = now.getFullYear(), m = now.getMonth() + 1;
+        const first = options.firstMonth; // 'yyyy-MM'
+        const picks = [];
+
+        const lm = m === 1 ? { y: y - 1, m: 12 } : { y: y, m: m - 1 };
+        picks.push({ text: 'Last month', end: lm.y + '-' + pad2(lm.m), type: 'Month', year: lm.y, number: lm.m });
+
+        let q = Math.ceil(m / 3) - 1, qy = y;
+        if (q === 0) { q = 4; qy = y - 1; }
+        picks.push({ text: 'Last quarter', end: qy + '-' + pad2(q * 3), type: 'Calendar quarter', year: qy, number: q });
+
+        const fyStart = m >= 7 ? y : y - 1;
+        picks.push({ text: 'This financial year so far', end: y + '-' + pad2(m), type: 'Financial year', year: fyStart });
+        picks.push({ text: 'Last financial year', end: fyStart + '-06', type: 'Financial year', year: fyStart - 1 });
+        picks.push({ text: 'This calendar year so far', end: y + '-' + pad2(m), type: 'Calendar year', year: y });
+
+        const row = document.getElementById('quickRow');
+        row.innerHTML = '';
+        picks.forEach(function (p) {
+            if (p.end < first) return; // entirely before the system went live
+            const b = document.createElement('button');
+            b.className = 'glass-btn';
+            b.textContent = p.text;
+            b.onclick = function () { setForm(p.type, p.year, p.number); };
+            row.appendChild(b);
+        });
+    }
+
+    // ── SUBMIT AND STATUS ─────────────────────────────────────────────────
+    function newRequestId() {
+        return 'pr-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    function setStatus(kind, html) {
+        const box = document.getElementById('statusBox');
+        box.className = 'status-line ' + kind;
+        box.innerHTML = html;
+    }
+
+    function setBusy(b) {
+        busy = b;
+        document.getElementById('sendBtn').disabled = b;
+    }
+
+    function submitRequest() {
+        if (busy) return;
+        const type = document.getElementById('typeSelect').value;
+        const year = parseInt(document.getElementById('yearInput').value, 10);
+        const numberRaw = isYearType(type) ? '' : document.getElementById('numberSelect').value;
+        const scope = document.getElementById('scopeSelect').value;
+
+        if (!year || year < 2000 || year > 2100) {
+            setStatus('bad', 'Please enter a four-digit year, for example 2026.');
+            return;
+        }
+
+        setBusy(true);
+        const requestId = newRequestId();
+        setStatus('working', '<span class="spinner"></span>Sending your request...');
+
+        // A write, but the backend ignores a repeated requestId, so retrying is safe.
+        api('submitReportRequest', {
+            email: user.email, scope: scope, periodType: type, year: year, number: numberRaw, requestId: requestId
+        }, {
+            write: true, retries: 2, timeout: 30000,
+            onRetry: function (i) {
+                setStatus('working', '<span class="spinner"></span>Connection slow, retrying... (' + (i.attempt + 1) + '/' + i.maxAttempts + ')');
+            }
+        }).then(function (res) {
+            if (!res || !res.success) {
+                setBusy(false);
+                setStatus('bad', esc((res && res.error) || 'The request could not be accepted.'));
+                return;
+            }
+            currentRequest = { requestId: requestId, label: res.label || '', started: Date.now(), misses: 0 };
+            setStatus('working', '<span class="spinner"></span>Request received for <b>' + esc(res.label || '') +
+                '</b>. Building your report... this usually takes a minute or two.');
+            schedulePoll();
+        }, function () {
+            setBusy(false);
+            setStatus('bad', 'We could not confirm the request was received. Please wait a minute, then check your inbox before trying again.');
+        });
+    }
+
+    function schedulePoll() {
+        clearTimeout(pollTimer);
+        pollTimer = setTimeout(pollStatus, CONFIG.POLL_MS);
+    }
+
+    function pollStatus() {
+        if (!currentRequest) return;
+        if (Date.now() - currentRequest.started > CONFIG.POLL_MAX_MS) {
+            setBusy(false);
+            setStatus('bad', 'This is taking longer than expected. The report may still arrive in your inbox. If it has not arrived in a few minutes, please try again.');
+            return;
+        }
+        api('getReportRequestStatus', { email: user.email, requestId: currentRequest.requestId }).then(function (res) {
+            if (!res || !res.success) {
+                currentRequest.misses++;
+                if (currentRequest.misses >= 3) {
+                    setBusy(false);
+                    setStatus('bad', 'We could not check the status of your request. Please look in your inbox, and try again if nothing arrives.');
+                    return;
+                }
+                schedulePoll();
+                return;
+            }
+            currentRequest.misses = 0;
+            if (res.status === 'Done') {
+                setBusy(false);
+                setStatus('ok', '✅ Sent. <b>' + esc(currentRequest.label) + '</b> has been emailed to ' + esc(user.email) +
+                    '. The PDF is attached. If you cannot see it, check your junk folder.');
+                currentRequest = null;
+            } else if (res.status === 'Failed') {
+                setBusy(false);
+                setStatus('bad', esc(res.message || 'The report could not be produced.') + ' You can try again.');
+                currentRequest = null;
+            } else {
+                const txt = res.status === 'Processing' ? 'Building your report...' : 'Waiting in the queue...';
+                setStatus('working', '<span class="spinner"></span>' + txt + ' (' + esc(currentRequest.label) + ')');
+                schedulePoll();
+            }
+        }, function () {
+            currentRequest.misses++;
+            if (currentRequest.misses >= 3) {
+                setBusy(false);
+                setStatus('bad', 'We could not check the status of your request. Please look in your inbox, and try again if nothing arrives.');
+                return;
+            }
+            schedulePoll();
+        });
+    }
+
+    window.addEventListener('error', function (e) { console.error('Periodic Reports error:', e.error); });
+</script>
+</body>
+</html>
