@@ -4,7 +4,7 @@
 =====================================================================
 PURPOSE: Centralized viewer for all system logging activities
 PORTAL: SysAdmin Portal Module
-VERSION: v1.4.0
+VERSION: v1.5.0
 LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Glass-morphism applied to all UI panels, stats, filter bars, tab nav
@@ -24,6 +24,21 @@ FEATURES:
 • Preset + date picker range filtering on all applicable tabs
 • Access log (Connections by Person summary removed)
 VERSION HISTORY:
+* v1.5.0 (Nov 2026): Email quota shown the same way everywhere. The Email
+*   Activity tab's quota card ("Emails Today") counted the log rows in the
+*   browser -- calendar day, every status, whatever range was selected -- so
+*   it disagreed with the Dashboard tab and with NotificationServer's quota
+*   check (74 vs 82 seen on 20 Nov 2026). It now asks SystemServices for the
+*   figure (new getEmailQuota action): the rolling last 24 hours of 'sent'
+*   and 'sent-fallback' emails, the same rule as NotificationServer and the
+*   Dashboard tab. The card is relabelled "Emails (last 24h)" with "of N in
+*   the last 24 hours" (N comes from the server, not hard-coded) and its bar
+*   now clears an old warning/danger colour when the figure falls. It no
+*   longer changes with the Quick Range or the From/To dates. On the
+*   Dashboard tab, "emails available today" now reads "emails left (last 24
+*   hours)". Everything else (Period Total, Success Rate, tables, filters) is
+*   unchanged. REQUIRES SystemServices V1.7 (deploy it first); against an
+*   older SystemServices the card shows "-" and "Quota unavailable".
 * v1.4.0 (Nov 2026): API reliability -- transport moved to the shared
 *   ApiClient.js (add <script src="ApiClient.js"> alongside this page).
 *   Every call here is a read, so each now retries automatically (3
@@ -537,7 +552,7 @@ VERSION HISTORY:
         <div class="tab-navigation">
             <button class="tab-btn active" onclick="switchTab('email-activity')">📧 Email Activity</button>
             <button class="tab-btn" onclick="switchTab('sms-activity')">📱 SMS Activity</button>
-            
+
             <button class="tab-btn" onclick="switchTab('contact-changes')">👤 Contact Changes</button>
             <button class="tab-btn" onclick="switchTab('dashboard')">📊 Dashboard</button>
             <button class="tab-btn" onclick="switchTab('access-log')">🔑 Access Log</button>
@@ -551,9 +566,9 @@ VERSION HISTORY:
 
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-label">Emails Today</div>
+                        <div class="stat-label">Emails (last 24h)</div>
                         <div class="stat-value" id="email-today-count">-</div>
-                        <div class="stat-subtext">of 100 daily quota</div>
+                        <div class="stat-subtext" id="email-quota-sub">of 100 in the last 24 hours</div>
                         <div class="progress-bar">
                             <div class="progress-fill" id="email-quota-bar" style="width: 0%"></div>
                         </div>
@@ -641,7 +656,7 @@ VERSION HISTORY:
             </div>
 
             <!-- TAB 3: SECURITY EVENTS  removed as not used-->
-            
+
 
             <!-- TAB 4: CONTACT CHANGES -->
             <div id="contact-changes" class="tab-content">
@@ -732,7 +747,7 @@ VERSION HISTORY:
             <!-- TAB 5: DASHBOARD -->
             <div id="dashboard" class="tab-content">
                 <div class="tab-heading">📊 System Dashboard</div>
-                
+
                 <div id="dashboard-container">
                     <div class="loading">
                         <div class="spinner"></div>
@@ -752,14 +767,14 @@ VERSION HISTORY:
         } else {
             document.body.style.display = '';
         }
-		
+
         // =====================================================================
         // CONFIGURATION
         // =====================================================================
-        
+
         const API_URL = 'https://script.google.com/macros/s/AKfycbyu0RdVfmlQEnr1wi5tfkPi-tGNLzKcs5H3R9DAnKXzZROwqEPhnCvpNq3CsjKGeaxXwA/exec';
         const MGMT_URL = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec';
-        
+
         let emailLogsData = [];
         let smsLogsData = [];
         let contactLogsData = [];
@@ -769,24 +784,24 @@ VERSION HISTORY:
         // =====================================================================
         // TAB SWITCHING
         // =====================================================================
-        
+
         function switchTab(tabName) {
             // Hide all tabs
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
-            
+
             // Remove active class from all buttons
             document.querySelectorAll('.tab-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
-            
+
             // Show selected tab
             document.getElementById(tabName).classList.add('active');
-            
+
             // Add active class to clicked button
             event.target.classList.add('active');
-            
+
             // Load data if not loaded
             switch(tabName) {
                 case 'email-activity':
@@ -810,7 +825,7 @@ VERSION HISTORY:
         // =====================================================================
         // API CALLS WITH JSONP
         // =====================================================================
-        
+
         // Reads only: retried automatically by ApiClient.js
         function apiRetryHint(info) {
             const text = 'Connection slow, retrying... (' + (info.attempt + 1) + '/' + info.maxAttempts + ')';
@@ -878,26 +893,29 @@ VERSION HISTORY:
         // =====================================================================
         // LOAD EMAIL LOGS
         // =====================================================================
-        
+
         async function loadEmailLogs() {
             const container = document.getElementById('email-logs-container');
             const { from, to } = getDateRange('email-date-from', 'email-date-to');
             const days = getDays('email-date-from', 'email-date-to', 'email-range-select');
-            
+
+            // v1.5.0: the quota card is asked of the server, independent of the range
+            loadEmailQuota();
+
             container.innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
                     <div>Loading email logs...</div>
                 </div>
             `;
-            
+
             try {
                 const response = await callAPI('getEmailLogs', { days: days });
-                
+
                 if (!response.success) {
                     throw new Error(response.error || 'Failed to load email logs');
                 }
-                
+
                 if (!response.exists || response.data.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
@@ -908,15 +926,15 @@ VERSION HISTORY:
                     `;
                     return;
                 }
-                
+
                 emailLogsData = response.data;
-                
+
                 // Update stats
                 updateEmailStats(emailLogsData);
-                
+
                 // Render table
                 renderEmailTable(emailLogsData);
-                
+
             } catch (error) {
                 console.error('Error loading email logs:', error);
                 container.innerHTML = `
@@ -929,32 +947,54 @@ VERSION HISTORY:
             }
         }
 
+        // v1.5.0: Period Total and Success Rate only. The quota card is filled
+        // by loadEmailQuota() from the server (rolling last 24 hours of sent +
+        // sent-fallback emails), no longer counted here from the loaded rows.
         function updateEmailStats(data) {
-            const today = new Date().toDateString();
-            const todayEmails = data.filter(log => new Date(log.timestamp).toDateString() === today);
-            
-            document.getElementById('email-today-count').textContent = todayEmails.length;
             document.getElementById('email-total-count').textContent = data.length;
-            
+
             const sentCount = data.filter(log => log.status === 'sent' || log.status === 'Success').length;
             const successRate = data.length > 0 ? ((sentCount / data.length) * 100).toFixed(1) : 0;
             document.getElementById('email-success-rate').textContent = successRate + '%';
-            
-            // Update quota bar
-            const quotaPercentage = (todayEmails.length / 100) * 100;
-            const quotaBar = document.getElementById('email-quota-bar');
-            quotaBar.style.width = quotaPercentage + '%';
-            
-            if (quotaPercentage >= 90) {
-                quotaBar.classList.add('danger');
-            } else if (quotaPercentage >= 70) {
-                quotaBar.classList.add('warning');
+        }
+
+        // v1.5.0: email quota used in the last 24 hours, from SystemServices
+        // V1.7 getEmailQuota -- the same figure as the Dashboard tab and
+        // NotificationServer's quota check.
+        async function loadEmailQuota() {
+            const countEl = document.getElementById('email-today-count');
+            const subEl = document.getElementById('email-quota-sub');
+            const bar = document.getElementById('email-quota-bar');
+
+            try {
+                const response = await callAPI('getEmailQuota');
+                if (!response.success) {
+                    throw new Error(response.error || 'Failed to load email quota');
+                }
+
+                countEl.textContent = response.used;
+                subEl.textContent = 'of ' + response.limit + ' in the last 24 hours';
+
+                const quotaPercentage = parseFloat(response.percentage) || 0;
+                bar.style.width = Math.min(quotaPercentage, 100) + '%';
+                bar.classList.remove('warning', 'danger');
+                if (quotaPercentage >= 90) {
+                    bar.classList.add('danger');
+                } else if (quotaPercentage >= 70) {
+                    bar.classList.add('warning');
+                }
+            } catch (error) {
+                console.error('Error loading email quota:', error);
+                countEl.textContent = '-';
+                subEl.textContent = 'Quota unavailable';
+                bar.style.width = '0%';
+                bar.classList.remove('warning', 'danger');
             }
         }
 
         function renderEmailTable(data) {
     const container = document.getElementById('email-logs-container');
-    
+
     const tableHTML = `
         <div class="table-container">
         <table class="log-table">
@@ -993,7 +1033,7 @@ VERSION HISTORY:
         </table>
         </div>
     `;
-    
+
     container.innerHTML = tableHTML;
 }
 
@@ -1015,26 +1055,26 @@ VERSION HISTORY:
         // =====================================================================
         // LOAD SMS LOGS
         // =====================================================================
-        
+
         async function loadSMSLogs() {
             const container = document.getElementById('sms-logs-container');
             const { from, to } = getDateRange('sms-date-from', 'sms-date-to');
             const days = getDays('sms-date-from', 'sms-date-to', 'sms-range-select');
-            
+
             container.innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
                     <div>Loading SMS logs...</div>
                 </div>
             `;
-            
+
             try {
                 const response = await callAPI('getSMSLogs', { days: days });
-                
+
                 if (!response.success) {
                     throw new Error(response.error || 'Failed to load SMS logs');
                 }
-                
+
                 if (!response.exists) {
                     container.innerHTML = `
                         <div class="empty-state">
@@ -1050,7 +1090,7 @@ VERSION HISTORY:
                     `;
                     return;
                 }
-                
+
                 if (response.data.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
@@ -1061,12 +1101,12 @@ VERSION HISTORY:
                     `;
                     return;
                 }
-                
+
                 smsLogsData = response.data;
-                
+
                 // Render SMS stats and table
                 renderSMSView(smsLogsData, response.totalCost);
-                
+
             } catch (error) {
                 console.error('Error loading SMS logs:', error);
                 container.innerHTML = `
@@ -1081,11 +1121,11 @@ VERSION HISTORY:
 
         function renderSMSView(data, totalCost) {
     const container = document.getElementById('sms-logs-container');
-    
+
     const today = new Date().toDateString();
     const todaySMS = data.filter(log => new Date(log.timestamp).toDateString() === today);
     const todayCost = todaySMS.reduce((sum, log) => sum + parseFloat(log.cost || 0), 0).toFixed(2);
-    
+
     const html = `
         <div class="stats-grid" style="margin-bottom: 30px;">
             <div class="stat-card">
@@ -1104,7 +1144,7 @@ VERSION HISTORY:
                 <div class="stat-subtext">Last 30 days ($0.037/SMS)</div>
             </div>
         </div>
-        
+
         <div class="table-container">
         <table class="log-table">
             <thead>
@@ -1140,79 +1180,79 @@ VERSION HISTORY:
         </table>
         </div>
     `;
-    
+
     container.innerHTML = html;
 }
 
         // =====================================================================
         // LOAD SECURITY LOGS
         // =====================================================================
-        
+
         // =====================================================================
         // DATE / TIME FORMATTING
         // =====================================================================
 
         function formatDate(dateValue) {
             if (!dateValue) return '';
-            
+
             try {
                 const date = new Date(dateValue);
                 if (isNaN(date.getTime())) return dateValue; // Return as-is if invalid
-                
+
                 // Format as YYYY-MM-DD
                 const year = date.getFullYear();
                 const month = String(date.getMonth() + 1).padStart(2, '0');
                 const day = String(date.getDate()).padStart(2, '0');
-                
+
                 return `${year}-${month}-${day}`;
             } catch (e) {
                 return dateValue; // Return original if formatting fails
             }
         }
-        
+
         function formatTime(timeValue) {
             if (!timeValue) return '';
-            
+
             try {
                 const time = new Date(timeValue);
                 if (isNaN(time.getTime())) return timeValue; // Return as-is if invalid
-                
+
                 // Format as HH:MM
                 const hours = String(time.getHours()).padStart(2, '0');
                 const minutes = String(time.getMinutes()).padStart(2, '0');
-                
+
                 return `${hours}:${minutes}`;
             } catch (e) {
                 return timeValue; // Return original if formatting fails
             }
         }
-        
-       
+
+
 
 
         // =====================================================================
         // LOAD CONTACT LOGS
         // =====================================================================
-        
+
         async function loadContactLogs() {
             const container = document.getElementById('contact-logs-container');
             const { from, to } = getDateRange('contact-date-from', 'contact-date-to');
             const days = getDays('contact-date-from', 'contact-date-to', 'contact-range-select');
-            
+
             container.innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
                     <div>Loading contact update logs...</div>
                 </div>
             `;
-            
+
             try {
                 const response = await callAPI('getContactLogs', { days: days });
-                
+
                 if (!response.success) {
                     throw new Error(response.error || 'Failed to load contact logs');
                 }
-                
+
                 if (!response.exists || response.data.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
@@ -1223,10 +1263,10 @@ VERSION HISTORY:
                     `;
                     return;
                 }
-                
+
                 contactLogsData = response.data;
                 renderContactTable(contactLogsData);
-                
+
             } catch (error) {
                 console.error('Error loading contact logs:', error);
                 container.innerHTML = `
@@ -1241,7 +1281,7 @@ VERSION HISTORY:
 
         function renderContactTable(data) {
     const container = document.getElementById('contact-logs-container');
-    
+
     const tableHTML = `
         <div class="table-container">
         <table class="log-table">
@@ -1280,46 +1320,46 @@ VERSION HISTORY:
         </table>
         </div>
     `;
-    
+
     container.innerHTML = tableHTML;
 }
 
         function filterContactTable() {
             const typeFilter = document.getElementById('contact-type-filter').value;
-            
+
             let filteredData = contactLogsData;
-            
+
             if (typeFilter !== 'all') {
                 filteredData = filteredData.filter(log => log.detailType === typeFilter);
             }
-            
+
             renderContactTable(filteredData);
         }
 
         // =====================================================================
         // LOAD DASHBOARD
         // =====================================================================
-        
+
         async function loadDashboard() {
             const container = document.getElementById('dashboard-container');
-            
+
             container.innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
                     <div>Loading system dashboard...</div>
                 </div>
             `;
-            
+
             try {
                 const response = await callAPI('getSystemDashboard');
-                
+
                 if (!response.success) {
                     throw new Error(response.error || 'Failed to load dashboard');
                 }
-                
+
                 dashboardData = response;
                 renderDashboard(dashboardData);
-                
+
             } catch (error) {
                 console.error('Error loading dashboard:', error);
                 container.innerHTML = `
@@ -1334,10 +1374,10 @@ VERSION HISTORY:
 
         function renderDashboard(data) {
             const container = document.getElementById('dashboard-container');
-            
+
             const html = `
-                
-                
+
+
                 <!-- Email Stats -->
                 <h3 style="margin: 30px 0 15px 0; color: rgba(255,255,255,0.9); font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em;">📧 Email System</h3>
                 <div class="stats-grid">
@@ -1352,7 +1392,7 @@ VERSION HISTORY:
                     <div class="stat-card">
                         <div class="stat-label">Quota Remaining</div>
                         <div class="stat-value">${data.email.quotaRemaining}</div>
-                        <div class="stat-subtext">emails available today</div>
+                        <div class="stat-subtext">emails left (last 24 hours)</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Success Rate</div>
@@ -1360,7 +1400,7 @@ VERSION HISTORY:
                         <div class="stat-subtext">delivery success</div>
                     </div>
                 </div>
-                
+
                 <!-- SMS Stats (if active) -->
                 ${data.sms.exists ? `
                     <h3 style="margin: 30px 0 15px 0; color: rgba(255,255,255,0.9); font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em;">📱 SMS System</h3>
@@ -1389,7 +1429,7 @@ VERSION HISTORY:
                         <div class="empty-text" style="font-size: 0.85rem;">SMS functionality available in NotificationServer V3.0 but not yet used.</div>
                     </div>
                 `}
-                
+
                 <!-- Security & Contact Stats -->
                 <h3 style="margin: 30px 0 15px 0; color: rgba(255,255,255,0.9); font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em;">🔐 Security & Updates</h3>
                 <div class="stats-grid">
@@ -1409,20 +1449,20 @@ VERSION HISTORY:
                         <div class="stat-subtext">All systems operational</div>
                     </div>
                 </div>
-                
+
                 <div class="info-strip">
                     <strong>Last Updated:</strong> ${formatTimestamp(data.timestamp)}<br>
                     <strong>Monitoring:</strong> Email, SMS, Security, Contact Updates
                 </div>
             `;
-            
+
             container.innerHTML = html;
         }
 
         // =====================================================================
         // UTILITY FUNCTIONS
         // =====================================================================
-        
+
         function formatTimestamp(timestamp) {
             const date = new Date(timestamp);
             const now = new Date();
@@ -1430,12 +1470,12 @@ VERSION HISTORY:
             const diffMins = Math.floor(diffMs / 60000);
             const diffHours = Math.floor(diffMs / 3600000);
             const diffDays = Math.floor(diffMs / 86400000);
-            
+
             if (diffMins < 1) return 'Just now';
             if (diffMins < 60) return `${diffMins}m ago`;
             if (diffHours < 24) return `${diffHours}h ago`;
             if (diffDays < 7) return `${diffDays}d ago`;
-            
+
             return date.toLocaleString('en-AU', {
                 year: 'numeric',
                 month: 'short',
@@ -1453,7 +1493,7 @@ VERSION HISTORY:
         // =====================================================================
         // INITIALIZATION
         // =====================================================================
-        
+
         document.addEventListener('DOMContentLoaded', function() {
             console.log('📋 System Logs V1.3 - Unified Activity Monitoring');
 
@@ -1465,7 +1505,7 @@ VERSION HISTORY:
 
             // Load initial tab
             loadEmailLogs();
-            
+
             console.log('✅ System Logs initialized');
         });
 
@@ -1473,7 +1513,7 @@ VERSION HISTORY:
         window.addEventListener('error', function(e) {
             console.error('⚠️ System Logs error:', e.error);
         });
-        
+
         // Performance monitoring
         window.addEventListener('load', function() {
             const loadTime = (performance.now() / 1000).toFixed(2);
@@ -1588,7 +1628,7 @@ VERSION HISTORY:
                 </table>
                 </div>`;
         }
-		
+
     </script>
 </body>
 </html>
