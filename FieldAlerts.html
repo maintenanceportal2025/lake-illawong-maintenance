@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.10.0
+  Frontend Version: V3.12.0
   Backend:          NotificationServer (Paper Copy List needs NotificationServer V3.17.0; Test Run and test copy need V3.16.0; the quota line needs V3.15.0)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
@@ -14,7 +14,7 @@ DOCUMENT INFORMATION:
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.10.0 - Paper Copy List
+VERSION: V3.12.0 - Subject clears after send; confirm shows recipient numbers
 LAST UPDATED: Nov 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -25,6 +25,26 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.12.0
+✅ Subject line now clears after a successful send (reset runs first and each step is guarded)
+✅ Confirm dialog shows real recipient numbers: "Email to N recipients + SMS to M recipients"
+   (counted by a Test Run of the same send; requires NotificationServer V3.16.0)
+
+NEW IN V3.11.0 (the Send Email / Send SMS ticks; no backend change):
+✅ Residents are not sitting waiting for email, so the text message is the
+   prompt that sends them to their inbox. Send SMS is now ticked automatically
+   whenever an email is going out: (1) the form opens with Send Email AND Send
+   SMS ticked; (2) ticking Send Email ticks Send SMS; (3) choosing E-Copy
+   Recipients ticks both. Send SMS can still be unticked for an email-only
+   send, and unticking Send Email still gives an SMS-only send.
+✅ After a successful send the form returns to this new starting state (both
+   ticked), as V3.5.1 did for the old one.
+✅ Nothing else changes. With both ticked the text is still the fixed "Please
+   check your email for a new message." and the confirmation box before every
+   send still shows that exact text. Only residents with the SMS-Alerts tag
+   and a mobile number are texted.
+✅ How to Use screen updated to say so.
 
 NEW IN V3.10.0 (a new screen; sending is not changed in any way):
 ✅ New "Paper Copy List" button beside E-Copy Recipients. It opens a list of
@@ -1989,7 +2009,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 
     <div class="options-grid">
         <div class="option-item">
-            <input type="checkbox" id="emailEnabled" class="option-checkbox" checked onchange="toggleSubjectField(); updateSendButton(); updateCharCount();">
+            <input type="checkbox" id="emailEnabled" class="option-checkbox" checked onchange="autoTickSms(); toggleSubjectField(); updateSendButton(); updateCharCount();">
             <label for="emailEnabled" class="option-label">
                 📧 Send Email
             </label>
@@ -2004,7 +2024,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 </div>
 
         <div class="option-item">
-            <input type="checkbox" id="smsEnabled" class="option-checkbox" onchange="updateCharCount();">
+            <input type="checkbox" id="smsEnabled" class="option-checkbox" checked onchange="updateCharCount();">
             <label for="smsEnabled" class="option-label">
                 📱 Send SMS
             </label>
@@ -2156,6 +2176,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             <ul>
                 <li><strong>Email only</strong>: the full message, with attachments if you add them.</li>
                 <li><strong>SMS only</strong>: a short text message. Type whatever you like, but keep it under about 160 characters or it is sent as more than one text (the counter and a warning will tell you). Best for urgent alerts.</li>
+                <li><strong>Email and SMS are both ticked automatically</strong>, because many residents are not watching their email and the text is the prompt to look. Choosing E-Copy Recipients ticks both too. Untick SMS for an email-only send, or untick Email for an SMS-only send.</li>
                 <li><strong>Email and SMS both ticked</strong>: the email carries your full message, and the SMS is always the same fixed text: <em>"Lake Illawong: Please check your email for a new message."</em> You do not type an SMS. Use this when the message is too long for a text, such as minutes or a notice with an attachment.</li>
             </ul>
             <div class="help-note">SMS only reaches residents who have the SMS-Alerts tag and a mobile number on file. Email only reaches residents who have an email address. If someone has no email, a warning box lists them so you can phone them.</div>
@@ -2454,6 +2475,7 @@ if (alertFormatCheckbox) {
             selectedUnits = [];
             selectedResidentEmails = [];
             btn.classList.add('selected');
+            tickEmailAndSms();   // V3.11.0: E-Copy sends go by email with the SMS prompt
             if (preview) {
                 preview.classList.add('show');
                 loadECopyList();
@@ -2823,6 +2845,23 @@ function getSeparateSmsText() {
     return updateSmsTextField() ? CHECK_EMAIL_SMS_TEXT : '';
 }
 
+// V3.11.0: Send SMS goes with Send Email. Called when Send Email is changed:
+// ticking Email ticks SMS (unticking Email leaves SMS alone, so an SMS-only
+// send is still possible).
+function autoTickSms() {
+    if (document.getElementById('emailEnabled').checked) {
+        document.getElementById('smsEnabled').checked = true;
+    }
+}
+
+// V3.11.0: choosing E-Copy Recipients ticks both Email and SMS
+function tickEmailAndSms() {
+    document.getElementById('emailEnabled').checked = true;
+    document.getElementById('smsEnabled').checked = true;
+    toggleSubjectField();
+    updateCharCount();
+}
+
 function toggleSubjectField() {
     const useAlertFormat = document.getElementById('useAlertFormat');
     const emailEnabled = document.getElementById('emailEnabled');
@@ -2969,22 +3008,24 @@ function resetSalutation() {
         // salutation (via clearAllSelections), plus the email subject and
         // the notification option ticks, which Clear Selections leaves alone.
         function resetFormAfterSend() {
-            clearAllSelections(true);
-
+            // V3.12.0: clear the subject FIRST so nothing later can stop it,
+            // and guard each step so one failure cannot skip the rest.
             const subject = document.getElementById('emailSubject');
+            if (subject) { subject.value = ''; subject.defaultValue = ''; }
+
+            try { clearAllSelections(true); } catch (e) { console.error('Reset: clearAllSelections', e); }
+
             if (subject) subject.value = '';
 
-            // Defaults as in the markup: Email ticked, Alert Format ticked, SMS unticked
+            // Defaults as in the markup: Email ticked, Alert Format ticked, SMS ticked (V3.11.0)
             document.getElementById('emailEnabled').checked = true;
             document.getElementById('useAlertFormat').checked = true;
-            document.getElementById('smsEnabled').checked = false;
-            toggleSubjectField();
+            document.getElementById('smsEnabled').checked = true;
 
-            // Template filter back to "all"
-            setTemplateFilter('all');
-
-            updateCharCount();
-            updateSendButton();
+            try { toggleSubjectField(); } catch (e) { console.error(e); }
+            try { setTemplateFilter('all'); } catch (e) { console.error(e); }
+            try { updateCharCount(); } catch (e) { console.error(e); }
+            try { updateSendButton(); } catch (e) { console.error(e); }
         }
 
         // V3.9.0: optional duration (ms). Default is still 4 seconds; a long
@@ -3632,16 +3673,33 @@ async function executeFieldAlertSend() {
 
     const { recipientFilter, messageText, emailEnabled, smsEnabled, sendBtn } = pendingSendParams;
 
+    // V3.12.0: real recipient numbers, taken from a Test Run (no sending)
+    // of exactly this send. Attachments are left out -- they add nothing to
+    // the counts. If the lookup fails, no numbers are shown (never "...").
+    let emailN = null, smsN = null;
+    try {
+        sendBtn.textContent = 'Counting recipients...';
+        const countParams = buildFieldAlertParams(recipientFilter, messageText, emailEnabled, smsEnabled);
+        delete countParams.attachments;
+        const sim = await callNotificationAPI('simulateFieldAlert', countParams);
+        if (sim && sim.success) {
+            if (sim.email && typeof sim.email.wouldSend === 'number') emailN = sim.email.wouldSend;
+            if (sim.sms && typeof sim.sms.wouldSend === 'number') smsN = sim.sms.wouldSend;
+        }
+    } catch (e) {
+        console.error('Recipient count unavailable:', e);
+    }
+    const plural = n => `${n} recipient${n === 1 ? '' : 's'}`;
+
     // Build confirmation message
     let confirmMsg = 'Send ';
     let methods = [];
 
     if (emailEnabled) {
-        methods.push('Email');
+        methods.push(emailN === null ? 'Email' : `Email to ${plural(emailN)}`);
     }
     if (smsEnabled) {
-        const smsCount = document.getElementById('smsCount').textContent;
-        methods.push(`SMS to ${smsCount} recipients`);
+        methods.push(smsN === null ? 'SMS' : `SMS to ${plural(smsN)}`);
     }
 
     confirmMsg += methods.join(' + ');
@@ -3677,15 +3735,22 @@ async function executeFieldAlertSend() {
         const response = await callNotificationAPI('sendFieldAlert', params);
 
         if (response.success) {
+            // V3.12.0: reset the form before building the message, so a
+            // problem reading the response can never leave the form filled in
+            const attachCount = attachments.length;
+            resetFormAfterSend();
+
+            const emailRes = response.email || {};
+            const smsRes = response.sms || {};
             let message = '✅ Alert sent!\n';
             if (emailEnabled) {
-                message += `📧 Emails: ${response.email.sent}`;
-                if (attachments.length > 0) {
-                    message += ` (with ${attachments.length} attachment${attachments.length !== 1 ? 's' : ''})`;
+                message += `📧 Emails: ${emailRes.sent !== undefined ? emailRes.sent : '?'}`;
+                if (attachCount > 0) {
+                    message += ` (with ${attachCount} attachment${attachCount !== 1 ? 's' : ''})`;
                 }
                 message += '\n';
             }
-            if (smsEnabled) message += `📱 SMS: ${response.sms.sent} ($${response.sms.cost})`;
+            if (smsEnabled) message += `📱 SMS: ${smsRes.sent !== undefined ? smsRes.sent : '?'} ($${smsRes.cost !== undefined ? smsRes.cost : '0'})`;
 
             showNotification(message, 'success');
 
@@ -3693,8 +3758,7 @@ async function executeFieldAlertSend() {
             // what used to be done piecemeal here (message, attachment, the
             // V3.3.3 selectedTemplate/skipGreeting reset, the V3.5.0
             // salutation reset) plus recipient selections, subject and the
-            // option ticks.
-            resetFormAfterSend();
+            // option ticks. (V3.12.0: now done at the top of this block.)
         } else {
             throw new Error(response.error || 'Failed to send');
         }
