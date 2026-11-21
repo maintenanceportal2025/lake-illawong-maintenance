@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.12.0
+  Frontend Version: V3.13.0
   Backend:          NotificationServer (Paper Copy List needs NotificationServer V3.17.0; Test Run and test copy need V3.16.0; the quota line needs V3.15.0)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
@@ -14,7 +14,7 @@ DOCUMENT INFORMATION:
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.12.0 - Subject clears after send; confirm shows recipient numbers
+VERSION: V3.13.0 - Admin / Field Ops modes
 LAST UPDATED: Nov 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -25,6 +25,15 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.13.0 (frontend only; no backend change)
+✅ Two modes, chosen by the portal that opens the page (?portal= in the link):
+   ADMIN mode (Admin Portal, SysAdmin Portal): Quick Templates hidden, Alert Format
+   unticked by default (plain email with a Subject line), E-Copy Recipients and
+   Paper Copy List shown.
+   FIELD OPS mode (Field Ops Portal and any other link): Quick Templates and Alert
+   Format as before; E-Copy Recipients and Paper Copy List hidden.
+   Same page, same backend, same quota and logs -- only what is shown differs.
 
 NEW IN V3.12.0
 ✅ Subject line now clears after a successful send (reset runs first and each step is guarded)
@@ -588,6 +597,11 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             margin-bottom: 15px;
             text-align: center;
         }
+
+        /* V3.13.0: two modes, chosen by ?portal= (admin / sysadmin = Admin mode,
+           anything else = Field Ops mode) */
+        .fieldops-mode .admin-only { display: none !important; }
+        .admin-mode #templateArea { display: none !important; }
 
         .template-grid {
             display: grid;
@@ -1916,6 +1930,8 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
         </div>
 <button class="portal-back-btn" onclick="goBackToPortal()">&#8592; Back to Portal</button><button class="help-btn" onclick="openHelp()">ℹ️ How to Use</button>
 
+        <!-- V3.13.0: templates wrapped so Admin mode can hide them -->
+        <div id="templateArea">
         <!-- Template Filters -->
         <div class="template-filters">
             <button class="filter-btn active" data-filter="all">All Templates</button>
@@ -1954,6 +1970,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 </div>
             </div>
         </div>
+        </div><!-- /templateArea -->
 
         <!-- Zone Selection -->
         <div class="zone-selector">
@@ -1966,8 +1983,8 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 <button class="zone-btn" data-zone="zone4">Zone 4 (29-36)</button>
                 <button class="zone-btn" data-zone="zone5">Zone 5 (37-44)</button>
 <button class="zone-btn special" onclick="openUnitSelector()">🔢 Select Individual Units</button>
-<button class="zone-btn ecopy-btn" data-zone="ecopy" onclick="selectZone('ecopy')">📧 E-Copy Recipients</button>
-<button class="zone-btn" onclick="openPaperList()">📄 Paper Copy List</button>
+<button class="zone-btn ecopy-btn admin-only" data-zone="ecopy" onclick="selectZone('ecopy')">📧 E-Copy Recipients</button>
+<button class="zone-btn admin-only" onclick="openPaperList()">📄 Paper Copy List</button>
             </div>
 
 <!-- E-Copy Distribution List Preview -->
@@ -2268,6 +2285,18 @@ function checkSession() {
             }
         }
         checkSession();
+
+        // V3.13.0: Admin mode (Admin / SysAdmin portal) = general correspondence:
+        // no templates, plain email format by default, E-Copy + Paper Copy List.
+        // Field Ops mode (everything else) = as before, minus E-Copy / Paper Copy List.
+        const FA_PORTAL = new URLSearchParams(window.location.search).get('portal');
+        const FA_ADMIN_MODE = (FA_PORTAL === 'admin' || FA_PORTAL === 'sysadmin');
+        document.body.classList.add(FA_ADMIN_MODE ? 'admin-mode' : 'fieldops-mode');
+        function applyModeDefaults() {
+            if (FA_ADMIN_MODE) document.getElementById('useAlertFormat').checked = false;
+        }
+        applyModeDefaults();
+        toggleSubjectField();
 
 function goBackToPortal() {
             const params = new URLSearchParams(window.location.search);
@@ -3020,6 +3049,7 @@ function resetSalutation() {
             // Defaults as in the markup: Email ticked, Alert Format ticked, SMS ticked (V3.11.0)
             document.getElementById('emailEnabled').checked = true;
             document.getElementById('useAlertFormat').checked = true;
+            applyModeDefaults();   // V3.13.0: Admin mode starts with Alert Format unticked
             document.getElementById('smsEnabled').checked = true;
 
             try { toggleSubjectField(); } catch (e) { console.error(e); }
