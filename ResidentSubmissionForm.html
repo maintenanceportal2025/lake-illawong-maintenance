@@ -7,7 +7,7 @@ DOCUMENT INFORMATION:
   File Name:        ResidentSubmissionForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.12.0
+  Frontend Version: V1.13.0
   Backend:          ResidentSubmissionForm V1.7.0
   Status:           PRODUCTION
   Created:          Oct 2025
@@ -15,6 +15,23 @@ DOCUMENT INFORMATION:
 
 
 VERSION HISTORY:
+  V1.13.0 (Nov 2026): "Back to Resident Portal" button added to the form
+    itself, raised by Tony. When the form is opened from a home-screen
+    link there is no browser back arrow, so a resident who started a
+    report and wanted to abort had no way out except starting a new
+    session. (V1.4.0 only put this button on the success modal.)
+      - Button uses the Design System .btn-back-glass class, placed under
+        the header divider, same position as the other resident modules.
+      - If anything has been entered (Location, name or description) the
+        button first asks "Discard this report?" with Keep Editing /
+        Discard and Leave. An untouched form leaves straight away.
+      - Does nothing while a submission is in flight (button also disabled
+        while the Processing screen is up), so it cannot interrupt a
+        request that is being sent.
+      - The post-submit success modal is unchanged and keeps its own
+        Back to Resident Portal button.
+    No change to transport, pickers, submit logic, backend or the success
+    modal. Requires ApiClient.js in the same folder (unchanged).
   V1.12.0 (Nov 2026): Transport migrated to the shared ApiClient.js.
     callScript() and submitFault() were single JSONP attempts with NO
     timeout and no retry, so one lost reply left "Processing Request"
@@ -105,6 +122,7 @@ PRIMARY FEATURES:
   Modal Picker:         Tap field to open full-screen scrollable list, no typing
   Unit-Aware Name List: Name picker shows the chosen unit's household first
   Submit Enforcement:   Button disabled until both fields selected and description filled
+  Back to Portal:       Button on the form, with discard check if anything entered
   Success Modal:        Tracking number displayed with photo email option
   Help Modal:           Removed — form is self-explanatory with modal picker pattern
   Fast Load:            Location list populated instantly from static file
@@ -382,6 +400,32 @@ TECHNICAL:
             border-color: rgba(255,255,255,0.08);
             cursor: not-allowed;
             transform: none;
+        }
+
+        /* V1.13.0 - Back to Resident Portal (Design System v2.4 .btn-back-glass, verbatim) */
+        .btn-back-glass {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: white;
+            padding: 10px 22px;
+            border-radius: 2px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            min-height: 44px;
+        }
+
+        .btn-back-glass:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.30);
+        }
+
+        /* V1.13.0 - spacing wrapper only (the button class above is unchanged) */
+        .back-row {
+            margin-bottom: 20px;
         }
 
         .loading {
@@ -1014,6 +1058,81 @@ TECHNICAL:
             .picker-modal-inner { border-radius: 12px; max-width: 480px; max-height: 65vh; }
         }
 
+        /* V1.13.0 - Discard confirmation (glass modal, same scrim/surface as the pickers) */
+        .confirm-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.7);
+            z-index: 10002;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .confirm-modal.active { display: flex; }
+
+        .confirm-modal-inner {
+            background: rgba(30, 58, 138, 0.97);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 2px;
+            width: 100%;
+            max-width: 420px;
+            padding: 28px 24px 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            color: white;
+        }
+
+        .confirm-modal-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 10px;
+        }
+
+        .confirm-modal-text {
+            font-size: 1rem;
+            color: var(--glass-text-muted);
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+
+        .confirm-modal-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .confirm-btn {
+            flex: 1;
+            min-width: 150px;
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 14px 20px;
+            border-radius: 2px;
+            font-size: 1rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 44px;
+        }
+
+        .confirm-btn:hover {
+            background: var(--glass-bg-strong);
+            border-color: var(--glass-border-hover);
+        }
+
+        .confirm-btn.primary {
+            background: var(--glass-bg-strong);
+            border-color: var(--glass-border-hover);
+        }
+
     </style>
 </head>
 <body>
@@ -1036,6 +1155,11 @@ TECHNICAL:
                 </div>
             </div>
             <div class="header-divider"></div>
+        </div>
+
+        <!-- V1.13.0 - Back button (no browser back arrow when opened from a home-screen link) -->
+        <div class="back-row">
+            <button type="button" class="btn-back-glass" id="backToPortalBtn" onclick="backToPortal()">&#8592; Back to Resident Portal</button>
         </div>
 
         <!-- Resident Form title section -->
@@ -1129,6 +1253,9 @@ TECHNICAL:
         let allResidentNames = [];   // full resident list (Dropdowns sheet)
         let unitResidents = {};      // { "Unit 2": ["Salome Rajaratnam", ...] } from backend V1.7.0
         let showAllNames = false;    // true after the person taps "Someone else"
+
+        // V1.13.0 - true while a submission is in flight (blocks Back to Portal)
+        let isSubmitting = false;
 
         // Load dropdowns on page load
         document.addEventListener('DOMContentLoaded', function() {
@@ -1322,7 +1449,40 @@ TECHNICAL:
             document.getElementById('submitBtn').disabled = !(unitOk && reporterOk && descOk);
         }
 
+        // V1.13.0 - Back to Resident Portal ---------------------------------
+        // True if the resident has entered anything on the form.
+        function hasUnsavedInput() {
+            return document.getElementById('unitNumber').value !== '' ||
+                   document.getElementById('reportedBy').value !== '' ||
+                   document.getElementById('problemDescription').value.trim() !== '';
+        }
 
+        function goToPortal() {
+            window.location.href = 'ResidentPortal.html';
+        }
+
+        function backToPortal() {
+            // Never interrupt a request that is being sent
+            if (isSubmitting) return;
+            if (hasUnsavedInput()) {
+                openConfirmModal();
+            } else {
+                goToPortal();
+            }
+        }
+
+        function openConfirmModal() {
+            document.getElementById('discardConfirmModal').classList.add('active');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('discardConfirmModal').classList.remove('active');
+        }
+
+        function confirmDiscardAndLeave() {
+            closeConfirmModal();
+            goToPortal();
+        }
 
         // Close picker if tapping the backdrop
         document.addEventListener('click', function(e) {
@@ -1332,6 +1492,11 @@ TECHNICAL:
                     closePicker(id);
                 }
             });
+            // V1.13.0 - tapping the backdrop of the discard prompt means Keep Editing
+            const confirmModal = document.getElementById('discardConfirmModal');
+            if (confirmModal && confirmModal.classList.contains('active') && e.target === confirmModal) {
+                closeConfirmModal();
+            }
         });
         // V1.12.0: thin wrapper over the shared ApiClient (see header). This is
         // a READ, so it is retried automatically. Rejects exactly as before
@@ -1361,6 +1526,9 @@ TECHNICAL:
 
             // Show loading state
             submitBtn.disabled = true;
+            // V1.13.0 - block Back to Portal while the request is in flight
+            isSubmitting = true;
+            document.getElementById('backToPortalBtn').disabled = true;
             showLoadingModal();
             result.style.display = 'none';
 
@@ -1427,6 +1595,9 @@ TECHNICAL:
 
             // Re-enable submit button
             submitBtn.disabled = false;
+            // V1.13.0 - request finished (either way): Back to Portal is available again
+            isSubmitting = false;
+            document.getElementById('backToPortalBtn').disabled = false;
         });
 
         // V1.12.0: thin wrapper over the shared ApiClient. This is a WRITE: it is
@@ -1588,6 +1759,18 @@ function submitAnother() {
             </div>
 
             <div class="picker-modal-list" id="reportedByList"></div>
+        </div>
+    </div>
+
+    <!-- V1.13.0 - Discard confirmation -->
+    <div class="confirm-modal" id="discardConfirmModal">
+        <div class="confirm-modal-inner">
+            <div class="confirm-modal-title">Discard this report?</div>
+            <div class="confirm-modal-text">You have started filling in this form. If you go back to the portal, what you have entered will be lost.</div>
+            <div class="confirm-modal-actions">
+                <button type="button" class="confirm-btn primary" onclick="closeConfirmModal()">Keep Editing</button>
+                <button type="button" class="confirm-btn" onclick="confirmDiscardAndLeave()">Discard and Leave</button>
+            </div>
         </div>
     </div>
 
