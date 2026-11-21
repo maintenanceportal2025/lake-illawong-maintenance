@@ -6,15 +6,15 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.9.0
-  Backend:          NotificationServer (Test Run and test copy need NotificationServer V3.16.0; the quota line needs V3.15.0)
+  Frontend Version: V3.10.0
+  Backend:          NotificationServer (Paper Copy List needs NotificationServer V3.17.0; Test Run and test copy need V3.16.0; the quota line needs V3.15.0)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
   Last Modified:    Nov 2026
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.9.0 - Test Run, real test copy and email quota line
+VERSION: V3.10.0 - Paper Copy List
 LAST UPDATED: Nov 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -25,6 +25,25 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.10.0 (a new screen; sending is not changed in any way):
+✅ New "Paper Copy List" button beside E-Copy Recipients. It opens a list of
+   the households that need a PAPER copy of a document: one row per unit
+   (Stage 1 only, one paper copy per household), showing the unit, zone,
+   everyone's names and the reason. A unit is on the list when any resident
+   in it holds the Paper-Copy tag ("Paper requested") or nobody in it has an
+   email address ("No email"). A unit where only one partner has an email and
+   nobody holds Paper-Copy is not on it. Residents who also hold E-Copy are
+   still emailed.
+✅ A Print button prints just the list (title, date, count and the table, on
+   white), not the rest of the page.
+✅ Selecting the Paper Copy List does NOT choose recipients and does not
+   affect Send, Test Run or any selection -- it is a list to look at and print.
+   It is read fresh from NotificationServer every time it is opened.
+✅ How to Use screen: new "Paper Copy List" section.
+✅ REQUIRES NotificationServer V3.17.0 (getPaperCopyList). DEPLOY
+   NOTIFICATIONSERVER FIRST. Against an older server the screen says the
+   server needs updating; everything else is unaffected.
 
 NEW IN V3.9.0 (adds a rehearsal; the live Send behaves exactly as before):
 ✅ New "Test Run" button beside Send. It runs the whole send through
@@ -1392,6 +1411,77 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 
         .test-row span { color: rgba(255,255,255,0.55); }
 
+        /* PAPER COPY LIST -- V3.10.0 (screen: white data table per Design System v2.4) */
+        .paper-summary {
+            background: rgba(59,130,246,0.15);
+            border: 1px solid rgba(59,130,246,0.4);
+            border-radius: 2px;
+            padding: 12px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: 600;
+            color: white;
+        }
+
+        .paper-note {
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 15px;
+        }
+
+        .paper-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #ffffff;
+            color: #1f2937;
+            font-size: 0.9rem;
+        }
+
+        .paper-table th {
+            background: #f3f4f6;
+            color: #374151;
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .paper-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: top;
+        }
+
+        .modal-container.paper-container { max-width: 720px; }
+
+        /* Print layout: only the paper list is printed -- V3.10.0 */
+        #paperPrintArea { display: none; }
+
+        @media print {
+            body > *:not(#paperPrintArea) { display: none !important; }
+            body {
+                background: #ffffff !important;
+                color: #000000 !important;
+            }
+            #paperPrintArea {
+                display: block !important;
+                color: #000000;
+                background: #ffffff;
+                padding: 20px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            #paperPrintArea h1 { font-size: 1.4rem; margin-bottom: 4px; }
+            #paperPrintArea p { margin-bottom: 12px; font-size: 0.95rem; }
+            #paperPrintArea table { width: 100%; border-collapse: collapse; }
+            #paperPrintArea th, #paperPrintArea td {
+                border: 1px solid #000000;
+                padding: 6px 8px;
+                text-align: left;
+                font-size: 0.95rem;
+            }
+            #paperPrintArea th { background: #e5e7eb; }
+            #paperPrintArea tr { page-break-inside: avoid; }
+        }
+
 /* ============================================= */
         /* E-COPY DISTRIBUTION - NEW V2.4 CSS */
         /* ============================================= */
@@ -1401,7 +1491,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             background: rgba(245,158,11,0.2);
             color: #fcd34d;
             font-weight: 600;
-            grid-column: 1 / -1;
+            grid-column: span 2;
             border: 1px solid rgba(245,158,11,0.4);
         }
 
@@ -1857,6 +1947,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 <button class="zone-btn" data-zone="zone5">Zone 5 (37-44)</button>
 <button class="zone-btn special" onclick="openUnitSelector()">🔢 Select Individual Units</button>
 <button class="zone-btn ecopy-btn" data-zone="ecopy" onclick="selectZone('ecopy')">📧 E-Copy Recipients</button>
+<button class="zone-btn" onclick="openPaperList()">📄 Paper Copy List</button>
             </div>
 
 <!-- E-Copy Distribution List Preview -->
@@ -2084,6 +2175,15 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 <li>It also says whether the send fits in the email limit. Gmail allows about 100 emails in 24 hours; if a send is too big for what is left, it is refused before anything goes out, and you can send to fewer zones and send the rest later.</li>
                 <li><strong>Send me a real test copy</strong> sends ONE real email (and one text, if SMS is ticked) to your own test address and mobile, never to a resident. The subject starts with [TEST]. It uses 1 of the daily emails. With attachments, the test can take a little while.</li>
                 <li>The line above the Send button shows how many emails have been sent in the last 24 hours and how many are left. Texts are not affected by it.</li>
+            </ul>
+
+            <h3>Paper Copy List</h3>
+            <ul>
+                <li>Press <strong>Paper Copy List</strong> (beside E-Copy Recipients) to see which households need a paper copy of a document. It is a list to look at and print. It does not choose recipients or send anything.</li>
+                <li>One row per household. A household is on the list if anyone in it has the <strong>Paper-Copy</strong> tag, or if nobody in it has an email address.</li>
+                <li>A household where one partner has an email and nobody has the Paper-Copy tag is not on the list, because the email reaches them.</li>
+                <li>Residents who hold E-Copy still get the email even if their household is on the paper list.</li>
+                <li>Press <strong>Print</strong> to print the list on its own.</li>
             </ul>
 
             <h3>Common situations</h3>
@@ -3852,7 +3952,105 @@ async function sendTestCopy() {
     }
 }
 
+
+// =====================================================================
+// V3.10.0: PAPER COPY LIST (a list to view and print; does not choose
+// recipients and does not touch any selection)
+// =====================================================================
+
+let paperListData = null;   // last list loaded, used by the print layout
+
+async function openPaperList() {
+    const body = document.getElementById('paperListBody');
+    const printBtn = document.getElementById('paperPrintBtn');
+    body.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.85);padding:20px;"><span class="spinner"></span>Loading paper copy list...</div>';
+    printBtn.disabled = true;
+    paperListData = null;
+    document.getElementById('paperListModal').classList.remove('hidden');
+
+    try {
+        const r = await callNotificationAPI('getPaperCopyList', {});
+        if (!r.success) {
+            throw new Error(r.error || 'Failed to load the paper copy list');
+        }
+        paperListData = r;
+        renderPaperList(r);
+        printBtn.disabled = false;
+    } catch (error) {
+        console.error('Paper copy list error:', error);
+        let text = error.message || 'Failed to load the paper copy list';
+        if (text.indexOf('Unknown action') !== -1) {
+            text = 'NotificationServer needs to be updated to V3.17.0 first.';
+        }
+        body.innerHTML = '<div class="no-email-warning">❌ ' + escapeHtml(text) + '</div>';
+    }
+}
+
+function paperSummaryText(r) {
+    return `${r.count} household${r.count !== 1 ? 's' : ''} need a paper copy ` +
+           `(${r.paperRequested} paper requested, ${r.noEmail} no email) of ${r.totalUnits} Stage 1 units`;
+}
+
+function paperRowsHtml(units) {
+    return units.map(u =>
+        `<tr><td>${escapeHtml(cleanUnitNumber(u.unit))}</td><td>${escapeHtml(u.zone || '')}</td>` +
+        `<td>${(u.names || []).map(escapeHtml).join(', ')}</td><td>${escapeHtml(u.reason)}</td></tr>`
+    ).join('');
+}
+
+function renderPaperList(r) {
+    const units = r.units || [];
+    let html = `<div class="paper-summary">${escapeHtml(paperSummaryText(r))}</div>`;
+    html += '<div class="paper-note">Residents who hold E-Copy are still emailed. One paper copy per household.</div>';
+
+    if (units.length === 0) {
+        html += '<p style="color:rgba(255,255,255,0.85);">No households need a paper copy. ✅</p>';
+    } else {
+        html += '<table class="paper-table"><thead><tr><th>Unit</th><th>Zone</th><th>Residents</th><th>Reason</th></tr></thead><tbody>' +
+                paperRowsHtml(units) + '</tbody></table>';
+    }
+    document.getElementById('paperListBody').innerHTML = html;
+}
+
+function closePaperList() {
+    document.getElementById('paperListModal').classList.add('hidden');
+}
+
+// Fills the print-only area from the list on screen, then prints it
+function printPaperList() {
+    if (!paperListData) return;
+    const today = new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+    const units = paperListData.units || [];
+
+    document.getElementById('paperPrintArea').innerHTML =
+        '<h1>Lake Illawong - Paper Copy List</h1>' +
+        `<p>${escapeHtml(today)} - ${escapeHtml(paperSummaryText(paperListData))}. One paper copy per household.</p>` +
+        '<table><thead><tr><th>Unit</th><th>Zone</th><th>Residents</th><th>Reason</th></tr></thead><tbody>' +
+        paperRowsHtml(units) + '</tbody></table>';
+
+    window.print();
+}
+
     </script>
+
+    <!-- PAPER COPY LIST -- V3.10.0 -->
+    <div id="paperListModal" class="modal-overlay hidden">
+        <div class="modal-container paper-container">
+            <div class="modal-header test-run-header">
+                <h2>📄 Paper Copy List</h2>
+            </div>
+            <div class="modal-body" id="paperListBody">
+                <!-- Populated by openPaperList() -->
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closePaperList()">Close</button>
+                <button class="modal-btn modal-btn-confirm" id="paperPrintBtn" onclick="printPaperList()" disabled>Print</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Printed version of the paper list (hidden on screen) -- V3.10.0 -->
+    <div id="paperPrintArea"></div>
 
     <!-- TEST RUN RESULTS -- V3.9.0 -->
     <div id="testRunModal" class="modal-overlay hidden">
