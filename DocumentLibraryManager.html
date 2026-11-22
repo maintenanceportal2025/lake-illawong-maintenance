@@ -5,7 +5,15 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.12.3 - FIX: editing a document silently dropped any access role tag
+VERSION: V2.12.4 - FIX: a title or category name containing an apostrophe broke
+         the Delete button (documents) and the Rename / Save / Delete buttons
+         (categories): esc() turns ' into &#39; but the browser turns it back
+         into ' before the onclick JavaScript is read, so the string ended
+         early and the click did nothing. The text is no longer placed inside
+         onclick strings: it is carried in data- attributes (document Delete,
+         and the View button for external links) or read from the category
+         row (data-cat). No visible change. No other change.
+         V2.12.3 - FIX: editing a document silently dropped any access role tag
          that is not offered as a tick-box (roles not flagged Y on the Roles
          tab), e.g. ZoneRep-1..5 on the Monthly Reports rows or Admin on
          DOC-012, so saving an edit removed that access. Such tags are now
@@ -1471,9 +1479,9 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 <td style="white-space:nowrap;font-size:0.8rem;">${fmtDate(doc.dateAdded)}</td>
                 <td class="actions">
                     ${doc.sourceType === 'Drive' && doc.sourceLocation ? `<button class="btn-edit" style="background:linear-gradient(135deg,#0f766e,#0d9488);" onclick="window.open('https://drive.google.com/file/d/${esc(doc.sourceLocation)}/view','_blank')">👁️ View</button>` : ''}
-                    ${doc.sourceType === 'Link' && doc.sourceLocation ? `<button class="btn-edit" style="background:linear-gradient(135deg,#0f766e,#0d9488);" onclick="window.open('${esc(doc.sourceLocation)}','_blank')">👁️ View</button>` : ''}
+                    ${doc.sourceType === 'Link' && doc.sourceLocation ? `<button class="btn-edit" style="background:linear-gradient(135deg,#0f766e,#0d9488);" data-url="${esc(doc.sourceLocation)}" onclick="window.open(this.dataset.url,'_blank')">👁️ View</button>` : ''}
                     <button class="btn-edit"   onclick="openEditModal('${esc(doc.documentId)}')">✏️ Edit</button>
-                    <button class="btn-delete" onclick="openDeleteModal('${esc(doc.documentId)}','${esc(doc.title||'')}')">🗑️</button>
+                    <button class="btn-delete" data-id="${esc(doc.documentId)}" data-title="${esc(doc.title||'')}" onclick="openDeleteModal(this.dataset.id,this.dataset.title)">🗑️</button>
                 </td>
             </tr>`;
         });
@@ -1889,19 +1897,19 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         }
 
         list.innerHTML = [...docCategories].sort().map(cat => `
-            <div class="cat-item" id="catrow_${safeId(cat)}">
+            <div class="cat-item" id="catrow_${safeId(cat)}" data-cat="${esc(cat)}">
                 <span class="cat-item-name" id="catname_${safeId(cat)}">${esc(cat)}</span>
                 <div class="cat-item-edit hidden" id="catedit_${safeId(cat)}">
                     <input type="text" value="${esc(cat)}"
-                        onkeydown="if(event.key==='Enter') saveRename('${safeId(cat)}','${esc(cat)}');
+                        onkeydown="if(event.key==='Enter') saveRename('${safeId(cat)}',this.closest('.cat-item').dataset.cat);
                                    if(event.key==='Escape') cancelRename('${safeId(cat)}')">
                 </div>
                 <button class="btn-cat-rename" id="catbtnrename_${safeId(cat)}"
                     onclick="startRename('${safeId(cat)}')">✏️ Rename</button>
                 <button class="btn-cat-save hidden" id="catbtnsave_${safeId(cat)}"
-                    onclick="saveRename('${safeId(cat)}','${esc(cat)}')">✓ Save</button>
+                    onclick="saveRename('${safeId(cat)}',this.closest('.cat-item').dataset.cat)">✓ Save</button>
                 <button class="btn-cat-delete"
-                    onclick="deleteCategory('${esc(cat)}')">🗑️</button>
+                    onclick="deleteCategory(this.closest('.cat-item').dataset.cat)">🗑️</button>
             </div>
         `).join('');
     }
