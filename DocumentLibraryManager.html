@@ -5,7 +5,17 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.12.1 - Script tag changed from VerificationModal_V1_0.js to the generic VerificationModal.js (identical code; V2.1.0 adds a quiet warm-up call that cuts slow first verification codes). No other change.
+VERSION: V2.12.2 - FIX: the "All Access Levels" toolbar filter could open with
+         no roles in it (only "All Access Levels"). It was built inside
+         buildCategoryDropdowns(), which runs when the CATEGORIES reply
+         arrives; if that reply beat the ROLES reply, docRoles was still
+         empty and the filter was built empty and never rebuilt (the edit
+         form's tick-boxes were fine because they are rebuilt when roles
+         arrive). The filter now has its own buildAccessFilter(), called when
+         the roles arrive (and keeps the current selection), so the order of
+         the two replies no longer matters. Header "BACKEND API" label
+         corrected to V2.9. No other change.
+         V2.12.1 - Script tag changed from VerificationModal_V1_0.js to the generic VerificationModal.js (identical code; V2.1.0 adds a quiet warm-up call that cuts slow first verification codes). No other change.
          V2.12.0 - Transport migrated to the shared ApiClient.js.
          callMgmt()/callDocLib() were single JSONP attempts with NO timeout
          and no retry, so one lost reply left "Loading documents..." (or a
@@ -36,7 +46,7 @@ VERSION: V2.12.1 - Script tag changed from VerificationModal_V1_0.js to the gene
          No functional change to document management. Prior: V2.9 -- long
          filename display, wraps in doc list and edit modal)
 LAST UPDATED: November 2026
-BACKEND API: DocumentLibrary.js V2.1
+BACKEND API: DocumentLibrary.js V2.9
 DESIGN SYSTEM: Lake Illawong Unified V2.4
 - Header: Transparent with logo (V1.4 standard)
 - Colors: Primary gradient page background
@@ -778,7 +788,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         }
         .btn-manage-cats:hover { background: rgba(255,255,255,0.22); }
 
-        
+
         @media (max-width: 900px) {
             .stats-row { grid-template-columns: repeat(2, 1fr); }
             .form-row { grid-template-columns: 1fr; }
@@ -1306,6 +1316,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 docRoles = [];
             }
             buildRoleCheckboxes();
+            buildAccessFilter();   // V2.12.2: rebuilt here so reply order cannot leave it empty
             rolesLoaded = true;
             checkDone();
         });
@@ -1487,6 +1498,21 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     }
 
     // ================================================================
+    // ACCESS LEVEL FILTER — built from dynamic docRoles (V2.12.2)
+    // Its own function, called when the roles arrive, so it no longer
+    // depends on which of the roles / categories replies came back first.
+    // Keeps the current selection if that role is still in the list.
+    // ================================================================
+    function buildAccessFilter() {
+        const accessSel = document.getElementById('accessFilter');
+        if (!accessSel) return;
+        const current = accessSel.value;
+        accessSel.innerHTML = '<option value="">All Access Levels</option>' +
+            docRoles.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+        if (current && docRoles.includes(current)) accessSel.value = current;
+    }
+
+    // ================================================================
     // CATEGORY DROPDOWNS — built from dynamic docCategories (Dropdowns sheet)
     // Populates: form modal select, toolbar filter, category manager list
     // ================================================================
@@ -1497,13 +1523,6 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             const current = formSel.value;
             formSel.innerHTML = '<option value="">— Select Category —</option>' +
                 docCategories.map(c => `<option value="${esc(c)}"${c === current ? ' selected' : ''}>${esc(c)}</option>`).join('');
-        }
-
-        // Toolbar access level filter — built from same dynamic docRoles list
-        const accessSel = document.getElementById('accessFilter');
-        if (accessSel) {
-            accessSel.innerHTML = '<option value="">All Access Levels</option>' +
-                docRoles.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
         }
 
         // Toolbar filter
@@ -1517,7 +1536,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         renderCategoryList();
     }
 
-    
+
 
     function onCbChange(cb) {
         cb.closest('label').classList.toggle('checked', cb.checked);
@@ -1965,7 +1984,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         });
     }
 
-    
+
     function showToast(type, message, duration) {
         const t = document.createElement('div');
         t.className   = 'toast toast-' + type;
