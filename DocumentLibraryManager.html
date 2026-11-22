@@ -5,7 +5,31 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.14.1 - Sends the signed-in person's name and email (from their verified
+VERSION: V2.15.0 - Document structure, step 2: the form now files each document by
+         Category > Subcategory > Year (needs backend V2.13 and its DocCategories
+         tab; with an older backend, or an empty DocCategories tab, the form
+         falls back to the old flat Category list exactly as before). (1) The
+         form is filled in top to bottom: Title, Description, Category, then
+         Subcategory (shown only when the chosen category has subcategories),
+         then Document Date, then where the document is. (2) The Document Date
+         decides the year folder, using the rule set for that category in
+         DocCategories: calendar year (2026), financial year July-June (2025-26)
+         or none; a document with no date is filed under "Undated". (3) For an
+         uploaded file the line under the form says "Will be filed in: Document
+         Library > Category > Subcategory > Year", and "Choose file to upload"
+         stays disabled until the Category, Subcategory and (where the year is
+         used) Document Date are filled in. (4) For a new document the Access
+         Control tick-boxes are pre-ticked with the default roles set for that
+         subcategory; they can still be changed, and are never changed on an
+         existing document. If someone has already ticked their own choice, it is
+         left alone. (5) The Subcategory is saved with the document (new
+         column) and shown under the Category in the list. (6) The
+         old "Categories" button is hidden while the new structure is in use
+         (categories now live in the DocCategories tab; a Manager screen for
+         them comes in a later version). The uploader still files into the
+         Category folder only (Drive folders by Subcategory and Year come with
+         the next uploader version); the extra values are sent to it and ignored.
+         V2.14.1 - Sends the signed-in person's name and email (from their verified
          login session) with every add, edit and delete, so the backend can write
          them to its new DocumentLog audit tab (needs backend V2.12; older
          backends ignore the extra values). With no session the name is left
@@ -1053,18 +1077,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 <div class="form-section">
                     <div class="form-section-title">📄 Document Details</div>
 
-                    <div class="form-row">
+                    <div class="form-row single">
                         <div class="field-group">
                             <label class="field-label" for="fTitle">Title <span class="required">*</span></label>
                             <input type="text" id="fTitle" class="field-input" placeholder="e.g. Pool Rules 2026" maxlength="100">
                             <div class="field-error" id="fTitleErr">Title is required</div>
-                        </div>
-                        <div class="field-group">
-                            <label class="field-label" for="fCategory">Category <span class="required">*</span></label>
-                            <select id="fCategory" class="field-select" onchange="updateUploadState()">
-                                <option value="">— Select Category —</option>
-                            </select>
-                            <div class="field-error" id="fCategoryErr">Category is required</div>
                         </div>
                     </div>
 
@@ -1080,8 +1097,26 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
                     <div class="form-row">
                         <div class="field-group">
+                            <label class="field-label" for="fCategory">Category <span class="required">*</span></label>
+                            <select id="fCategory" class="field-select" onchange="onCategoryChange()">
+                                <option value="">— Select Category —</option>
+                            </select>
+                            <div class="field-error" id="fCategoryErr">Category is required</div>
+                        </div>
+                        <div class="field-group" id="subcatGroup" style="display:none;">
+                            <label class="field-label" for="fSubcategory">Subcategory <span class="required">*</span></label>
+                            <select id="fSubcategory" class="field-select" onchange="onSubcategoryChange()">
+                                <option value="">— Select Subcategory —</option>
+                            </select>
+                            <div class="field-error" id="fSubcategoryErr">Subcategory is required</div>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="field-group">
                             <label class="field-label" for="fDocumentDate">Document Date</label>
-                            <input type="date" id="fDocumentDate" class="field-input">
+                            <input type="date" id="fDocumentDate" class="field-input" onchange="updateUploadState()">
+                            <div class="field-hint" id="dateHint">The date on the document, not today's date</div>
                         </div>
                         <div class="field-group">
                             <label class="field-label" for="fTags">Search Tags</label>
@@ -1238,7 +1273,9 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     let deleteTargetId = null;
     let currentUser    = null;
     let uploadPopup    = null;
-    let uploadedToCategory = '';   // V2.13.0: category the last upload was filed under
+    let uploadedToCategory = '';   // V2.13.0: category the last upload was filed under (V2.15.0: full path text)
+    let categoryTree  = [];        // V2.15.0: from getCategoryTree (backend V2.13); empty = old flat list in use
+    let lastDefaultRoles = [];     // V2.15.0: default roles last ticked automatically
     let uploadPollTimer = null;
 
     // ================================================================
@@ -1434,17 +1471,31 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             checkDone();
         });
 
-        // Load categories from DocumentLibrary backend (Dropdowns sheet)
-        callDocLib('getDocCategories', {}, function(response) {
-            if (response.success && response.categories && response.categories.length > 0) {
-                docCategories = response.categories.map(c => c.value || c);
-            } else {
-                console.warn('getDocCategories failed or empty:', response.error);
-                docCategories = [];
+        // V2.15.0: load the structure (DocCategories tab, backend V2.13). If it is
+        // missing or empty (older backend), use the old flat list (Dropdowns sheet).
+        callDocLib('getCategoryTree', {}, function(tree) {
+            if (tree && tree.success && tree.categories && tree.categories.length > 0) {
+                categoryTree  = tree.categories;
+                docCategories = categoryTree.map(c => c.name);
+                const cb = document.querySelector('.btn-manage-cats');
+                if (cb) cb.style.display = 'none';   // categories now live in DocCategories
+                buildCategoryDropdowns();
+                catsLoaded = true;
+                checkDone();
+                return;
             }
-            buildCategoryDropdowns();
-            catsLoaded = true;
-            checkDone();
+            categoryTree = [];
+            callDocLib('getDocCategories', {}, function(response) {
+                if (response.success && response.categories && response.categories.length > 0) {
+                    docCategories = response.categories.map(c => c.value || c);
+                } else {
+                    console.warn('getDocCategories failed or empty:', response.error);
+                    docCategories = [];
+                }
+                buildCategoryDropdowns();
+                catsLoaded = true;
+                checkDone();
+            });
         });
     }
 
@@ -1515,7 +1566,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 if (!roles.includes(acc)) return false;
             }
             if (q) {
-                const hay = [doc.title, doc.description, doc.tags, doc.documentId, doc.addedBy]
+                const hay = [doc.title, doc.description, doc.tags, doc.documentId, doc.addedBy, doc.subcategory]
                     .join(' ').toLowerCase();
                 if (!hay.includes(q)) return false;
             }
@@ -1568,7 +1619,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                     <span class="doc-title-desc" title="${esc(doc.description||'')}">${esc(doc.description||'')}</span>
                     ${doc.fileName ? `<span class="doc-title-file" title="${esc(doc.fileName)}">📄 ${esc(doc.fileName)}</span>` : ''}
                 </td>
-                <td style="white-space:nowrap;">${esc(doc.category||'—')}</td>
+                <td style="white-space:nowrap;">${esc(doc.category||'—')}${doc.subcategory ? `<span class="doc-title-desc">${esc(doc.subcategory)}</span>` : ''}</td>
                 <td><div class="role-pills">${pills||'—'}</div></td>
                 <td><span class="source-badge ${srcCls}">${esc(doc.sourceType||'—')}</span></td>
                 <td><span class="filetype-badge">${esc(doc.fileType||'—')}</span></td>
@@ -1716,6 +1767,99 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         updateUploadState();
     }
 
+    // ================================================================
+    // STRUCTURE HELPERS (V2.15.0)
+    // ================================================================
+    function findCategory(name) {
+        return categoryTree.find(function(c) { return c.name === name; }) || null;
+    }
+    function findSubcategory(catName, subName) {
+        const c = findCategory(catName);
+        if (!c) return null;
+        return c.subcategories.find(function(x) { return x.name === subName; }) || null;
+    }
+    // The rule that applies: the subcategory's own, else the category's.
+    function currentRule() {
+        const catName = document.getElementById('fCategory').value;
+        const subName = document.getElementById('fSubcategory').value;
+        const c = findCategory(catName);
+        if (!c) return { groupBy: 'None', defaultRoles: '' };
+        const sub = subName ? findSubcategory(catName, subName) : null;
+        const src = sub || c;
+        return { groupBy: src.groupBy || c.groupBy || 'None', defaultRoles: src.defaultRoles || c.defaultRoles || '' };
+    }
+    // Year folder name from the Document Date and the rule. '' = no year level.
+    function yearLabelFor(groupBy, dateStr) {
+        const g = (groupBy || 'None').toLowerCase();
+        if (g === 'none') return '';
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr || '');
+        if (!m) return 'Undated';
+        const y = parseInt(m[1], 10), mo = parseInt(m[2], 10);
+        if (g.indexOf('financial') === 0) {
+            const start = mo >= 7 ? y : y - 1;
+            return start + '-' + String((start + 1) % 100).padStart(2, '0');
+        }
+        return String(y);
+    }
+    function categoryHasSubs(catName) {
+        const c = findCategory(catName);
+        return !!(c && c.subcategories.length);
+    }
+    // Where the file will go, as text; '' when the choices are not complete.
+    function filingPathText() {
+        const catName = document.getElementById('fCategory').value;
+        if (!catName) return '';
+        let text = 'Document Library › ' + catName;
+        if (categoryTree.length) {
+            const subName = document.getElementById('fSubcategory').value;
+            if (categoryHasSubs(catName)) { if (!subName) return ''; text += ' › ' + subName; }
+            const rule = currentRule();
+            const year = yearLabelFor(rule.groupBy, document.getElementById('fDocumentDate').value);
+            if (year) text += ' › ' + year;
+        }
+        return text;
+    }
+    function buildSubcategoryOptions(catName, selected) {
+        const group = document.getElementById('subcatGroup');
+        const sel   = document.getElementById('fSubcategory');
+        const c = findCategory(catName);
+        if (!c || !c.subcategories.length) {
+            sel.innerHTML = '<option value="">— Select Subcategory —</option>';
+            group.style.display = 'none';
+            return;
+        }
+        sel.innerHTML = '<option value="">— Select Subcategory —</option>' +
+            c.subcategories.map(function(x) { return '<option value="' + esc(x.name) + '">' + esc(x.name) + '</option>'; }).join('');
+        if (selected && !c.subcategories.some(function(x) { return x.name === selected; })) {
+            sel.innerHTML += '<option value="' + esc(selected) + '">' + esc(selected) + '</option>';
+        }
+        sel.value = selected || '';
+        group.style.display = 'block';
+    }
+    function onCategoryChange() {
+        buildSubcategoryOptions(document.getElementById('fCategory').value, '');
+        applyDefaultRoles();
+        updateUploadState();
+    }
+    function onSubcategoryChange() {
+        applyDefaultRoles();
+        updateUploadState();
+    }
+    // New documents only: pre-tick the default roles, unless the person has
+    // already made their own choice (anything ticked that we did not tick).
+    function applyDefaultRoles() {
+        if (editingId || !categoryTree.length) return;
+        const catName = document.getElementById('fCategory').value;
+        if (!catName) return;
+        if (categoryHasSubs(catName) && !document.getElementById('fSubcategory').value) return;
+        const ticked = getCheckedRoles().concat(preservedRoles).slice().sort().join(',');
+        const prev   = lastDefaultRoles.slice().sort().join(',');
+        if (ticked !== '' && ticked !== prev) return;
+        const defs = currentRule().defaultRoles.split(',').map(function(r) { return r.trim(); }).filter(Boolean);
+        setRoleCheckboxes(defs.join(','));
+        lastDefaultRoles = defs.slice();
+    }
+
     // The Category decides which Drive folder the file goes into, so the
     // upload button waits for it, and the person is told where the file will go.
     function updateUploadState() {
@@ -1723,20 +1867,41 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         const cat   = document.getElementById('fCategory').value;
         const btn   = document.getElementById('btnUploadDrive');
         const where = document.getElementById('uploadWhere');
+        const dHint = document.getElementById('dateHint');
         if (!btn || !where) return;
+
+        // Hint under Document Date: which year folder it will pick
+        if (dHint) {
+            const yr = categoryTree.length && cat ? yearLabelFor(currentRule().groupBy, document.getElementById('fDocumentDate').value) : '';
+            dHint.textContent = yr && yr !== 'Undated'
+                ? 'The date on the document, not today\'s date. Year folder: ' + yr
+                : 'The date on the document, not today\'s date';
+        }
 
         if (type !== 'Drive') { where.style.display = 'none'; return; }
 
+        // What is still needed before a file can be uploaded
+        let need = '';
+        if (!cat) need = 'Choose a Category above first. It decides where the file is stored.';
+        else if (categoryTree.length) {
+            if (categoryHasSubs(cat) && !document.getElementById('fSubcategory').value) {
+                need = 'Choose a Subcategory above first. It decides where the file is stored.';
+            } else if (yearLabelFor(currentRule().groupBy, '') === 'Undated' && !document.getElementById('fDocumentDate').value) {
+                need = 'Enter the Document Date above first. It decides the year folder.';
+            }
+        }
+
         const waiting = btn.textContent.indexOf('Waiting') !== -1;
-        if (!waiting) btn.disabled = !cat;
+        if (!waiting) btn.disabled = !!need;
         where.style.display = 'block';
-        if (!cat) {
+        if (need) {
             where.style.color = '#b45309';
-            where.textContent = 'Choose a Category above first. It decides where the file is stored.';
+            where.textContent = need;
         } else {
+            const path = filingPathText();
             where.style.color = '#1e3a8a';
-            where.textContent = 'Will be filed in: Document Library › ' + cat;
-            if (uploadedToCategory && uploadedToCategory !== cat) {
+            where.textContent = 'Will be filed in: ' + path;
+            if (uploadedToCategory && uploadedToCategory !== path) {
                 where.textContent += '   (note: the file already uploaded stays in "' + uploadedToCategory + '")';
             }
         }
@@ -1774,8 +1939,9 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     // DRIVE UPLOAD POPUP
     // ================================================================
     function openUploadPopup() {
-        if (!document.getElementById('fCategory').value) {
-            showToast('error', '❌ Choose a Category first. It decides where the file is stored.');
+        if (!document.getElementById('fCategory').value || !filingPathText()) {
+            updateUploadState();
+            showToast('error', '❌ Fill in the Category, Subcategory and Document Date first. They decide where the file is stored.');
             return;
         }
         const w = 560, h = 480;
@@ -1784,8 +1950,13 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
         // Pass category to uploader via query string
         const category = document.getElementById('fCategory').value;
+        // V2.15.0: subcategory and year are sent too (Uploader V1.9 ignores them until step 3)
+        const subcategory = document.getElementById('fSubcategory').value;
+        const yearName    = categoryTree.length ? yearLabelFor(currentRule().groupBy, document.getElementById('fDocumentDate').value) : '';
         const uploaderUrl = CONFIG.UPLOADER_URL +
-            (category ? '?category=' + encodeURIComponent(category) : '');
+            (category ? '?category=' + encodeURIComponent(category) +
+                (subcategory ? '&subcategory=' + encodeURIComponent(subcategory) : '') +
+                (yearName ? '&year=' + encodeURIComponent(yearName) : '') : '');
         uploadPopup = window.open(
             uploaderUrl,
             'DriveUploader',
@@ -1867,7 +2038,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         // V2.13.0: File Type from the file, remember where it was filed, and guide the next step
         const ft = fileTypeFromName(fileName);
         if (ft) document.getElementById('fFileType').value = ft;
-        uploadedToCategory = document.getElementById('fCategory').value;
+        uploadedToCategory = filingPathText();
         updateUploadState();
         showNextStep();
 
@@ -1909,7 +2080,13 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('modalSubtitle').textContent = documentId;
         document.getElementById('fDocumentId').value        = documentId;
         document.getElementById('fTitle').value             = doc.title        || '';
-        document.getElementById('fCategory').value          = doc.category     || '';
+        // V2.15.0: a category no longer in the structure is still shown, so it is not lost
+        const catSel = document.getElementById('fCategory');
+        if (doc.category && !Array.prototype.some.call(catSel.options, function(o) { return o.value === doc.category; })) {
+            const o = document.createElement('option'); o.value = o.textContent = doc.category; catSel.appendChild(o);
+        }
+        catSel.value = doc.category || '';
+        buildSubcategoryOptions(doc.category || '', doc.subcategory || '');
         document.getElementById('fDescription').value       = doc.description  || '';
         document.getElementById('fDocumentDate').value      = toDateInput(doc.documentDate);
         document.getElementById('fSourceType').value        = doc.sourceType   || '';
@@ -1925,6 +2102,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('modalStatus').textContent  = '';
 
         setRoleCheckboxes(doc.accessRoles || '');
+        lastDefaultRoles = [];
         onSourceTypeChange();
         document.getElementById('editModalOverlay').classList.remove('hidden');
     }
@@ -1942,6 +2120,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         ['fTitle', 'fSourceLocation', 'fTags', 'fDocumentDate'].forEach(id =>
             document.getElementById(id).value = '');
         document.getElementById('fCategory').value    = '';
+        buildSubcategoryOptions('', '');
+        lastDefaultRoles = [];
         document.getElementById('fSourceType').value  = '';
         document.getElementById('fFileType').value    = 'PDF';
         document.getElementById('fDescription').value = '';
@@ -1988,6 +2168,10 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
         if (!title)          fieldErr('fTitle',          'Title is required');
         if (!category)       fieldErr('fCategory',       'Category is required');
+        const subcategory    = document.getElementById('fSubcategory').value;
+        if (category && categoryTree.length && categoryHasSubs(category) && !subcategory) {
+            fieldErr('fSubcategory', 'Subcategory is required');
+        }
         if (!description)    fieldErr('fDescription',    'Description is required');
         if (!sourceType)     fieldErr('fSourceType',     'Source Type is required');
         if (!sourceLocation) {
@@ -2010,6 +2194,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             documentId:     document.getElementById('fDocumentId').value || null,
             title,
             category,
+            subcategory,
             description,
             documentDate:   document.getElementById('fDocumentDate').value,
             sourceType,
