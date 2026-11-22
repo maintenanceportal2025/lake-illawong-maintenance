@@ -6,13 +6,21 @@ DOCUMENT INFORMATION:
   File Name:        DocumentLibrary.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.2.0
+  Frontend Version: V2.3.0
   Backend:          DocumentLibrary V2.9
   Status:           PRODUCTION
   Created:          March 2026
   Last Modified:    Nov 2026
 
 VERSION HISTORY:
+  V2.3.0 (Nov 2026): NEW - Download. Each uploaded (Drive) document in the
+    list now has a Download button next to the type icon, and the phone
+    cards have one too. It saves the file to the person's device using
+    Google Drive's download address (the files are shared "anyone with the
+    link", as they already were for viewing). Clicking the row still opens the
+    document as before. Links and paper copies have no Download button, as
+    there is no file. No backend change. If Drive cannot supply the file the
+    resident sees the same kind of message as for a failed open.
   V2.2.0 (Nov 2026): STYLE - the document list (desktop rows and the mobile
     cards) is now a solid light panel with dark text and the blue header
     row, matching the Document Library Manager and the Design System rule
@@ -510,7 +518,7 @@ TECHNICAL:
 
         .doc-list-header {
             display: grid;
-            grid-template-columns: 1fr 160px 50px;
+            grid-template-columns: 1fr 160px 50px 112px;
             gap: 15px;
             padding: 13px 20px;
             background: linear-gradient(90deg, #1e40af 0%, #1e3a8a 100%);
@@ -526,7 +534,7 @@ TECHNICAL:
 
         .doc-row {
             display: grid;
-            grid-template-columns: 1fr 160px 50px;
+            grid-template-columns: 1fr 160px 50px 112px;
             gap: 15px;
             padding: 15px 20px;
             background: #f1f5f9;
@@ -567,6 +575,23 @@ TECHNICAL:
             font-size: 1.3rem;
             text-align: center;
         }
+
+        /* V2.3.0: Download button */
+        .btn-download {
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            color: white;
+            border: none;
+            border-radius: 2px;
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: opacity 0.15s;
+        }
+
+        .btn-download:hover { opacity: 0.85; }
+        .doc-row-download { text-align: center; }
 
         /* Mobile card list (inside drill-down) */
         .mobile-doc-list {
@@ -799,6 +824,7 @@ TECHNICAL:
                 <div class="doc-list-header-cell">Document</div>
                 <div class="doc-list-header-cell">Category</div>
                 <div class="doc-list-header-cell" style="text-align:center;">Type</div>
+                <div class="doc-list-header-cell" style="text-align:center;"></div>
             </div>
             <div id="docListBody"></div>
         </div>
@@ -1102,6 +1128,7 @@ function renderDrillView(docs, title, isSearch) {
             </div>
             <div class="doc-row-category">${escHtml(doc.category || 'Uncategorized')}</div>
             <div class="doc-row-type">${typeIcons[doc.sourceType] || '📄'}</div>
+            <div class="doc-row-download">${canDownload(doc) ? `<button class="btn-download" data-id="${escAttr(doc.documentId)}" onclick="event.stopPropagation(); downloadDocumentById(this.dataset.id)">⬇ Download</button>` : ''}</div>
         </div>
     `).join('');
     document.getElementById('docListBody').innerHTML = listHTML;
@@ -1117,6 +1144,7 @@ function renderDrillView(docs, title, isSearch) {
             <div class="mobile-doc-item-meta">
                 <span>${escHtml(doc.category || 'Uncategorized')}</span>
                 <span>${typeIcons[doc.sourceType] || '📄'}</span>
+                ${canDownload(doc) ? `<button class="btn-download" data-id="${escAttr(doc.documentId)}" onclick="event.stopPropagation(); downloadDocumentById(this.dataset.id)">⬇ Download</button>` : ''}
             </div>
         </div>
     `).join('');
@@ -1179,6 +1207,36 @@ function openDocumentById(documentId) {
         return;
     }
     openDocument(doc.documentId, doc.sourceType, doc.sourceLocation || '', doc.title);
+}
+
+// ============================================================
+// DOWNLOAD (V2.3.0) -- uploaded (Drive) documents only
+// ============================================================
+function driveFileIdOf(sourceLink) {
+    if (!sourceLink) return '';
+    if (!/^https?:/i.test(sourceLink)) return sourceLink;
+    const m = /\/d\/([A-Za-z0-9_-]+)/.exec(sourceLink) || /[?&]id=([A-Za-z0-9_-]+)/.exec(sourceLink);
+    return m ? m[1] : '';
+}
+
+function canDownload(doc) {
+    return doc.sourceType === 'Drive' && !!driveFileIdOf(doc.sourceLocation || '');
+}
+
+function downloadDocumentById(documentId) {
+    const doc = allDocuments.find(d => d.documentId === documentId);
+    const id  = doc ? driveFileIdOf(doc.sourceLocation || '') : '';
+    if (!doc || doc.sourceType !== 'Drive' || !id) {
+        alert('Unable to download this document. Please contact management.');
+        return;
+    }
+    const a = document.createElement('a');
+    a.href = 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(id);
+    a.rel  = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 }
 
 function openDocument(documentId, sourceType, sourceLink, title) {
