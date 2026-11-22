@@ -5,7 +5,29 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.12.8 - Display tidy-up, no change to how documents are saved.
+VERSION: V2.13.0 - Guided document form (wording and prompts only; nothing about
+         how documents are saved changes). (1) Source Type is now
+         "Where is the document?" with plain options ("Upload a file...",
+         "A web page or link", "A paper copy kept at the office") and a hint;
+         Upload is preselected for a new document. (2) File Type is filled in
+         automatically (from the uploaded file's extension, or Link /
+         Physical when those sources are chosen); it can still be changed.
+         (3) The upload button reads "Choose file to upload" and stays
+         disabled until a Category is chosen, because the Category decides
+         where the file is stored; a line under Source Location says
+         "Will be filed in: Document Library > <category>". (4) After an
+         upload a green "Next step" box says what to do next (tick who can
+         see it, then Add Document), and the form scrolls to and highlights
+         Access Control. Works with Uploader V1.8. No other change.
+         V2.12.9 - FIX: a previous upload could be offered again. After a normal
+         upload the Manager receives the file ID directly from the popup, but
+         the copy the popup also writes to the UploadHandoff tab was never
+         read, so it stayed there. Next time the uploader was opened and
+         closed WITHOUT uploading, the Manager read that old copy and filled
+         in the previous file. The stale copy is now cleared (read and
+         discarded) each time the Add / Edit form opens, before any upload
+         can start. No change to a normal upload. No other change.
+         V2.12.8 - Display tidy-up, no change to how documents are saved.
          (1) Document Date no longer shows one day early when a document is
          opened for editing: toDateInput() used toISOString(), which reports
          the UTC date, and midnight in Melbourne is the previous day in UTC;
@@ -517,6 +539,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         }
         .field-textarea { resize: vertical; min-height: 58px; }
         .field-hint { font-size: 0.75rem; color: #94a3b8; margin-top: 3px; }
+        .highlight-pulse { animation: pulseBorder 2.4s ease-out 1; }
+        @keyframes pulseBorder { 0% { box-shadow: 0 0 0 0 rgba(5,150,105,0.7); border-color: #059669; } 70% { box-shadow: 0 0 0 10px rgba(5,150,105,0); border-color: #059669; } 100% { box-shadow: 0 0 0 0 rgba(5,150,105,0); } }
         .field-input.error, .field-select.error { border-color: #ef4444; }
         .field-error { font-size: 0.75rem; color: #dc2626; margin-top: 3px; display: none; }
         .field-error.visible { display: block; }
@@ -1004,7 +1028,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                         </div>
                         <div class="field-group">
                             <label class="field-label" for="fCategory">Category <span class="required">*</span></label>
-                            <select id="fCategory" class="field-select">
+                            <select id="fCategory" class="field-select" onchange="updateUploadState()">
                                 <option value="">— Select Category —</option>
                             </select>
                             <div class="field-error" id="fCategoryErr">Category is required</div>
@@ -1040,18 +1064,19 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
                     <div class="form-row thirds">
                         <div class="field-group">
-                            <label class="field-label" for="fSourceType">Source Type <span class="required">*</span></label>
-                            <select id="fSourceType" class="field-select" onchange="onSourceTypeChange()">
+                            <label class="field-label" for="fSourceType">Where is the document? <span class="required">*</span></label>
+                            <select id="fSourceType" class="field-select" onchange="onSourceTypeChange(true)">
                                 <option value="">— Select —</option>
-                                <option value="Drive">Google Drive</option>
-                                <option value="Link">External URL</option>
-                                <option value="Physical">Physical Location</option>
+                                <option value="Drive">Upload a file (stored in the library)</option>
+                                <option value="Link">A web page or link</option>
+                                <option value="Physical">A paper copy kept at the office</option>
                             </select>
-                            <div class="field-error" id="fSourceTypeErr">Source Type is required</div>
+                            <div class="field-hint">How will residents get this document?</div>
+                            <div class="field-error" id="fSourceTypeErr">Please choose where the document is</div>
                         </div>
                         <div class="field-group">
                             <label class="field-label" for="fFileType">File Type</label>
-                            <select id="fFileType" class="field-select">
+                            <select id="fFileType" class="field-select" title="Set automatically; change it only if it is wrong">
                                 <option value="PDF">PDF</option>
                                 <option value="DOC">DOC/DOCX</option>
                                 <option value="XLS">XLS/XLSX</option>
@@ -1066,7 +1091,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                             <label class="field-label">&nbsp;</label>
                             <button type="button" class="btn-upload-drive"
                                 id="btnUploadDrive" onclick="openUploadPopup()">
-                                ☁️ Upload to Drive
+                                ☁️ Choose file to upload
                             </button>
                         </div>
                     </div>
@@ -1078,8 +1103,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                                 <input type="text" id="fSourceLocation" class="field-input"
                                     placeholder="Select a Source Type above">
                             </div>
-                            <div class="field-hint" id="fSourceHint">Select a Source Type to see guidance</div>
+                            <div class="field-hint" id="fSourceHint">Select where the document is, above</div>
+                            <div class="field-hint" id="uploadWhere" style="display:none;font-weight:600;color:#1e3a8a;"></div>
                             <div class="field-error" id="fSourceLocationErr">Source Location is required</div>
+                            <!-- Next-step prompt shown after an upload (V2.13.0) -->
+                            <div id="nextStepBox" style="display:none;margin-top:8px;padding:10px 12px;background:#d1fae5;border:1px solid #6ee7b7;border-radius:2px;font-size:0.82rem;color:#065f46;font-weight:600;"></div>
                             <!-- Shown after Drive upload — confirms which file was uploaded -->
                             <div id="uploadedFileNameDisplay" style="display:none;margin-top:6px;padding:6px 10px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:2px;font-size:0.78rem;color:#475569;word-break:break-all;">
                                 📄 <span id="uploadedFileNameText"></span>
@@ -1091,7 +1119,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 </div>
 
                 <!-- Access Control -->
-                <div class="form-section">
+                <div class="form-section" id="accessSection">
                     <div class="form-section-title">🔐 Access Control <span class="required">*</span></div>
                     <div class="role-checkboxes" id="roleCheckboxes">
                         <!-- built by buildRoleCheckboxes() -->
@@ -1174,6 +1202,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     let deleteTargetId = null;
     let currentUser    = null;
     let uploadPopup    = null;
+    let uploadedToCategory = '';   // V2.13.0: category the last upload was filed under
     let uploadPollTimer = null;
 
     // ================================================================
@@ -1617,31 +1646,97 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     // ================================================================
     // SOURCE TYPE CHANGE
     // ================================================================
-    function onSourceTypeChange() {
+    function onSourceTypeChange(fromUser) {
         const type = document.getElementById('fSourceType').value;
 
         const hints = {
-            Drive:    'Google Drive File ID — auto-filled after upload, or paste an existing ID manually',
-            Link:     'Full URL including https://',
-            Physical: 'Physical location description (e.g. "Office filing cabinet, drawer 3")'
+            Drive:    'Use "Choose file to upload" above. The file is stored in the library and its ID is filled in here for you (or paste an existing Drive file ID).',
+            Link:     'Paste the full web address, starting with https://',
+            Physical: 'Say where the paper copy is kept (e.g. "Office filing cabinet, drawer 3")'
         };
         const placeholders = {
-            Drive:    'Click "Upload to Drive" or paste an existing Drive File ID',
+            Drive:    'Filled in automatically after you upload a file',
             Link:     'https://example.com/document.pdf',
             Physical: 'e.g. Committee Room — Filing Cabinet A'
         };
 
-        document.getElementById('fSourceHint').textContent     = hints[type]        || 'Select a Source Type above';
+        document.getElementById('fSourceHint').textContent     = hints[type]        || 'Select where the document is, above';
         document.getElementById('fSourceLocation').placeholder = placeholders[type] || '';
 
         // Show Upload button only for Drive
         document.getElementById('uploadBtnCol').style.display = type === 'Drive' ? 'block' : 'none';
+
+        // File Type follows the source when the person changes it (not when
+        // an existing document is merely being opened for editing).
+        if (fromUser) {
+            if (type === 'Link')     document.getElementById('fFileType').value = 'Link';
+            if (type === 'Physical') document.getElementById('fFileType').value = 'Physical';
+        }
+        updateUploadState();
+    }
+
+    // The Category decides which Drive folder the file goes into, so the
+    // upload button waits for it, and the person is told where the file will go.
+    function updateUploadState() {
+        const type  = document.getElementById('fSourceType').value;
+        const cat   = document.getElementById('fCategory').value;
+        const btn   = document.getElementById('btnUploadDrive');
+        const where = document.getElementById('uploadWhere');
+        if (!btn || !where) return;
+
+        if (type !== 'Drive') { where.style.display = 'none'; return; }
+
+        const waiting = btn.textContent.indexOf('Waiting') !== -1;
+        if (!waiting) btn.disabled = !cat;
+        where.style.display = 'block';
+        if (!cat) {
+            where.style.color = '#b45309';
+            where.textContent = 'Choose a Category above first. It decides where the file is stored.';
+        } else {
+            where.style.color = '#1e3a8a';
+            where.textContent = 'Will be filed in: Document Library › ' + cat;
+            if (uploadedToCategory && uploadedToCategory !== cat) {
+                where.textContent += '   (note: the file already uploaded stays in "' + uploadedToCategory + '")';
+            }
+        }
+    }
+
+    // File Type from the uploaded file's extension
+    function fileTypeFromName(name) {
+        const m = /\.([A-Za-z0-9]+)$/.exec(name || '');
+        const ext = m ? m[1].toLowerCase() : '';
+        if (ext === 'pdf') return 'PDF';
+        if (ext === 'doc' || ext === 'docx') return 'DOC';
+        if (ext === 'xls' || ext === 'xlsx' || ext === 'csv') return 'XLS';
+        if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif') return 'PNG';
+        return ext ? 'Other' : '';
+    }
+
+    // After an upload: say what to do next, and take the person to it.
+    function showNextStep() {
+        const box = document.getElementById('nextStepBox');
+        const needRoles = getCheckedRoles().length + preservedRoles.length === 0;
+        box.textContent = needRoles
+            ? '✅ File attached. Next: tick who can see this document under Access Control (below), then click Add Document.'
+            : '✅ File attached. Next: check the details, then click ' + (editingId ? 'Save Changes' : 'Add Document') + '.';
+        box.style.display = 'block';
+        if (needRoles) {
+            const sec = document.getElementById('accessSection');
+            sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            sec.classList.remove('highlight-pulse');
+            void sec.offsetWidth;   // restart the animation
+            sec.classList.add('highlight-pulse');
+        }
     }
 
     // ================================================================
     // DRIVE UPLOAD POPUP
     // ================================================================
     function openUploadPopup() {
+        if (!document.getElementById('fCategory').value) {
+            showToast('error', '❌ Choose a Category first. It decides where the file is stored.');
+            return;
+        }
         const w = 560, h = 480;
         const left = Math.round(window.screenX + (window.outerWidth  - w) / 2);
         const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
@@ -1681,7 +1776,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                             // Popup closed without a completed upload — just reset button
                             const b = document.getElementById('btnUploadDrive');
                             if (b && b.disabled) {
-                                b.textContent = '☁️ Upload to Drive';
+                                b.textContent = '☁️ Choose file to upload';
                                 b.disabled = false;
                             }
                             // V2.12.0: the reply (and with it the staged file ID) may
@@ -1711,8 +1806,15 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         }
 
         const btn = document.getElementById('btnUploadDrive');
-        btn.textContent = '☁️ Upload to Drive';
+        btn.textContent = '☁️ Choose file to upload';
         btn.disabled = false;
+
+        // V2.13.0: File Type from the file, remember where it was filed, and guide the next step
+        const ft = fileTypeFromName(fileName);
+        if (ft) document.getElementById('fFileType').value = ft;
+        uploadedToCategory = document.getElementById('fCategory').value;
+        updateUploadState();
+        showNextStep();
 
         showToast('success', '✅ Uploaded: ' + (fileName || fileId));
     }
@@ -1720,7 +1822,14 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     // ================================================================
     // ADD / EDIT MODAL
     // ================================================================
+    // V2.12.9: discard any left-over upload hand-off (see header) so an old
+    // file can never be offered for a new document. Reply ignored.
+    function clearStaleUpload() {
+        callDocLib('getLastUpload', {}, function() {});
+    }
+
     function openAddModal() {
+        clearStaleUpload();
         editingId = null;
         clearForm();
         document.getElementById('modalTitle').textContent    = '➕ Add New Document';
@@ -1728,6 +1837,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('fDocumentId').value        = '';
         document.getElementById('btnSave').textContent      = '💾 Add Document';
         document.getElementById('modalStatus').textContent  = '';
+        document.getElementById('fSourceType').value        = 'Drive';   // V2.13.0: most documents are uploads
+        onSourceTypeChange(false);
         document.getElementById('editModalOverlay').classList.remove('hidden');
         setTimeout(() => document.getElementById('fTitle').focus(), 60);
     }
@@ -1736,6 +1847,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         const doc = allDocuments.find(d => d.documentId === documentId);
         if (!doc) { showToast('error', 'Document not found'); return; }
 
+        clearStaleUpload();
         editingId = documentId;
         clearForm();
         document.getElementById('modalTitle').textContent    = '✏️ Edit Document';
@@ -1786,6 +1898,9 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('fFileName').value = '';
         setRoleCheckboxes('');
         clearFieldErrors();
+        uploadedToCategory = '';
+        document.getElementById('nextStepBox').style.display = 'none';
+        document.getElementById('uploadWhere').style.display = 'none';
     }
 
     function clearFieldErrors() {
