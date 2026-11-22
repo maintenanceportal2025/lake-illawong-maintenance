@@ -5,7 +5,17 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.13.2 - The Source Location box (and its hint) is hidden when the
+VERSION: V2.14.0 - Deleting an uploaded document now also moves its file to the Drive
+         trash (needs backend V2.11; works harmlessly with older backends, which
+         only remove the row). The confirm box says what will happen to the file
+         for that kind of document: uploaded file (moved to the Drive trash,
+         restorable for 30 days), link (nothing to remove) or paper copy
+         (nothing to remove). After deleting, the message reports what happened to
+         the file, including when it was kept (another document uses it) or could
+         not be moved. The wording "permanently remove ... cannot be undone"
+         is replaced because the file can now be restored from the trash. No
+         other change.
+         V2.13.2 - The Source Location box (and its hint) is hidden when the
          source is an uploaded file: the ID is filled in behind the scenes and
          the file name panel already confirms the upload. It is still shown for
          a web link and a paper copy, where the person types the address or
@@ -1173,10 +1183,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             <div class="confirm-icon">🗑️</div>
             <div class="confirm-title">Delete Document?</div>
             <div class="confirm-msg">
-                This will permanently remove
+                This will remove
                 <span class="confirm-doc-name" id="confirmDocName">"Document"</span>
                 from the library. Residents immediately lose access.
-                <br><strong>This cannot be undone.</strong>
+                <br><span id="confirmFileNote"></span>
+                <br><strong>The library entry cannot be restored.</strong>
             </div>
             <div class="confirm-actions">
                 <button class="btn-cancel" onclick="closeDeleteModal()">Keep</button>
@@ -2039,6 +2050,13 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     function openDeleteModal(documentId, title) {
         deleteTargetId = documentId;
         document.getElementById('confirmDocName').textContent = '"' + title + '"';
+        // V2.14.0: say what will happen to the file for this kind of document
+        const doc  = allDocuments.find(function(d) { return d.documentId === documentId; });
+        const type = doc ? doc.sourceType : '';
+        document.getElementById('confirmFileNote').textContent =
+            type === 'Drive'    ? 'The uploaded file will also be moved to the Drive trash (it can be restored from there for 30 days).' :
+            type === 'Link'     ? 'This is a web link, so there is no file to remove.' :
+            type === 'Physical' ? 'This is a paper copy, so there is no file to remove.' : '';
         document.getElementById('deleteModalOverlay').classList.remove('hidden');
     }
 
@@ -2062,7 +2080,15 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 showToast('info', '⚠️ No reply from the server — the document may have been deleted. The list has been refreshed; please check.', 10000);
                 loadDocuments();
             } else if (response.success) {
-                showToast('success', '✅ Document deleted');
+                // V2.14.0: say what happened to the file (older backends send no note)
+                const note = response.fileNote ? ' ' + response.fileNote : '';
+                if (response.fileTrashed) {
+                    showToast('success', '✅ Document deleted.' + note, 7000);
+                } else if (response.fileNote && /could not|was not|left in Drive|kept in Drive|not found/i.test(response.fileNote)) {
+                    showToast('info', '⚠️ Document deleted.' + note, 10000);
+                } else {
+                    showToast('success', '✅ Document deleted.' + note, 5000);
+                }
                 loadDocuments();
             } else {
                 showToast('error', '❌ Delete failed: ' + (response.error || 'Unknown error'));
