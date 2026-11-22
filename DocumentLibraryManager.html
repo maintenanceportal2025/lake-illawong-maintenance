@@ -5,7 +5,18 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.13.0 - Guided document form (wording and prompts only; nothing about
+VERSION: V2.13.1 - (1) The Manager now collects the uploaded file WHILE the uploader
+         popup is still open (it checks every few seconds) and closes the
+         popup itself, so nobody has to close it. Before, the file was only
+         collected after the popup was closed by hand, and the popup could not
+         close itself (it runs inside the Apps Script wrapper page). Closing
+         the popup by hand still works as before. (2) The File Type field is
+         hidden: it was filled in automatically anyway and is only a label in
+         the document list (nothing uses it to open a document). It is still
+         saved: from the uploaded file's extension, Link or Physical for those
+         sources, otherwise left as it was (PDF for a new document). Works
+         with Uploader V1.9. No other change.
+         V2.13.0 - Guided document form (wording and prompts only; nothing about
          how documents are saved changes). (1) Source Type is now
          "Where is the document?" with plain options ("Upload a file...",
          "A web page or link", "A paper copy kept at the office") and a hint;
@@ -1062,7 +1073,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 <div class="form-section">
                     <div class="form-section-title">📁 File Source</div>
 
-                    <div class="form-row thirds">
+                    <div class="form-row">
                         <div class="field-group">
                             <label class="field-label" for="fSourceType">Where is the document? <span class="required">*</span></label>
                             <select id="fSourceType" class="field-select" onchange="onSourceTypeChange(true)">
@@ -1074,7 +1085,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                             <div class="field-hint">How will residents get this document?</div>
                             <div class="field-error" id="fSourceTypeErr">Please choose where the document is</div>
                         </div>
-                        <div class="field-group">
+                        <div class="field-group" style="display:none;">   <!-- V2.13.1: set automatically, not shown -->
                             <label class="field-label" for="fFileType">File Type</label>
                             <select id="fFileType" class="field-select" title="Set automatically; change it only if it is wrong">
                                 <option value="PDF">PDF</option>
@@ -1760,8 +1771,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         btn.textContent = '⏳ Waiting for upload…';
         btn.disabled = true;
 
-        // Detect popup closed without completing upload
+        // V2.13.1: collect the uploaded file while the popup is still open (the
+        // popup cannot message this page or close itself), and close it from here.
+        // Also handles the popup being closed by hand, as before.
         if (uploadPollTimer) clearInterval(uploadPollTimer);
+        let tick = 0, polling = false;
         uploadPollTimer = setInterval(function() {
             if (uploadPopup && uploadPopup.closed) {
                 clearInterval(uploadPollTimer);
@@ -1787,7 +1801,18 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                         }
                     });
                 }, 800);
+                return;
             }
+            // Popup still open: every 3rd tick (~2.4s), look for a finished upload.
+            tick++;
+            if (tick % 3 !== 0 || polling) return;
+            polling = true;
+            callDocLib('getLastUpload', {}, function(response) {
+                polling = false;
+                if (response && response.fileId && uploadPollTimer) {
+                    handleUploadComplete(response.fileId, response.fileName);   // also closes the popup
+                }
+            });
         }, 800);
     }
 
