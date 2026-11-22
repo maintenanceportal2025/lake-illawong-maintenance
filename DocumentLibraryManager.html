@@ -5,7 +5,12 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.12.5 - FIX: category Rename showed Save and the bin but no box to type
+VERSION: V2.12.6 - Category Save, Delete and Add now give clear visual feedback
+         while the request is running: the button is disabled and changes to
+         "Saving...", "Deleting..." or "Adding..." so it cannot be clicked a
+         second time by mistake. If the request fails the button is restored.
+         (Document Save and Delete already did this.) No other change.
+         V2.12.5 - FIX: category Rename showed Save and the bin but no box to type
          the new name. The rename input's container (.cat-item-edit) was
          styled display:none in the stylesheet, so removing its 'hidden'
          class (which is how Rename reveals it) had no effect. The
@@ -793,6 +798,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         }
         .btn-cat-add:hover { background: linear-gradient(135deg, #10b981, #059669); }
         .btn-cat-add:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-cat-save:disabled, .btn-cat-delete:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .btn-manage-cats {
             padding: 8px 14px;
@@ -1914,7 +1920,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 <button class="btn-cat-save hidden" id="catbtnsave_${safeId(cat)}"
                     onclick="saveRename('${safeId(cat)}',this.closest('.cat-item').dataset.cat)">✓ Save</button>
                 <button class="btn-cat-delete"
-                    onclick="deleteCategory(this.closest('.cat-item').dataset.cat)">🗑️</button>
+                    onclick="deleteCategory(this.closest('.cat-item').dataset.cat, this)">🗑️</button>
             </div>
         `).join('');
     }
@@ -1940,6 +1946,12 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
         if (!newValue || newValue === oldValue) { cancelRename(safeKey); return; }
 
+        const saveBtn = document.getElementById('catbtnsave_' + safeKey);
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Saving…'; }
+        function restoreSave() {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '✓ Save'; }
+        }
+
         callDocLib('updateDocCategory', { oldValue: oldValue, newValue: newValue }, function(response) {
             if (response.outcomeUnknown) {
                 showToast('info', '⚠️ ' + UNKNOWN_MSG, 10000);
@@ -1958,6 +1970,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 });
             } else {
                 showToast('error', '❌ ' + (response.error || 'Rename failed'));
+                restoreSave();
                 cancelRename(safeKey);
             }
         });
@@ -1970,7 +1983,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
         const btn = document.getElementById('btnCatAdd');
         btn.disabled = true;
-        btn.textContent = '⏳';
+        btn.textContent = '⏳ Adding…';
 
         callDocLib('addDocCategory', { value: value }, function(response) {
             btn.disabled = false;
@@ -1993,8 +2006,10 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         });
     }
 
-    function deleteCategory(value) {
+    function deleteCategory(value, btn) {
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Deleting…'; }
         callDocLib('deleteDocCategory', { value: value }, function(response) {
+            if (btn && !response.success) { btn.disabled = false; btn.textContent = '🗑️'; }
             if (response.outcomeUnknown) {
                 showToast('info', '⚠️ No reply from the server — the category may have been deleted. The list has been refreshed; please check.', 10000);
                 refreshCategories(true);
