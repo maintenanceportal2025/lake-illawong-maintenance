@@ -5,7 +5,13 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.14.0 - Deleting an uploaded document now also moves its file to the Drive
+VERSION: V2.14.1 - Sends the signed-in person's name and email (from their verified
+         login session) with every add, edit and delete, so the backend can write
+         them to its new DocumentLog audit tab (needs backend V2.12; older
+         backends ignore the extra values). With no session the name is left
+         empty and the log shows "Unknown". Nothing visible changes. The Added By
+         column is unchanged.
+         V2.14.0 - Deleting an uploaded document now also moves its file to the Drive
          trash (needs backend V2.11; works harmlessly with older backends, which
          only remove the row). The confirm box says what will happen to the file
          for that kind of document: uploaded file (moved to the Drive trash,
@@ -2012,6 +2018,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             accessRoles:    checkedRoles.concat(preservedRoles).join(','),
             tags:           document.getElementById('fTags').value.trim(),
             addedBy:        currentUser ? currentUser.name : 'Admin',
+            actorName:      currentUser ? (currentUser.name  || '') : '',
+            actorEmail:     currentUser ? (currentUser.email || '') : '',
             fileName:       document.getElementById('fFileName').value.trim()
         };
 
@@ -2071,7 +2079,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         btn.disabled = true;
         btn.textContent = '⏳ Deleting…';
 
-        callDocLib('deleteDocument', { documentId: deleteTargetId }, function(response) {
+        callDocLib('deleteDocument', {
+            documentId: deleteTargetId,
+            actorName:  currentUser ? (currentUser.name  || '') : '',
+            actorEmail: currentUser ? (currentUser.email || '') : ''
+        }, function(response) {
             btn.disabled = false;
             btn.textContent = '🗑️ Delete';
             closeDeleteModal();
