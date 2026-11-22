@@ -5,7 +5,19 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.12.7 - Deleting a category now asks "Are you sure?" first. The prompt
+VERSION: V2.12.8 - Display tidy-up, no change to how documents are saved.
+         (1) Document Date no longer shows one day early when a document is
+         opened for editing: toDateInput() used toISOString(), which reports
+         the UTC date, and midnight in Melbourne is the previous day in UTC;
+         it now uses the local date. (2) The wrong Access Control hint
+         ('"Public" = anyone, no login required') is replaced. (3) Role pills
+         added for the new roles (Resident-Executive, Social-Executive,
+         Fire-Warden, Technical-Docs, Director, ZoneRep-N) using the existing
+         pill styles. (4) A Log Out button is added at the foot of the page
+         (the logout() function and its style already existed but nothing
+         called it). (5) Header comments corrected (authentication and
+         session wording). No other change.
+         V2.12.7 - Deleting a category now asks "Are you sure?" first. The prompt
          names the category and says how many documents currently use it.
          Cancel leaves everything unchanged. No other change.
          V2.12.6 - Category Save, Delete and Add now give clear visual feedback
@@ -82,9 +94,9 @@ DESIGN SYSTEM: Lake Illawong Unified V2.4
 - Layout: White content cards on gradient
 - API Protocol: JSONP with proper callback cleanup (fixed V2.10, Aug 2026 --
   previously deleted the callback rather than replacing it with a no-op)
-AUTHENTICATION: VerificationModal V1.0 (OTP via ManagementCentral)
+AUTHENTICATION: VerificationModal.js (OTP via ManagementCentral)
 - Allowed roles: Doc Manager, Developer
-- Session: sessionStorage (cleared on browser close)
+- Session: held by VerificationModal under CONFIG.SESSION_KEY; Log Out clears it
 DEPENDENCIES:
 - ApiClient.js (shared JSONP transport)
 - VerificationModal.js (OTP authentication)
@@ -956,6 +968,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             <div id="tableContent" class="hidden"></div>
         </div>
 
+        <!-- LOG OUT -->
+        <div class="logout-container">
+            <button class="logout-btn" onclick="if (confirm('Are you sure you want to log out?')) logout()">🚪 Log Out</button>
+        </div>
+
 
     </div>
 
@@ -1084,7 +1101,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                         At least one access role is required
                     </div>
                     <div class="field-hint" style="margin-top:8px;">
-                        Residents only see documents where their roleTag matches. "Public" = anyone, no login required.
+                        Residents only see documents where one of their role tags matches a role ticked here.
                     </div>
                 </div>
 
@@ -1505,10 +1522,12 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     }
 
     function rolePillClass(r) {
-        if (r.startsWith('Resident-Committee') || r.startsWith('Resident Committee')) return 'pill-committee';
-        if (r.startsWith('Social-Committee')   || r.startsWith('Social Committee'))   return 'pill-social';
+        if (r.startsWith('Resident-') || r.startsWith('Resident Committee') || r.startsWith('ZoneRep-')) return 'pill-committee';
+        if (r.startsWith('Social-')   || r.startsWith('Social Committee'))   return 'pill-social';
         return { 'Public':'pill-public', 'Resident':'pill-resident',
-                 'Doc Manager':'pill-docmgr', 'Admin':'pill-admin', 'Staff':'pill-staff' }[r] || 'pill-other';
+                 'Doc Manager':'pill-docmgr', 'Technical-Docs':'pill-docmgr',
+                 'Admin':'pill-admin', 'Director':'pill-admin',
+                 'Staff':'pill-staff', 'Fire-Warden':'pill-staff' }[r] || 'pill-other';
     }
 
     // ================================================================
@@ -2075,7 +2094,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         try {
             const d = new Date(val);
             if (isNaN(d)) return '';
-            return d.toISOString().split('T')[0]; // YYYY-MM-DD
+            // local date, not UTC: toISOString() showed Melbourne dates one day early
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); // YYYY-MM-DD
         } catch(e) { return ''; }
     }
 
