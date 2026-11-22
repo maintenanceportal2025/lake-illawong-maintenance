@@ -5,7 +5,13 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.13.1 - (1) The Manager now collects the uploaded file WHILE the uploader
+VERSION: V2.13.2 - The Source Location box (and its hint) is hidden when the
+         source is an uploaded file: the ID is filled in behind the scenes and
+         the file name panel already confirms the upload. It is still shown for
+         a web link and a paper copy, where the person types the address or
+         place. Saving with no file uploaded now says "Upload a file first".
+         Pasting an existing Drive ID is no longer offered. No other change.
+         V2.13.1 - (1) The Manager now collects the uploaded file WHILE the uploader
          popup is still open (it checks every few seconds) and closes the
          popup itself, so nobody has to close it. Before, the file was only
          collected after the popup was closed by hand, and the popup could not
@@ -1109,12 +1115,14 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
                     <div class="form-row single">
                         <div class="field-group">
-                            <label class="field-label" for="fSourceLocation">Source Location <span class="required">*</span></label>
+                            <label class="field-label" for="fSourceLocation" id="sourceLocLabel">Source Location <span class="required">*</span></label>
+                            <div id="sourceInputWrap">
                             <div class="drive-input-row">
                                 <input type="text" id="fSourceLocation" class="field-input"
                                     placeholder="Select a Source Type above">
                             </div>
                             <div class="field-hint" id="fSourceHint">Select where the document is, above</div>
+                            </div>
                             <div class="field-hint" id="uploadWhere" style="display:none;font-weight:600;color:#1e3a8a;"></div>
                             <div class="field-error" id="fSourceLocationErr">Source Location is required</div>
                             <!-- Next-step prompt shown after an upload (V2.13.0) -->
@@ -1674,6 +1682,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         document.getElementById('fSourceHint').textContent     = hints[type]        || 'Select where the document is, above';
         document.getElementById('fSourceLocation').placeholder = placeholders[type] || '';
 
+        // V2.13.2: for an uploaded file the ID is filled in behind the scenes
+        const isDrive = type === 'Drive';
+        document.getElementById('sourceInputWrap').style.display = isDrive ? 'none' : 'block';
+        document.getElementById('sourceLocLabel').style.display  = isDrive ? 'none' : 'block';
+
         // Show Upload button only for Drive
         document.getElementById('uploadBtnCol').style.display = type === 'Drive' ? 'block' : 'none';
 
@@ -1960,7 +1973,14 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         if (!category)       fieldErr('fCategory',       'Category is required');
         if (!description)    fieldErr('fDescription',    'Description is required');
         if (!sourceType)     fieldErr('fSourceType',     'Source Type is required');
-        if (!sourceLocation) fieldErr('fSourceLocation', 'Source Location is required');
+        if (!sourceLocation) {
+            if (sourceType === 'Drive') {
+                fieldErr('fSourceLocation', 'Upload a file first');
+                showToast('error', '❌ Upload a file first (use "Choose file to upload").');
+            } else {
+                fieldErr('fSourceLocation', 'Source Location is required');
+            }
+        }
 
         if (checkedRoles.length + preservedRoles.length === 0) {
             document.getElementById('fAccessRolesErr').classList.add('visible');
