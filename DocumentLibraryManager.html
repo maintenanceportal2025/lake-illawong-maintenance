@@ -5,7 +5,14 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.12.2 - FIX: the "All Access Levels" toolbar filter could open with
+VERSION: V2.12.3 - FIX: editing a document silently dropped any access role tag
+         that is not offered as a tick-box (roles not flagged Y on the Roles
+         tab), e.g. ZoneRep-1..5 on the Monthly Reports rows or Admin on
+         DOC-012, so saving an edit removed that access. Such tags are now
+         kept untouched on save and listed under the tick-boxes ("Also kept
+         on this document: ..."). To remove one, flag the role on the Roles
+         tab so it appears as a tick-box. No other change.
+         V2.12.2 - FIX: the "All Access Levels" toolbar filter could open with
          no roles in it (only "All Access Levels"). It was built inside
          buildCategoryDropdowns(), which runs when the CATEGORIES reply
          arrives; if that reply beat the ROLES reply, docRoles was still
@@ -1050,6 +1057,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                     <div class="role-checkboxes" id="roleCheckboxes">
                         <!-- built by buildRoleCheckboxes() -->
                     </div>
+                    <div class="field-hint" id="preservedRolesNote" style="margin-top:8px;display:none;"></div>
                     <div class="field-error" id="fAccessRolesErr" style="margin-top:8px;">
                         At least one access role is required
                     </div>
@@ -1116,6 +1124,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     // No roles or categories are hardcoded here
     let docRoles      = [];   // from ManagementCentral getDocRoles
     let docCategories = [];   // from DocumentLibrary getDocCategories
+    let preservedRoles = [];  // tags on the document being edited that have no tick-box (V2.12.3)
 
     // ================================================================
     // STATE
@@ -1543,7 +1552,14 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     }
 
     function setRoleCheckboxes(rolesString) {
-        const roles = rolesString ? rolesString.split(',').map(r => r.trim()) : [];
+        const roles = rolesString ? rolesString.split(',').map(r => r.trim()).filter(Boolean) : [];
+        // V2.12.3: tags with no tick-box are kept as they are
+        preservedRoles = roles.filter(r => !docRoles.includes(r));
+        const note = document.getElementById('preservedRolesNote');
+        if (note) {
+            note.textContent = preservedRoles.length ? 'Also kept on this document: ' + preservedRoles.join(', ') : '';
+            note.style.display = preservedRoles.length ? 'block' : 'none';
+        }
         document.querySelectorAll('#roleCheckboxes input[type="checkbox"]').forEach(cb => {
             cb.checked = roles.includes(cb.value);
             cb.closest('label').classList.toggle('checked', cb.checked);
@@ -1765,7 +1781,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         if (!sourceType)     fieldErr('fSourceType',     'Source Type is required');
         if (!sourceLocation) fieldErr('fSourceLocation', 'Source Location is required');
 
-        if (checkedRoles.length === 0) {
+        if (checkedRoles.length + preservedRoles.length === 0) {
             document.getElementById('fAccessRolesErr').classList.add('visible');
             valid = false;
         }
@@ -1781,7 +1797,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             sourceType,
             sourceLocation,
             fileType:       document.getElementById('fFileType').value,
-            accessRoles:    checkedRoles.join(','),
+            accessRoles:    checkedRoles.concat(preservedRoles).join(','),
             tags:           document.getElementById('fTags').value.trim(),
             addedBy:        currentUser ? currentUser.name : 'Admin',
             fileName:       document.getElementById('fFileName').value.trim()
