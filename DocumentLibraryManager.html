@@ -5,7 +5,24 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.15.0 - Document structure, step 2: the form now files each document by
+VERSION: V2.16.0 - Document structure, step 5: a screen to manage the categories and
+         subcategories (needs backend V2.14). A new "Structure" button opens a panel
+         listing every category with its subcategories, how many documents use each,
+         and for each: move up / down, edit, add a subcategory (on a category) and delete.
+         Edit changes the name, the icon (category), Group by (None / Calendar
+         year / Financial year), the default access roles and whether it is switched on.
+         Renaming also renames the Drive folder and updates the documents that use the
+         old name (the backend does this; if Drive already has a folder with the new
+         name, nothing is changed and the reason is shown). Delete is refused while
+         any document uses it. The category "Monthly Reports" cannot be renamed,
+         switched off or deleted (the Monthly Reports script depends on its name). Adding
+         a category creates one with no subcategories; add subcategories to it
+         afterwards (a category with subcategories keeps Group by and default roles on
+         the subcategories). The form's Category / Subcategory lists refresh after
+         each change. The old "Categories" button is replaced by "Structure" whenever
+         the DocCategories list is in use; with an older backend the old button stays
+         as before. Every change is recorded in the DocumentLog tab with who made it.
+         V2.15.0 - Document structure, step 2: the form now files each document by
          Category > Subcategory > Year (needs backend V2.13 and its DocCategories
          tab; with an older backend, or an empty DocCategories tab, the form
          falls back to the old flat Category list exactly as before). (1) The
@@ -1016,7 +1033,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 <span class="record-count" id="recordCount"></span>
             </div>
             <div class="toolbar-right">
-                <button class="btn-manage-cats" onclick="toggleCatPanel()">⚙️ Categories</button>
+                <button class="btn-manage-cats" id="btnOldCats" onclick="toggleCatPanel()">⚙️ Categories</button>
+                <button class="btn-manage-cats" id="btnStructure" style="display:none;" onclick="toggleStructPanel()">🗂️ Structure</button>
                 <button class="btn-add" onclick="openAddModal()">+ Add Document</button>
             </div>
         </div>
@@ -1036,6 +1054,26 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                         placeholder="New category name…" maxlength="60"
                         onkeydown="if(event.key==='Enter') addCategory()">
                     <button class="btn-cat-add" id="btnCatAdd" onclick="addCategory()">+ Add</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- STRUCTURE PANEL (V2.16.0, hidden by default) -->
+        <div id="structPanel" class="cat-panel hidden">
+            <div class="cat-panel-header">
+                <div class="cat-panel-title">🗂️ Document Structure</div>
+                <button class="cat-panel-close" onclick="toggleStructPanel()">✕</button>
+            </div>
+            <div class="cat-panel-body">
+                <div class="field-hint" style="margin:0 0 10px 0;">
+                    Documents are filed by Category, then Subcategory, then Year. Renaming also renames the Drive folder
+                    and updates the documents. Something that documents still use cannot be deleted.
+                </div>
+                <div class="cat-list" id="structList" style="max-height:480px;">
+                    <div style="color:#94a3b8;font-size:0.82rem;padding:10px 0;">Loading…</div>
+                </div>
+                <div class="cat-add-row">
+                    <button class="btn-cat-add" onclick="openStructModal('addCategory','','')">+ Add category</button>
                 </div>
             </div>
         </div>
@@ -1233,6 +1271,82 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             <div class="confirm-actions">
                 <button class="btn-cancel" onclick="closeDeleteModal()">Keep</button>
                 <button class="btn-confirm-delete" id="btnConfirmDelete" onclick="confirmDelete()">🗑️ Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         STRUCTURE: ADD / EDIT MODAL (V2.16.0)
+    ================================================================ -->
+    <div id="structModalOverlay" class="modal-overlay hidden" onclick="if (event.target === event.currentTarget) closeStructModal()">
+        <div class="modal" style="max-width:560px;">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-title" id="structModalTitle">Category</div>
+                    <div class="modal-subtitle" id="structModalSubtitle"></div>
+                </div>
+                <button class="modal-close" onclick="closeStructModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row single">
+                    <div class="field-group">
+                        <label class="field-label" for="sName" id="sNameLabel">Name <span class="required">*</span></label>
+                        <input type="text" id="sName" class="field-input" maxlength="60">
+                        <div class="field-hint" id="sProtectedNote" style="display:none;">This category's name is used by the Monthly Reports script, so it cannot be renamed or switched off.</div>
+                    </div>
+                </div>
+                <div class="form-row single" id="sIconWrap">
+                    <div class="field-group">
+                        <label class="field-label" for="sIcon">Icon</label>
+                        <input type="text" id="sIcon" class="field-input" maxlength="8" placeholder="e.g. 🏛️">
+                        <div class="field-hint">One emoji, shown beside the category on the library page.</div>
+                    </div>
+                </div>
+                <div class="form-row single" id="sGroupWrap">
+                    <div class="field-group">
+                        <label class="field-label" for="sGroupBy">Group by</label>
+                        <select id="sGroupBy" class="field-select">
+                            <option value="None">None</option>
+                            <option value="Calendar year">Calendar year</option>
+                            <option value="Financial year">Financial year</option>
+                        </select>
+                        <div class="field-hint">None: no year level. Calendar year: for example 2026. Financial year: July to June, for example 2025-26. Existing files are not moved.</div>
+                    </div>
+                </div>
+                <div class="form-section" id="sRolesWrap" style="margin-bottom:12px;">
+                    <div class="form-section-title">🔐 Default access roles</div>
+                    <div class="role-checkboxes" id="sRoles"></div>
+                    <div class="field-hint" id="sPreservedNote" style="margin-top:8px;display:none;"></div>
+                    <div class="field-hint" style="margin-top:8px;">Pre-ticked when someone adds a document here. They can still change the ticks.</div>
+                </div>
+                <div class="form-row single" id="sActiveWrap">
+                    <div class="field-group">
+                        <label class="role-cb-item" id="sActiveLabel" style="display:flex;">
+                            <input type="checkbox" id="sActive" onchange="this.closest('label').classList.toggle('checked', this.checked)">
+                            Switched on (offered when adding documents)
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-status" id="structModalStatus"></div>
+                <div class="modal-actions">
+                    <button class="btn-cancel" onclick="closeStructModal()">Cancel</button>
+                    <button class="btn-save" id="btnStructSave" onclick="saveStruct()">💾 Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- STRUCTURE: DELETE CONFIRM (V2.16.0) -->
+    <div id="structDeleteOverlay" class="modal-overlay hidden">
+        <div class="confirm-modal">
+            <div class="confirm-icon">🗑️</div>
+            <div class="confirm-title" id="structDeleteTitle">Delete?</div>
+            <div class="confirm-msg" id="structDeleteMsg"></div>
+            <div class="confirm-actions">
+                <button class="btn-cancel" onclick="closeStructDelete()">Keep</button>
+                <button class="btn-confirm-delete" id="btnStructDelete" onclick="confirmStructDelete()">🗑️ Delete</button>
             </div>
         </div>
     </div>
@@ -1477,8 +1591,10 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             if (tree && tree.success && tree.categories && tree.categories.length > 0) {
                 categoryTree  = tree.categories;
                 docCategories = categoryTree.map(c => c.name);
-                const cb = document.querySelector('.btn-manage-cats');
+                const cb = document.getElementById('btnOldCats');
                 if (cb) cb.style.display = 'none';   // categories now live in DocCategories
+                const sb = document.getElementById('btnStructure');
+                if (sb) sb.style.display = '';       // V2.16.0: the Structure screen replaces it
                 buildCategoryDropdowns();
                 catsLoaded = true;
                 checkDone();
@@ -2289,6 +2405,311 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 loadDocuments();
             } else {
                 showToast('error', '❌ Delete failed: ' + (response.error || 'Unknown error'));
+            }
+        });
+    }
+
+    // ================================================================
+    // STRUCTURE SCREEN (V2.16.0) -- edits the DocCategories tab (backend V2.14)
+    // No text is placed inside onclick strings: buttons carry data- attributes.
+    // ================================================================
+    let structRows = [];
+    let structProtected = '';
+    let structMode = '';            // addCategory | addSub | editCategory | editSub
+    let structTarget = { category: '', sub: '' };
+    let structOrig = null;
+    let structPreserved = [];
+    let structDeleteTarget = null;
+
+    function actorParams() {
+        return {
+            actorName:  currentUser ? (currentUser.name  || '') : '',
+            actorEmail: currentUser ? (currentUser.email || '') : ''
+        };
+    }
+
+    function toggleStructPanel() {
+        const panel = document.getElementById('structPanel');
+        const isHidden = panel.classList.contains('hidden');
+        panel.classList.toggle('hidden', !isHidden);
+        if (isHidden) loadStructure();
+    }
+
+    function loadStructure() {
+        callDocLib('getTreeAdmin', {}, function(r) {
+            const list = document.getElementById('structList');
+            if (r && r.success) {
+                structRows = r.rows || [];
+                structProtected = r.protectedCategory || '';
+                renderStructure();
+            } else {
+                list.innerHTML = '<div style="color:#dc2626;font-size:0.82rem;padding:10px 0;">' +
+                    esc((r && r.error) || 'Could not load the structure.') + '</div>';
+            }
+        });
+    }
+
+    // After any change: reload what the document form offers.
+    function refreshTreeForForm() {
+        callDocLib('getCategoryTree', {}, function(tree) {
+            if (tree && tree.success && tree.categories && tree.categories.length) {
+                categoryTree  = tree.categories;
+                docCategories = categoryTree.map(function(c) { return c.name; });
+                buildCategoryDropdowns();
+            }
+        });
+    }
+
+    function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+
+    function renderStructure() {
+        const list = document.getElementById('structList');
+        if (!structRows.length) {
+            list.innerHTML = '<div style="color:#94a3b8;font-size:0.82rem;padding:10px 0;">No categories yet. Use "+ Add category".</div>';
+            return;
+        }
+        const blocks = [], byName = {};
+        structRows.forEach(function(r) {
+            let b = byName[r.category];
+            if (!b) { b = { name: r.category, rows: [] }; byName[r.category] = b; blocks.push(b); }
+            b.rows.push(r);
+        });
+
+        let html = '';
+        blocks.forEach(function(b) {
+            const first   = b.rows[0];
+            const hasSubs = b.rows.some(function(r) { return r.subcategory; });
+            const allOff  = b.rows.every(function(r) { return !r.active; });
+            const isProt  = b.name === structProtected;
+            const catData = 'data-cat="' + esc(b.name) + '"';
+            let meta = plural(first.categoryDocCount, 'document');
+            if (!hasSubs) meta += ' · Group by: ' + first.groupBy + (first.defaultRoles ? ' · Default: ' + first.defaultRoles : '');
+            if (allOff) meta += ' · switched off';
+            html += '<div class="cat-item" style="background:#f8fafc;">' +
+                '<span class="cat-item-name"><strong>' + esc((first.icon ? first.icon + ' ' : '') + b.name) + '</strong>' +
+                ' <span class="field-hint" style="display:inline;">' + esc(meta) + '</span></span>' +
+                '<button class="btn-cat-rename" data-act="up" ' + catData + ' data-sub="" title="Move up">▲</button>' +
+                '<button class="btn-cat-rename" data-act="down" ' + catData + ' data-sub="" title="Move down">▼</button>' +
+                '<button class="btn-cat-rename" data-act="edit" ' + catData + ' data-sub="">✏️ Edit</button>' +
+                (isProt ? '' : '<button class="btn-cat-rename" data-act="addsub" ' + catData + ' data-sub="">+ Subcategory</button>') +
+                (isProt ? '' : '<button class="btn-cat-delete" data-act="delete" ' + catData + ' data-sub="" title="Delete category">🗑️</button>') +
+                '</div>';
+            if (hasSubs) {
+                b.rows.forEach(function(r) {
+                    const sMeta = plural(r.docCount, 'document') + ' · Group by: ' + r.groupBy +
+                                  (r.defaultRoles ? ' · Default: ' + r.defaultRoles : '') + (r.active ? '' : ' · switched off');
+                    const subData = catData + ' data-sub="' + esc(r.subcategory) + '"';
+                    html += '<div class="cat-item" style="padding-left:34px;">' +
+                        '<span class="cat-item-name">' + esc(r.subcategory) +
+                        ' <span class="field-hint" style="display:inline;">' + esc(sMeta) + '</span></span>' +
+                        '<button class="btn-cat-rename" data-act="up" ' + subData + ' title="Move up">▲</button>' +
+                        '<button class="btn-cat-rename" data-act="down" ' + subData + ' title="Move down">▼</button>' +
+                        '<button class="btn-cat-rename" data-act="edit" ' + subData + '>✏️ Edit</button>' +
+                        '<button class="btn-cat-delete" data-act="delete" ' + subData + ' title="Delete subcategory">🗑️</button>' +
+                        '</div>';
+                });
+            }
+        });
+        list.innerHTML = html;
+    }
+
+    document.getElementById('structList').addEventListener('click', function(ev) {
+        const btn = ev.target.closest ? ev.target.closest('button[data-act]') : null;
+        if (!btn) return;
+        structAction(btn.dataset.act, btn.dataset.cat || '', btn.dataset.sub || '');
+    });
+
+    function structAction(act, cat, sub) {
+        if (act === 'up' || act === 'down') {
+            const params = Object.assign({ category: cat, subcategory: sub, direction: act }, actorParams());
+            callDocLib('moveTreeItem', params, function(r) {
+                if (r && r.success) { loadStructure(); refreshTreeForForm(); }
+                else if (r && r.outcomeUnknown) { showToast('info', '⚠️ ' + UNKNOWN_MSG, 8000); loadStructure(); refreshTreeForForm(); }
+                else showToast('error', '❌ ' + ((r && r.error) || 'Could not move it'));
+            });
+        } else if (act === 'edit') {
+            openStructModal(sub ? 'editSub' : 'editCategory', cat, sub);
+        } else if (act === 'addsub') {
+            openStructModal('addSub', cat, '');
+        } else if (act === 'delete') {
+            openStructDelete(cat, sub);
+        }
+    }
+
+    function structRolesString() {
+        const ticked = [...document.querySelectorAll('#sRoles input[type="checkbox"]:checked')].map(function(cb) { return cb.value; });
+        return ticked.concat(structPreserved).join(',');
+    }
+    function sameRoles(a, b) {
+        const x = (a || '').split(',').map(function(v) { return v.trim(); }).filter(Boolean).sort().join(',');
+        const y = (b || '').split(',').map(function(v) { return v.trim(); }).filter(Boolean).sort().join(',');
+        return x === y;
+    }
+
+    function openStructModal(mode, cat, sub) {
+        structMode = mode;
+        structTarget = { category: cat, sub: sub };
+        const catRows = structRows.filter(function(r) { return r.category === cat; });
+        const hasSubs = catRows.some(function(r) { return r.subcategory; });
+        let row = null;
+        if (mode === 'editSub') row = catRows.filter(function(r) { return r.subcategory === sub; })[0] || null;
+        if (mode === 'editCategory' && !hasSubs) row = catRows[0] || null;
+        const editing = mode === 'editCategory' || mode === 'editSub';
+        const isProt  = mode === 'editCategory' && cat === structProtected;
+
+        const titles = { addCategory: '➕ Add Category', addSub: '➕ Add Subcategory', editCategory: '✏️ Edit Category', editSub: '✏️ Edit Subcategory' };
+        document.getElementById('structModalTitle').textContent = titles[mode];
+        document.getElementById('structModalSubtitle').textContent =
+            mode === 'addCategory' ? 'A new category with no subcategories. Add subcategories to it afterwards.' :
+            mode === 'addSub'      ? 'In "' + cat + '"' :
+            mode === 'editSub'     ? cat + ' › ' + sub : cat;
+        document.getElementById('sNameLabel').firstChild.textContent = (mode === 'addSub' || mode === 'editSub') ? 'Subcategory name ' : 'Category name ';
+
+        const showIcon  = mode === 'addCategory' || mode === 'editCategory';
+        const showRules = mode === 'addCategory' || mode === 'addSub' || mode === 'editSub' || (mode === 'editCategory' && !hasSubs);
+        document.getElementById('sIconWrap').style.display   = showIcon  ? 'block' : 'none';
+        document.getElementById('sGroupWrap').style.display  = showRules ? 'block' : 'none';
+        document.getElementById('sRolesWrap').style.display  = showRules ? 'block' : 'none';
+        document.getElementById('sActiveWrap').style.display = editing   ? 'block' : 'none';
+
+        const src = row || catRows[0] || null;
+        const name = mode === 'editSub' ? sub : (mode === 'editCategory' ? cat : '');
+        document.getElementById('sName').value = name;
+        document.getElementById('sName').disabled = isProt;
+        document.getElementById('sProtectedNote').style.display = isProt ? 'block' : 'none';
+        document.getElementById('sIcon').value = (mode === 'editCategory' && src) ? (src.icon || '') : '';
+        document.getElementById('sGroupBy').value = row ? row.groupBy : 'None';
+
+        // role tick-boxes (ids of their own; roles with no tick-box are kept)
+        const roleStr = row ? row.defaultRoles : '';
+        const roles = roleStr ? roleStr.split(',').map(function(r) { return r.trim(); }).filter(Boolean) : [];
+        structPreserved = roles.filter(function(r) { return docRoles.indexOf(r) === -1; });
+        document.getElementById('sRoles').innerHTML = docRoles.length
+            ? docRoles.map(function(role) {
+                return '<label class="role-cb-item' + (roles.indexOf(role) !== -1 ? ' checked' : '') + '">' +
+                       '<input type="checkbox" value="' + esc(role) + '"' + (roles.indexOf(role) !== -1 ? ' checked' : '') +
+                       ' onchange="onCbChange(this)"> ' + esc(role) + '</label>';
+              }).join('')
+            : '<div style="color:#94a3b8;font-size:0.82rem;">No roles loaded — check ManagementCentral connection.</div>';
+        const pn = document.getElementById('sPreservedNote');
+        pn.textContent = structPreserved.length ? 'Also kept: ' + structPreserved.join(', ') : '';
+        pn.style.display = structPreserved.length ? 'block' : 'none';
+
+        const act = document.getElementById('sActive');
+        act.checked  = src ? !!src.active : true;
+        act.disabled = isProt;
+        document.getElementById('sActiveLabel').classList.toggle('checked', act.checked);
+
+        structOrig = {
+            name: name,
+            icon: document.getElementById('sIcon').value,
+            groupBy: document.getElementById('sGroupBy').value,
+            roles: roleStr || '',
+            active: act.checked,
+            showIcon: showIcon, showRules: showRules
+        };
+        document.getElementById('structModalStatus').textContent = '';
+        document.getElementById('btnStructSave').disabled = false;
+        document.getElementById('structModalOverlay').classList.remove('hidden');
+        setTimeout(function() { const n = document.getElementById('sName'); if (!n.disabled) n.focus(); }, 60);
+    }
+
+    function closeStructModal() {
+        document.getElementById('structModalOverlay').classList.add('hidden');
+    }
+
+    function saveStruct() {
+        const name = document.getElementById('sName').value.replace(/\s+/g, ' ').trim();
+        const status = document.getElementById('structModalStatus');
+        if (!name) { status.textContent = '❌ A name is required'; return; }
+        const groupBy = document.getElementById('sGroupBy').value;
+        const roles   = structRolesString();
+        const icon    = document.getElementById('sIcon').value.trim();
+        const active  = document.getElementById('sActive').checked;
+        const cat = structTarget.category, sub = structTarget.sub;
+
+        let action, params;
+        if (structMode === 'addCategory') {
+            action = 'addTreeItem';
+            params = { category: name, groupBy: groupBy, icon: icon, defaultRoles: roles };
+        } else if (structMode === 'addSub') {
+            action = 'addTreeItem';
+            params = { category: cat, subcategory: name, groupBy: groupBy, defaultRoles: roles };
+        } else {
+            action = 'updateTreeItem';
+            params = { category: cat, subcategory: sub };
+            let changes = 0;
+            if (name !== structOrig.name)                     { params.newName = name; changes++; }
+            if (structOrig.showIcon && icon !== structOrig.icon) { params.icon = icon; changes++; }
+            if (structOrig.showRules && groupBy !== structOrig.groupBy) { params.groupBy = groupBy; changes++; }
+            if (structOrig.showRules && !sameRoles(roles, structOrig.roles)) { params.defaultRoles = roles; changes++; }
+            if (active !== structOrig.active)                 { params.active = active; changes++; }
+            if (!changes) { closeStructModal(); showToast('info', 'No changes to save'); return; }
+        }
+        Object.assign(params, actorParams());
+        const renamed = params.newName !== undefined;
+
+        const btn = document.getElementById('btnStructSave');
+        btn.disabled = true;
+        status.textContent = 'Saving…';
+        callDocLib(action, params, function(r) {
+            btn.disabled = false;
+            status.textContent = '';
+            if (r && r.outcomeUnknown) {
+                showToast('info', '⚠️ ' + UNKNOWN_MSG, 10000);
+                closeStructModal(); loadStructure(); refreshTreeForForm(); loadDocuments();
+            } else if (r && r.success) {
+                showToast('success', '✅ ' + (r.message || 'Saved'), renamed ? 7000 : 4000);
+                closeStructModal(); loadStructure(); refreshTreeForForm();
+                if (renamed) loadDocuments();
+            } else {
+                status.textContent = '❌ ' + ((r && r.error) || 'Save failed');
+            }
+        });
+    }
+
+    function openStructDelete(cat, sub) {
+        structDeleteTarget = { category: cat, sub: sub };
+        const catRows = structRows.filter(function(r) { return r.category === cat; });
+        const row = sub ? catRows.filter(function(r) { return r.subcategory === sub; })[0] : catRows[0];
+        const used = row ? (sub ? row.docCount : row.categoryDocCount) : 0;
+        const label = sub ? 'the subcategory "' + sub + '" (in "' + cat + '")' : 'the category "' + cat + '"' + (catRows.some(function(r) { return r.subcategory; }) ? ' and all its subcategories' : '');
+        document.getElementById('structDeleteTitle').textContent = sub ? 'Delete Subcategory?' : 'Delete Category?';
+        const msg = document.getElementById('structDeleteMsg');
+        const btn = document.getElementById('btnStructDelete');
+        if (used > 0) {
+            msg.textContent = 'Cannot delete ' + label + ': ' + plural(used, 'document') + ' still use it. Delete or re-file them first.';
+            btn.style.display = 'none';
+        } else {
+            msg.textContent = 'This removes ' + label + ' from the structure. Its Drive folder (if any) is left in place.';
+            btn.style.display = '';
+        }
+        btn.disabled = false;
+        btn.textContent = '🗑️ Delete';
+        document.getElementById('structDeleteOverlay').classList.remove('hidden');
+    }
+
+    function closeStructDelete() {
+        structDeleteTarget = null;
+        document.getElementById('structDeleteOverlay').classList.add('hidden');
+    }
+
+    function confirmStructDelete() {
+        if (!structDeleteTarget) return;
+        const btn = document.getElementById('btnStructDelete');
+        btn.disabled = true;
+        btn.textContent = '⏳ Deleting…';
+        const params = Object.assign({ category: structDeleteTarget.category, subcategory: structDeleteTarget.sub }, actorParams());
+        callDocLib('deleteTreeItem', params, function(r) {
+            closeStructDelete();
+            if (r && r.outcomeUnknown) {
+                showToast('info', '⚠️ ' + UNKNOWN_MSG, 10000);
+                loadStructure(); refreshTreeForForm();
+            } else if (r && r.success) {
+                showToast('success', '✅ ' + (r.message || 'Deleted'), 6000);
+                loadStructure(); refreshTreeForForm();
+            } else {
+                showToast('error', '❌ ' + ((r && r.error) || 'Delete failed'));
             }
         });
     }
