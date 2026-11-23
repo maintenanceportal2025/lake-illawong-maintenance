@@ -5,7 +5,13 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.16.1 - Structure panel: categories that have subcategories can be collapsed
+VERSION: V2.16.2 - Structure panel: moving a category or subcategory up / down now shows
+         the new order straight away, with a message "Saving the new order... please
+         wait, do not click again" while the server catches up (it can take up to
+         10 seconds), and the buttons are locked until it has replied, so a second
+         click cannot be made by mistake. If the server reports a problem the list
+         is reloaded to show the true order. No change to what is saved.
+         V2.16.1 - Structure panel: categories that have subcategories can be collapsed
          and expanded (a ▸ / ▾ button on the category line). They start collapsed
          so the list is short; the line shows how many subcategories it holds. The
          choice is remembered while the page is open, and a category you just added
@@ -1074,6 +1080,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                     Documents are filed by Category, then Subcategory, then Year. Renaming also renames the Drive folder
                     and updates the documents. Something that documents still use cannot be deleted.
                 </div>
+                <div class="field-hint" id="structBusyMsg" style="display:none;margin:0 0 8px 0;font-weight:600;color:#1e3a8a;">⏳ Saving the new order… please wait and do not click again. This can take up to 10 seconds.</div>
                 <div class="cat-list" id="structList" style="max-height:480px;">
                     <div style="color:#94a3b8;font-size:0.82rem;padding:10px 0;">Loading…</div>
                 </div>
@@ -2425,6 +2432,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     let structOrig = null;
     let structPreserved = [];
     let structDeleteTarget = null;
+    let structBusy = false;         // V2.16.2: a move is being saved
     let structExpanded = {};        // V2.16.1: categories currently opened (default collapsed)
 
     function actorParams() {
@@ -2530,13 +2538,50 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         structAction(btn.dataset.act, btn.dataset.cat || '', btn.dataset.sub || '');
     });
 
+    function setStructBusy(on) {
+        structBusy = on;
+        document.getElementById('structBusyMsg').style.display = on ? 'block' : 'none';
+        const list = document.getElementById('structList');
+        list.style.opacity = on ? '0.6' : '';
+        list.style.pointerEvents = on ? 'none' : '';
+    }
+
+    // Shows the new order at once (the server applies the same swap).
+    function structMoveLocally(cat, sub, dir) {
+        const blocks = [], byName = {};
+        structRows.forEach(function(r) {
+            let b = byName[r.category];
+            if (!b) { b = { name: r.category, rows: [] }; byName[r.category] = b; blocks.push(b); }
+            b.rows.push(r);
+        });
+        const bi = blocks.findIndex(function(b) { return b.name === cat; });
+        if (bi === -1) return;
+        if (!sub) {
+            const j = bi + dir;
+            if (j < 0 || j >= blocks.length) return;
+            const t = blocks[bi]; blocks[bi] = blocks[j]; blocks[j] = t;
+        } else {
+            const rows = blocks[bi].rows;
+            const ri = rows.findIndex(function(r) { return r.subcategory === sub; });
+            const j = ri + dir;
+            if (ri === -1 || j < 0 || j >= rows.length) return;
+            const t = rows[ri]; rows[ri] = rows[j]; rows[j] = t;
+        }
+        structRows = [].concat.apply([], blocks.map(function(b) { return b.rows; }));
+    }
+
     function structAction(act, cat, sub) {
         if (act === 'up' || act === 'down') {
+            if (structBusy) { showToast('info', 'Still saving the last move. Please wait.'); return; }
+            setStructBusy(true);
+            structMoveLocally(cat, sub, act === 'up' ? -1 : 1);
+            renderStructure();
             const params = Object.assign({ category: cat, subcategory: sub, direction: act }, actorParams());
             callDocLib('moveTreeItem', params, function(r) {
+                setStructBusy(false);
                 if (r && r.success) { loadStructure(); refreshTreeForForm(); }
                 else if (r && r.outcomeUnknown) { showToast('info', '⚠️ ' + UNKNOWN_MSG, 8000); loadStructure(); refreshTreeForForm(); }
-                else showToast('error', '❌ ' + ((r && r.error) || 'Could not move it'));
+                else { showToast('error', '❌ ' + ((r && r.error) || 'Could not move it')); loadStructure(); }
             });
         } else if (act === 'toggle') {
             structExpanded[cat] = !structExpanded[cat];
