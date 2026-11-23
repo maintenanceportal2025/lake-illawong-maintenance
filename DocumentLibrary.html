@@ -6,13 +6,36 @@ DOCUMENT INFORMATION:
   File Name:        DocumentLibrary.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.3.0
-  Backend:          DocumentLibrary V2.9
+  Frontend Version: V2.4.0
+  Backend:          DocumentLibrary V2.14
   Status:           PRODUCTION
   Created:          March 2026
   Last Modified:    Nov 2026
 
 VERSION HISTORY:
+  V2.4.0 (Nov 2026): NEW - Category > Subcategory > Year browsing (step 6 of the
+    structure build; needs backend V2.13 or later for the structure and the
+    subcategory on each document). (1) A category that holds documents filed in
+    subcategories opens a SUB-MENU of cards, one per subcategory the person
+    can actually open (a subcategory they have no documents in, for example
+    Executive for someone without that role, is not shown at all). A category
+    with no subcategories opens its document list directly, as before. (2) The
+    list is grouped under YEAR headings, newest first, using the rule for that
+    category / subcategory in the DocCategories tab (Calendar year: 2026;
+    Financial year July-June: 2025-26; None: no headings). The year comes from
+    the document's Document Date; a document with no date sits under
+    "Undated" at the end. (3) A BREADCRUMB (All Categories > Category >
+    Subcategory) sits above each list, each part is a link; the Back button
+    goes up one level. (4) Category order and icons now come from the
+    DocCategories tab (Sort order and Icon); a category not in the tab is
+    still shown, after the others, with the old icon list or a folder icon.
+    (5) Search also matches the subcategory, and each result shows
+    "Category > Subcategory" so the person can see where it lives. If the
+    structure cannot be loaded the page works as in V2.3.0 (alphabetical
+    categories, no sub-menu, no year headings). Frequently Opened, All
+    Documents, the New markers, Download, the list styling and everything
+    else are unchanged. The year is read in the person's own time zone, which
+    matches the spreadsheet's for residents in Australia.
   V2.3.0 (Nov 2026): NEW - Download. Each uploaded (Drive) document in the
     list now has a Download button next to the type icon, and the phone
     cards have one too. It saves the file to the person's device using
@@ -672,6 +695,44 @@ TECHNICAL:
             color: white;
         }
 
+        /* V2.4.0: breadcrumb and year headings */
+        .crumb {
+            color: rgba(255,255,255,0.7);
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+        }
+
+        .crumb-link {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.9);
+            cursor: pointer;
+            font-size: inherit;
+            padding: 0;
+            text-decoration: underline;
+        }
+
+        .crumb-link:hover { color: white; }
+
+        .year-heading {
+            padding: 10px 20px;
+            background: #e2e8f0;
+            color: #1e3a8a;
+            font-weight: 700;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #cbd5e1;
+        }
+
+        .mobile-year-heading {
+            color: rgba(255,255,255,0.85);
+            font-weight: 700;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin: 14px 0 8px;
+        }
+
         /* ============================================================
            RESPONSIVE
         ============================================================ */
@@ -802,18 +863,34 @@ TECHNICAL:
     </div>
 
     <!-- ============================================================
+         SUB-MENU VIEW (V2.4.0): the subcategories of one category
+    ============================================================ -->
+    <div id="subView" class="hidden">
+        <div class="drill-header">
+            <button class="drill-back-btn" onclick="backToCategories()">← All Categories</button>
+            <div>
+                <div class="drill-title" id="subTitle"></div>
+                <div class="drill-count" id="subCount"></div>
+            </div>
+        </div>
+        <div class="crumb" id="subCrumb"></div>
+        <div class="category-grid" id="subGrid"></div>
+    </div>
+
+    <!-- ============================================================
          DRILL-DOWN / SEARCH RESULTS VIEW
     ============================================================ -->
     <div id="drillView" class="hidden">
 
         <!-- Drill header -->
         <div class="drill-header">
-            <button class="drill-back-btn" onclick="backToCategories()">← All Categories</button>
+            <button class="drill-back-btn" id="drillBackBtn" onclick="goBackOne()">← All Categories</button>
             <div>
                 <div class="drill-title" id="drillTitle"></div>
                 <div class="drill-count" id="drillCount"></div>
             </div>
         </div>
+        <div class="crumb hidden" id="drillCrumb"></div>
 
         <!-- Search results label (shown only in search mode) -->
         <div id="searchResultsLabel" class="search-results-label hidden"></div>
@@ -903,8 +980,12 @@ const CATEGORY_ICONS = {
 // ============================================================
 let allDocuments    = [];
 let currentUserData = null;
-let currentCategory = null; // null = grid view, string = drill-down, 'SEARCH' = search results
 let searchTimeout   = null;
+let categoryTree    = [];    // V2.4.0: from getCategoryTree (best effort; empty = old flat behaviour)
+// Where the person is: level 'grid' | 'subs' | 'list' | 'search'.
+// list: cat / sub (sub '' = no subcategory level) or special '__ALL__' / '__FEATURED__'.
+let nav             = { level: 'grid' };
+let navBeforeSearch = null;
 
 // ============================================================
 // INIT
@@ -939,6 +1020,12 @@ function handleVerificationSuccess(userData) {
 async function loadDocuments() {
     showLoading(true);
 
+    // V2.4.0: the structure (order, icons, year rules). Best effort: the page
+    // still works without it. Started now so it loads while the documents do.
+    const treePromise = callAPI('getCategoryTree', {}, { retries: 1 })
+        .then(function (t) { return (t && t.success && t.categories) ? t.categories : []; })
+        .catch(function () { return []; });
+
     try {
         // Public documents
         const pubResp = await callAPI('getDocuments', {
@@ -963,6 +1050,7 @@ async function loadDocuments() {
         }
 
         allDocuments = [...publicDocs, ...privateDocs];
+        categoryTree = await treePromise;
 
         showLoading(false);
         renderCategoryView();
@@ -975,23 +1063,84 @@ async function loadDocuments() {
 }
 
 // ============================================================
+// STRUCTURE HELPERS (V2.4.0)
+// ============================================================
+function treeCat(name) {
+    return categoryTree.find(function (c) { return c.name === name; }) || null;
+}
+function treeSub(catName, subName) {
+    const c = treeCat(catName);
+    if (!c) return null;
+    return c.subcategories.find(function (x) { return x.name === subName; }) || null;
+}
+function catOrder(name) {
+    const i = categoryTree.findIndex(function (c) { return c.name === name; });
+    return i === -1 ? 100000 : i;
+}
+function subOrder(catName, subName) {
+    const c = treeCat(catName);
+    if (!c) return 100000;
+    const i = c.subcategories.findIndex(function (x) { return x.name === subName; });
+    return i === -1 ? 100000 : i;
+}
+function iconFor(catName) {
+    const c = treeCat(catName);
+    return (c && c.icon) || CATEGORY_ICONS[catName] || '📁';
+}
+function docCat(d) { return (d.category || 'Uncategorized').trim(); }
+function docSub(d) { return (d.subcategory || '').trim(); }
+function docsInCategory(cat) {
+    return allDocuments.filter(function (d) { return docCat(d) === cat; });
+}
+function docPath(d) {
+    return docCat(d) + (docSub(d) ? ' › ' + docSub(d) : '');
+}
+// Year grouping rule that applies to a category / subcategory
+function groupByFor(cat, sub) {
+    const c = treeCat(cat);
+    if (!c) return 'None';
+    const x = sub ? treeSub(cat, sub) : null;
+    return (x && x.groupBy) || (c.subcategories.length && !sub ? 'None' : c.groupBy) || 'None';
+}
+function docDateObj(v) {
+    if (!v) return null;
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+}
+function yearLabel(groupBy, v) {
+    const g = (groupBy || 'None').toLowerCase();
+    if (g === 'none') return '';
+    const d = docDateObj(v);
+    if (!d) return 'Undated';
+    const y = d.getFullYear(), m = d.getMonth() + 1;
+    if (g.indexOf('financial') === 0) {
+        const start = m >= 7 ? y : y - 1;
+        return start + '-' + String((start + 1) % 100).padStart(2, '0');
+    }
+    return String(y);
+}
+
+// ============================================================
 // CATEGORY GRID VIEW
 // ============================================================
 function renderCategoryView() {
-    currentCategory = null;
+    nav = { level: 'grid' };
 
     showView('categoryView');
 
     // Build category map
     const catMap = {};
     allDocuments.forEach(doc => {
-        const cat = (doc.category || 'Uncategorized').trim();
+        const cat = docCat(doc);
         if (!catMap[cat]) catMap[cat] = [];
         catMap[cat].push(doc);
     });
 
     const grid       = document.getElementById('categoryGrid');
-    const sortedCats = Object.keys(catMap).sort();
+    // V2.4.0: structure order first (Sort order in DocCategories), then the rest A to Z
+    const sortedCats = Object.keys(catMap).sort(function (a, b) {
+        return (catOrder(a) - catOrder(b)) || a.localeCompare(b);
+    });
     const featured   = allDocuments.filter(d => d.featured === true);
 
     let html = '';
@@ -1016,12 +1165,12 @@ function renderCategoryView() {
 
     // One card per category (V2.1.2: name carried in a data- attribute, not in the onclick string)
     sortedCats.forEach(cat => {
-        const icon    = CATEGORY_ICONS[cat] || '📁';
+        const icon    = iconFor(cat);
         const hasNew  = catMap[cat].some(d => isNew(d.dateAdded));
         html += `
             <div class="category-card" data-cat="${escAttr(cat)}" onclick="drillIntoCategory(this.dataset.cat)">
                 ${hasNew ? '<span class="new-dot">New</span>' : ''}
-                <div class="category-icon">${icon}</div>
+                <div class="category-icon">${escHtml(icon)}</div>
                 <div class="category-name">${escHtml(cat)}</div>
             </div>
         `;
@@ -1051,43 +1200,183 @@ function renderQuickAccess() {
 }
 
 // ============================================================
+// SUB-MENU VIEW (V2.4.0) — only subcategories the person can open
+// ============================================================
+function renderSubMenu(cat) {
+    nav = { level: 'subs', cat: cat };
+    showView('subView');
+
+    const docs = docsInCategory(cat);
+    const bySub = {};
+    docs.forEach(function (d) {
+        const k = docSub(d);
+        if (!bySub[k]) bySub[k] = [];
+        bySub[k].push(d);
+    });
+    const names = Object.keys(bySub).filter(Boolean).sort(function (a, b) {
+        return (subOrder(cat, a) - subOrder(cat, b)) || a.localeCompare(b);
+    });
+
+    document.getElementById('subTitle').textContent = cat;
+    document.getElementById('subCount').textContent =
+        docs.length === 1 ? '1 document' : docs.length + ' documents';
+    renderCrumb('subCrumb', { cat: cat, sub: null, current: 'cat' });
+
+    const icon = iconFor(cat);
+    let html = '';
+    names.forEach(function (sub) {
+        const hasNew = bySub[sub].some(function (d) { return isNew(d.dateAdded); });
+        html += `
+            <div class="category-card" data-cat="${escAttr(cat)}" data-sub="${escAttr(sub)}" onclick="drillIntoSub(this.dataset.cat, this.dataset.sub)">
+                ${hasNew ? '<span class="new-dot">New</span>' : ''}
+                <div class="category-icon">${escHtml(icon)}</div>
+                <div class="category-name">${escHtml(sub)}</div>
+            </div>
+        `;
+    });
+    // documents in this category that were not given a subcategory
+    if (bySub['']) {
+        const hasNew = bySub[''].some(function (d) { return isNew(d.dateAdded); });
+        html += `
+            <div class="category-card all-docs" data-cat="${escAttr(cat)}" data-sub="" onclick="drillIntoSub(this.dataset.cat, this.dataset.sub)">
+                ${hasNew ? '<span class="new-dot">New</span>' : ''}
+                <div class="category-icon">${escHtml(icon)}</div>
+                <div class="category-name">Other documents</div>
+            </div>
+        `;
+    }
+    document.getElementById('subGrid').innerHTML = html;
+}
+
+// ============================================================
+// BREADCRUMB (V2.4.0) — parts are links; no text inside onclick strings
+// ============================================================
+function renderCrumb(elId, ctx) {
+    const el = document.getElementById(elId);
+    if (!ctx || !ctx.cat) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+    let html = '<button class="crumb-link" data-nav="grid">All Categories</button> › ';
+    if (ctx.sub !== null && ctx.sub !== undefined && ctx.fromSubs) {
+        html += '<button class="crumb-link" data-nav="cat" data-cat="' + escAttr(ctx.cat) + '">' + escHtml(ctx.cat) + '</button> › ' +
+                '<span>' + escHtml(ctx.sub || 'Other documents') + '</span>';
+    } else {
+        html += '<span>' + escHtml(ctx.cat) + '</span>';
+    }
+    el.innerHTML = html;
+    el.classList.remove('hidden');
+}
+
+['subCrumb', 'drillCrumb'].forEach(function (id) {
+    document.getElementById(id).addEventListener('click', function (ev) {
+        const btn = ev.target.closest ? ev.target.closest('button[data-nav]') : null;
+        if (!btn) return;
+        if (btn.dataset.nav === 'grid') backToCategories();
+        else if (btn.dataset.nav === 'cat') drillIntoCategory(btn.dataset.cat);
+    });
+});
+
+// ============================================================
 // DRILL-DOWN VIEW
 // ============================================================
-function drillIntoCategory(category) {
-    currentCategory = category;
-
-    // Clear search when drilling by category
+function clearSearchBox() {
     document.getElementById('searchInput').value = '';
     document.getElementById('searchClear').style.display = 'none';
+}
 
-    let docs, label;
+function drillIntoCategory(category) {
+    // Clear search when drilling by category
+    clearSearchBox();
 
     if (category === '__ALL__') {
-        docs  = [...allDocuments];
-        label = 'All Documents';
+        nav = { level: 'list', special: '__ALL__' };
+        renderDrillView([...allDocuments], 'All Documents', false, null);
     } else if (category === '__FEATURED__') {
-        docs  = allDocuments.filter(d => d.featured === true);
-        label = 'Frequently Opened';
+        nav = { level: 'list', special: '__FEATURED__' };
+        renderDrillView(allDocuments.filter(d => d.featured === true), 'Frequently Opened', false, null);
     } else {
-        docs  = allDocuments.filter(d => (d.category || 'Uncategorized').trim() === category);
-        label = category;
+        const docs = docsInCategory(category);
+        if (docs.some(function (d) { return docSub(d); })) {
+            renderSubMenu(category);
+        } else {
+            nav = { level: 'list', cat: category, sub: '', fromSubs: false };
+            renderDrillView(docs, category, false, { cat: category, sub: null, fromSubs: false });
+        }
     }
+}
 
-    renderDrillView(docs, label, false);
+function drillIntoSub(cat, sub) {
+    clearSearchBox();
+    nav = { level: 'list', cat: cat, sub: sub, fromSubs: true };
+    const docs = docsInCategory(cat).filter(function (d) { return docSub(d) === sub; });
+    renderDrillView(docs, sub || 'Other documents', false, { cat: cat, sub: sub, fromSubs: true });
 }
 
 function backToCategories() {
-    currentCategory = null;
-
     // Clear search
-    document.getElementById('searchInput').value = '';
-    document.getElementById('searchClear').style.display = 'none';
+    clearSearchBox();
     document.getElementById('searchResultsLabel').classList.add('hidden');
 
     renderCategoryView();
 }
 
-function renderDrillView(docs, title, isSearch) {
+// Back button on the document list: up one level
+function goBackOne() {
+    if (nav.level === 'list' && nav.fromSubs) {
+        drillIntoCategory(nav.cat);
+    } else {
+        backToCategories();
+    }
+}
+
+// Puts the person back where they were (after a search is cleared)
+function restoreNav(saved) {
+    if (!saved || saved.level === 'grid') { renderCategoryView(); return; }
+    if (saved.level === 'subs') { drillIntoCategory(saved.cat); return; }
+    if (saved.level === 'list') {
+        if (saved.special) { drillIntoCategory(saved.special); return; }
+        if (saved.fromSubs) { drillIntoSub(saved.cat, saved.sub); return; }
+        drillIntoCategory(saved.cat);
+        return;
+    }
+    renderCategoryView();
+}
+
+function docRowHTML(doc, typeIcons) {
+    return `
+        <div class="doc-row" data-id="${escAttr(doc.documentId)}" onclick="openDocumentById(this.dataset.id)">
+            <div>
+                <div class="doc-row-title">
+                    ${escHtml(doc.title)}
+                    ${isNew(doc.dateAdded) ? '<span class="new-pill">New</span>' : ''}
+                </div>
+                ${doc.description ? `<div class="doc-row-desc">${escHtml(doc.description)}</div>` : ''}
+            </div>
+            <div class="doc-row-category">${escHtml(docPath(doc))}</div>
+            <div class="doc-row-type">${typeIcons[doc.sourceType] || '📄'}</div>
+            <div class="doc-row-download">${canDownload(doc) ? `<button class="btn-download" data-id="${escAttr(doc.documentId)}" onclick="event.stopPropagation(); downloadDocumentById(this.dataset.id)">⬇ Download</button>` : ''}</div>
+        </div>
+    `;
+}
+
+function mobileItemHTML(doc, typeIcons) {
+    return `
+        <div class="mobile-doc-item" data-id="${escAttr(doc.documentId)}" onclick="openDocumentById(this.dataset.id)">
+            <div class="mobile-doc-item-title">
+                ${escHtml(doc.title)}
+                ${isNew(doc.dateAdded) ? '<span class="new-pill">New</span>' : ''}
+            </div>
+            ${doc.description ? `<div class="mobile-doc-item-desc">${escHtml(doc.description)}</div>` : ''}
+            <div class="mobile-doc-item-meta">
+                <span>${escHtml(docPath(doc))}</span>
+                <span>${typeIcons[doc.sourceType] || '📄'}</span>
+                ${canDownload(doc) ? `<button class="btn-download" data-id="${escAttr(doc.documentId)}" onclick="event.stopPropagation(); downloadDocumentById(this.dataset.id)">⬇ Download</button>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+// ctx: { cat, sub, fromSubs } for a category / subcategory list (drives the
+// year headings, back button and breadcrumb); null for All / Frequently Opened / search.
+function renderDrillView(docs, title, isSearch, ctx) {
     showView('drillView');
 
     document.getElementById('drillTitle').textContent = title;
@@ -1095,6 +1384,11 @@ function renderDrillView(docs, title, isSearch) {
         docs.length === 0 ? 'No documents' :
         docs.length === 1 ? '1 document' :
         docs.length + ' documents';
+
+    // Back button and breadcrumb
+    const back = document.getElementById('drillBackBtn');
+    back.textContent = (ctx && ctx.fromSubs) ? '← ' + ctx.cat : '← All Categories';
+    renderCrumb('drillCrumb', ctx);
 
     const searchLabel = document.getElementById('searchResultsLabel');
     if (isSearch) {
@@ -1116,38 +1410,32 @@ function renderDrillView(docs, title, isSearch) {
 
     const typeIcons = { 'Drive': '📄', 'Link': '🔗', 'Physical': '📦' };
 
-    // Desktop list rows (V2.1.2: click passes the document ID only)
-    const listHTML = docs.map(doc => `
-        <div class="doc-row" data-id="${escAttr(doc.documentId)}" onclick="openDocumentById(this.dataset.id)">
-            <div>
-                <div class="doc-row-title">
-                    ${escHtml(doc.title)}
-                    ${isNew(doc.dateAdded) ? '<span class="new-pill">New</span>' : ''}
-                </div>
-                ${doc.description ? `<div class="doc-row-desc">${escHtml(doc.description)}</div>` : ''}
-            </div>
-            <div class="doc-row-category">${escHtml(doc.category || 'Uncategorized')}</div>
-            <div class="doc-row-type">${typeIcons[doc.sourceType] || '📄'}</div>
-            <div class="doc-row-download">${canDownload(doc) ? `<button class="btn-download" data-id="${escAttr(doc.documentId)}" onclick="event.stopPropagation(); downloadDocumentById(this.dataset.id)">⬇ Download</button>` : ''}</div>
-        </div>
-    `).join('');
-    document.getElementById('docListBody').innerHTML = listHTML;
+    // Year headings (category / subcategory lists whose rule is not None)
+    const groupBy = ctx ? groupByFor(ctx.cat, ctx.sub) : 'None';
+    let ordered = docs;
+    if ((groupBy || 'None').toLowerCase() !== 'none') {
+        // newest Document Date first, undated last; ties keep the existing order
+        ordered = docs.map(function (d, i) { return { d: d, i: i }; }).sort(function (a, b) {
+            const da = docDateObj(a.d.documentDate), db = docDateObj(b.d.documentDate);
+            if (da && db) return (db - da) || (a.i - b.i);
+            if (da) return -1;
+            if (db) return 1;
+            return a.i - b.i;
+        }).map(function (x) { return x.d; });
+    }
 
-    // Mobile items
-    const mobileHTML = docs.map(doc => `
-        <div class="mobile-doc-item" data-id="${escAttr(doc.documentId)}" onclick="openDocumentById(this.dataset.id)">
-            <div class="mobile-doc-item-title">
-                ${escHtml(doc.title)}
-                ${isNew(doc.dateAdded) ? '<span class="new-pill">New</span>' : ''}
-            </div>
-            ${doc.description ? `<div class="mobile-doc-item-desc">${escHtml(doc.description)}</div>` : ''}
-            <div class="mobile-doc-item-meta">
-                <span>${escHtml(doc.category || 'Uncategorized')}</span>
-                <span>${typeIcons[doc.sourceType] || '📄'}</span>
-                ${canDownload(doc) ? `<button class="btn-download" data-id="${escAttr(doc.documentId)}" onclick="event.stopPropagation(); downloadDocumentById(this.dataset.id)">⬇ Download</button>` : ''}
-            </div>
-        </div>
-    `).join('');
+    let listHTML = '', mobileHTML = '', lastYear = null;
+    ordered.forEach(function (doc) {
+        const yr = yearLabel(groupBy, doc.documentDate);
+        if (yr && yr !== lastYear) {
+            listHTML   += '<div class="year-heading">' + escHtml(yr) + '</div>';
+            mobileHTML += '<div class="mobile-year-heading">' + escHtml(yr) + '</div>';
+        }
+        lastYear = yr;
+        listHTML   += docRowHTML(doc, typeIcons);
+        mobileHTML += mobileItemHTML(doc, typeIcons);
+    });
+    document.getElementById('docListBody').innerHTML = listHTML;
     document.getElementById('mobileDocList').innerHTML = mobileHTML;
 }
 
@@ -1164,12 +1452,9 @@ function handleSearch(value) {
 
     if (!q) {
         // Return to wherever the user was
-        if (currentCategory && currentCategory !== 'SEARCH') {
-            // Re-render the category they were in
-            drillIntoCategory(currentCategory);
-        } else {
-            renderCategoryView();
-        }
+        const saved = navBeforeSearch;
+        navBeforeSearch = null;
+        restoreNav(saved);
         return;
     }
 
@@ -1178,14 +1463,16 @@ function handleSearch(value) {
             const haystack = [
                 doc.title,
                 doc.category,
+                doc.subcategory,
                 doc.description,
                 doc.tags
             ].join(' ').toLowerCase();
             return haystack.includes(q);
         });
 
-        currentCategory = 'SEARCH';
-        renderDrillView(results, value.trim(), true);
+        if (nav.level !== 'search') navBeforeSearch = nav;
+        nav = { level: 'search' };
+        renderDrillView(results, value.trim(), true, null);
     }, 250);
 }
 
@@ -1281,12 +1568,14 @@ function logout() {
 function showLoading(show) {
     document.getElementById('loadingState').style.display = show ? 'block' : 'none';
     document.getElementById('categoryView').classList.add('hidden');
+    document.getElementById('subView').classList.add('hidden');
     document.getElementById('drillView').classList.add('hidden');
 }
 
 function showView(viewId) {
     document.getElementById('loadingState').style.display = 'none';
     document.getElementById('categoryView').classList.toggle('hidden', viewId !== 'categoryView');
+    document.getElementById('subView').classList.toggle('hidden', viewId !== 'subView');
     document.getElementById('drillView').classList.toggle('hidden', viewId !== 'drillView');
 }
 
