@@ -5,7 +5,12 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.16.0 - Document structure, step 5: a screen to manage the categories and
+VERSION: V2.16.1 - Structure panel: categories that have subcategories can be collapsed
+         and expanded (a ▸ / ▾ button on the category line). They start collapsed
+         so the list is short; the line shows how many subcategories it holds. The
+         choice is remembered while the page is open, and a category you just added
+         a subcategory to opens by itself. Display only; nothing else changed.
+         V2.16.0 - Document structure, step 5: a screen to manage the categories and
          subcategories (needs backend V2.14). A new "Structure" button opens a panel
          listing every category with its subcategories, how many documents use each,
          and for each: move up / down, edit, add a subcategory (on a category) and delete.
@@ -2420,6 +2425,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     let structOrig = null;
     let structPreserved = [];
     let structDeleteTarget = null;
+    let structExpanded = {};        // V2.16.1: categories currently opened (default collapsed)
 
     function actorParams() {
         return {
@@ -2483,9 +2489,14 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
             const isProt  = b.name === structProtected;
             const catData = 'data-cat="' + esc(b.name) + '"';
             let meta = plural(first.categoryDocCount, 'document');
+            if (hasSubs) meta += ' · ' + plural(b.rows.length, 'subcategory').replace('subcategorys', 'subcategories');
             if (!hasSubs) meta += ' · Group by: ' + first.groupBy + (first.defaultRoles ? ' · Default: ' + first.defaultRoles : '');
             if (allOff) meta += ' · switched off';
+            const open = !!structExpanded[b.name];
             html += '<div class="cat-item" style="background:#f8fafc;">' +
+                (hasSubs
+                    ? '<button class="btn-cat-rename" data-act="toggle" ' + catData + ' data-sub="" title="' + (open ? 'Collapse' : 'Expand') + '" style="min-width:28px;">' + (open ? '▾' : '▸') + '</button>'
+                    : '<span style="display:inline-block;min-width:28px;"></span>') +
                 '<span class="cat-item-name"><strong>' + esc((first.icon ? first.icon + ' ' : '') + b.name) + '</strong>' +
                 ' <span class="field-hint" style="display:inline;">' + esc(meta) + '</span></span>' +
                 '<button class="btn-cat-rename" data-act="up" ' + catData + ' data-sub="" title="Move up">▲</button>' +
@@ -2494,7 +2505,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 (isProt ? '' : '<button class="btn-cat-rename" data-act="addsub" ' + catData + ' data-sub="">+ Subcategory</button>') +
                 (isProt ? '' : '<button class="btn-cat-delete" data-act="delete" ' + catData + ' data-sub="" title="Delete category">🗑️</button>') +
                 '</div>';
-            if (hasSubs) {
+            if (hasSubs && open) {
                 b.rows.forEach(function(r) {
                     const sMeta = plural(r.docCount, 'document') + ' · Group by: ' + r.groupBy +
                                   (r.defaultRoles ? ' · Default: ' + r.defaultRoles : '') + (r.active ? '' : ' · switched off');
@@ -2527,6 +2538,9 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 else if (r && r.outcomeUnknown) { showToast('info', '⚠️ ' + UNKNOWN_MSG, 8000); loadStructure(); refreshTreeForForm(); }
                 else showToast('error', '❌ ' + ((r && r.error) || 'Could not move it'));
             });
+        } else if (act === 'toggle') {
+            structExpanded[cat] = !structExpanded[cat];
+            renderStructure();
         } else if (act === 'edit') {
             openStructModal(sub ? 'editSub' : 'editCategory', cat, sub);
         } else if (act === 'addsub') {
@@ -2660,6 +2674,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 closeStructModal(); loadStructure(); refreshTreeForForm(); loadDocuments();
             } else if (r && r.success) {
                 showToast('success', '✅ ' + (r.message || 'Saved'), renamed ? 7000 : 4000);
+                if (structMode === 'addSub') structExpanded[cat] = true;
                 closeStructModal(); loadStructure(); refreshTreeForForm();
                 if (renamed) loadDocuments();
             } else {
