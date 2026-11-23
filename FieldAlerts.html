@@ -6,15 +6,15 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.14.0
-  Backend:          NotificationServer (Paper Copy List needs NotificationServer V3.17.0; Test Run and test copy need V3.16.0; the quota line needs V3.15.0)
+  Frontend Version: V3.15.0
+  Backend:          NotificationServer (Print copy needs NotificationServer V3.18.0; Paper Copy List needs NotificationServer V3.17.0; Test Run and test copy need V3.16.0; the quota line needs V3.15.0)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
   Last Modified:    Nov 2026
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
 PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.14.0 - Admin mode renamed Resident E-Notices
+VERSION: V3.15.0 - Print copy to a print helper
 LAST UPDATED: Nov 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -25,6 +25,13 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.15.0 (needs NotificationServer V3.18.0; deploy that first)
+✅ Admin mode: when a document is attached, a "Send print copy to" row shows one
+   tickbox per print helper (the people who print paper copies), chosen per send.
+   Each ticked person gets one email with the document and the Paper Copy List.
+   Confirm dialog, Test Run, real test copy and the success message all cover it.
+   Hidden in Field Ops mode and when nothing is attached.
 
 NEW IN V3.14.0 (frontend only)
 ✅ In Admin mode the page is called "Resident E-Notices" (browser tab, heading and
@@ -2125,6 +2132,18 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
     <div class="attachment-total" id="attachmentTotal" style="display:none; margin-top: 8px; font-size: 0.85rem; color: #6b7280;"></div>
 </div>
 
+<!-- V3.15.0: print copy to a print helper (the person who prints paper copies).
+     Shown only in Admin mode, only when a document is attached. -->
+<div class="attachment-section show admin-only" id="printHelperSection" style="display:none;">
+    <label class="attachment-label">
+        🖨️ <strong>Send print copy to (Optional)</strong>
+        <span style="color: #6b7280; font-weight: 400; font-size: 0.85rem; margin-left: 8px;">
+            Emails the attached document and the Paper Copy List to the person who prints it
+        </span>
+    </label>
+    <div id="printHelperList" style="display:flex; flex-wrap:wrap; gap:8px 24px; margin-top:8px;"></div>
+</div>
+
 <!-- SMS Options -->
 
 
@@ -2226,6 +2245,14 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 <li>A household where one partner has an email and nobody has the Paper-Copy tag is not on the list, because the email reaches them.</li>
                 <li>Residents who hold E-Copy still get the email even if their household is on the paper list.</li>
                 <li>Press <strong>Print</strong> to print the list on its own.</li>
+            </ul>
+
+            <h3>Print copy (Resident E-Notices)</h3>
+            <ul>
+                <li>When you attach a document, a <strong>Send print copy to</strong> row appears with one tickbox for each person who prints paper copies. Tick the person who prints this document (or both, or neither).</li>
+                <li>They each get ONE email with the document attached and the Paper Copy List in the message, so they do not have to look for the right file. For a zone or unit send, the list covers only those households.</li>
+                <li>The Test Run shows who would get a print copy and how many households are on the list. The real test copy sends the print email to your test address only.</li>
+                <li>Each print copy uses one of the daily emails. If it fails, the village email has still gone out; the screen tells you, so you can send the print copy again.</li>
             </ul>
 
             <h3>Common situations</h3>
@@ -2340,6 +2367,10 @@ let showFullList = false;
 // Array of {file, base64, filename, mimeType, size} -- V3.4.0, was a single
 // attachmentData/attachmentFilename pair (one file per alert).
 let attachments = [];
+
+// V3.15.0: print helpers (names only, from NotificationServer getPrintHelpers)
+let printHelperNames = [];
+
 const MAX_SINGLE_ATTACHMENT_BYTES = 10 * 1024 * 1024;   // 10MB per file
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;    // 20MB combined
 
@@ -2370,6 +2401,9 @@ let quotaInfo = null;        // last checkEmailQuota response, or null
 
             // V3.9.0: show how much of the daily email limit is left
             loadQuotaLine();
+
+            // V3.15.0: Admin mode only -- who can be sent a print copy
+            if (FA_ADMIN_MODE) loadPrintHelpers();
         });
 
         // =====================================================================
@@ -3310,6 +3344,47 @@ function formatFileSize(bytes) {
     return (bytes / 1024 / 1024).toFixed(1) + ' MB';
 }
 
+// =====================================================================
+// V3.15.0: PRINT COPY -- tickboxes for the print helpers
+// =====================================================================
+
+async function loadPrintHelpers() {
+    try {
+        const response = await callNotificationAPI('getPrintHelpers', {});
+        printHelperNames = (response && response.success && Array.isArray(response.helpers)) ? response.helpers : [];
+    } catch (error) {
+        console.error('Print helpers unavailable:', error);
+        printHelperNames = [];
+    }
+    const box = document.getElementById('printHelperList');
+    if (box) {
+        box.innerHTML = printHelperNames.map(n =>
+            `<label style="display:flex;align-items:center;gap:8px;color:#1f2937;cursor:pointer;">` +
+            `<input type="checkbox" class="print-helper-box" value="${escapeHtml(n)}"> ${escapeHtml(n)}</label>`
+        ).join('');
+    }
+    updatePrintHelperSection();
+}
+
+// Show the row only when there is a helper AND a document is attached;
+// otherwise hide it and untick everything.
+function updatePrintHelperSection() {
+    const section = document.getElementById('printHelperSection');
+    if (!section) return;
+    const show = FA_ADMIN_MODE && printHelperNames.length > 0 && attachments.length > 0;
+    section.style.display = show ? 'block' : 'none';
+    if (!show) {
+        document.querySelectorAll('.print-helper-box').forEach(b => { b.checked = false; });
+    }
+}
+
+function getSelectedPrintHelpers() {
+    const section = document.getElementById('printHelperSection');
+    if (!section || section.style.display === 'none') return [];
+    return Array.from(document.querySelectorAll('.print-helper-box'))
+        .filter(b => b.checked).map(b => b.value);
+}
+
 /**
  * Display attachment previews -- V3.4.0, one row per file (was a single
  * fixed preview block for exactly one file).
@@ -3333,6 +3408,8 @@ function displayAttachmentPreviews() {
             </button>
         </div>
     `).join('');
+
+    updatePrintHelperSection();   // V3.15.0
 
     if (totalEl) {
         if (attachments.length > 0) {
@@ -3548,6 +3625,13 @@ function buildFieldAlertParams(recipientFilter, messageText, emailEnabled, smsEn
         params.smsMessage = separateSms;
     }
 
+    // V3.15.0: print copy to the ticked print helper(s). Requires
+    // NotificationServer V3.18.0+.
+    const printTo = getSelectedPrintHelpers();
+    if (printTo.length > 0) {
+        params.printTo = printTo.join(',');
+    }
+
     // Add attachments if present -- V3.4.0, params.attachments (plural,
     // a JSON array) replaces the old singular params.attachment.
     // Requires NotificationServer V3.10.0+.
@@ -3717,13 +3801,19 @@ async function executeFieldAlertSend() {
     // V3.12.0: real recipient numbers, taken from a Test Run (no sending)
     // of exactly this send. Attachments are left out -- they add nothing to
     // the counts. If the lookup fails, no numbers are shown (never "...").
-    let emailN = null, smsN = null;
+    let emailN = null, smsN = null, printHouseholds = null;
     try {
         sendBtn.textContent = 'Counting recipients...';
         const countParams = buildFieldAlertParams(recipientFilter, messageText, emailEnabled, smsEnabled);
         delete countParams.attachments;
+        if (countParams.printTo) {
+            // V3.15.0: the server needs a document to accept a print copy; a
+            // tiny placeholder does for counting (a Test Run sends nothing)
+            countParams.attachments = JSON.stringify([{ filename: 'count.txt', mimeType: 'text/plain', data: 'eA==' }]);
+        }
         const sim = await callNotificationAPI('simulateFieldAlert', countParams);
         if (sim && sim.success) {
+            if (sim.print && typeof sim.print.households === 'number') printHouseholds = sim.print.households;
             if (sim.email && typeof sim.email.wouldSend === 'number') emailN = sim.email.wouldSend;
             if (sim.sms && typeof sim.sms.wouldSend === 'number') smsN = sim.sms.wouldSend;
         }
@@ -3744,6 +3834,13 @@ async function executeFieldAlertSend() {
     }
 
     confirmMsg += methods.join(' + ');
+
+    // V3.15.0: print copy line
+    const printNamesForConfirm = getSelectedPrintHelpers();
+    if (printNamesForConfirm.length > 0) {
+        confirmMsg += `\n\nPrint copy to ${printNamesForConfirm.join(' and ')}` +
+            (printHouseholds === null ? '' : ` (${printHouseholds} household${printHouseholds === 1 ? '' : 's'} on the paper list)`);
+    }
 
     // V3.8.0: show the SMS text that will be sent when Email + SMS are both ticked
     const separateSmsForConfirm = getSeparateSmsText();
@@ -3792,8 +3889,17 @@ async function executeFieldAlertSend() {
                 message += '\n';
             }
             if (smsEnabled) message += `📱 SMS: ${smsRes.sent !== undefined ? smsRes.sent : '?'} ($${smsRes.cost !== undefined ? smsRes.cost : '0'})`;
+            // V3.15.0: print copy outcome (a failure never undoes the village send)
+            if (response.print) {
+                const pr = response.print;
+                if (pr.failed > 0) {
+                    message += `\n⚠️ Print copy FAILED for ${(pr.helpers || []).join(', ')} -- the village email was sent. Send the print copy again.`;
+                } else {
+                    message += `\n🖨️ Print copy: ${(pr.helpers || []).join(', ')} (${pr.households} household${pr.households === 1 ? '' : 's'})`;
+                }
+            }
 
-            showNotification(message, 'success');
+            showNotification(message, (response.print && response.print.failed > 0) ? 'error' : 'success', (response.print && response.print.failed > 0) ? 15000 : 4000);
 
             // V3.5.1: reset everything to the just-opened state. This covers
             // what used to be done piecemeal here (message, attachment, the
@@ -3970,6 +4076,19 @@ function showTestRunResult(r) {
             : `<div class="test-row"><span>Nobody</span></div>`) + `</div>`;
     }
 
+    // V3.15.0: print copy
+    if (r.print) {
+        html += `<div class="test-heading">🖨️ Print copy</div>`;
+        if (r.print.error) {
+            html += `<div class="test-note">⚠️ The print copy could not be prepared: ${escapeHtml(r.print.error)}</div>`;
+        } else {
+            html += `<p style="margin-bottom:8px;color:rgba(255,255,255,0.85);font-size:0.95rem;">` +
+                `Would go to: <strong>${escapeHtml((r.print.helpers || []).join(', '))}</strong> ` +
+                `(${r.print.wouldSend} email${r.print.wouldSend !== 1 ? 's' : ''}), with the attached document and the Paper Copy List: ` +
+                `<strong>${r.print.households} household${r.print.households !== 1 ? 's' : ''}</strong> (${escapeHtml(r.print.scope || 'All households')}).</p>`;
+        }
+    }
+
     if (smsOn) {
         html += `<div class="test-heading">📱 SMS (${smsItems.length})</div>`;
         if (smsItems.length > 0) {
@@ -4028,6 +4147,7 @@ async function sendTestCopy() {
     let confirmMsg = 'Send a REAL test copy to yourself?\n\n';
     if (emailOn) confirmMsg += '📧 1 email (uses 1 of the daily email limit)\n';
     if (smsOn) confirmMsg += '📱 1 SMS to your own test mobile\n';
+    if (lastTestParams.printTo) confirmMsg += '🖨️ 1 print copy email to your own test address (uses 1 more of the daily email limit)\n';
     confirmMsg += '\nIt goes only to the test address and mobile set up on the server, not to any resident.\n\nContinue?';
 
     if (!confirm(confirmMsg)) return;
@@ -4044,6 +4164,7 @@ async function sendTestCopy() {
         let message = '✅ Test copy sent to you\n';
         if (emailOn) message += `📧 Email: ${response.email.sent}${response.email.failed ? ' (' + response.email.failed + ' failed)' : ''}\n`;
         if (smsOn) message += `📱 SMS: ${response.sms.sent}${response.sms.failed ? ' (' + response.sms.failed + ' failed)' : ''}`;
+        if (response.print) message += `\n🖨️ Print copy: ${response.print.sent}${response.print.failed ? ' (' + response.print.failed + ' failed)' : ''}`;
         showNotification(message, 'success', 8000);
 
         // One test copy per Test Run (run again to send another)
