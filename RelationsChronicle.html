@@ -6,10 +6,10 @@ DOCUMENT INFORMATION:
   File Name:        RelationsChronicle.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.1.0
+  Frontend Version: V1.2.0
   Backend:          RelationsManager V1.0.10 -- getRelationByRef /
                      getRelationsByUnit / getRelationsByName / getEvents
-  Status:           PRODUCTION
+  Status:           DEVELOPMENT
   Created:          Aug 2026
 
 PURPOSE:
@@ -55,6 +55,7 @@ SEARCH MODES:
                return several.
 
 VERSION HISTORY:
+  V1.2.0 (Nov 2026): Operations Portal access. The role check now uses the shared session (VerificationModal.checkAccess, V2.2.1+): Relations-Manager (Developer always passes); the page loads data only after it passes. Added ?portal=operations: uses the Operations Portal session (portalOperationsVerified) and Back returns to the Operations Portal; the default (Admin Portal) behaviour is unchanged. Nothing else changed.
   V1.1.0 (Nov 2026): Display name corrected to "Lake Illawong Residential Village"
     (was "Retirement Village"; the Chronicle's printed record header too).
     Also: Transport moved to the shared ApiClient.js (API
@@ -257,7 +258,7 @@ TECHNICAL:
     </div>
 
     <!-- Back button -->
-    <button class="portal-back-btn" onclick="window.location.href='AdminPortal.html'">
+    <button class="portal-back-btn" data-portal-back onclick="window.location.href=PORTAL_PAGE">
         &#8592; Back to Admin Portal
     </button>
 
@@ -292,9 +293,11 @@ TECHNICAL:
 </div><!-- end container -->
 
 <script>
+    const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+    const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'AdminPortal.html';
     const CONFIG = {
         BACKEND_URL:   'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
-        SESSION_KEY:   'portalAdminVerified',
+        SESSION_KEY:   IN_OPERATIONS ? 'portalOperationsVerified' : 'portalAdminVerified',
         ALLOWED_ROLES: ['Relations-Manager', 'Developer']
     };
 
@@ -311,6 +314,7 @@ TECHNICAL:
     // ── AUTH ──────────────────────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', function () {
+        if (IN_OPERATIONS) document.querySelectorAll('[data-portal-back]').forEach(function (el) { el.textContent = '\u2190 Back to Operations Portal'; });
         const alreadyVerified = VerificationModal.init({
             moduleName: 'Relations Chronicle',
             moduleIcon: '📋',
@@ -327,7 +331,7 @@ TECHNICAL:
     function handleVerificationSuccess(userData) {
         window._sessionUser = userData;
         const roles = userData.roleTags || [];
-        const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
+        const hasAccess = VerificationModal.checkAccess(CONFIG.ALLOWED_ROLES).ok;
         if (!hasAccess) {
             document.getElementById('deniedName').textContent  = userData.name || 'Unknown';
             document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
