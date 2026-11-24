@@ -7,13 +7,23 @@ DOCUMENT INFORMATION:
 - File Name:        DesktopExplorer.html
 - System:           Lake Illawong Management Central System
 - Module:           Desktop Problem Data Analytics Interface
-- Version:          v1.1.5
+- Version:          v1.1.6
 - Status:           Production
 - Created:          August 2025
-- Last Modified:    August 2026
+- Last Modified:    November 2026
 - Author:           Tony
 
 VERSION HISTORY:
+- v1.1.6 (Nov 2026): Access control. Replaced the five-key session check
+                     (which let in any signed-in person, including a
+                     resident, now that sessions are shared) with the shared
+                     session plus VerificationModal.checkAccess (V2.2.1+).
+                     Allowed roles: Operations-Portal, Field-Ops-Portal,
+                     ZoneRep-Portal, Admin-Portal, SysAdmin-Portal (Developer
+                     always passes). Anyone else sees Access Not Authorised.
+                     Added ?portal=operations (Back goes to the Operations
+                     Portal). Data now loads only after the role check passes.
+                     Page remains read-only/unrestricted for those roles.
 - v1.1.5 (Aug 2026): checkSession() now also checks localStorage for each
                      valid key, not just sessionStorage. Field Ops sessions
                      (portalFieldOpsVerified) moved to a persistent
@@ -103,6 +113,8 @@ TECHNICAL NOTES:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Desktop Explorer</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -891,48 +903,80 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     </div>
 
     <script>
-function checkSession() {
-            const validKeys = [
-                'portalFieldOpsVerified',
-                'portalAdminVerified',
-                'portalZoneRepVerified',
-                'portalSysAdminVerified',
-                'lakeIllawongVerified'
-            ];
-            
-            const hasSession = validKeys.some(key => sessionStorage.getItem(key) === 'true' || localStorage.getItem(key) === 'true');
-        
-        if (hasSession) {
+// SESSION GUARD + ROLE CHECK (v1.1.6). Uses the shared session; the role
+        // check runs on every load. ?portal= decides where Back / sign-in go.
+        const PORTAL_DESTINATIONS = {
+            'operations': 'OperationsPortal.html',
+            'fieldops':   'FieldOperationsPortal.html',
+            'admin':      'AdminPortal.html',
+            'zonerep':    'ZoneRepPortal.html',
+            'sysadmin':   'SysAdminPortal.html',
+            'residents':  'ResidentPortal.html'
+        };
+        const PORTAL_KEYS = {
+            'operations': 'portalOperationsVerified',
+            'fieldops':   'portalFieldOpsVerified',
+            'admin':      'portalAdminVerified',
+            'zonerep':    'portalZoneRepVerified',
+            'sysadmin':   'portalSysAdminVerified'
+        };
+        const PORTAL_PARAM = new URLSearchParams(window.location.search).get('portal');
+        const PORTAL_PAGE = PORTAL_DESTINATIONS[PORTAL_PARAM] || 'FieldOperationsPortal.html';
+        const SESSION_KEY = PORTAL_KEYS[PORTAL_PARAM] || 'portalFieldOpsVerified';
+        const ALLOWED_ROLES = ['Operations-Portal', 'Field-Ops-Portal', 'ZoneRep-Portal', 'Admin-Portal', 'SysAdmin-Portal'];
+
+        function showDenied(name) {
             document.body.style.display = '';
-        } else {
-                const params = new URLSearchParams(window.location.search);
-                const portal = params.get('portal');
-                const destinations = {
-                    'fieldops':  'FieldOperationsPortal.html',
-                    'admin':     'AdminPortal.html',
-                    'zonerep':   'ZoneRepPortal.html',
-                    'sysadmin':  'SysAdminPortal.html',
-                    'residents': 'ResidentPortal.html'
-                };
-                window.location.href = destinations[portal] || 'FieldOperationsPortal.html';
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to the Desktop Explorer. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
+        }
+
+        let accessOk = false, domReady = false, explorerStarted = false;
+        function maybeStartExplorer() {
+            if (accessOk && domReady && !explorerStarted) {
+                explorerStarted = true;
+                loadProblemsData();
+                loadDynamicDropdowns();
             }
         }
-        checkSession();
 
-        
-function goBackToPortal() {
-    const params = new URLSearchParams(window.location.search);
-    const portal = params.get('portal');
-    const destinations = {
-        'fieldops': 'FieldOperationsPortal.html',
-        'admin':    'AdminPortal.html',
-        'zonerep':  'ZoneRepPortal.html',
-        'sysadmin': 'SysAdminPortal.html',
-        'residents': 'ResidentPortal.html'
-    };
-    window.location.href = destinations[portal] || 'FieldOperationsPortal.html';
-}
-        
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Desktop Explorer',
+            sessionKey: SESSION_KEY,
+            storageType: 'local',
+            expiryDays: 30,
+            onSuccess: function(userData) {
+                if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                    showDenied(userData && userData.name);
+                    return;
+                }
+                document.body.style.display = '';
+                accessOk = true;
+                maybeStartExplorer();
+            }
+        });
+        if (!alreadyVerified) {
+            window.location.href = PORTAL_PAGE;
+        }
+
+        function goBackToPortal() {
+            window.location.href = PORTAL_PAGE;
+        }
+
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
 
         let allProblems = [], filteredProblems = [], currentProblem = null, currentDataset = 'current';
@@ -968,8 +1012,8 @@ const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100, 'All']; // Available options
     }
     
     // Use enhanced loading
-    loadProblemsData();
-    loadDynamicDropdowns(); // NEW: Load dynamic dropdown data
+    domReady = true;
+    maybeStartExplorer(); // v1.1.6: data loads only once the role check has passed
 });
 
 
