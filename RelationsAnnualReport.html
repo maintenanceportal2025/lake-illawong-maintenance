@@ -7,9 +7,9 @@ DOCUMENT INFORMATION:
   File Name:        RelationsAnnualReport.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Portal Module
-  Frontend Version: V1.2.0
+  Frontend Version: V1.3.0
   Backend:          RelationsManager V1.0.12
-  Status:           PRODUCTION
+  Status:           DEVELOPMENT
   Created:          Aug 2026
 
 PURPOSE:
@@ -66,6 +66,7 @@ PURPOSE:
   dialog handles Save as PDF).
 
 VERSION HISTORY:
+  V1.3.0 (Nov 2026): Operations Portal access. The role check now uses the shared session (VerificationModal.checkAccess, V2.2.1+): Relations-Manager (Developer always passes); the page loads data only after it passes. Added ?portal=operations: uses the Operations Portal session (portalOperationsVerified) and Back returns to the Operations Portal; the default (Admin Portal) behaviour is unchanged. Nothing else changed. The Open in RelationsManager link carries ?portal=operations.
   V1.2.0 (Nov 2026): Transport moved to the shared ApiClient.js (API
     reliability initiative). jsonpPromise() keeps its name and signature
     but now calls ApiClient. READS (getAnnualReportData, getAnnualNarrative,
@@ -529,7 +530,7 @@ TECHNICAL:
     </div>
 
     <!-- Back button -->
-    <button class="portal-back-btn" onclick="window.location.href='AdminPortal.html'">
+    <button class="portal-back-btn" data-portal-back onclick="window.location.href=PORTAL_PAGE">
         &#8592; Back to Admin Portal
     </button>
 
@@ -640,10 +641,12 @@ TECHNICAL:
 </div>
 
 <script>
+    const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+    const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'AdminPortal.html';
     const CONFIG = {
         BACKEND_URL:   'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
-        SESSION_KEY:   'portalAdminVerified',
-        PORTAL_URL:    'AdminPortal.html',
+        SESSION_KEY:   IN_OPERATIONS ? 'portalOperationsVerified' : 'portalAdminVerified',
+        PORTAL_URL:    PORTAL_PAGE,
         ALLOWED_ROLES: ['Relations-Manager', 'Developer']
     };
 
@@ -662,6 +665,7 @@ TECHNICAL:
     // ── AUTH ──────────────────────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', function () {
+        if (IN_OPERATIONS) document.querySelectorAll('[data-portal-back]').forEach(function (el) { el.textContent = '\u2190 Back to Operations Portal'; });
         buildFYOptions();
         document.getElementById('rarSummaryInput').addEventListener('input', updateModalSaveState);
         document.getElementById('rarActionInput').addEventListener('input', updateModalSaveState);
@@ -679,7 +683,7 @@ TECHNICAL:
     function handleVerificationSuccess(userData) {
         window._sessionUser = userData;
         const roles = userData.roleTags || [];
-        const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
+        const hasAccess = VerificationModal.checkAccess(CONFIG.ALLOWED_ROLES).ok;
         if (!hasAccess) {
             document.getElementById('deniedName').textContent  = userData.name || 'Unknown';
             document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
@@ -1138,7 +1142,7 @@ TECHNICAL:
         // clicks reuse the same window instead of piling up new tabs
         // while working through several disputes in one sitting.
         const w = window.open(
-            'RelationsManager.html?ref=' + encodeURIComponent(ref),
+            'RelationsManager.html?ref=' + encodeURIComponent(ref) + (IN_OPERATIONS ? '&portal=operations' : ''),
             'rarRelationsManagerWindow',
             'width=820,height=900,left=80,top=40'
         );
