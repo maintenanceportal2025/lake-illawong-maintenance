@@ -1,8 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-    Executive Dashboard V1.3.0
+    Executive Dashboard V1.4.0
     Updated: November 2026
+    Changes: Access control. The old guard only looked for the portalAdminVerified
+             key, which under the shared session no longer proves a role (a
+             signed-in resident would pass). Now uses the shared session and
+             VerificationModal.checkAccess (V2.2.1+): Operations-Portal or
+             Admin-Portal holders (Developer always passes); anyone else sees
+             Access Not Authorised and no data loads. Role check runs on every
+             load. Read-only page, so Unrestricted for those roles. Added
+             ?portal=operations: Back goes to the Operations Portal (default
+             remains the Admin Portal). Data loads only after the check passes.
+             Add VerificationModal.js (included). No change to data, charts,
+             filters or exports.
+    Prior: V1.3.0 Nov 2026
     Changes: API reliability -- makeRequest() now uses the shared ApiClient.js
              (add <script src="ApiClient.js"> alongside this page). The
              dashboard only reads (getFaultLogData, getLegacyLogData), so each
@@ -27,6 +39,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lake Illawong - Executive Dashboard</title>
     <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/html2canvas@latest/dist/html2canvas.min.js"></script>
@@ -805,7 +818,7 @@ body #pdfModal .modal-cancel {
                 
                 <!-- Back to Portal -->
                 <div style="margin-bottom: 12px;">
-                    <button class="portal-back-btn" onclick="window.location.href='AdminPortal.html'">&#8592; Back to Portal</button>
+                    <button class="portal-back-btn" onclick="window.location.href=PORTAL_PAGE">&#8592; Back to Portal</button>
                 </div>
 
                 <!-- Data Source Selection Row -->
@@ -1003,11 +1016,57 @@ body #pdfModal .modal-cancel {
 </div>
 
     <script>
-// SESSION GUARD
-        if (!sessionStorage.getItem('portalAdminVerified')) {
-            window.location.href = 'AdminPortal.html';
-        } else {
+// SESSION GUARD + ROLE CHECK (V1.4.0). Shared session; role check runs on every
+        // load. ?portal=operations -> Operations Portal; otherwise Admin Portal as before.
+        const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+        const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'AdminPortal.html';
+        const ALLOWED_ROLES = ['Operations-Portal', 'Admin-Portal'];
+
+        function showDenied(name) {
             document.body.style.display = '';
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to the Executive Dashboard. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
+        }
+
+        let edAccessOk = false, edDomReady = false, edStarted = false;
+        function maybeStartDashboard() {
+            if (edAccessOk && edDomReady && !edStarted) {
+                edStarted = true;
+                loadData();
+            }
+        }
+
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Executive Dashboard',
+            sessionKey: IN_OPERATIONS ? 'portalOperationsVerified' : 'portalAdminVerified',
+            storageType: 'local',
+            expiryDays: 30,
+            onSuccess: function(userData) {
+                if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                    showDenied(userData && userData.name);
+                    return;
+                }
+                document.body.style.display = '';
+                edAccessOk = true;
+                maybeStartDashboard();
+            }
+        });
+        if (!alreadyVerified) {
+            window.location.href = PORTAL_PAGE;
         }
 
 // PDF Modal Functions
@@ -1474,7 +1533,8 @@ let initialLoad = true;
 
         // Initialize
         window.addEventListener('DOMContentLoaded', () => {
-            loadData();
+            edDomReady = true;
+            maybeStartDashboard();   // V1.4.0: only once the role check has passed
         });
 
         // Toggle Slicer Section Collapse/Expand
