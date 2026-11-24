@@ -1,9 +1,9 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V2.1.0
+ * VERIFICATION MODAL COMPONENT V2.2.1
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 2.1.0
+ * VERSION: 2.2.1
  * CREATED: February 16, 2026
  * LAST UPDATED: November 2026
  * FILE: VerificationModal.js (generic name, no version in the filename)
@@ -14,6 +14,60 @@
  * as ApiClient.js and EventEntryModal.js. The frozen predecessor
  * VerificationModal_V1_0.js keeps the old "1.0" numbering and must not be
  * changed; ALL changes go in this file only.):
+ * - V2.2.1 (Nov 2026, shared role check): new checkAccess(allowedRoles), a
+ *   read-only helper so any page can make its role check in one line:
+ *     const r = VerificationModal.checkAccess(['Relations-Manager']);
+ *     r.ok (true/false), r.reason (null | 'not-signed-in' | 'no-role'),
+ *     r.user (the signed-in person's data, or null).
+ *   Rules: nobody signed in -> not ok, 'not-signed-in'. The 'Developer' tag
+ *   always passes. An empty or missing list means "any signed-in person";
+ *   a value that is not a list (e.g. a string by mistake) is refused.
+ *   Otherwise the person needs at least one of the listed tags (exact match,
+ *   same as the includes() checks pages use today). It only READS the
+ *   session: it never shows the modal, clears anything or redirects, so the
+ *   page decides what to do (existing denied screens are unchanged). No
+ *   page uses it yet; nothing else in this file changed from V2.2.0.
+ * - V2.2.0 (Nov 2026, shared session): ONE sign-in now covers every portal.
+ *   (1) A single shared session is kept in localStorage under the key
+ *   'lakeIllawongSession' (name, unit, roleTags, email, phone, identifier,
+ *   verifiedAt, expiresAt). init() reads it first: a person who has verified
+ *   on any page is already verified on every other page that uses this file.
+ *   Each page still makes its OWN role check in onSuccess (unchanged), so a
+ *   shared sign-in never grants access to anything the roles do not allow.
+ *   (2) Lifetime: 30 days SLIDING (every page that loads while signed in
+ *   pushes the expiry out to 30 days from now) with a HARD CAP of 90 days
+ *   from the original verification, after which a new code is required.
+ *   This applies to every portal including Admin and SysAdmin. The
+ *   storageType / expiryDays options are still accepted so no page needs
+ *   editing, but the lifetime is now set here: Field Ops (storageType
+ *   'local', expiryDays 30, formerly an absolute 30 days) follows the same
+ *   30 / 90 rule as everyone else.
+ *   (3) Pages that read the old per-portal keys directly (without this
+ *   file) keep working: on every successful init() / verification the old
+ *   keys for the calling page's sessionKey (<key>, _name, _unit, _roles,
+ *   _identifier, _email, _phone, plus _expires for storageType 'local') are
+ *   written into the SAME store as before (sessionStorage by default,
+ *   localStorage for storageType 'local'). Those pages can be moved to this
+ *   file one version at a time. NOTE: such a page opened directly in a new
+ *   tab, before any page using this file has run in that tab, will not yet
+ *   see its old key and will send the person to its portal page first.
+ *   (4) clearVerification() now clears the shared session AND every old
+ *   per-portal key (all six known keys, both stores, plus the calling
+ *   page's own sessionKey). Without that, the next page load would simply
+ *   read the shared session and sign the person straight back in. Every
+ *   portal's Access Denied / Log Out path already calls it, so a Log Out on
+ *   any page signs the person out of every portal (and a denied portal
+ *   signs them out everywhere -- by design).
+ *   (5) New logout(redirectUrl): clearVerification() + hide(), then goes to
+ *   redirectUrl if one is given.
+ *   (6) Step 1 now says: "You'll stay signed in on this device. Not your
+ *   device? Log out when finished." (existing .vm-info style, no new CSS).
+ *   (7) Safety net: if localStorage cannot be used (blocked / full), the
+ *   file behaves exactly as V2.1.0 did (per-page session keys only).
+ *   One-time effect of deploying: nobody is carried over from an old
+ *   per-portal session -- each person verifies once more, and that sign-in
+ *   then covers every portal. No change to the OTP send / verify / relay /
+ *   warm-up code.
  * - V2.1.0 (Nov 2026, warm-up): when the modal is first shown on a page, it now makes
  *   one quiet, read-only call (checkVerificationStatus for a dummy address,
  *   via the same relay path a real send uses) so the Netlify function and
@@ -176,6 +230,7 @@
  * 1. Include in HTML: <script src="VerificationModal.js"></script>
  * 2. Initialize: VerificationModal.init({ ... })
  * 3. Show if needed: if (!alreadyVerified) VerificationModal.show();
+ * 4. Log Out: VerificationModal.logout()  (or clearVerification() then show())
  *
  * EXAMPLE:
  * const verified = VerificationModal.init({
@@ -230,6 +285,23 @@ const VerificationModal = (function() {
     const WARMUP_IDENTIFIER = 'warmup@lakeillawong.invalid';
     let warmUpDone = false;
 
+    // Nov 2026 (V2.2.0, shared session): see change log.
+    const SHARED_KEY = 'lakeIllawongSession';   // one session for every portal (localStorage)
+    const SLIDE_DAYS = 30;                      // sliding lifetime
+    const CAP_DAYS = 90;                        // hard cap from the original verification
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    // Every per-portal key used anywhere in the system (cleared on log out)
+    const LEGACY_KEYS = [
+        'lakeIllawongVerified',
+        'portalAdminVerified',
+        'portalZoneRepVerified',
+        'portalFieldOpsVerified',
+        'portalSysAdminVerified',
+        'periodicReportsVerified'
+    ];
+    const LEGACY_SUFFIXES = ['', '_name', '_unit', '_roles', '_identifier', '_email', '_phone', '_expires'];
+    let sharedUsable = null;                    // null = not tested yet
+
     let modalInjected = false;
     let expiryTimerInterval = null;
     let resendTimerInterval = null;
@@ -237,8 +309,103 @@ const VerificationModal = (function() {
     // Which Web Storage object backs this session -- 'local' persists across
     // sessionStorage being cleared (e.g. iOS reclaiming a backgrounded tab);
     // 'session' (default) is the original, unchanged behaviour.
+    // From V2.2.0 this is the store for the per-portal (old) keys that are
+    // mirrored for pages that read them directly.
     function _getStore() {
         return config.storageType === 'local' ? localStorage : sessionStorage;
+    }
+
+    // ---------------------------------------------------------------
+    // V2.2.0: shared session
+    // ---------------------------------------------------------------
+
+    // Can localStorage be used? (blocked / full storage -> false -> V2.1.0 behaviour)
+    function _sharedOk() {
+        if (sharedUsable !== null) return sharedUsable;
+        try {
+            const probe = '__vmProbe';
+            localStorage.setItem(probe, '1');
+            localStorage.removeItem(probe);
+            sharedUsable = true;
+        } catch (e) {
+            sharedUsable = false;
+        }
+        return sharedUsable;
+    }
+
+    // Returns the shared session if there is one that is still valid, else null.
+    // An expired (sliding or 90-day cap) session is cleared everywhere here.
+    function _readShared() {
+        if (!_sharedOk()) return null;
+        let raw = null;
+        try { raw = localStorage.getItem(SHARED_KEY); } catch (e) { return null; }
+        if (!raw) return null;
+
+        let s = null;
+        try { s = JSON.parse(raw); } catch (e) { s = null; }
+        if (!s || typeof s !== 'object' || !s.verifiedAt || !s.expiresAt || !Array.isArray(s.roleTags)) {
+            try { localStorage.removeItem(SHARED_KEY); } catch (e) {}
+            return null;
+        }
+
+        const now = Date.now();
+        if (now > s.expiresAt || now > s.verifiedAt + CAP_DAYS * DAY_MS) {
+            clearVerification();
+            return null;
+        }
+        return s;
+    }
+
+    function _writeShared(s) {
+        try {
+            localStorage.setItem(SHARED_KEY, JSON.stringify(s));
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Push the sliding expiry out to 30 days from now, never past the 90-day cap.
+    function _slide(s) {
+        const now = Date.now();
+        s.expiresAt = Math.min(now + SLIDE_DAYS * DAY_MS, s.verifiedAt + CAP_DAYS * DAY_MS);
+        _writeShared(s);
+    }
+
+    // Write this page's old per-portal keys (same store, same names as before)
+    // so pages that read them directly keep working.
+    function _mirrorLegacy(s) {
+        try {
+            const store = _getStore();
+            const key = config.sessionKey;
+            const txt = function(v) { return v === undefined || v === null ? '' : String(v); };
+            store.setItem(key, 'true');
+            store.setItem(key + '_name', txt(s.name));
+            store.setItem(key + '_unit', txt(s.unit));
+            store.setItem(key + '_roles', JSON.stringify(s.roleTags || []));
+            store.setItem(key + '_identifier', txt(s.identifier));
+            store.setItem(key + '_email', txt(s.email));
+            store.setItem(key + '_phone', txt(s.phone));
+            if (config.storageType === 'local') {
+                store.setItem(key + '_expires', String(s.expiresAt));
+            }
+        } catch (e) {
+            // storage blocked: nothing more can be done here
+        }
+    }
+
+    // Remove every per-portal key (all known keys + this page's own), both stores.
+    function _clearLegacy() {
+        const keys = LEGACY_KEYS.slice();
+        if (config.sessionKey && keys.indexOf(config.sessionKey) === -1) keys.push(config.sessionKey);
+        [function() { return sessionStorage; }, function() { return localStorage; }].forEach(function(getStore) {
+            try {
+                const store = getStore();
+                keys.forEach(function(k) {
+                    LEGACY_SUFFIXES.forEach(function(suffix) { store.removeItem(k + suffix); });
+                });
+            } catch (e) {}
+        });
     }
 
     // Initialize
@@ -349,9 +516,8 @@ const VerificationModal = (function() {
         }
     }
 
-    // Check if verified
-    function isVerified() {
-        if (!config.useSessionStorage) return false;
+    // V2.1.0 per-page check, used only when localStorage cannot be used.
+    function _legacyIsVerified() {
         const store = _getStore();
 
         if (store.getItem(config.sessionKey) !== 'true') return false;
@@ -368,61 +534,107 @@ const VerificationModal = (function() {
         return true;
     }
 
+    // Check if verified. V2.2.0: reads the shared session; when it is valid the
+    // sliding expiry is renewed and this page's old keys are refreshed.
+    function isVerified() {
+        if (!config.useSessionStorage) return false;
+        if (!_sharedOk()) return _legacyIsVerified();
+
+        const s = _readShared();
+        if (!s) return false;
+
+        _slide(s);
+        _mirrorLegacy(s);
+        return true;
+    }
+
     // Get stored user data
     function getStoredUserData() {
         if (!config.useSessionStorage) return null;
-        const store = _getStore();
 
-        const name = store.getItem(config.sessionKey + '_name');
-        const unit = store.getItem(config.sessionKey + '_unit');
-        const roles = store.getItem(config.sessionKey + '_roles');
-        const email = store.getItem(config.sessionKey + '_email');
-        const phone = store.getItem(config.sessionKey + '_phone');
+        if (!_sharedOk()) {
+            const store = _getStore();
 
-        if (!roles) return null;
+            const name = store.getItem(config.sessionKey + '_name');
+            const unit = store.getItem(config.sessionKey + '_unit');
+            const roles = store.getItem(config.sessionKey + '_roles');
+            const email = store.getItem(config.sessionKey + '_email');
+            const phone = store.getItem(config.sessionKey + '_phone');
+
+            if (!roles) return null;
+
+            return {
+                name: name,
+                unit: unit,
+                roleTags: JSON.parse(roles),
+                email: email || '',
+                phone: phone || ''
+            };
+        }
+
+        const s = _readShared();
+        if (!s) return null;
 
         return {
-            name: name,
-            unit: unit,
-            roleTags: JSON.parse(roles),
-            email: email || '',
-            phone: phone || ''
+            name: s.name,
+            unit: s.unit,
+            roleTags: s.roleTags,
+            email: s.email || '',
+            phone: s.phone || ''
         };
     }
 
-    // Store user data
+    // Store user data (a new verification: starts a fresh 30-day / 90-day clock)
     function storeUserData(userData) {
         if (!config.useSessionStorage) return;
-        const store = _getStore();
 
-        store.setItem(config.sessionKey, 'true');
-        store.setItem(config.sessionKey + '_name', userData.name);
-        store.setItem(config.sessionKey + '_unit', userData.unit);
-        store.setItem(config.sessionKey + '_roles', JSON.stringify(userData.roleTags));
-        store.setItem(config.sessionKey + '_identifier', verificationData.identifier);
-        store.setItem(config.sessionKey + '_email', userData.email || '');
-        store.setItem(config.sessionKey + '_phone', userData.phone || '');
+        const now = Date.now();
+        const s = {
+            v: 1,
+            name: userData.name,
+            unit: userData.unit,
+            roleTags: userData.roleTags,
+            email: userData.email || '',
+            phone: userData.phone || '',
+            identifier: verificationData.identifier,
+            verifiedAt: now,
+            expiresAt: now + SLIDE_DAYS * DAY_MS
+        };
 
-        if (config.storageType === 'local' && config.expiryDays) {
-            const expiresAt = Date.now() + (config.expiryDays * 24 * 60 * 60 * 1000);
-            store.setItem(config.sessionKey + '_expires', String(expiresAt));
-        }
+        if (_sharedOk()) _writeShared(s);
+        _mirrorLegacy(s);
     }
 
-    // Clear verification
+    // Clear verification: the shared session AND every per-portal key, so the
+    // next page load cannot sign the person straight back in (see V2.2.0 notes).
     function clearVerification() {
-        if (config.useSessionStorage) {
-            const store = _getStore();
-            store.removeItem(config.sessionKey);
-            store.removeItem(config.sessionKey + '_name');
-            store.removeItem(config.sessionKey + '_unit');
-            store.removeItem(config.sessionKey + '_roles');
-            store.removeItem(config.sessionKey + '_identifier');
-            store.removeItem(config.sessionKey + '_email');
-            store.removeItem(config.sessionKey + '_phone');
-            store.removeItem(config.sessionKey + '_expires');
-        }
+        try { localStorage.removeItem(SHARED_KEY); } catch (e) {}
+        _clearLegacy();
         verificationData = { method: null, identifier: null, verificationId: null };
+    }
+
+    // Log out of every portal; optionally go somewhere afterwards.
+    function logout(redirectUrl) {
+        clearVerification();
+        hide();
+        if (redirectUrl) window.location.href = redirectUrl;
+    }
+
+    // Role check (V2.2.1). Read-only: see the change log.
+    function checkAccess(allowedRoles) {
+        const user = getStoredUserData();
+        if (!user) return { ok: false, reason: 'not-signed-in', user: null };
+        const tags = Array.isArray(user.roleTags) ? user.roleTags : [];
+        if (tags.indexOf('Developer') !== -1) return { ok: true, reason: null, user: user };
+        if (allowedRoles === undefined || allowedRoles === null ||
+            (Array.isArray(allowedRoles) && allowedRoles.length === 0)) {
+            return { ok: true, reason: null, user: user };
+        }
+        // Anything that is not a list (e.g. a string by mistake) is refused, never opened.
+        if (!Array.isArray(allowedRoles)) return { ok: false, reason: 'no-role', user: user };
+        const has = allowedRoles.some(function (r) { return tags.indexOf(r) !== -1; });
+        return has ? { ok: true, reason: null, user: user }
+                   : { ok: false, reason: 'no-role', user: user };
     }
 
     // Inject modal HTML and CSS
@@ -750,6 +962,10 @@ const VerificationModal = (function() {
 
             <div class="vm-info">
                 🔒 For your security, please verify your identity using your ${config.smsOnly ? 'mobile number' : 'email address or mobile number'}.
+            </div>
+
+            <div class="vm-info" id="vmStayNote">
+                You'll stay signed in on this device. Not your device? Log out when finished.
             </div>
 
             <div id="vmError1" class="vm-error hidden"></div>
@@ -1406,6 +1622,8 @@ const VerificationModal = (function() {
         isVerified: isVerified,
         getUserData: getStoredUserData,
         clearVerification: clearVerification,
+        logout: logout,
+        checkAccess: checkAccess,
         // Internal methods (exposed for onclick handlers)
         _selectMethod: _selectMethod,
         _validateStep1: _validateStep1,
