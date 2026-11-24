@@ -7,13 +7,32 @@ DOCUMENT INFORMATION:
   File Name:        MaintenanceModule.html
   System:           Lake Illawong Management Central System
   Component Type:   Core Staff Management Interface
-  Frontend Version: V1.3.3
+  Frontend Version: V1.4.0
   Backend:          MaintenancePortal V1.6.7
   Status:           PRODUCTION
   Created:          September 2025
-  Last Modified:    Oct 2026
+  Last Modified:    Nov 2026
 
 VERSION HISTORY:
+  V1.4.0 (Nov 2026): Operations Portal support and a real role check.
+                     (1) This page previously only checked that a session
+                     existed, never the person's role (the portal was the
+                     only gate). It now runs VerificationModal.checkAccess on
+                     every load, including when the person is already signed
+                     in, and shows an "Access Not Authorised" screen -- without
+                     signing the person out -- unless they hold
+                     Field-Ops-Portal or Operations-Portal (Developer always
+                     passes). Roles: ALLOWED_ROLES below.
+                     (2) ?portal=operations: Back to Portal and Logout go to
+                     OperationsPortal.html, a person who is not signed in is
+                     sent there to verify, and the session key is
+                     portalOperationsVerified. Without the parameter the
+                     behaviour is as before (FieldOperationsPortal.html).
+                     (3) The problem list, dropdown lists and any pending
+                     ?search= are now loaded only after the role check
+                     passes (the search parameter is still captured first).
+                     No change to problems, filters, saving, reopen,
+                     classification, chat, reports or styling.
   V1.3.3 (Nov 2026): Script tag changed from VerificationModal_V1_0.js to the generic VerificationModal.js (identical code; V2.1.0 adds a quiet warm-up call that cuts slow first verification codes). No other change.
   V1.3.2 (Oct 2026): Classification accuracy (pairs with backend V1.6.7).
                      (1) The hardcoded "General" Category / Sub-Category
@@ -201,11 +220,12 @@ V1.2.2 (Mar 2026): User accountability — logged-in user name now written
                      sessionStorage key set by VerificationModal on login
 
 AUTHENTICATION:
-  Session guard via VerificationModal.init() (portalFieldOpsVerified key,
-  storageType 'local', 30-day expiry -- V1.2.5). Session set on login at
-  FieldOperationsPortal.html or, since V1.2.5, this module directly.
+  Shared session via VerificationModal.init() (V2.2.1 or later). Session key
+  portalFieldOpsVerified, or portalOperationsVerified with ?portal=operations.
+  Role check on every load via VerificationModal.checkAccess: Field-Ops-Portal
+  or Operations-Portal (Developer always passes) -- V1.4.0.
   Direct URL access without a valid session redirects to
-  FieldOperationsPortal.html.
+  FieldOperationsPortal.html, or OperationsPortal.html with ?portal=operations.
 
 SYSTEM CONNECTIONS:
   Backend API:      MaintenancePortal V1.6.7
@@ -1447,7 +1467,7 @@ Padding: 10px;
             <div class="header-divider"></div>
             <!-- Header Buttons - Will wrap below on mobile -->
             <div class="header-right">
-        <button style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;padding:8px 18px;border-radius:2px;font-size:0.88rem;font-weight:600;cursor:pointer;min-height:44px;font-family:inherit;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'" onclick="window.location.href='FieldOperationsPortal.html'">&#8592; Back to Portal</button>
+        <button style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;padding:8px 18px;border-radius:2px;font-size:0.88rem;font-weight:600;cursor:pointer;min-height:44px;font-family:inherit;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'" onclick="window.location.href=PORTAL_PAGE">&#8592; Back to Portal</button>
         <button id="refreshBtn" class="btn btn-refresh">🔄 Refresh</button>
 
 
@@ -1793,21 +1813,62 @@ Padding: 10px;
 
     <script>
 
- // SESSION GUARD -- via VerificationModal (V1.2.5): matches
- // FieldOperationsPortal's storageType:'local', expiryDays:30 config so
- // this module honours the same persistent, 30-day-expiring session
- // whether reached via the portal or a direct bookmark.
+ // SESSION GUARD + ROLE CHECK (V1.4.0).
+ // ?portal=operations -> Operations Portal; anything else -> Field Operations
+ // Portal (as before). The person must hold Field-Ops-Portal or
+ // Operations-Portal (Developer always passes). Runs on every load,
+ // including when already signed in.
+            const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+            const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'FieldOperationsPortal.html';
+            const ALLOWED_ROLES = ['Field-Ops-Portal', 'Operations-Portal'];
+            let accessOk = false, accessDenied = false, domReady = false, systemStarted = false;
+
+            // Starts loading data only once BOTH the page is ready and the role check has passed.
+            function maybeStartSystem() {
+                if (accessOk && domReady && !systemStarted) {
+                    systemStarted = true;
+                    initializeSystem();
+                }
+            }
+
+            function showDenied(name) {
+                accessDenied = true;
+                document.body.style.display = '';
+                document.body.innerHTML =
+                    '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                    'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                    '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                    'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                    'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                    '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                    '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                    '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                    String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                    '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                    'Your account does not have access to the Maintenance Module. Please contact management if you believe this is an error.</p>' +
+                    '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                    'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                    'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                    'Back to Portal</button></div></div>';
+            }
+
             const alreadyVerified = VerificationModal.init({
                 moduleName: 'Maintenance Module',
-                sessionKey: 'portalFieldOpsVerified',
+                sessionKey: IN_OPERATIONS ? 'portalOperationsVerified' : 'portalFieldOpsVerified',
                 storageType: 'local',
                 expiryDays: 30,
-                onSuccess: function() {
+                onSuccess: function(userData) {
+                    if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                        showDenied(userData && userData.name);
+                        return;
+                    }
                     document.body.style.display = '';
+                    accessOk = true;
+                    maybeStartSystem();
                 }
             });
             if (!alreadyVerified) {
-                window.location.href = 'FieldOperationsPortal.html';
+                window.location.href = PORTAL_PAGE;
             }
 
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxtdMfxB5b1F5K401X0lJxnK2-DGkiG2zYZNukJvAHx0K1AqgPTMIdiunwS3etm0FOL/exec';
@@ -1844,6 +1905,7 @@ let sortNewestFirst = false; // Default: Oldest first (current behavior)
         const PRIORITY_ORDER = ['Urgent', 'High', 'Medium', 'Low'];
 
         document.addEventListener('DOMContentLoaded', function() {
+            if (accessDenied) return;   // V1.4.0: the page has been replaced by the denied screen
             console.log('* Maintenance Portal V3.0 SIMPLIFIED - Initializing...');
 
 
@@ -1853,7 +1915,8 @@ let sortNewestFirst = false; // Default: Oldest first (current behavior)
 
             setupEventListeners();
             showMainPortal();
-            initializeSystem();
+            domReady = true;
+            maybeStartSystem();   // V1.4.0: was initializeSystem(); now waits for the role check
         });
 
         // Capture search parameter from URL or sessionStorage.
@@ -3830,7 +3893,7 @@ function showRetryNotification(attempt, maxAttempts) {
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
                 VerificationModal.clearVerification();
-                window.location.href = 'FieldOperationsPortal.html';
+                window.location.href = PORTAL_PAGE;
             }
         }
 
