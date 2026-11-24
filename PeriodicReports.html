@@ -7,13 +7,21 @@ DOCUMENT INFORMATION:
   File Name:        PeriodicReports.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module (Directors and Zone Representatives)
-  Frontend Version: V1.0.0
+  Frontend Version: V1.1.0
   Backend:          MonthlyReports (web app)
   Status:           PRODUCTION
   Created:          Nov 2026
   Last Modified:    Nov 2026
 
 VERSION HISTORY:
+  V1.1.0 (Nov 2026): Operations Portal access. Added ?portal=operations: uses
+                     the Operations Portal session (portalOperationsVerified)
+                     and Back goes to the Operations Portal. In that mode the
+                     page also requires the Director role (VerificationModal
+                     .checkAccess, V2.2.1+; Developer always passes) -- anyone
+                     else sees Access Not Authorised. The admin, zonerep and
+                     direct-link modes are unchanged: the backend still decides
+                     who may request what. Nothing else changed.
   V1.0.0 (Nov 2026): Initial release. A Director can request the Board-style
                      problem report and a Zone Rep the report for their own
                      zone, for a month, quarter, half-year or year (calendar
@@ -294,10 +302,13 @@ TECHNICAL:
     };
 
     const PORTAL = (new URLSearchParams(window.location.search).get('portal') || '').toLowerCase();
-    const SESSION_KEY = PORTAL === 'admin' ? 'portalAdminVerified'
+    const IN_OPERATIONS = PORTAL === 'operations';
+    const SESSION_KEY = IN_OPERATIONS ? 'portalOperationsVerified'
+                      : PORTAL === 'admin' ? 'portalAdminVerified'
                       : PORTAL === 'zonerep' ? 'portalZoneRepVerified'
                       : 'periodicReportsVerified';
-    const BACK_URL = PORTAL === 'admin' ? 'AdminPortal.html'
+    const BACK_URL = IN_OPERATIONS ? 'OperationsPortal.html'
+                   : PORTAL === 'admin' ? 'AdminPortal.html'
                    : PORTAL === 'zonerep' ? 'ZoneRepPortal.html'
                    : 'SystemHub.html';
 
@@ -344,6 +355,11 @@ TECHNICAL:
 
     function handleVerified(userData) {
         user = userData;
+        // V1.1.0: in the Operations Portal this module is for Directors
+        if (IN_OPERATIONS && !VerificationModal.checkAccess(['Director']).ok) {
+            showDenied('Access Not Authorised', 'Your account does not have access to Periodic Reports. Please contact management if you believe this is an error.');
+            return;
+        }
         hide('deniedView'); hide('mainView'); show('loadingView');
         if (!user.email) {
             showDenied('No email address on file',
