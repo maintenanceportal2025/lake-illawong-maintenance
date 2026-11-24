@@ -1,0 +1,386 @@
+<!--
+=====================================================================
+OperationsPortal.html - OPERATIONS PORTAL
+=====================================================================
+
+DOCUMENT INFORMATION:
+  File Name:        OperationsPortal.html
+  System:           Lake Illawong Management Central System
+  Component Type:   Staff Portal (replaces Field Operations, Admin and
+                    SysAdmin portals at cut-over)
+  Frontend Version: V1.0.0
+  Status:           DEVELOPMENT (built in isolation; listed on System Hub
+                    marked Development; the three old portals are untouched)
+  Created:          Nov 2026
+  Design System:    Lake Illawong Unified V2.4 (glass cards, no new pattern)
+
+VERSION HISTORY:
+  V1.0.0 (Nov 2026): Initial release. One portal for Field Ops, Admin and
+                     SysAdmin modules, grouped by function. Every module is
+                     shown to everyone who holds Operations-Portal. Restricted
+                     modules show a padlock and open only for the roles in
+                     MODULES below (Developer always passes); anyone else
+                     sees a short notice and stays signed in. Role check uses
+                     VerificationModal.checkAccess (V2.2.1) and runs on every
+                     load, including when the person is already signed in.
+                     Modules are linked with ?portal=operations. Modules are
+                     updated one at a time to honour that and to make their
+                     own role check, so until each is updated some will still
+                     send the person to their old portal.
+
+AUTHENTICATION:
+  OTP via VerificationModal.js (V2.2.1 or later, shared session)
+  Session Key: portalOperationsVerified
+  Role required: Operations-Portal or Developer
+  Restricted modules: see MODULES (role lists are placeholders to be
+  confirmed by management: Management Central and Survey Management use
+  Admin-Portal until their roles are decided)
+
+RELATED FILES: VerificationModal.js, SystemHub.html, logo.png
+=====================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operations Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --glass-bg:           rgba(255, 255, 255, 0.08);
+            --glass-bg-hover:     rgba(255, 255, 255, 0.13);
+            --glass-bg-strong:    rgba(255, 255, 255, 0.15);
+            --glass-border:       rgba(255, 255, 255, 0.15);
+            --glass-border-hover: rgba(255, 255, 255, 0.35);
+            --glass-blur:         blur(15px);
+            --glass-text:         #ffffff;
+            --glass-text-muted:   rgba(255, 255, 255, 0.70);
+            --glass-text-subtle:  rgba(255, 255, 255, 0.50);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                         'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            min-height: 100vh;
+            line-height: 1.6;
+            color: #ffffff;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+        /* HEADER (transparent with logo) */
+        .header { background: transparent; text-align: center; margin-bottom: 30px; color: white; }
+        .header-content { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 15px; }
+        .logo-container { flex-shrink: 0; }
+        .logo-image { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; padding: 5px; }
+        .header-text { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+        .header-title { font-size: 2.2rem; font-weight: 700; line-height: 1.1; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); color: white; }
+        .header-subtitle { font-size: 1rem; font-weight: 500; color: rgba(255,255,255,0.9); }
+        .header-divider {
+            height: 2px;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 10%,
+                rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 90%, transparent 100%);
+            border-radius: 2px;
+            margin-top: 15px;
+        }
+
+        /* BACK BUTTON (glass) */
+        .btn-back-glass {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: white;
+            padding: 10px 22px;
+            border-radius: 2px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            min-height: 44px;
+        }
+        .btn-back-glass:hover { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.30); }
+
+        .top-bar { margin-bottom: 20px; }
+
+        /* GROUP PANELS */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            color: var(--glass-text);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .group-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--glass-text);
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        /* GLASS NAV CARDS (Design System V2.4) */
+        .glass-card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 16px;
+        }
+        .glass-nav-card {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 2px;
+            padding: 24px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            min-height: 110px;
+            color: var(--glass-text);
+            font-weight: 600;
+            font-size: 0.95rem;
+            position: relative;
+        }
+        .glass-nav-card:hover {
+            background: var(--glass-bg-hover);
+            border-color: var(--glass-border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+        .card-icon { font-size: 1.8rem; line-height: 1; }
+        .card-lock { position: absolute; top: 8px; right: 10px; font-size: 0.85rem; opacity: 0.85; }
+
+        /* NOTICE (restricted module, no access) */
+        .notice {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            color: #fcd34d;
+            border-radius: 2px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            display: none;
+        }
+        .notice.show { display: block; }
+
+        .logout-container { text-align: center; margin-top: 30px; }
+
+        .hidden { display: none !important; }
+
+        @media (max-width: 768px) {
+            .container { padding: 15px; }
+            .glass-card-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .glass-nav-card { min-height: 110px; height: 110px; padding: 14px 10px; }
+        }
+        @media (max-width: 480px) {
+            .header-content { flex-direction: column; gap: 15px; }
+            .header-text { align-items: center; text-align: center; }
+            .header-title { font-size: 1.8rem; }
+            .logo-image { width: 70px; height: 70px; }
+        }
+    </style>
+    <script src="VerificationModal.js"></script>
+</head>
+<body>
+    <!-- DASHBOARD VIEW (shown only after the role check passes) -->
+    <div id="dashboardView" class="container hidden">
+
+        <div class="top-bar">
+            <button class="btn-back-glass" onclick="window.location.href='SystemHub.html'">← Back to System Hub</button>
+        </div>
+
+        <header class="header">
+            <div class="header-content">
+                <div class="logo-container">
+                    <img src="logo.png" alt="Lake Illawong Logo" class="logo-image">
+                </div>
+                <div class="header-text">
+                    <h1 class="header-title">Operations Portal</h1>
+                    <p class="header-subtitle">Problem management, reporting and administration tools</p>
+                </div>
+            </div>
+            <div class="header-divider"></div>
+        </header>
+
+        <div id="restrictedNotice" class="notice" role="status"></div>
+
+        <div id="groups"></div>
+
+        <div class="logout-container">
+            <button id="logoutBtn" class="btn-back-glass" onclick="logout()">🚪 Log Out</button>
+        </div>
+    </div>
+
+    <script>
+        // ── MODULE LIST ──────────────────────────────────────────────
+        // roles: [] = unrestricted (any Operations-Portal holder).
+        // A list = restricted: padlock, and only those roles (or Developer) open it.
+        // Group and module order here is the order shown on the page.
+        const PORTAL_ROLE = 'Operations-Portal';
+        const PORTAL_PARAM = '?portal=operations';
+
+        const GROUPS = [
+            { title: 'Problem Management', modules: [
+                { name: 'Maintenance Module', icon: '🔧', url: 'MaintenanceModule.html', roles: [] },
+                { name: 'Timeline Viewer',    icon: '🕐', url: 'TimelineViewer.html',    roles: [] },
+                { name: 'Problem Queue',      icon: '📋', url: 'ProblemQueue.html',      roles: [] },
+                { name: 'Bulk Submission',    icon: '📝', url: 'BulkSubmissionForm.html', roles: [] }
+            ]},
+            { title: 'Reporting', modules: [
+                { name: 'Reports Hub',         icon: '📄', url: 'ReportsHub.html',         roles: [] },
+                { name: 'Executive Dashboard', icon: '📈', url: 'ExecutiveDashboard.html', roles: [] },
+                { name: 'Periodic Reports',    icon: '📧', url: 'PeriodicReports.html',    roles: ['Director'] }
+            ]},
+            { title: 'Analysis', modules: [
+                { name: 'Desktop Explorer', icon: '🖥️', url: 'DesktopExplorer.html', roles: [] }
+            ]},
+            { title: 'Communication', modules: [
+                { name: 'Field Alerts', icon: '🚨', url: 'FieldAlerts.html', roles: [] }
+            ]},
+            { title: 'Management', modules: [
+                { name: 'Management Central',       icon: '⚙️', url: 'ManagementCentral.html',      roles: ['Admin-Portal'] },
+                { name: 'Survey Management',        icon: '📊', url: 'SurveyManagement.html',       roles: ['Admin-Portal'] },
+                { name: 'Calendar Manager',         icon: '📅', url: 'CalendarManager.html',        roles: ['Calendar-Manager'] },
+                { name: 'Document Library Manager', icon: '🗂️', url: 'DocumentLibraryManager.html', roles: ['Doc Manager'] }
+            ]},
+            { title: 'Relations', modules: [
+                { name: 'Relations Manager', icon: '🤝', url: 'RelationsManager.html',      roles: ['Relations-Manager'] },
+                { name: 'Chronicle',         icon: '📋', url: 'RelationsChronicle.html',    roles: ['Relations-Manager'] },
+                { name: 'Annual Report',     icon: '📑', url: 'RelationsAnnualReport.html', roles: ['Relations-Manager'] }
+            ]},
+            { title: 'System', modules: [
+                { name: 'System Logs',         icon: '📋', url: 'SystemLogs.html',         roles: ['SysAdmin-Portal'] },
+                { name: 'System Dependencies', icon: '🔗', url: 'SystemDependencies.html', roles: ['SysAdmin-Portal'] }
+            ]}
+        ];
+
+        function esc(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ── ROLE CHECK ───────────────────────────────────────────────
+        // Uses the shared check in VerificationModal V2.2.1. Developer always passes.
+        function canOpen(mod) {
+            return VerificationModal.checkAccess(mod.roles).ok;
+        }
+
+        // ── RENDER ───────────────────────────────────────────────────
+        function renderGroups() {
+            const host = document.getElementById('groups');
+            host.innerHTML = GROUPS.map(function (g, gi) {
+                const cards = g.modules.map(function (m, mi) {
+                    const locked = m.roles.length > 0;
+                    return '<div class="glass-nav-card" role="button" tabindex="0"'
+                        + ' title="' + esc(m.name) + (locked ? ' (restricted)' : '') + '"'
+                        + ' data-g="' + gi + '" data-m="' + mi + '">'
+                        + (locked ? '<span class="card-lock" aria-label="Restricted">🔒</span>' : '')
+                        + '<span class="card-icon">' + m.icon + '</span>'
+                        + '<span>' + esc(m.name) + '</span></div>';
+                }).join('');
+                return '<section class="glass-panel"><h2 class="group-title">' + esc(g.title) + '</h2>'
+                    + '<div class="glass-card-grid">' + cards + '</div></section>';
+            }).join('');
+
+            host.querySelectorAll('.glass-nav-card').forEach(function (el) {
+                const go = function () { openModule(GROUPS[el.dataset.g].modules[el.dataset.m]); };
+                el.addEventListener('click', go);
+                el.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+                });
+            });
+        }
+
+        function openModule(mod) {
+            const notice = document.getElementById('restrictedNotice');
+            if (!canOpen(mod)) {
+                notice.textContent = mod.name + ' is not available for your role.';
+                notice.classList.add('show');
+                window.scrollTo(0, 0);
+                return;
+            }
+            notice.classList.remove('show');
+            window.location.href = mod.url + PORTAL_PARAM;
+        }
+
+        // ── ACCESS DENIED (not an Operations Portal holder) ──────────
+        function showDenied(name) {
+            VerificationModal.clearVerification();
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;'
+              + 'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">'
+              + '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);'
+              + 'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;'
+              + 'max-width:450px;width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">'
+              + '<div style="font-size:3rem;margin-bottom:16px;">🚫</div>'
+              + '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>'
+              + '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' + esc(name) + '</strong></p>'
+              + '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">'
+              + 'Your account does not have access to the Operations Portal. '
+              + 'Please contact management if you believe this is an error.</p>'
+              + '<button onclick="window.location.href=\'SystemHub.html\'" '
+              + 'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);'
+              + 'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">'
+              + 'Back to System Hub</button></div></div>';
+        }
+
+        // ── START ────────────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', function () {
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'Operations Portal',
+                moduleIcon: '⚙️',
+                sessionKey: 'portalOperationsVerified',
+                // onSuccess runs after a new verification AND when a valid shared
+                // session already exists, so the role check below runs every load.
+                onSuccess: function (userData) {
+                    const r = VerificationModal.checkAccess([PORTAL_ROLE]);
+                    if (!r.ok) { showDenied(userData && userData.name); return; }
+                    renderGroups();
+                    document.getElementById('dashboardView').classList.remove('hidden');
+                    logPortalAccess(userData.name, userData.unit);
+                }
+            });
+            if (!alreadyVerified) VerificationModal.show();
+        });
+
+        function logout() {
+            if (confirm('Are you sure you want to log out?')) {
+                VerificationModal.logout();
+                location.reload();
+            }
+        }
+
+        function logPortalAccess(name, unit) {
+            var cbName = 'logcb_' + Date.now();
+            var script = document.createElement('script');
+            var settled = false;
+            function finish() {
+                if (settled) return;
+                settled = true;
+                window[cbName] = function () {};
+                try { document.head.removeChild(script); } catch (e) {}
+            }
+            window[cbName] = function () { finish(); };
+            script.onerror = function () { finish(); };
+            script.src = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
+                + '?action=logAccess&callback=' + cbName
+                + '&type=Portal-Login'
+                + '&name=' + encodeURIComponent(name || '')
+                + '&unit=' + encodeURIComponent(unit || '')
+                + '&detail=' + encodeURIComponent('Operations Portal');
+            document.head.appendChild(script);
+        }
+    </script>
+</body>
+</html>
