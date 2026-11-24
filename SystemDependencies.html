@@ -10,17 +10,28 @@
     =====================================================================
     PURPOSE: Dynamic architecture mapping and dependency tracking
     PORTAL: SysAdmin Portal
-    VERSION: V1.2.0
+    VERSION: V1.3.0
     LAST UPDATED: November 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from white card design)
     - JS-generated inline styles updated to glass equivalents
     - Modals retain white background (popup detail views)
-    AUTHENTICATION: Session guard — portalSysAdminVerified
+    AUTHENTICATION: Shared session + role check (SysAdmin-Portal or Developer), see V1.3.0
     BACKEND: SystemServices.js (getCompleteDependencyMap) -- corrected
     from "SystemDependencies backend", confirmed via direct inspection.
     SystemServices.js was renamed from PasswordManager V1.1 (May 2026)
     and is also the backend behind SystemLogs.html.
+
+    CHANGES IN V1.3.0 (Nov 2026):
+    - CHANGED: Access control. The old guard only checked that
+      portalSysAdminVerified existed, which under the shared session no longer
+      proves a role (a signed-in resident would pass), and this page lists
+      every backend URL. Now uses the shared session and
+      VerificationModal.checkAccess (V2.2.1+): SysAdmin-Portal or Developer
+      only. Anyone else sees Access Not Authorised and nothing loads. The role
+      check runs on every load. Added ?portal=operations (Back goes to the
+      Operations Portal). Add VerificationModal.js (included). Map display
+      and wording unchanged.
 
     CHANGES IN V1.2.0 (Nov 2026):
     - CHANGED: API reliability -- transport moved to the shared
@@ -384,7 +395,7 @@
         </div>
 
         <!-- BACK BUTTON -->
-        <button class="portal-back-btn" onclick="window.location.href='SysAdminPortal.html'">&#8592; Back to Portal</button>
+        <button class="portal-back-btn" onclick="window.location.href=PORTAL_PAGE">&#8592; Back to Portal</button>
 
         <!-- LOADING -->
         <div id="loading-indicator">
@@ -429,12 +440,59 @@
     </div>
 
     <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <script>
-        // SESSION GUARD
-        if (!sessionStorage.getItem('portalSysAdminVerified')) {
-            window.location.href = 'SysAdminPortal.html';
-        } else {
+// SESSION GUARD + ROLE CHECK. Shared session; role check runs on every load.
+        // ?portal=operations -> Operations Portal; otherwise SysAdminPortal.html as before.
+        const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+        const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'SysAdminPortal.html';
+        const ALLOWED_ROLES = ['SysAdmin-Portal'];
+
+        function showDenied(name) {
             document.body.style.display = '';
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to System Dependencies. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
+        }
+
+        let accessOk = false, domReady = false, pageStarted = false;
+        function maybeStartPage() {
+            if (accessOk && domReady && !pageStarted) {
+                pageStarted = true;
+                loadSystemDependencies();
+            }
+        }
+
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'System Dependencies',
+            sessionKey: IN_OPERATIONS ? 'portalOperationsVerified' : 'portalSysAdminVerified',
+            storageType: 'local',
+            expiryDays: 30,
+            onSuccess: function(userData) {
+                if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                    showDenied(userData && userData.name);
+                    return;
+                }
+                document.body.style.display = '';
+                accessOk = true;
+                maybeStartPage();
+            }
+        });
+        if (!alreadyVerified) {
+            window.location.href = PORTAL_PAGE;
         }
 
         const CONFIG = {
@@ -717,7 +775,8 @@
         }
 
         document.addEventListener('DOMContentLoaded', function() {
-            loadSystemDependencies();
+            domReady = true;
+            maybeStartPage();   // V1.3.0: only once the role check has passed
         });
     </script>
 </body>
