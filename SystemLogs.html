@@ -4,13 +4,13 @@
 =====================================================================
 PURPOSE: Centralized viewer for all system logging activities
 PORTAL: SysAdmin Portal Module
-VERSION: v1.5.0
+VERSION: v1.6.0
 LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Glass-morphism applied to all UI panels, stats, filter bars, tab nav
 - Data tables retain white background per Design System rule
 - Preset + date picker on all applicable tabs
-AUTHENTICATION: None (accessed via SysAdmin Portal)
+AUTHENTICATION: Shared session + role check (SysAdmin-Portal or Developer), see v1.6.0
 LOG SHEETS:
 • EmailLog - All email notifications
 • SMSLog - SMS notifications (auto-created when first SMS sent)
@@ -24,6 +24,15 @@ FEATURES:
 • Preset + date picker range filtering on all applicable tabs
 • Access log (Connections by Person summary removed)
 VERSION HISTORY:
+* v1.6.0 (Nov 2026): Access control. The old guard only checked that
+*   portalSysAdminVerified existed, which under the shared session no longer
+*   proves a role (a signed-in resident would pass), and the logs include
+*   resident names, emails and phone numbers. Now uses the shared session and
+*   VerificationModal.checkAccess (V2.2.1+): SysAdmin-Portal or Developer only.
+*   Anyone else sees Access Not Authorised and no log data loads. The role
+*   check runs on every load. Added ?portal=operations (Back goes to the
+*   Operations Portal). Add VerificationModal.js (included). Tabs, filters
+*   and display unchanged.
 * v1.5.0 (Nov 2026): Email quota shown the same way everywhere. The Email
 *   Activity tab's quota card ("Emails Today") counted the log rows in the
 *   browser -- calendar day, every status, whatever range was selected -- so
@@ -547,7 +556,7 @@ VERSION HISTORY:
             </div>
             <div class="header-divider"></div>
         </div>
-        <button style="background: rgba(255,255,255,0.08); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 10px 22px; border-radius: 2px; font-weight: 600; cursor: pointer; margin-bottom: 16px; display: inline-block; min-height: 44px; font-size: 0.9rem; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'" onclick="window.location.href='SysAdminPortal.html'">&#8592; Back to Portal</button>
+        <button style="background: rgba(255,255,255,0.08); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.15); color: white; padding: 10px 22px; border-radius: 2px; font-weight: 600; cursor: pointer; margin-bottom: 16px; display: inline-block; min-height: 44px; font-size: 0.9rem; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'" onclick="window.location.href=PORTAL_PAGE">&#8592; Back to Portal</button>
         <!-- TAB NAVIGATION -->
         <div class="tab-navigation">
             <button class="tab-btn active" onclick="switchTab('email-activity')">📧 Email Activity</button>
@@ -759,13 +768,60 @@ VERSION HISTORY:
     </div>
 
     <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <script>
 
-// SESSION GUARD
-        if (!sessionStorage.getItem('portalSysAdminVerified')) {
-            window.location.href = 'SysAdminPortal.html';
-        } else {
+// SESSION GUARD + ROLE CHECK. Shared session; role check runs on every load.
+        // ?portal=operations -> Operations Portal; otherwise SysAdminPortal.html as before.
+        const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+        const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'SysAdminPortal.html';
+        const ALLOWED_ROLES = ['SysAdmin-Portal'];
+
+        function showDenied(name) {
             document.body.style.display = '';
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to System Logs. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
+        }
+
+        let accessOk = false, domReady = false, pageStarted = false;
+        function maybeStartPage() {
+            if (accessOk && domReady && !pageStarted) {
+                pageStarted = true;
+                startSystemLogs();
+            }
+        }
+
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'System Logs',
+            sessionKey: IN_OPERATIONS ? 'portalOperationsVerified' : 'portalSysAdminVerified',
+            storageType: 'local',
+            expiryDays: 30,
+            onSuccess: function(userData) {
+                if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                    showDenied(userData && userData.name);
+                    return;
+                }
+                document.body.style.display = '';
+                accessOk = true;
+                maybeStartPage();
+            }
+        });
+        if (!alreadyVerified) {
+            window.location.href = PORTAL_PAGE;
         }
 
         // =====================================================================
@@ -1495,6 +1551,11 @@ VERSION HISTORY:
         // =====================================================================
 
         document.addEventListener('DOMContentLoaded', function() {
+            domReady = true;
+            maybeStartPage();   // v1.6.0: only once the role check has passed
+        });
+
+        function startSystemLogs() {
             console.log('📋 System Logs V1.3 - Unified Activity Monitoring');
 
             // Initialise all date pickers to last 30 days
@@ -1507,7 +1568,7 @@ VERSION HISTORY:
             loadEmailLogs();
 
             console.log('✅ System Logs initialized');
-        });
+        }
 
         // Error handling
         window.addEventListener('error', function(e) {
