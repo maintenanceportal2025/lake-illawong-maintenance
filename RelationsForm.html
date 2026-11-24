@@ -6,7 +6,7 @@ DOCUMENT INFORMATION:
   File Name:        RelationsForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident/Admin Shared Module
-  Frontend Version: V1.2.1
+  Frontend Version: V1.3.0
   Status:           PRODUCTION
   Created:          Aug 2026
 
@@ -66,6 +66,16 @@ SUCCESS SCREEN:
   explanation only ever reaches the submitter at triage.
 
 VERSION HISTORY:
+  V1.3.0 (Nov 2026): Operations Portal access, and residents no longer verify
+    under the admin session key. (1) Resident (default) mode now uses the
+    standard resident key 'lakeIllawongVerified' instead of 'portalAdminVerified'.
+    (2) New ?portal=operations mode for Board staff: uses the Operations Portal
+    session (portalOperationsVerified), requires Relations-Manager (or Developer)
+    through VerificationModal.checkAccess (V2.2.1+), and anyone else sees Access
+    Not Authorised. Back and Done go to the Operations Portal / Relations Manager
+    with ?portal=operations. Board mode is still only offered to Relations-Manager
+    or Developer. Fields, validation, submit and backend unchanged.
+  V1.2.2 (Nov 2026): Header only. Status corrected from DEVELOPMENT to PRODUCTION. No code change.
   V1.2.1 (Nov 2026): Display name corrected to "Lake Illawong Residential Village" (was "Retirement Village"). Text only.
   V1.2.0 (Nov 2026): Board members can now lodge their OWN dispute as a
     resident. Previously anyone holding an ADMIN_ROLES tag (Relations-Manager
@@ -509,13 +519,14 @@ VERSION HISTORY:
 </div>
 
 <script>
+    const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
     const CONFIG = {
         BACKEND_URL:      'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
         MGMT_URL:         'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
-        SESSION_KEY:      'portalAdminVerified',
+        SESSION_KEY:      IN_OPERATIONS ? 'portalOperationsVerified' : 'lakeIllawongVerified',
         ADMIN_ROLES:      ['Relations-Manager', 'Developer'],
-        RESIDENT_PORTAL:  'ResidentPortal.html',
-        ADMIN_MANAGER:    'RelationsManager.html'
+        RESIDENT_PORTAL:  IN_OPERATIONS ? 'OperationsPortal.html' : 'ResidentPortal.html',
+        ADMIN_MANAGER:    IN_OPERATIONS ? 'RelationsManager.html?portal=operations' : 'RelationsManager.html'
     };
 
     let isBoardMode      = false;
@@ -542,7 +553,27 @@ VERSION HISTORY:
         currentUserData = userData;
         const roles = userData.roleTags || [];
         console.log('RelationsForm: verified as', userData.name, '| roleTags:', roles);
-        const hasAdminRole = CONFIG.ADMIN_ROLES.some(function(r) { return roles.indexOf(r) !== -1; });
+        const hasAdminRole = VerificationModal.checkAccess(CONFIG.ADMIN_ROLES).ok;
+        // V1.3.0: in the Operations Portal this form is for Board staff only
+        if (IN_OPERATIONS && !hasAdminRole) {
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(userData.name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to the Relations Form. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'OperationsPortal.html\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
+            return;
+        }
         console.log('RelationsForm: hasAdminRole =', hasAdminRole);
 
         if (hasAdminRole) {
