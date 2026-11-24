@@ -6,7 +6,7 @@ PURPOSE: On-demand report generation for Admin, SysAdmin and ZoneRep
          audiences. Generates PDF output from live FaultLog/LegacyLog data.
 PORTAL: Admin Portal (primary), SysAdmin Portal
 FILE: ReportsHub.html
-VERSION: V1.3.1
+VERSION: V1.4.0
 LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0 (glass-morphism)
 AUTHENTICATION: Shares Admin Portal's "portalAdminVerified" session
@@ -41,6 +41,17 @@ REPORTS:
   12. Programmed Works           (scheduled and completed programmed works)
 
 VERSION HISTORY:
+  V1.4.0 (Nov 2026): Operations Portal access. Reports Hub is read-only, so in
+                     the Operations Portal it is open to every Operations-Portal
+                     holder (Developer always passes). Allowed roles are now
+                     Operations-Portal, ReportsHub-Portal (kept so the Admin
+                     Portal link keeps working until it is retired) and
+                     Developer. Anyone else, including a signed-in resident,
+                     still sees Access Not Authorised. Added ?portal=operations:
+                     uses the Operations Portal session and Back goes to the
+                     Operations Portal (default stays the Admin Portal). The
+                     denied panel's button is now the standard glass Back to
+                     Portal. No change to reports, filters or data.
   V1.3.1 (Nov 2026): OPEN PROBLEMS -- "High Priority" stat box removed, per Tony.
                      It counted High only (Urgent was excluded), and the Priority
                      filter already does the job properly, so the box was
@@ -971,7 +982,7 @@ VERSION HISTORY:
         <div class="header-divider"></div>
     </div>
 
-    <button class="back-btn" onclick="window.location.href='AdminPortal.html'">&#8592; Back to Portal</button>
+    <button class="back-btn" onclick="window.location.href=PORTAL_PAGE">&#8592; Back to Portal</button>
 
     <div class="layout">
 
@@ -3640,16 +3651,18 @@ function getLast12MonthLabels() {
 // RelationsManager uses. Supersedes V1.1.29's redirect-only guard, which
 // assumed blanket Admin-Portal access was the right bar; it wasn't, per
 // Tony, for the same reason RelationsManager isn't either.
-const REPORTS_HUB_ALLOWED_ROLES = ['ReportsHub-Portal', 'Developer'];
+const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'AdminPortal.html';
+const REPORTS_HUB_ALLOWED_ROLES = ['Operations-Portal', 'ReportsHub-Portal', 'Developer'];
 
 document.addEventListener('DOMContentLoaded', () => {
     const alreadyVerified = VerificationModal.init({
         moduleName: 'Reports Hub',
         moduleIcon: '📊',
-        sessionKey: 'portalAdminVerified',
+        sessionKey: IN_OPERATIONS ? 'portalOperationsVerified' : 'portalAdminVerified',
         onSuccess: function(userData) {
             const roles = userData.roleTags || [];
-            const allowed = REPORTS_HUB_ALLOWED_ROLES.some(r => roles.includes(r));
+            const allowed = REPORTS_HUB_ALLOWED_ROLES.some(r => roles.includes(r)) || VerificationModal.checkAccess(REPORTS_HUB_ALLOWED_ROLES).ok;
             if (!allowed) {
                 document.body.innerHTML = `
                     <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;
@@ -3665,11 +3678,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             <p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">
                                 Your account does not have access to Reports Hub.
                                 Please contact management if you believe this is an error.</p>
-                            <button onclick="window.location.href='AdminPortal.html'"
-                                    style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
-                                           color:white;border:none;padding:12px 24px;border-radius:8px;
-                                           font-weight:600;cursor:pointer;font-size:0.95rem;">
-                                Back to Admin Portal
+                            <button onclick="window.location.href=PORTAL_PAGE"
+                                    style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);
+                                           border:1px solid rgba(255,255,255,0.15);color:white;padding:10px 22px;
+                                           border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;
+                                           min-height:44px;">
+                                Back to Portal
                             </button>
                         </div>
                     </div>`;
