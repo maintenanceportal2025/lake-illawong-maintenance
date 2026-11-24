@@ -3,9 +3,22 @@
 PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
-PORTAL: Field Operations Portal, Admin Portal Module
-VERSION: V1.5.0
+PORTAL: Resident Portal (public), Operations Portal, Field Operations Portal, Admin Portal
+VERSION: V1.6.0
 LAST UPDATED: November 2026
+
+CHANGELOG V1.6.0:
+ - CHANGED: "Open in Maintenance Module" is now shown only to a signed-in
+   person who holds Field-Ops-Portal (Developer always passes), using
+   VerificationModal.checkAccess (V2.2.1+, read-only). The Maintenance Module
+   is a Restricted module, so residents who open a problem from the queue no
+   longer get a button that leads them to a refusal. The queue itself stays
+   public with no sign-in, as before. Add <script src="VerificationModal.js">
+   (included here). Note: the Maintenance Module enforces the role itself;
+   this only hides the button.
+ - ADDED: ?portal=operations -- Back to Portal goes to OperationsPortal.html,
+   and Open in Maintenance Module carries portal=operations so the Maintenance
+   Module's Back also returns to the Operations Portal.
 
 CHANGELOG V1.5.0:
  - CHANGED: Transport moved to the shared ApiClient.js (API reliability
@@ -1028,7 +1041,7 @@ CHANGELOG V1.1:
                 <!-- Populated by JavaScript -->
             </div>
             <div class="modal-actions">
-                <button class="modal-btn modal-btn-primary" onclick="openInMaintenanceModule()">
+                <button class="modal-btn modal-btn-primary" id="openInMaintBtn" style="display:none;" onclick="openInMaintenanceModule()">
                     Open in Maintenance Module
                 </button>
                 <button class="modal-btn modal-btn-secondary" onclick="closeModal()">
@@ -1039,6 +1052,7 @@ CHANGELOG V1.1:
     </div>
 
     <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <script>
         // =====================================================================
         // GLOBAL STATE
@@ -1051,9 +1065,18 @@ function goBackToPortal() {
                 'admin':     'AdminPortal.html',
                 'zonerep':   'ZoneRepPortal.html',
                 'sysadmin':  'SysAdminPortal.html',
+                'operations': 'OperationsPortal.html',
                 'residents': 'ResidentPortal.html'
             };
             window.location.href = destinations[portal] || 'ResidentPortal.html';
+        }
+
+        // V1.6.0: the queue is public; the Maintenance Module button is for
+        // Field-Ops-Portal holders only (read-only check, no sign-in prompt).
+        function canOpenMaintenance() {
+            try {
+                return !!(window.VerificationModal && VerificationModal.checkAccess(['Field-Ops-Portal']).ok);
+            } catch (e) { return false; }
         }
 
       
@@ -1624,6 +1647,8 @@ function applySearch() {
             `;
             
             modal.classList.add('active');
+            const omb = document.getElementById('openInMaintBtn');   // V1.6.0
+            if (omb) omb.style.display = canOpenMaintenance() ? '' : 'none';
         }
 
         function closeModal() {
@@ -1633,6 +1658,7 @@ function applySearch() {
         }
 
         function openInMaintenanceModule() {
+            if (!canOpenMaintenance()) return;   // V1.6.0: staff only
             if (!selectedProblem) {
                 alert('Error: No problem selected. Please try again.');
                 return;
@@ -1653,7 +1679,8 @@ function applySearch() {
             }
             
             // Navigate directly to MaintenanceModule with ?search= param
-            const url = `MaintenanceModule.html?search=${encodeURIComponent(searchNumber)}`;
+            const inOps = new URLSearchParams(window.location.search).get('portal') === 'operations';
+            const url = `MaintenanceModule.html?search=${encodeURIComponent(searchNumber)}` + (inOps ? '&portal=operations' : '');
             window.location.href = url;
         }
 
