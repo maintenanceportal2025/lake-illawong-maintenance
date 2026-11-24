@@ -7,13 +7,28 @@
       File Name:        BulkSubmissionForm.html
       System:           Lake Illawong Management Central System
       Component Type:   Staff Module
-      Frontend Version: V2.4.0
+      Frontend Version: V2.5.0
       Backend:          BulkSubmissionForm V2.0.2
       Status:           PRODUCTION
       Created:          Nov 2025
       Last Modified:    Nov 2026
 
     VERSION HISTORY:
+      V2.5.0 (Nov 2026): Access control. Bulk Submission creates records and
+                         can email/SMS residents, so it is a Restricted module.
+                         The old guard (portalAdminVerified, or
+                         portalFieldOpsVerified) only checked that a key
+                         existed, which under the shared session no longer
+                         proves a role -- a signed-in resident would pass. Now
+                         uses the shared session and VerificationModal.checkAccess
+                         (V2.2.1+): only Field-Ops-Portal holders (Developer
+                         always passes). Anyone else sees Access Not Authorised
+                         and nothing loads. Role check runs on every load; the
+                         form and its dropdown calls start only after it passes.
+                         Added ?portal=operations (Back goes to the Operations
+                         Portal); ?portal=fieldops and the default (Admin) links
+                         still work. Add VerificationModal.js (included).
+                         Fields, validation, submit and backend unchanged.
       V2.4.0 (Nov 2026): Transport migrated to the shared ApiClient.js.
                          callScript() was a single JSONP attempt with NO
                          timeout and no retry, used for every call including
@@ -153,6 +168,7 @@
     <title>Lake Illawong - Bulk Problem Submission</title>
 	<script src="lake-illawong-locations.js"></script>
 	<script src="ApiClient.js"></script>
+	<script src="VerificationModal.js"></script>
    
     
     <style>
@@ -786,7 +802,7 @@
             <div class="header-divider"></div>
         </div>
 
-<button class="portal-back-btn" onclick="window.location.href=homePortalUrl">&#8592; Back to Portal</button>
+<button class="portal-back-btn" onclick="window.location.href=PORTAL_PAGE">&#8592; Back to Portal</button>
 		
         <!-- Title Card -->
         <div class="title-card">
@@ -1097,17 +1113,59 @@
 // sessions are localStorage-backed (30-day expiry, since Aug 2026) so
 // that key is checked in both storages; Admin's stays sessionStorage-only,
 // unchanged.
+// SESSION GUARD + ROLE CHECK. Shared session; role check runs on every load.
+        // ?portal=operations -> Operations Portal; otherwise AdminPortal.html as before.
+        const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
         const launchPortal = new URLSearchParams(window.location.search).get('portal') || 'admin';
-        const homePortalUrl = launchPortal === 'fieldops' ? 'FieldOperationsPortal.html' : 'AdminPortal.html';
+        const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html'
+                          : (launchPortal === 'fieldops' ? 'FieldOperationsPortal.html' : 'AdminPortal.html');
+        const ALLOWED_ROLES = ['Field-Ops-Portal'];
 
-        const hasAdminSession = sessionStorage.getItem('portalAdminVerified') === 'true';
-        const hasFieldOpsSession = sessionStorage.getItem('portalFieldOpsVerified') === 'true' ||
-                                    localStorage.getItem('portalFieldOpsVerified') === 'true';
-
-        if (!hasAdminSession && !hasFieldOpsSession) {
-            window.location.href = homePortalUrl;
-        } else {
+        function showDenied(name) {
             document.body.style.display = '';
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to Bulk Submission. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
+        }
+
+        let accessOk = false, domReady = false, pageStarted = false;
+        function maybeStartPage() {
+            if (accessOk && domReady && !pageStarted) {
+                pageStarted = true;
+                startBulkForm();
+            }
+        }
+
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Bulk Submission',
+            sessionKey: IN_OPERATIONS ? 'portalOperationsVerified' : (launchPortal === 'fieldops' ? 'portalFieldOpsVerified' : 'portalAdminVerified'),
+            storageType: 'local',
+            expiryDays: 30,
+            onSuccess: function(userData) {
+                if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                    showDenied(userData && userData.name);
+                    return;
+                }
+                document.body.style.display = '';
+                accessOk = true;
+                maybeStartPage();
+            }
+        });
+        if (!alreadyVerified) {
+            window.location.href = PORTAL_PAGE;
         }
 		
 
@@ -1123,7 +1181,12 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
         let isLoading = false;
 
         // Initialize on page load
-        document.addEventListener('DOMContentLoaded', async function() {
+        document.addEventListener('DOMContentLoaded', function() {
+            domReady = true;
+            maybeStartPage();   // V2.5.0: only once the role check has passed
+        });
+
+        async function startBulkForm() {
             console.log('🚀 Bulk Submission Form Loading...');
             
             try {
@@ -1133,7 +1196,7 @@ const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwZK3qXTeX5cDUWll8F
                 hideLoadingScreen();
                 showError('Failed to load form data. Please refresh the page.');
             }
-        });
+        }
 
         async function initializeForm() {
             console.log('👤 User mode: Administrator');
