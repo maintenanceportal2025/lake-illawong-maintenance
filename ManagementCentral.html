@@ -7,13 +7,26 @@ DOCUMENT INFORMATION:
   File Name:        ManagementCentral.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module (Admin Portal)
-  Frontend Version: V1.5.0
+  Frontend Version: V1.6.0
   Backend:          ManagementCentral.js
   Status:           PRODUCTION
   Created:          2025
   Last Modified:    Oct 2026
 
 VERSION HISTORY:
+  V1.6.0 (Nov 2026): Access control. Management Central adds, edits and deletes
+                     contacts, roles and dropdowns, so it is a Restricted
+                     module. The old guard only checked that portalAdminVerified
+                     existed, which under the shared session no longer proves a
+                     role (a signed-in resident would pass). Now uses the shared
+                     session and VerificationModal.checkAccess (V2.2.1+).
+                     PLACEHOLDER: allowed role is Admin-Portal (Developer always
+                     passes) until the real management role is decided. Anyone
+                     else sees Access Not Authorised and the page's controls
+                     and keyboard shortcuts do nothing. Role check runs on every
+                     load. Added ?portal=operations (Back goes to the Operations
+                     Portal). Add VerificationModal.js (included). Contact,
+                     dropdown and role management unchanged.
   V1.5.0 (Oct 2026): Migrated to the shared ApiClient.js. makeAPICall() had a
                      single 15s attempt with no retry, so any cold start or
                      lost response on load surfaced as "Request timeout" for
@@ -124,7 +137,7 @@ TECHNICAL:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Management Central V1.5.0 - Lake Illawong</title>
+    <title>Management Central V1.6.0 - Lake Illawong</title>
     <style>
         :root {
             /* Primary */
@@ -908,7 +921,7 @@ TECHNICAL:
     <div class="header-divider"></div>
 </div>
 
-        <button class="btn-back-glass" onclick="window.location.href='AdminPortal.html'" style="display:inline-block; margin-bottom: 16px;">← Back to Portal</button>
+        <button class="btn-back-glass" onclick="window.location.href=PORTAL_PAGE" style="display:inline-block; margin-bottom: 16px;">← Back to Portal</button>
 
         <div class="content">
             
@@ -1157,13 +1170,60 @@ TECHNICAL:
     </div>
 
     <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <script>
 
-		// SESSION GUARD
-        if (!sessionStorage.getItem('portalAdminVerified')) {
-            window.location.href = 'AdminPortal.html';
-        } else {
+		// SESSION GUARD + ROLE CHECK. Shared session; role check runs on every load.
+        // ?portal=operations -> Operations Portal; otherwise AdminPortal.html as before.
+        const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+        const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'AdminPortal.html';
+        const ALLOWED_ROLES = ['Admin-Portal'];
+
+        function showDenied(name) {
             document.body.style.display = '';
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to Management Central. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
+        }
+
+        let accessOk = false, domReady = false, pageStarted = false;
+        function maybeStartPage() {
+            if (accessOk && domReady && !pageStarted) {
+                pageStarted = true;
+                startManagementCentral();
+            }
+        }
+
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Management Central',
+            sessionKey: IN_OPERATIONS ? 'portalOperationsVerified' : 'portalAdminVerified',
+            storageType: 'local',
+            expiryDays: 30,
+            onSuccess: function(userData) {
+                if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                    showDenied(userData && userData.name);
+                    return;
+                }
+                document.body.style.display = '';
+                accessOk = true;
+                maybeStartPage();
+            }
+        });
+        if (!alreadyVerified) {
+            window.location.href = PORTAL_PAGE;
         }
 
         // Configuration - CHANGED TO V1.1 BACKEND
@@ -2106,7 +2166,13 @@ function filterByStage(stage) {
         }
 
         // Initialize
+        // V1.6.0: wiring starts only once the role check has passed
         document.addEventListener('DOMContentLoaded', function() {
+            domReady = true;
+            maybeStartPage();
+        });
+
+        function startManagementCentral() {
             // Modal close on click outside
             window.onclick = function(event) {
                 const modal = document.getElementById('residentModal');
@@ -2125,7 +2191,7 @@ function filterByStage(stage) {
                     showAddResident();
                 }
             });
-        });
+        }
     </script>
 </body>
 </html>
