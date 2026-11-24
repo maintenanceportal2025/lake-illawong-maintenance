@@ -5,7 +5,8 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.16.3 - Wording: the stats card "Public Access" now reads "All Residents". It
+VERSION: V2.17.0 - Operations Portal access. The role check now uses the shared session (VerificationModal.checkAccess, V2.2.1+): Doc Manager (Developer always passes); the page loads data only after it passes. Added ?portal=operations: uses the Operations Portal session (portalOperationsVerified) and Back returns to the Operations Portal; the default (Admin Portal) behaviour is unchanged. Nothing else changed.
+         V2.16.3 - Wording: the stats card "Public Access" now reads "All Residents". It
          has always counted documents tagged Resident (or Public), that is every
          verified resident, not the general public. The count itself is unchanged.
          V2.16.2 - Structure panel: moving a category or subcategory up / down now shows
@@ -983,7 +984,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 Contact the system administrator to discuss Access requirements
             </div>
             <button class="btn-reverify" onclick="reVerify()">🔄 Try a Different Account</button>
-            <button class="btn-back-portal" onclick="window.location.href='AdminPortal.html'">← Back to Portal</button>
+            <button class="btn-back-portal" onclick="window.location.href=PORTAL_PAGE">← Back to Portal</button>
         </div>
     </div>
 
@@ -1010,7 +1011,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         </div>
 
         <!-- BACK BUTTON -->
-        <button class="btn-back-portal" onclick="window.location.href='AdminPortal.html'">&#8592; Back to Admin Portal</button>
+        <button class="btn-back-portal" data-portal-back onclick="window.location.href=PORTAL_PAGE">&#8592; Back to Admin Portal</button>
 
         <!-- STATS -->
         <div class="stats-row">
@@ -1373,6 +1374,8 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     // ================================================================
     // CONFIGURATION
     // ================================================================
+    const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+    const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'AdminPortal.html';
     const CONFIG = {
         // DocumentLibrary.js backend
         BACKEND_URL: 'https://script.google.com/macros/s/AKfycbxH9YUs18W2euFxGUcIJU_zRmlDuxT-Glo5-MJfNErFzD0cL2ICm8__xBgnrNizB94/exec',
@@ -1384,7 +1387,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
        UPLOADER_URL: 'https://script.google.com/macros/s/AKfycbz9tv4g8rr-N5EwQPhVTI4nAMH4iTyi5tZvL999hdfQkZeULvCcsFZwsor8syni6AI_/exec',
 
         ALLOWED_ROLES: ['Doc Manager', 'Developer'],
-        SESSION_KEY:   'portalAdminVerified'
+        SESSION_KEY:   IN_OPERATIONS ? 'portalOperationsVerified' : 'portalAdminVerified'
     };
 
     // Loaded dynamically from Roles sheet (Col C = Y) and Dropdowns sheet
@@ -1411,6 +1414,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     // BOOT — OTP AUTHENTICATION
     // ================================================================
     document.addEventListener('DOMContentLoaded', function() {
+        if (IN_OPERATIONS) document.querySelectorAll('[data-portal-back]').forEach(function (el) { el.textContent = '\u2190 Back to Operations Portal'; });
         buildRoleCheckboxes();
 
         // Listen for Drive upload completion message from popup window
@@ -1439,7 +1443,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     // Called by VerificationModal on successful OTP
     function handleVerificationSuccess(userData) {
         const userRoles = userData.roleTags || [];
-        const hasAccess = CONFIG.ALLOWED_ROLES.some(r => userRoles.includes(r));
+        const hasAccess = VerificationModal.checkAccess(CONFIG.ALLOWED_ROLES).ok;
 
         if (!hasAccess) {
             showAccessDenied(userData);
