@@ -6,8 +6,8 @@ DOCUMENT INFORMATION:
   File Name:        RelationsManager.html
   System:           Lake Illawong Management Central System
   Component Type:   Admin Module
-  Frontend Version: V1.1.3
-  Status:           PRODUCTION
+  Frontend Version: V1.2.0
+  Status:           DEVELOPMENT
   Created:          Aug 2026
 
 PURPOSE:
@@ -61,6 +61,7 @@ KEY STRUCTURAL CHANGES FROM DisputesManager.html:
     must both use it too, not invent a new one).
 
 VERSION HISTORY:
+  V1.2.0 (Nov 2026): Operations Portal access. The role check now uses the shared session (VerificationModal.checkAccess, V2.2.1+): Relations-Manager (Developer always passes); the page loads data only after it passes. Added ?portal=operations: uses the Operations Portal session (portalOperationsVerified) and Back returns to the Operations Portal; the default (Admin Portal) behaviour is unchanged. Nothing else changed. The + Log Dispute link carries ?portal=operations so its Back returns here.
   V1.1.3 (Nov 2026, also): display name corrected to "Lake Illawong Residential Village" (3 places; was "Retirement Village").
   V1.1.3 (Nov 2026): Script tag changed from VerificationModal_V1_0.js to the generic VerificationModal.js (identical code; V2.1.0 adds a quiet warm-up call that cuts slow first verification codes). No other change.
   V1.1.2 (Nov 2026): FIX -- after Add Event on a Resident-to-Management
@@ -765,7 +766,7 @@ VERSION HISTORY:
     </div>
 
     <!-- Back button -->
-    <button class="portal-back-btn" onclick="window.location.href='AdminPortal.html'">
+    <button class="portal-back-btn" data-portal-back onclick="window.location.href=PORTAL_PAGE">
         &#8592; Back to Admin Portal
     </button>
 
@@ -817,7 +818,7 @@ VERSION HISTORY:
             </select>
             <button class="btn-refresh" onclick="loadRelations()">&#8635; Refresh</button>
             <button class="btn-print" onclick="printRelationsRegister()">&#128438; Print Register</button>
-            <a class="btn-log-dispute" href="RelationsForm.html">+ Log Dispute</a>
+            <a class="btn-log-dispute" id="logDisputeLink" href="RelationsForm.html">+ Log Dispute</a>
         </div>
 
         <!-- Deep-link banner (shown only when ?ref= opened this page directly
@@ -839,11 +840,13 @@ VERSION HISTORY:
 </div><!-- end container -->
 
 <script>
+    const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+    const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'AdminPortal.html';
     const CONFIG = {
         BACKEND_URL:   'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
         MGMT_URL:      'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec',
-        SESSION_KEY:   'portalAdminVerified',
-        PORTAL_URL:    'AdminPortal.html',
+        SESSION_KEY:   IN_OPERATIONS ? 'portalOperationsVerified' : 'portalAdminVerified',
+        PORTAL_URL:    PORTAL_PAGE,
         ALLOWED_ROLES: ['Relations-Manager', 'Developer'],
         REVIEW_DAYS:   28,
         EARLY_RESOLUTION_HOURS: 72,
@@ -882,6 +885,8 @@ VERSION HISTORY:
     // ── AUTH ──────────────────────────────────────────────────────────────
 
     document.addEventListener('DOMContentLoaded', function () {
+        if (IN_OPERATIONS) document.querySelectorAll('[data-portal-back]').forEach(function (el) { el.textContent = '\u2190 Back to Operations Portal'; });
+        if (IN_OPERATIONS) { var ldl = document.getElementById('logDisputeLink'); if (ldl) ldl.href = 'RelationsForm.html?portal=operations'; }
         const alreadyVerified = VerificationModal.init({
             moduleName: 'Relations Manager',
             moduleIcon: '🤝',
@@ -894,7 +899,7 @@ VERSION HISTORY:
     function handleVerificationSuccess(userData) {
         window._sessionUser = userData;
         const roles = userData.roleTags || [];
-        const hasAccess = CONFIG.ALLOWED_ROLES.some(function(r) { return roles.includes(r); });
+        const hasAccess = VerificationModal.checkAccess(CONFIG.ALLOWED_ROLES).ok;
         if (!hasAccess) {
             document.getElementById('deniedName').textContent  = userData.name || 'Unknown';
             document.getElementById('deniedRoles').textContent = roles.join(', ') || 'None';
