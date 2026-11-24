@@ -6,15 +6,15 @@ DOCUMENT INFORMATION:
   File Name:        FieldAlerts.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module
-  Frontend Version: V3.15.0
+  Frontend Version: V3.16.0
   Backend:          NotificationServer (Print copy needs NotificationServer V3.18.0; Paper Copy List needs NotificationServer V3.17.0; Test Run and test copy need V3.16.0; the quota line needs V3.15.0)
   Status:           PRODUCTION
   Created:          Not recorded in earlier header
   Last Modified:    Nov 2026
 
 PURPOSE: Complete notification system with Email + SMS via NotificationServer
-PORTAL: Field Operations Portal, Admin Portal
-VERSION: V3.15.0 - Print copy to a print helper
+PORTAL: Operations Portal (restricted to Field-Ops-Portal)
+VERSION: V3.16.0 - Access control and one combined display
 LAST UPDATED: Nov 2026
 DESIGN SYSTEM: Lake Illawong Unified Design System v2.4 (V3.5.0 additions
   built to v2.4; existing elements unchanged from the V2.0 glass-morphism
@@ -25,6 +25,18 @@ TECHNICAL:
   API Protocol: fetch() POST, form-encoded (NotificationServer)
   Design System: Lake Illawong Unified Design System v2.4
   Hosting: Netlify
+
+NEW IN V3.16.0 (frontend only; no backend change)
+✅ Access control: uses the shared session and VerificationModal.checkAccess
+   (V2.2.1+). Only Field-Ops-Portal holders (and Developer) can open the page;
+   anyone else, including a signed-in resident, sees Access Not Authorised and
+   no data loads. The role check runs on every load. Field Alerts sends mass
+   email/SMS, so it is a Restricted module.
+✅ One combined display: the Admin / Field Ops modes are gone. Quick Templates,
+   Alert Format (ticked by default), E-Copy Recipients, Paper Copy List and the
+   print-helper row (when a document is attached) are all always available.
+   Heading is "Field Notifications".
+✅ ?portal=operations supported: Back goes to the Operations Portal.
 
 NEW IN V3.15.0 (needs NotificationServer V3.18.0; deploy that first)
 ✅ Admin mode: when a document is attached, a "Send print copy to" row shows one
@@ -609,10 +621,7 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
             text-align: center;
         }
 
-        /* V3.13.0: two modes, chosen by ?portal= (admin / sysadmin = Admin mode,
-           anything else = Field Ops mode) */
-        .fieldops-mode .admin-only { display: none !important; }
-        .admin-mode #templateArea { display: none !important; }
+        /* V3.16.0: the V3.13.0 Admin / Field Ops modes were removed; one combined display. */
 
         .template-grid {
             display: grid;
@@ -1994,8 +2003,8 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
                 <button class="zone-btn" data-zone="zone4">Zone 4 (29-36)</button>
                 <button class="zone-btn" data-zone="zone5">Zone 5 (37-44)</button>
 <button class="zone-btn special" onclick="openUnitSelector()">🔢 Select Individual Units</button>
-<button class="zone-btn ecopy-btn admin-only" data-zone="ecopy" onclick="selectZone('ecopy')">📧 E-Copy Recipients</button>
-<button class="zone-btn admin-only" onclick="openPaperList()">📄 Paper Copy List</button>
+<button class="zone-btn ecopy-btn" data-zone="ecopy" onclick="selectZone('ecopy')">📧 E-Copy Recipients</button>
+<button class="zone-btn" onclick="openPaperList()">📄 Paper Copy List</button>
             </div>
 
 <!-- E-Copy Distribution List Preview -->
@@ -2133,8 +2142,8 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
 </div>
 
 <!-- V3.15.0: print copy to a print helper (the person who prints paper copies).
-     Shown only in Admin mode, only when a document is attached. -->
-<div class="attachment-section show admin-only" id="printHelperSection" style="display:none;">
+     Shown only when a document is attached. -->
+<div class="attachment-section show" id="printHelperSection" style="display:none;">
     <label class="attachment-label">
         🖨️ <strong>Send print copy to (Optional)</strong>
         <span style="color: #6b7280; font-weight: 400; font-size: 0.85rem; margin-left: 8px;">
@@ -2287,66 +2296,76 @@ background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
         </div>
     </div>
 
+    <script src="ApiClient.js"></script>
+    <script src="VerificationModal.js"></script>
     <script>
 
-function checkSession() {
-            const validKeys = [
-                'portalFieldOpsVerified',
-                'portalAdminVerified',
-                'portalZoneRepVerified',
-                'portalSysAdminVerified',
-                'lakeIllawongVerified'
-            ];
+// SESSION GUARD + ROLE CHECK (V3.16.0). Shared session; role check runs on every
+        // load. ?portal= decides where Back / sign-in go (operations = Operations Portal).
+        const PORTAL_DESTINATIONS = {
+            'operations': 'OperationsPortal.html',
+            'fieldops':   'FieldOperationsPortal.html',
+            'admin':      'AdminPortal.html',
+            'zonerep':    'ZoneRepPortal.html',
+            'sysadmin':   'SysAdminPortal.html',
+            'residents':  'ResidentPortal.html'
+        };
+        const PORTAL_KEYS = {
+            'operations': 'portalOperationsVerified',
+            'fieldops':   'portalFieldOpsVerified',
+            'admin':      'portalAdminVerified',
+            'zonerep':    'portalZoneRepVerified',
+            'sysadmin':   'portalSysAdminVerified'
+        };
+        const PORTAL_PARAM = new URLSearchParams(window.location.search).get('portal');
+        const PORTAL_PAGE = PORTAL_DESTINATIONS[PORTAL_PARAM] || 'FieldOperationsPortal.html';
+        const SESSION_KEY = PORTAL_KEYS[PORTAL_PARAM] || 'portalFieldOpsVerified';
+        const ALLOWED_ROLES = ['Field-Ops-Portal'];
 
-            const hasSession = validKeys.some(key => sessionStorage.getItem(key) === 'true' || localStorage.getItem(key) === 'true');
-
-        if (hasSession) {
+        function showDenied(name) {
             document.body.style.display = '';
-        } else {
-                const params = new URLSearchParams(window.location.search);
-                const portal = params.get('portal');
-                const destinations = {
-                    'fieldops':  'FieldOperationsPortal.html',
-                    'admin':     'AdminPortal.html',
-                    'zonerep':   'ZoneRepPortal.html',
-                    'sysadmin':  'SysAdminPortal.html',
-                    'residents': 'ResidentPortal.html'
-                };
-                window.location.href = destinations[portal] || 'FieldOperationsPortal.html';
-            }
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to Field Alerts. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
         }
-        checkSession();
 
-        // V3.13.0: Admin mode (Admin / SysAdmin portal) = general correspondence:
-        // no templates, plain email format by default, E-Copy + Paper Copy List.
-        // Field Ops mode (everything else) = as before, minus E-Copy / Paper Copy List.
-        const FA_PORTAL = new URLSearchParams(window.location.search).get('portal');
-        const FA_ADMIN_MODE = (FA_PORTAL === 'admin' || FA_PORTAL === 'sysadmin');
-        document.body.classList.add(FA_ADMIN_MODE ? 'admin-mode' : 'fieldops-mode');
-        function applyModeDefaults() {
-            if (FA_ADMIN_MODE) document.getElementById('useAlertFormat').checked = false;
+        let faAccessOk = false, faDomReady = false, faStarted = false;
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Field Alerts',
+            sessionKey: SESSION_KEY,
+            storageType: 'local',
+            expiryDays: 30,
+            onSuccess: function(userData) {
+                if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                    showDenied(userData && userData.name);
+                    return;
+                }
+                document.body.style.display = '';
+                faAccessOk = true;
+                if (typeof maybeStartFieldAlerts === 'function') maybeStartFieldAlerts();
+            }
+        });
+        if (!alreadyVerified) {
+            window.location.href = PORTAL_PAGE;
         }
-        applyModeDefaults();
+
         toggleSubjectField();
 
-        // V3.14.0: Admin mode is called "Resident E-Notices"; Field Ops keeps "Field Notifications"
-        if (FA_ADMIN_MODE) {
-            document.title = ' Resident E-Notices';
-            document.getElementById('pageTitle').textContent = ' Resident E-Notices';
-            document.getElementById('helpTitle').textContent = 'How to Use Resident E-Notices';
-        }
-
-function goBackToPortal() {
-            const params = new URLSearchParams(window.location.search);
-            const portal = params.get('portal');
-            const destinations = {
-                'fieldops':  'FieldOperationsPortal.html',
-                'admin':     'AdminPortal.html',
-                'zonerep':   'ZoneRepPortal.html',
-                'sysadmin':  'SysAdminPortal.html',
-                'residents': 'ResidentPortal.html'
-            };
-            window.location.href = destinations[portal] || 'FieldOperationsPortal.html';
+        function goBackToPortal() {
+            window.location.href = PORTAL_PAGE;
         }
 
 
@@ -2386,7 +2405,7 @@ let quotaInfo = null;        // last checkEmailQuota response, or null
         // INITIALIZATION
         // =====================================================================
 
-        document.addEventListener('DOMContentLoaded', function() {
+        function startFieldAlerts() {
             setupEventListeners();
             generateUnitsGrid();
 
@@ -2402,9 +2421,21 @@ let quotaInfo = null;        // last checkEmailQuota response, or null
             // V3.9.0: show how much of the daily email limit is left
             loadQuotaLine();
 
-            // V3.15.0: Admin mode only -- who can be sent a print copy
-            if (FA_ADMIN_MODE) loadPrintHelpers();
+            // V3.15.0: who can be sent a print copy
+            loadPrintHelpers();
+        }
+
+        // V3.16.0: page start waits for the role check to pass (see top of script)
+        document.addEventListener('DOMContentLoaded', function() {
+            faDomReady = true;
+            maybeStartFieldAlerts();
         });
+        function maybeStartFieldAlerts() {
+            if (faAccessOk && faDomReady && !faStarted) {
+                faStarted = true;
+                startFieldAlerts();
+            }
+        }
 
         // =====================================================================
         // EVENT LISTENERS
@@ -3094,7 +3125,6 @@ function resetSalutation() {
             // Defaults as in the markup: Email ticked, Alert Format ticked, SMS ticked (V3.11.0)
             document.getElementById('emailEnabled').checked = true;
             document.getElementById('useAlertFormat').checked = true;
-            applyModeDefaults();   // V3.13.0: Admin mode starts with Alert Format unticked
             document.getElementById('smsEnabled').checked = true;
 
             try { toggleSubjectField(); } catch (e) { console.error(e); }
@@ -3371,7 +3401,7 @@ async function loadPrintHelpers() {
 function updatePrintHelperSection() {
     const section = document.getElementById('printHelperSection');
     if (!section) return;
-    const show = FA_ADMIN_MODE && printHelperNames.length > 0 && attachments.length > 0;
+    const show = printHelperNames.length > 0 && attachments.length > 0;
     section.style.display = show ? 'block' : 'none';
     if (!show) {
         document.querySelectorAll('.print-helper-box').forEach(b => { b.checked = false; });
