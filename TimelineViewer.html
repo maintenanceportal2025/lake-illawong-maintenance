@@ -9,18 +9,39 @@
     LAKE ILLAWONG - TIMELINE VIEWER
     =====================================================================
     PURPOSE: Activity history and problem tracking for Field Ops
-    PORTAL: Field Operations Portal
-    VERSION: V1.2.1
+    PORTAL: Operations Portal (opened with ?portal=operations) or the
+            Field Operations Portal (default, until cut-over)
+    VERSION: V1.3.0
     LAST UPDATED: November 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from white card design)
     - CSS variables remapped to glass equivalents so JS-generated
       HTML using var() automatically inherits correct glass styling
-    AUTHENTICATION: Session guard via VerificationModal (portalFieldOpsVerified,
-      storageType 'local', 30-day expiry -- V1.1.2)
+    AUTHENTICATION: Shared session via VerificationModal (V2.2.1 or later),
+      role check via VerificationModal.checkAccess on every load.
+      Roles accepted: Field-Ops-Portal, Operations-Portal (Developer always).
     BACKEND: Explorer V1.2.1 (getFaultLogData)
 
     CHANGE LOG
+    - V1.3.0 (Nov 2026): Operations Portal support, shared role check.
+                         (1) This page previously only checked that a
+                         session existed, never the person's role. It now
+                         runs VerificationModal.checkAccess on every load
+                         (including when already signed in) and shows an
+                         "Access Not Authorised" screen, without signing the
+                         person out, if they hold neither Field-Ops-Portal
+                         nor Operations-Portal (Developer always passes).
+                         (2) ?portal=operations: Back button goes to
+                         OperationsPortal.html and, if not signed in, the
+                         person is sent there to verify. Without the
+                         parameter behaviour is as before (Back to
+                         FieldOperationsPortal.html). Session key is
+                         portalOperationsVerified in operations mode.
+                         (3) The problem list is now loaded only after the role
+                         check passes (it used to load on page load whatever
+                         the person's role).
+                         No change to search, filters, timeline display,
+                         export, API use or styling.
     - V1.2.1 (Nov 2026): Script tag changed from VerificationModal_V1_0.js to the generic VerificationModal.js (identical code; V2.1.0 adds a quiet warm-up call that cuts slow first verification codes). No other change.
     - V1.2.0 (Nov 2026): Transport migrated to the shared ApiClient.js.
                          makeAPICall() was a single JSONP attempt with a
@@ -278,8 +299,8 @@
             <div class="header-divider"></div>
         </div>
 
-        <!-- BACK BUTTON -->
-        <button class="portal-back-btn" onclick="window.location.href='FieldOperationsPortal.html'">&#8592; Back to Portal</button>
+        <!-- BACK BUTTON (target set from ?portal= in the script below) -->
+        <button class="portal-back-btn" id="backBtn" onclick="window.location.href=PORTAL_PAGE">&#8592; Back to Portal</button>
 
         <!-- SEARCH SECTION -->
         <div class="search-section">
@@ -346,34 +367,68 @@
     </div>
 
     <script>
-        // SESSION GUARD -- via VerificationModal (V1.1.2): matches
-        // FieldOperationsPortal / MaintenanceModule's storageType:'local',
-        // expiryDays:30 config, so this module honours the same
-        // persistent, 30-day-expiring session as its siblings, whether
-        // reached via the portal or a direct bookmark.
+        // SESSION GUARD + ROLE CHECK (V1.3.0).
+        // ?portal=operations -> Operations Portal; anything else -> Field Operations
+        // Portal (as before). A signed-in person must hold Field-Ops-Portal or
+        // Operations-Portal (Developer always passes). The check runs on every
+        // load, including when the person is already signed in.
+        const IN_OPERATIONS = new URLSearchParams(window.location.search).get('portal') === 'operations';
+        const PORTAL_PAGE = IN_OPERATIONS ? 'OperationsPortal.html' : 'FieldOperationsPortal.html';
+        const ALLOWED_ROLES = ['Field-Ops-Portal', 'Operations-Portal'];
+
+        function showDenied(name) {
+            document.body.style.display = '';
+            document.body.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
+                'background:linear-gradient(135deg,#1e40af 0%,#1e3a8a 100%);padding:20px;">' +
+                '<div style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);' +
+                'border:1px solid rgba(255,255,255,0.15);border-radius:2px;padding:40px;max-width:450px;' +
+                'width:100%;text-align:center;color:white;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;">' +
+                '<div style="font-size:3rem;margin-bottom:16px;">&#128683;</div>' +
+                '<h2 style="font-size:1.4rem;font-weight:600;margin-bottom:12px;">Access Not Authorised</h2>' +
+                '<p style="color:rgba(255,255,255,0.8);margin-bottom:8px;">Verified as: <strong style="color:white;">' +
+                String(name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</strong></p>' +
+                '<p style="color:rgba(255,255,255,0.7);font-size:0.9rem;margin-bottom:28px;">' +
+                'Your account does not have access to the Timeline Viewer. Please contact management if you believe this is an error.</p>' +
+                '<button onclick="window.location.href=\'' + PORTAL_PAGE + '\'" ' +
+                'style="background:rgba(255,255,255,0.08);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.15);' +
+                'color:white;padding:10px 22px;border-radius:2px;font-weight:600;cursor:pointer;font-size:0.9rem;min-height:44px;">' +
+                'Back to Portal</button></div></div>';
+        }
+
         const alreadyVerified = VerificationModal.init({
             moduleName: 'Timeline Viewer',
-            sessionKey: 'portalFieldOpsVerified',
+            sessionKey: IN_OPERATIONS ? 'portalOperationsVerified' : 'portalFieldOpsVerified',
             storageType: 'local',
             expiryDays: 30,
-            onSuccess: function() {
+            onSuccess: function(userData) {
+                if (!VerificationModal.checkAccess(ALLOWED_ROLES).ok) {
+                    showDenied(userData && userData.name);
+                    return;
+                }
                 document.body.style.display = '';
+                startPage();
             }
         });
         if (!alreadyVerified) {
-            window.location.href = 'FieldOperationsPortal.html';
+            window.location.href = PORTAL_PAGE;
         }
 
         const API_URL = 'https://script.google.com/macros/s/AKfycbxtdMfxB5b1F5K401X0lJxnK2-DGkiG2zYZNukJvAHx0K1AqgPTMIdiunwS3etm0FOL/exec';
         let currentProblems = [], currentTimeline = [], filteredProblems = [];
         let allZones = new Set(), allStatuses = new Set(), allPriorities = new Set();
 
-        document.addEventListener('DOMContentLoaded', function() {
+        // Runs once, only after the role check passes (V1.3.0: previously ran on
+        // DOMContentLoaded whether or not the person was authorised).
+        let pageStarted = false;
+        function startPage() {
+            if (pageStarted) return;
+            pageStarted = true;
             loadAllProblems();
             document.getElementById('searchInput').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') performSearch();
             });
-        });
+        }
 
         async function loadAllProblems() {
             try {
