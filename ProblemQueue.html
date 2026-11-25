@@ -1,4 +1,11 @@
 <!--
+  V1.8.0 (Nov 2026, gated): The Problem Queue now needs a verification code (the shared sign-in).
+  (1) The page follows the Access Standard: it loads VerificationModal.js, declares ALLOWED_ROLES as an empty list (any signed-in person; the Developer tag always passes), and only shows the queue and requests data once the sign-in has passed. A person who has already verified on any other page (shared session, 30 days sliding, 90-day cap) goes straight in with no new code.
+  (2) Decided by Tony 26 Nov 2026 (see claude/Security_Decision_Record_Nov2026.md). Before this version the queue was public by design.
+  (3) Unchanged: queue ordering, filters, search, sort toggle, wording and layout; the "Open in Maintenance Module" button (still only for Maintenance-Team holders); ?portal= Back button destinations. A page opened with ?portal=operations signs in under the Operations Portal key, anything else under lakeIllawongVerified (the shared session is what is actually checked).
+  (Older history follows.)
+-->
+<!--
   V1.7.0 (Nov 2026, tidy-up): Role tag renamed to Maintenance-Team (the disused portal tags are gone from this module). Logo, title and subtitle now follow the Design System header standard. (The Maintenance Module button only shows for Maintenance-Team holders.) Also reachable from the Resident Portal.
   (Older history follows in the header block below.)
 -->
@@ -7,8 +14,8 @@
 PROBLEM QUEUE - PRIORITY-BASED PROBLEM QUEUE DISPLAY
 =====================================================================
 PURPOSE: Transparent queue display showing priority and date-ordered problems
-PORTAL: Resident Portal (public), Operations Portal, Field Operations Portal, Admin Portal
-VERSION: V1.7.0
+PORTAL: Resident Portal, Operations Portal, Field Operations Portal, Admin Portal (sign-in required from V1.8.0)
+VERSION: V1.8.0
 LAST UPDATED: November 2026
 
 CHANGELOG V1.6.1:
@@ -67,8 +74,11 @@ DESIGN SYSTEM: Lake Illawong Unified V2.4
 - Colors: Primary gradient page background
 - Layout: White content cards on gradient
 - Read-only display (no modifications)
-AUTHENTICATION: None (Accessed via authenticated portals)
-DEPENDENCIES: Explorer V1.0.js backend (getFaultLogData action), ApiClient.js
+AUTHENTICATION: OTP via VerificationModal.js (V1.8.0). Shared session
+  (lakeIllawongSession); any signed-in person may use the page
+  (ALLOWED_ROLES = []). Session key: lakeIllawongVerified, or
+  portalOperationsVerified when opened with ?portal=operations.
+DEPENDENCIES: Explorer V1.0.js backend (getFaultLogData action), ApiClient.js, VerificationModal.js
 RELATED FILES: MaintenanceModule.html, FieldOperationsPortal.html
 HIERARCHICAL POSITION: system_problem_queue
 
@@ -178,6 +188,9 @@ CHANGELOG V1.1:
             line-height: 1.6;
         }
 
+        /* V1.8.0: hidden until the sign-in has passed */
+        .hidden { display: none; }
+
         /* UNIFIED DESIGN SYSTEM - Container Standards */
         .container {
             max-width: 1400px;
@@ -219,7 +232,7 @@ CHANGELOG V1.1:
 .portal-back-btn:hover { background: rgba(255,255,255,0.25); }
 
 
-      
+
 
         .logo-container {
             flex-shrink: 0;
@@ -258,7 +271,7 @@ CHANGELOG V1.1:
                 flex-direction: column;
                 gap: 15px;
             }
-            
+
             .header-text {
                 align-items: center;
                 text-align: center;
@@ -514,7 +527,7 @@ CHANGELOG V1.1:
 
       .status-unknown { background: #f3f4f6; color: #6b7280; }
 
-      
+
 
         /* AGING BADGES - NEW V1.3 */
         .aging-badge {
@@ -913,13 +926,24 @@ CHANGELOG V1.1:
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- V1.8.0: shown only if the signed-in person is not allowed in (see handleVerified) -->
+    <div class="container hidden" id="deniedView">
+        <div class="content-card" style="text-align: center; max-width: 500px; margin: 60px auto 20px;">
+            <div style="font-size: 3rem; margin-bottom: 16px;">&#128683;</div>
+            <h2 style="font-size: 1.4rem; font-weight: 600; margin-bottom: 12px;">Access Not Authorised</h2>
+            <p style="color: rgba(255,255,255,0.7); margin-bottom: 24px;">Your account does not have access to the Problem Queue. Please contact management if you believe this is an error.</p>
+            <button class="portal-back-btn" onclick="goBackToPortal()">&#8592; Back to Portal</button>
+        </div>
+    </div>
+
+    <!-- V1.8.0: hidden until the sign-in has passed -->
+    <div class="container hidden" id="pageContent">
         <!-- HEADER -->
         <div class="header">
             <div class="header-content">
                 <div class="logo-container">
-                    <img src="https://raw.githubusercontent.com/maintenanceportal2025/maintenance-portal/main/logo.png" 
-                         alt="Lake Illawong Logo" 
+                    <img src="https://raw.githubusercontent.com/maintenanceportal2025/maintenance-portal/main/logo.png"
+                         alt="Lake Illawong Logo"
                          class="logo-image"
                          onerror="this.style.display='none'">
                 </div>
@@ -932,7 +956,7 @@ CHANGELOG V1.1:
         </div>
 
 <button class="portal-back-btn" onclick="goBackToPortal()">&#8592; Back to Portal</button>
-      
+
         <!-- CONTENT CARD -->
         <div class="content-card">
             <!-- QUEUE TYPE TOGGLE - NEW V1.1 -->
@@ -1071,24 +1095,31 @@ function goBackToPortal() {
             window.location.href = destinations[portal] || 'ResidentPortal.html';
         }
 
-        // V1.6.0: the queue is public; the Maintenance Module button is for
-        // Field-Ops-Portal holders only (read-only check, no sign-in prompt).
+        // V1.6.0: the Maintenance Module button is for
+        // Maintenance-Team holders only (read-only check, no sign-in prompt).
         function canOpenMaintenance() {
             try {
                 return (typeof VerificationModal !== 'undefined') && !!VerificationModal.checkAccess(['Maintenance-Team']).ok;
             } catch (e) { return false; }
         }
 
-      
+
         const API_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
-        
+
+        // V1.8.0: Access Standard. An empty list = any signed-in person
+        // (the Developer tag always passes). The queue is only requested
+        // once accessOk is true.
+        const ALLOWED_ROLES = [];
+        let accessOk = false;
+        let queueStarted = false;
+
         let allProblems = [];
         let currentQueueType = 'current'; // NEW V1.1: Track queue type
         let searchTerm = '';
         let sortMode = 'priority'; // NEW V1.3: 'priority' or 'age'
         let currentFilter = 'all';
         let selectedProblem = null;
-        
+
         const PRIORITY_ORDER = {
             'Urgent': 1,
             'High': 2,
@@ -1099,15 +1130,43 @@ function goBackToPortal() {
         // =====================================================================
         // INITIALIZATION
         // =====================================================================
-        
+
+        // V1.8.0: sign-in first. Runs on every load, including when a shared
+        // session already exists (onSuccess is then called straight away).
         document.addEventListener('DOMContentLoaded', () => {
-            loadQueue();
-            updateInfoBox(); // NEW V1.1: Set initial info box
+            const inOps = new URLSearchParams(window.location.search).get('portal') === 'operations';
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'Problem Queue',
+                moduleIcon: '📋',
+                sessionKey: inOps ? 'portalOperationsVerified' : 'lakeIllawongVerified',
+                smsOnly: false,
+                onSuccess: handleVerified
+            });
+            if (!alreadyVerified) VerificationModal.show();
         });
 
+        function handleVerified(userData) {
+            const r = VerificationModal.checkAccess(ALLOWED_ROLES);
+            if (!r.ok) {
+                accessOk = false;
+                document.getElementById('pageContent').classList.add('hidden');
+                document.getElementById('deniedView').classList.remove('hidden');
+                return;
+            }
+            accessOk = true;
+            document.getElementById('deniedView').classList.add('hidden');
+            document.getElementById('pageContent').classList.remove('hidden');
+            if (!queueStarted) {
+                queueStarted = true;
+                loadQueue();
+                updateInfoBox(); // NEW V1.1: Set initial info box
+            }
+        }
+
         async function loadQueue() {
+            if (!accessOk) return;   // V1.8.0: nothing is requested before the sign-in has passed
             showLoading();
-            
+
             try {
                 const problems = await fetchAllProblems();
                 allProblems = problems;
@@ -1121,7 +1180,7 @@ function goBackToPortal() {
         // =====================================================================
         // API COMMUNICATION (JSONP)
         // =====================================================================
-        
+
         function fetchAllProblems() {
             // V1.5.0: read via the shared ApiClient (retried)
             if (typeof ApiClient === 'undefined') {
@@ -1143,23 +1202,23 @@ function goBackToPortal() {
         // =====================================================================
         // QUEUE TYPE MANAGEMENT - NEW V1.1
         // =====================================================================
-        
+
         function setQueueType(type) {
             currentQueueType = type;
-            
+
             // Update button states
             document.querySelectorAll('.queue-type-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
             event.target.classList.add('active');
-            
+
             // Reset filter to 'all' when switching queue types
             currentFilter = 'all';
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
             document.querySelector('.filter-btn[onclick*="all"]').classList.add('active');
-            
+
             // Update info box and reprocess queue
             updateInfoBox();
             processQueue();
@@ -1167,11 +1226,11 @@ function goBackToPortal() {
 
         function setSortMode(mode) {
             sortMode = mode;
-            
+
             // Update button states
             const sortPriorityBtn = document.getElementById('sortPriorityBtn');
             const sortAgeBtn = document.getElementById('sortAgeBtn');
-            
+
             if (mode === 'priority') {
                 sortPriorityBtn.classList.add('active');
                 sortAgeBtn.classList.remove('active');
@@ -1179,7 +1238,7 @@ function goBackToPortal() {
                 sortAgeBtn.classList.add('active');
                 sortPriorityBtn.classList.remove('active');
             }
-            
+
             // Update info box and reprocess queue
             updateInfoBox();
             processQueue();
@@ -1187,23 +1246,23 @@ function goBackToPortal() {
 
         function updateInfoBox() {
             const infoBox = document.getElementById('infoBox');
-            
+
             if (currentQueueType === 'current') {
-                const sortInfo = sortMode === 'priority' 
+                const sortInfo = sortMode === 'priority'
                     ? 'Priority (Urgent, High, Medium, Low), then by Date (oldest first)'
                     : 'Age (oldest to newest), regardless of priority';
-                
+
                 infoBox.innerHTML = `
                     <strong>Current Queue Logic</strong><br>
                     Problems sorted by: <strong>${sortInfo}</strong>
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
                         <strong>Aging Alerts:</strong>
                         <div style="margin-top: 8px;">
-                            <span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #f59e0b; font-size: 11px;">⚠️ 30-59 DAYS</span> 
+                            <span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #f59e0b; font-size: 11px;">⚠️ 30-59 DAYS</span>
                             = Needs attention
                         </div>
                         <div style="margin-top: 8px;">
-                            <span style="background: #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #ef4444; font-size: 11px;">🚨 60+ DAYS</span> 
+                            <span style="background: #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #ef4444; font-size: 11px;">🚨 60+ DAYS</span>
                             = Urgent attention required
                         </div>
                     </div>
@@ -1222,11 +1281,11 @@ function goBackToPortal() {
                     <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
                         <strong>Status Meanings:</strong>
                         <div style="margin-top: 8px;">
-                            <span style="background: #e9d5ff; color: #9333ea; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Programmed</span> 
+                            <span style="background: #e9d5ff; color: #9333ea; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Programmed</span>
                             = Scheduled for future work
                         </div>
                         <div style="margin-top: 8px;">
-                            <span style="background: #d1fae5; color: #047857; padding: 2px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #10b981;">✓ Programmed-Completed</span> 
+                            <span style="background: #d1fae5; color: #047857; padding: 2px 8px; border-radius: 4px; font-weight: 600; border: 2px solid #10b981;">✓ Programmed-Completed</span>
                             = Work completed, stays in program group
                         </div>
                     </div>
@@ -1237,16 +1296,16 @@ function goBackToPortal() {
         // =====================================================================
         // QUEUE PROCESSING - UPDATED V1.1
         // =====================================================================
-        
+
         function processQueue() {
             let queueProblems;
-            
+
             if (currentQueueType === 'current') {
                 // Current Queue: Filter active problems only (exclude Completed, Cancelled, Programmed, Programmed-Completed, Project)
                 queueProblems = allProblems.filter(problem => {
                     const status = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, ''); // Remove spaces
-                    return status !== 'completed' && 
-                           status !== 'cancelled' && 
+                    return status !== 'completed' &&
+                           status !== 'cancelled' &&
                            status !== 'closed' &&
                            status !== 'programmed' &&
                            status !== 'programmed-completed' && // CRITICAL: Exclude from current queue
@@ -1260,28 +1319,28 @@ function goBackToPortal() {
                     return status === 'programmed' || status === 'programmed-completed';
                 });
             }
-            
+
             // Calculate days in queue for each problem
             queueProblems.forEach(problem => {
                 problem.daysInQueue = calculateDaysInQueue(problem);
             });
-            
+
             // Sort logic - UPDATED V1.3 for Sort Mode Toggle
             queueProblems.sort((a, b) => {
                 // SPECIAL SORT for Programmed Queue: Active items first, completed at bottom
                 if (currentQueueType === 'programmed') {
                     const statusA = (a.problemStatus || '').toLowerCase().replace(/\s+/g, '');
                     const statusB = (b.problemStatus || '').toLowerCase().replace(/\s+/g, '');
-                    
+
                     // Programmed = 0, Programmed-Completed = 1 (so Programmed sorts first)
                     const statusOrderA = statusA === 'programmed-completed' ? 1 : 0;
                     const statusOrderB = statusB === 'programmed-completed' ? 1 : 0;
-                    
+
                     if (statusOrderA !== statusOrderB) {
                         return statusOrderA - statusOrderB; // Active first, completed last
                     }
                 }
-                
+
                 // NEW V1.3: Check sort mode for Current Queue
                 if (currentQueueType === 'current' && sortMode === 'age') {
                     // AGE FIRST MODE: Sort by date only (oldest first)
@@ -1289,43 +1348,43 @@ function goBackToPortal() {
                     const dateB = new Date(b.timestamp || b.dateReported);
                     return dateA - dateB;
                 }
-                
+
                 // DEFAULT: PRIORITY FIRST MODE
                 // Sort by priority first
                 const priorityA = PRIORITY_ORDER[a.problemPriority] || 999;
                 const priorityB = PRIORITY_ORDER[b.problemPriority] || 999;
-                
+
                 if (priorityA !== priorityB) {
                     return priorityA - priorityB;
                 }
-                
+
                 // Same priority - sort by date (oldest first)
                 const dateA = new Date(a.timestamp || a.dateReported);
                 const dateB = new Date(b.timestamp || b.dateReported);
                 return dateA - dateB;
             });
-            
+
             // Assign queue positions
             queueProblems.forEach((problem, index) => {
                 problem.queuePosition = index + 1;
             });
-            
+
             displayQueue(queueProblems);
             updateStats(queueProblems);
         }
 
         function calculateDaysInQueue(problem) {
             // Try multiple possible date field names
-            const dateReported = problem.timestamp || 
-                               problem.dateReported || 
-                               problem.reportedDate || 
+            const dateReported = problem.timestamp ||
+                               problem.dateReported ||
+                               problem.reportedDate ||
                                problem.date;
-            
+
             if (!dateReported) {
                 console.warn('No date found for problem:', problem);
                 return 0;
             }
-            
+
             // Parse the date - handle various formats
             let reported;
             if (dateReported instanceof Date) {
@@ -1338,27 +1397,27 @@ function goBackToPortal() {
                 console.warn('Invalid date format:', dateReported, 'for problem:', problem);
                 return 0;
             }
-            
+
             // Check if date is valid
             if (isNaN(reported.getTime())) {
                 console.warn('Invalid date:', dateReported, 'for problem:', problem);
                 return 0;
             }
-            
+
             const today = new Date();
             today.setHours(0, 0, 0, 0); // Reset to start of day
             reported.setHours(0, 0, 0, 0); // Reset to start of day
-            
+
             const diffTime = today - reported;
             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-            
+
             return Math.max(0, diffDays); // Ensure non-negative
         }
 
         // =====================================================================
         // DISPLAY
         // =====================================================================
-        
+
         function displayQueue(problems) {
             let filteredProblems = problems;
 
@@ -1387,20 +1446,20 @@ function goBackToPortal() {
             } else if (currentFilter === 'high') {
                 filteredProblems = problems.filter(p => p.problemPriority === 'High');
             }
-            
+
             const container = document.getElementById('queueCards');
             container.innerHTML = '';
-            
+
             if (filteredProblems.length === 0) {
                 showEmpty();
                 return;
             }
-            
+
             filteredProblems.forEach(problem => {
                 const card = createQueueCard(problem);
                 container.appendChild(card);
             });
-            
+
             showCards();
         }
 
@@ -1408,23 +1467,23 @@ function goBackToPortal() {
             const card = document.createElement('div');
             card.className = 'queue-card';
             card.onclick = () => showProblemModal(problem);
-            
+
             // Mark In Progress cards
-            const isInProgress = (problem.problemStatus || '').toLowerCase().includes('progress') || 
+            const isInProgress = (problem.problemStatus || '').toLowerCase().includes('progress') ||
                                 (problem.problemStatus || '').toLowerCase().includes('active');
             if (isInProgress) {
                 card.classList.add('in-progress');
             }
-            
+
             const priorityClass = getPriorityClass(problem.problemPriority);
             const statusClass = getStatusClass(problem.problemStatus);
             const friendlyPID = getFriendlyPID(problem.internalId || problem.problemId);
-            
+
             // Add checkmark for Programmed-Completed status
-            const statusText = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, '') === 'programmed-completed' 
-                ? '✓ Programmed-Completed' 
+            const statusText = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, '') === 'programmed-completed'
+                ? '✓ Programmed-Completed'
                 : (problem.problemStatus || 'Reported');
-            
+
             // NEW V1.3: Generate aging badge
             let agingBadgeHTML = '';
             if (problem.daysInQueue >= 60) {
@@ -1433,8 +1492,8 @@ function goBackToPortal() {
                 agingBadgeHTML = '<span class="aging-badge aging-warning">⚠️ 30-59 DAYS</span>';
             }
 
-         
-            
+
+
             // DEBUG: Check photoUrls value
             // console.log(`Problem ${friendlyPID}: photoUrls = "${problem.photoUrls}", length = ${problem.photoUrls ? problem.photoUrls.length : 'null'}`);
             card.innerHTML = `
@@ -1458,7 +1517,7 @@ function goBackToPortal() {
                     </div>
                 </div>
             `;
-            
+
             return card;
         }
 
@@ -1468,7 +1527,7 @@ function goBackToPortal() {
             const high = problems.filter(p => p.problemPriority === 'High').length;
             const medium = problems.filter(p => p.problemPriority === 'Medium').length;
             const low = problems.filter(p => p.problemPriority === 'Low').length;
-            
+
             document.getElementById('statTotal').textContent = total;
             document.getElementById('statUrgent').textContent = urgent;
             document.getElementById('statHigh').textContent = high;
@@ -1497,16 +1556,16 @@ function applySearch() {
             document.getElementById('searchResultNote').textContent = '';
             processQueue();
         }
-      
+
         function setFilter(filter) {
             currentFilter = filter;
-            
+
             // Update button states
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
             event.target.classList.add('active');
-            
+
             // Reprocess and display
             processQueue();
         }
@@ -1514,28 +1573,28 @@ function applySearch() {
         // =====================================================================
         // MODAL MANAGEMENT
         // =====================================================================
-        
+
         function showProblemModal(problem) {
             selectedProblem = problem;
             const modal = document.getElementById('problemModal');
             const modalBody = document.getElementById('modalBody');
-            
+
             // DEBUG: Check photoUrls value
             console.log('🔍 PhotoUrls value:', problem.photoUrls);
             console.log('🔍 PhotoUrls type:', typeof problem.photoUrls);
             console.log('🔍 PhotoUrls exists?', problem.photoUrls ? 'YES' : 'NO');
-            
+
             const friendlyPID = getFriendlyPID(problem.internalId || problem.problemId);
             document.getElementById('modalTitle').textContent = `Problem ${friendlyPID}`;
-            
+
             const priorityClass = getPriorityClass(problem.problemPriority);
             const statusClass = getStatusClass(problem.problemStatus);
-            
+
             // Add checkmark for Programmed-Completed status
-            const statusText = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, '') === 'programmed-completed' 
-                ? '✓ Programmed-Completed' 
+            const statusText = (problem.problemStatus || '').toLowerCase().replace(/\s+/g, '') === 'programmed-completed'
+                ? '✓ Programmed-Completed'
                 : (problem.problemStatus || 'Reported');
-            
+
             // NEW V1.3: Generate aging badge for modal
             let agingBadgeHTML = '';
             if (problem.daysInQueue >= 60) {
@@ -1557,7 +1616,7 @@ function applySearch() {
                     </div>
                 `;
             }
-            
+
             modalBody.innerHTML = `
                 <div class="modal-field">
                     <div class="modal-label">Queue Position</div>
@@ -1622,8 +1681,8 @@ function applySearch() {
                         <div class="modal-value">${problem.comments}</div>
                     </div>
                 ` : ''}
-                ${problem.photoUrls && 
-                  problem.photoUrls.trim() !== '' && 
+                ${problem.photoUrls &&
+                  problem.photoUrls.trim() !== '' &&
                   problem.photoUrls.toLowerCase() !== 'n/a' &&
                   problem.photoUrls.toLowerCase() !== 'none' &&
                   problem.photoUrls !== 'undefined' &&
@@ -1631,8 +1690,8 @@ function applySearch() {
                     <div class="modal-field full-width" style="border-top: 2px solid #e5e7eb; padding-top: 16px; margin-top: 16px;">
                         <div class="modal-label">📷 Photos</div>
                         <div class="modal-value">
-                            <a href="${problem.photoUrls}" 
-                               target="_blank" 
+                            <a href="${problem.photoUrls}"
+                               target="_blank"
                                style="display: inline-block; padding: 12px 24px; background: #0891b2; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background 0.3s;"
                                onmouseover="this.style.background='#0e7490'"
                                onmouseout="this.style.background='#0891b2'">
@@ -1645,7 +1704,7 @@ function applySearch() {
                     </div>
                 ` : ''}
             `;
-            
+
             modal.classList.add('active');
             const omb = document.getElementById('openInMaintBtn');   // V1.6.0
             if (omb) omb.style.display = canOpenMaintenance() ? '' : 'none';
@@ -1663,12 +1722,12 @@ function applySearch() {
                 alert('Error: No problem selected. Please try again.');
                 return;
             }
-            
+
             const friendlyPID = getFriendlyPID(selectedProblem.internalId || selectedProblem.problemId);
             const pidForURL = friendlyPID.replace(/\s+/g, '');
             // Extract just the number (e.g., "PID160113" → "160113")
             const searchNumber = pidForURL.replace(/^PID/i, '');
-            
+
             // Store in sessionStorage so search survives any auth redirect.
             // MaintenanceModule reads 'pendingSearch' on load and applies it
             // even if the ?search= URL param was stripped during auth flow.
@@ -1677,7 +1736,7 @@ function applySearch() {
             } catch(e) {
                 // sessionStorage unavailable - URL param will be the fallback
             }
-            
+
             // Navigate directly to MaintenanceModule with ?search= param
             const inOps = new URLSearchParams(window.location.search).get('portal') === 'operations';
             const url = `MaintenanceModule.html?search=${encodeURIComponent(searchNumber)}` + (inOps ? '&portal=operations' : '');
@@ -1694,7 +1753,7 @@ function applySearch() {
         // =====================================================================
         // UI STATES
         // =====================================================================
-        
+
         function showLoading() {
             document.getElementById('loadingState').style.display = 'block';
             document.getElementById('errorState').style.display = 'none';
@@ -1715,7 +1774,7 @@ function applySearch() {
             document.getElementById('errorState').style.display = 'none';
             document.getElementById('emptyState').style.display = 'block';
             document.getElementById('queueCardsContainer').style.display = 'none';
-            
+
             // Update empty state message based on queue type
             const emptyMessage = document.getElementById('emptyStateMessage');
             if (currentQueueType === 'current') {
@@ -1735,7 +1794,7 @@ function applySearch() {
         // =====================================================================
         // UTILITY FUNCTIONS
         // =====================================================================
-        
+
         function getPriorityClass(priority) {
             if (!priority) return 'priority-low';
             const p = priority.toLowerCase();
@@ -1748,7 +1807,7 @@ function applySearch() {
         function getStatusClass(status) {
     if (!status) return 'status-reported';
     const s = status.toLowerCase();
-    
+
     if (s.includes('completed') || s.includes('closed')) return 'status-completed';
     if (s.includes('progress') || s.includes('active')) return 'status-in-progress';
     if (s.includes('hold') || s.includes('pending')) return 'status-on-hold';
@@ -1758,18 +1817,18 @@ function applySearch() {
     if (s.includes('programmed')) return 'status-programmed';
     if (s.includes('project')) return 'status-project';
     if (s.includes('unknown')) return 'status-unknown';
-    
+
     return 'status-reported';
 }
 
         function getFriendlyPID(internalId) {
             if (!internalId) return 'Unknown';
-            
+
             // If already in PID format, return as-is
             if (internalId.toString().startsWith('PID')) {
                 return internalId;
             }
-            
+
             // Extract numeric part from formats like "FAULT-LOG-123"
             const parts = internalId.toString().split('-');
             return parts.length > 1 ? 'PID ' + parts[parts.length - 1] : internalId;
@@ -1777,7 +1836,7 @@ function applySearch() {
 
         function formatDate(dateString) {
             if (!dateString) return '-';
-            
+
             try {
                 const date = new Date(dateString);
                 return date.toLocaleDateString('en-AU', {
