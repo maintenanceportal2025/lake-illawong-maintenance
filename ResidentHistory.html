@@ -1,5 +1,12 @@
 <!--
-  VERSION: V1.3.0 (Nov 2026, tidy-up): Tidy-up: logo, title and subtitle follow the Design System header standard (90px round cover, 70px mobile; title 2.2rem/700; subtitle 1rem/500); Back button reads "Back to Portal". 
+  VERSION: V1.4.0 (Nov 2026, gated): My Problem History now needs a verification code (the shared sign-in).
+  (1) The page loads VerificationModal.js and follows the Access Standard: ALLOWED_ROLES is an empty list, which means any signed-in person (the Developer tag always passes). Nobody sees the search screen, and no data is requested, until the sign-in has passed. A person who has already verified on any other page (the shared session, 30 days sliding, 90-day cap) goes straight in with no new code.
+  (2) Reason: a problem request can contain personal information, and this page links to entries in the Problem Queue. Decided by Tony 26 Nov 2026 (see claude/Security_Decision_Record_Nov2026.md).
+  (3) Not changed: the unit number is still typed in, so any signed-in resident can look up any unit (transparency, by decision). Search, statistics, queue positions, the detail popup, wording and layout are unchanged.
+  (Older history follows.)
+-->
+<!--
+  VERSION: V1.3.0 (Nov 2026, tidy-up): Tidy-up: logo, title and subtitle follow the Design System header standard (90px round cover, 70px mobile; title 2.2rem/700; subtitle 1rem/500); Back button reads "Back to Portal".
   (Older history follows in the header block below.)
 -->
 <!--
@@ -8,15 +15,17 @@ LAKE ILLAWONG MANAGEMENT CENTRAL SYSTEM - MY PROBLEM HISTORY
 =====================================================================
 PURPOSE: Resident self-service view of their own problem history
 PORTAL: Resident Portal
-VERSION: V1.3.0
+VERSION: V1.4.0
 LAST UPDATED: November 2026
 DESIGN SYSTEM: Lake Illawong Unified v2.0
 - Glass-morphism throughout (converted from V1.4 white card design)
 - Input section, stats, results, request cards all glass panels
 - Modal retains white background (popup detail view)
 - Back button: portal-back-btn standard, above all panels
-AUTHENTICATION: None (public module)
-DEPENDENCIES: Explorer backend (getFaultLogData, getLegacyLogData actions), ApiClient.js
+AUTHENTICATION: OTP via VerificationModal.js (V1.4.0). Shared session
+  (lakeIllawongSession); any signed-in person may use the page
+  (ALLOWED_ROLES = []). Session key: lakeIllawongVerified.
+DEPENDENCIES: Explorer backend (getFaultLogData, getLegacyLogData actions), ApiClient.js, VerificationModal.js
 RELATED FILES: ResidentPortal.html, ProblemQueue.html
 
 CHANGE LOG
@@ -72,6 +81,9 @@ CHANGE LOG
             color: var(--glass-text);
             line-height: 1.6;
         }
+
+        /* V1.4.0: hidden until the sign-in has passed */
+        .hidden { display: none; }
 
         .container {
             max-width: 1200px;
@@ -689,7 +701,18 @@ CHANGE LOG
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- V1.4.0: shown only if the signed-in person is not allowed in (see handleVerified) -->
+    <div class="container hidden" id="deniedView">
+        <div class="glass-panel" style="text-align: center; max-width: 500px; margin: 60px auto 20px;">
+            <div style="font-size: 3rem; margin-bottom: 16px;">&#128683;</div>
+            <h2 style="font-size: 1.4rem; font-weight: 600; margin-bottom: 12px;">Access Not Authorised</h2>
+            <p style="color: var(--glass-text-muted); margin-bottom: 24px;">Your account does not have access to My Problem History. Please contact management if you believe this is an error.</p>
+            <button class="portal-back-btn" onclick="goBack()">&#8592; Back to Portal</button>
+        </div>
+    </div>
+
+    <!-- V1.4.0: hidden until the sign-in has passed -->
+    <div class="container hidden" id="pageContent">
 
         <!-- HEADER -->
         <header class="header">
@@ -789,9 +812,16 @@ CHANGE LOG
         </div>
     </div>
 
+    <script src="VerificationModal.js"></script>
     <script src="ApiClient.js"></script>
     <script>
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzEWNgrtuamJxLUEo_dWCm9-WxoD-zDejn6LKwV3Vt8yCHv0CArlBVtzj1ad_JM0A6N/exec';
+
+        // V1.4.0: Access Standard. An empty list = any signed-in person
+        // (the Developer tag always passes). Data is only requested once
+        // accessOk is true.
+        const ALLOWED_ROLES = [];
+        let accessOk = false;
 
         let allProblems = [];
         let currentUnit = '';
@@ -801,6 +831,33 @@ CHANGE LOG
         const closeBtn = document.getElementById('closeProblemModal');
         closeBtn.onclick = () => modal.classList.remove('active');
         window.onclick = (e) => { if (e.target === modal) modal.classList.remove('active'); };
+
+        // V1.4.0: sign-in first. Runs on every load, including when a shared
+        // session already exists (onSuccess is then called straight away).
+        document.addEventListener('DOMContentLoaded', function() {
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'My Problem History',
+                moduleIcon: '📋',
+                sessionKey: 'lakeIllawongVerified',
+                smsOnly: false,
+                onSuccess: handleVerified
+            });
+            if (!alreadyVerified) VerificationModal.show();
+        });
+
+        function handleVerified(userData) {
+            const r = VerificationModal.checkAccess(ALLOWED_ROLES);
+            if (!r.ok) {
+                accessOk = false;
+                document.getElementById('pageContent').classList.add('hidden');
+                document.getElementById('deniedView').classList.remove('hidden');
+                return;
+            }
+            accessOk = true;
+            document.getElementById('deniedView').classList.add('hidden');
+            document.getElementById('pageContent').classList.remove('hidden');
+            document.getElementById('unitNumber').focus();
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('unitNumber').focus();
@@ -819,6 +876,7 @@ CHANGE LOG
         }
 
         async function loadMyHistory() {
+            if (!accessOk) return;   // V1.4.0: nothing is requested before the sign-in has passed
             const unitInput = document.getElementById('unitNumber').value.trim();
             if (!unitInput) {
                 alert('Please enter your unit number');
