@@ -1,4 +1,13 @@
 <!--
+  V3.8.0 (Nov 2026): Sign in at the door, Log Out, and the old information section and footer removed.
+  (1) The portal now asks the person to verify (email or SMS code) before any card is shown. A valid shared session (VerificationModal V2.2.1+, 30-day sliding) means no prompt, so a resident verifies about once every few months. While the code prompt is showing, two small buttons stay reachable above it: "Back to System Hub" and "Emergency Procedures", so nobody is stranded and emergency information is never behind a code.
+  (2) New Log Out button at the foot of the page (same as the Operations Portal): clears the shared session so the next visit asks for a code. Useful on a shared or borrowed device.
+  (3) Removed the "Why Use the Residents Portal?" section and the footer ("2025 ... Residents Portal v1.0"), which were out of date; the footer's opening tag was also missing. Their unused CSS is removed.
+  (4) openGatedModule() now checks the shared session (VerificationModal.checkAccess) instead of the old lakeIllawongVerified key.
+  Cards, routing and the other modules are unchanged. Public Documents (PublicDocuments.html) is a separate page and is not affected.
+  (Older history follows.)
+-->
+<!--
   V3.7.1 (Nov 2026, tidy-up): Fix: removed the extra divider added in V3.7.0. The header already draws its own divider (.header::after), so the added one made two. 
   (Older history follows in the header block below.)
 -->
@@ -15,8 +24,8 @@ DOCUMENT INFORMATION:
   File Name:        ResidentPortal_V3_0.html
   Github Filename:   ResidentPortal.html
   System:           Lake Illawong Management Central System
-  Component Type:   Resident Portal (Public Hub)
-  Frontend Version: V3.7.0
+  Component Type:   Resident Portal (sign-in required)
+  Frontend Version: V3.8.0
   Status:           PRODUCTION
   Created:          Apr 2026
   Last Modified:    Nov 2026
@@ -103,9 +112,11 @@ VERSION HISTORY:
                      unchanged.
 
 AUTHENTICATION:
-  Public hub — no OTP required at portal level.
-  Gated modules fire OTP via VerificationModal.js.
-  Session Key: lakeIllawongVerified | smsOnly: false
+  Sign-in required at portal level (V3.8.0): OTP via VerificationModal.js
+  (V2.2.1 or later) unless a valid shared session exists. Any signed-in resident
+  may enter (checkAccess with no roles). Log Out clears the shared session.
+  Emergency Procedures and Back to System Hub stay reachable above the sign-in prompt.
+  Session Key: lakeIllawongVerified (legacy mirror) | smsOnly: false
 
 MODULES (11 active):
   1. Resident Directory     -> ResidentDirectory.html (GATED)
@@ -114,7 +125,7 @@ MODULES (11 active):
   4. Common Areas Queue     -> CommonAreasQueue.html (public)
   5. Update My Details      -> ResidentDetailsUpdate.html (GATED)
   6. Community Surveys      -> CommunitySurveys.html (public)
-  7. Emergency Procedures   -> Local modal (always public)
+  7. Emergency Procedures   -> Local modal (never behind a code: reachable from the sign-in screen)
   8. Facilities Booking     -> FacilitiesBooking.html (FUTURE)
   9. Document Library       -> DocumentLibrary.html (GATED)
   10. My Disputes           -> https://lake-illawong-maintenance.netlify.app/
@@ -531,96 +542,6 @@ MODULES (11 active):
             cursor: not-allowed;
             transform: none;
         }
-
-        /* Information Section */
-        .info-section {
-            background: var(--glass-bg);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border: 1px solid var(--glass-border);
-            border-radius: 2px;
-            padding: 30px;
-            margin-bottom: 30px;
-        }
-
-        .info-section h3 {
-            text-align: center;
-            font-size: 1.25rem;
-            color: white;
-            margin-bottom: 25px;
-            font-weight: 600;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 25px;
-        }
-
-        .info-item {
-            text-align: center;
-        }
-
-        .info-icon {
-            width: 50px;
-            height: 50px;
-            background: var(--glass-bg-strong);
-            border: 1px solid var(--glass-border);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 15px;
-            font-size: 20px;
-        }
-
-        .info-title {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--glass-text);
-            margin-bottom: 8px;
-        }
-
-        .info-description {
-            color: var(--glass-text-muted);
-            font-size: 0.875rem;
-            line-height: 1.5;
-        }
-
-        /* Footer */
-        .footer {
-            background: transparent;
-            border-radius: 6px;
-            padding: 25px;
-            text-align: center;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            border: 1px solid #e2e8f0;
-        }
-
-        .footer-links {
-            display: flex;
-            justify-content: center;
-            gap: 25px;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-        }
-
-        .footer-link {
-            color: #64748b;
-            text-decoration: none;
-            font-weight: 600;
-            transition: color 0.2s ease;
-            font-size: 0.9rem;
-        }
-
-        .footer-link:hover {
-            color: #667eea;
-        }
-
-        .footer-text {
-            color: var(--glass-text-muted);
-            font-size: 0.8rem;
-        }
 .loading-state {
         display: flex;
         flex-direction: column;
@@ -686,15 +607,6 @@ MODULES (11 active):
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
-
-            .info-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .footer-links {
-                flex-direction: column;
-                gap: 15px;
-            }
         }
 
         /* V3.6.0: Back to System Hub (same glass back button as the Operations Portal) */
@@ -714,12 +626,16 @@ MODULES (11 active):
         }
         .btn-back-glass:hover { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.30); }
         .top-bar { margin-bottom: 20px; }
+        /* V3.8.0: sign-in gate and Log Out */
+        .hidden { display: none !important; }
+        .gate-bar { position: fixed; top: 12px; left: 0; right: 0; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 0 12px; z-index: 10001; }
+        .logout-container { text-align: center; margin-top: 30px; }
         @media (max-width: 480px) { .logo-image { width: 70px; height: 70px; } }
     </style>
     <script src="VerificationModal.js"></script>
 </head>
 <body>
-    <div class="container">
+    <div class="container hidden" id="portalView">
         <!-- Header - White Rounded Box Standard -->
         <header class="header">
             <div class="header-content">
@@ -1212,63 +1128,28 @@ MODULES (11 active):
             </div>
         </section>
 
-        <!-- Information Section -->
-        <section class="info-section">
-            <h3>Why Use the Residents Portal?</h3>
-            
-            <div class="info-grid">
-                <div class="info-item">
-                    <div class="info-icon">⚡</div>
-                    <div class="info-title">Faster Service</div>
-                    <div class="info-description">
-                        Submit requests instantly with automatic routing to the maintenance team
-                    </div>
-                </div>
-                
-                <div class="info-item">
-                    <div class="info-icon">📱</div>
-                    <div class="info-title">24/7 Access</div>
-                    <div class="info-description">
-                        Report issues and access information any time, from any device
-                    </div>
-                </div>
-                
-                <div class="info-item">
-                    <div class="info-icon">📊</div>
-                    <div class="info-title">Full Transparency</div>
-                    <div class="info-description">
-                        Track your requests and see exactly how your issues are being resolved
-                    </div>
-                </div>
-                
-                <div class="info-item">
-                    <div class="info-icon">🤝</div>
-                    <div class="info-title">Community Connection</div>
-                    <div class="info-description">
-                        Stay informed with village updates and connect with your neighbours
-                    </div>
-                </div>
-            </div>
-        </section>
+        <div class="logout-container">
+            <button id="logoutBtn" class="btn-back-glass" onclick="logout()">🚪 Log Out</button>
+        </div>
+    </div>
 
-        <!-- Footer -->
-        
-            <p class="footer-text">
-                © 2025 Lake Illawong Residential Village • Residents Portal v1.0
-            </p>
-        </footer>
+    <!-- V3.8.0: shown only while the sign-in prompt is up -->
+    <div class="gate-bar hidden" id="gateBar">
+        <button class="btn-back-glass" onclick="window.location.href='SystemHub.html'">← Back to System Hub</button>
+        <button class="btn-back-glass" onclick="showEmergencyInfo()">🚨 Emergency Procedures</button>
     </div>
 
     <script>
 
 // Initialise VerificationModal (no auto-show — fires on gated card click)
-        VerificationModal.init({
+        const portalAlreadyVerified = VerificationModal.init({
             moduleName: 'Residents Portal',
             moduleIcon: '🏠',
             sessionKey: 'lakeIllawongVerified',
             smsOnly: false,
             onSuccess: function(userData) {
                 console.log('✅ Resident verified:', userData.name);
+                revealPortal();
                 if (pendingModule) {
                     document.body.style.opacity = '0';
                     window.location.href = pendingModule;
@@ -1278,8 +1159,21 @@ MODULES (11 active):
 
         let pendingModule = null;
 
+        // V3.8.0: nothing is shown until the person is signed in
+        function revealPortal() {
+            document.getElementById('portalView').classList.remove('hidden');
+            document.getElementById('gateBar').classList.add('hidden');
+        }
+
+        function logout() {
+            if (confirm('Are you sure you want to log out?')) {
+                VerificationModal.logout();
+                location.reload();
+            }
+        }
+
         function openGatedModule(url) {
-            if (sessionStorage.getItem('lakeIllawongVerified') === 'true') {
+            if (VerificationModal.checkAccess([]).ok) {
                 showLoadingOverlay();
                 window.location.href = url;
             } else {
@@ -1306,7 +1200,10 @@ MODULES (11 active):
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🏠 Residents Portal v1.0 - Loaded');
             console.log('📱 Design System: Lake Illawong Unified v1.0');
-            
+            if (!portalAlreadyVerified) {
+                document.getElementById('gateBar').classList.remove('hidden');
+                VerificationModal.show();
+            }
         });
 
         
