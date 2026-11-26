@@ -1,10 +1,5 @@
 <!--
-  V2.18.1 (Nov 2026, tidy-up): Role tag renamed from Doc Manager to Document-Manager. Nothing else changed.
-  (Older history follows in the header block below.)
--->
-<!--
-  V2.18.1 (Nov 2026, tidy-up): Tidy-up: logo, title and subtitle follow the Design System header standard; Back button reads "Back to Portal". The name and unit pill is removed. Mobile logo is now 70px.
-  (Older history follows in the header block below.)
+  V2.19.0 (Nov 2026): Replace a document's file (needs backend V2.15). See the header block below.
 -->
 <!--
 =====================================================================
@@ -13,7 +8,9 @@ LAKE ILLAWONG MAINTENANCE SYSTEM - DOCUMENT LIBRARY MANAGER
 PURPOSE: Admin interface to add, edit, delete and organise Document
          Library records. Includes Google Drive file upload via popup.
 PORTAL: Admin Portal
-VERSION: V2.18.0 - Operations Portal access. The role check now uses the shared session (VerificationModal.checkAccess, V2.2.1+): Doc Manager (Developer always passes); the page loads data only after it passes. Added ?portal=operations: uses the Operations Portal session (portalOperationsVerified) and Back returns to the Operations Portal; the default (Admin Portal) behaviour is unchanged. Nothing else changed.
+VERSION: V2.19.0 - Replace a file (needs backend V2.15). Open a document with Edit: when it is an uploaded file the upload button now reads "Replace file". Choosing a new file (any file name) attaches it; on Save the backend moves the old file to the Drive bin (restorable 30 days), the stored file name and type update to the new file, and the document shows as New again for residents. A green note says this once a new file is attached. The Title can be changed in the same save (for example to show a version). Saving after changing an uploaded document to a link or paper copy now asks first, because the old file would be binned. Adding a document whose Title already exists (same words, ignoring capitals) now asks before adding, suggesting Edit > Replace file instead. The Saved message says when the old file was binned, or kept because another document uses it. Nothing else changed.
+         V2.18.1 - Tidy-up: header follows the Design System standard, Back button reads "Back to Portal", name pill removed, role tag Document-Manager.
+         V2.18.0 - Operations Portal access. The role check now uses the shared session (VerificationModal.checkAccess, V2.2.1+): Doc Manager (Developer always passes); the page loads data only after it passes. Added ?portal=operations: uses the Operations Portal session (portalOperationsVerified) and Back returns to the Operations Portal; the default (Admin Portal) behaviour is unchanged. Nothing else changed.
          V2.16.3 - Wording: the stats card "Public Access" now reads "All Residents". It
          has always counted documents tagged Resident (or Public), that is every
          verified resident, not the general public. The count itself is unchanged.
@@ -1401,6 +1398,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     let categoryTree  = [];        // V2.15.0: from getCategoryTree (backend V2.13); empty = old flat list in use
     let lastDefaultRoles = [];     // V2.15.0: default roles last ticked automatically
     let uploadPollTimer = null;
+    let originalDoc = null;        // V2.19.0: the document as loaded for Edit (null when adding)
 
     // ================================================================
     // BOOT — OTP AUTHENTICATION
@@ -2031,6 +2029,18 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         }
     }
 
+    // V2.19.0: label for the upload button ("Replace file" when editing an uploaded document)
+    function uploadBtnLabel() {
+        return (editingId && originalDoc && originalDoc.sourceType === 'Drive') ? '☁️ Replace file' : '☁️ Choose file to upload';
+    }
+    // True when the form now points at a different file than the one loaded for Edit
+    function isFileReplaced() {
+        if (!editingId || !originalDoc || originalDoc.sourceType !== 'Drive' || !originalDoc.sourceLocation) return false;
+        const t = document.getElementById('fSourceType').value;
+        const loc = document.getElementById('fSourceLocation').value.trim();
+        return t !== 'Drive' || loc !== String(originalDoc.sourceLocation).trim();
+    }
+
     // File Type from the uploaded file's extension
     function fileTypeFromName(name) {
         const m = /\.([A-Za-z0-9]+)$/.exec(name || '');
@@ -2046,6 +2056,11 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     function showNextStep() {
         const box = document.getElementById('nextStepBox');
         const needRoles = getCheckedRoles().length + preservedRoles.length === 0;
+        if (isFileReplaced()) {
+            box.textContent = '✅ New file attached. When you click Save Changes, the current file is moved to the Drive bin (restorable for 30 days) and residents will see this document as New.';
+            box.style.display = 'block';
+            return;
+        }
         box.textContent = needRoles
             ? '✅ File attached. Next: tick who can see this document under Access Control (below), then click Add Document.'
             : '✅ File attached. Next: check the details, then click ' + (editingId ? 'Save Changes' : 'Add Document') + '.';
@@ -2115,7 +2130,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                             // Popup closed without a completed upload — just reset button
                             const b = document.getElementById('btnUploadDrive');
                             if (b && b.disabled) {
-                                b.textContent = '☁️ Choose file to upload';
+                                b.textContent = uploadBtnLabel();
                                 b.disabled = false;
                             }
                             // V2.12.0: the reply (and with it the staged file ID) may
@@ -2156,7 +2171,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         }
 
         const btn = document.getElementById('btnUploadDrive');
-        btn.textContent = '☁️ Choose file to upload';
+        btn.textContent = uploadBtnLabel();
         btn.disabled = false;
 
         // V2.13.0: File Type from the file, remember where it was filed, and guide the next step
@@ -2181,12 +2196,14 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
     function openAddModal() {
         clearStaleUpload();
         editingId = null;
+        originalDoc = null;
         clearForm();
         document.getElementById('modalTitle').textContent    = '➕ Add New Document';
         document.getElementById('modalSubtitle').textContent = 'Complete all required fields';
         document.getElementById('fDocumentId').value        = '';
         document.getElementById('btnSave').textContent      = '💾 Add Document';
         document.getElementById('modalStatus').textContent  = '';
+        document.getElementById('btnUploadDrive').textContent = uploadBtnLabel();
         document.getElementById('fSourceType').value        = 'Drive';   // V2.13.0: most documents are uploads
         onSourceTypeChange(false);
         document.getElementById('editModalOverlay').classList.remove('hidden');
@@ -2199,6 +2216,7 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
         clearStaleUpload();
         editingId = documentId;
+        originalDoc = doc;
         clearForm();
         document.getElementById('modalTitle').textContent    = '✏️ Edit Document';
         document.getElementById('modalSubtitle').textContent = documentId;
@@ -2228,12 +2246,14 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
         setRoleCheckboxes(doc.accessRoles || '');
         lastDefaultRoles = [];
         onSourceTypeChange();
+        { const ub = document.getElementById('btnUploadDrive'); if (ub) { ub.textContent = uploadBtnLabel(); } }
         document.getElementById('editModalOverlay').classList.remove('hidden');
     }
 
     function closeEditModal() {
         document.getElementById('editModalOverlay').classList.add('hidden');
         editingId = null;
+        originalDoc = null;
     }
 
     function overlayClick(event) {
@@ -2314,6 +2334,17 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
 
         if (!valid) return;
 
+        // V2.19.0: adding a document whose title already exists
+        if (!editingId) {
+            const want = title.toLowerCase().replace(/\s+/g, ' ');
+            const clash = allDocuments.find(function(d) { return String(d.title || '').toLowerCase().replace(/\s+/g, ' ').trim() === want; });
+            if (clash && !confirm('A document titled "' + clash.title + '" already exists (' + clash.documentId + ').\n\nIf you add this, residents will see two documents with the same title.\n\nTo swap in a new file instead, Cancel, then use Edit on the existing document and choose "Replace file".\n\nOK = add it anyway.   Cancel = go back.')) return;
+        }
+        // V2.19.0: an uploaded document being changed to a link or paper copy bins its file
+        if (editingId && originalDoc && originalDoc.sourceType === 'Drive' && sourceType !== 'Drive') {
+            if (!confirm('This document is currently an uploaded file. Saving it as ' + (sourceType === 'Link' ? 'a web link' : 'a paper copy') + ' moves that file to the Drive bin (restorable for 30 days).\n\nOK = save.   Cancel = go back.')) return;
+        }
+
         const params = {
             documentId:     document.getElementById('fDocumentId').value || null,
             title,
@@ -2349,9 +2380,15 @@ HIERARCHICAL POSITION: AdminPortal > DocumentLibraryManager
                 closeEditModal();
                 loadDocuments();
             } else if (response.success) {
-                showToast('success', editingId
-                    ? '✅ Document updated'
-                    : '✅ ' + (response.documentId || 'Document') + ' added successfully');
+                if (editingId && response.fileReplaced) {
+                    const note = response.fileNote ? ' ' + response.fileNote : '';
+                    showToast(response.fileTrashed ? 'success' : 'info',
+                        '✅ File replaced.' + (response.fileTrashed ? ' The old file was moved to the Drive bin.' : '') + note, 9000);
+                } else {
+                    showToast('success', editingId
+                        ? '✅ Document updated'
+                        : '✅ ' + (response.documentId || 'Document') + ' added successfully');
+                }
                 closeEditModal();
                 loadDocuments();
             } else {
