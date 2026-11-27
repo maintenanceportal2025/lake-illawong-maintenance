@@ -1,4 +1,7 @@
 <!--
+  V1.4.0 (Nov 2026, shared sign-in): Brought into line with the other modules (Access Standard). The page used its own check -- "is the old Zone Rep session key present?" -- and sent anyone without it back to the Zone Rep Portal. It now loads VerificationModal.js: a person who is not signed in is asked for a code right here, a person already signed in (any page) goes straight in, and the role check is VerificationModal.checkAccess(['ZoneRep-Portal']) (the Developer tag always passes). Anyone else sees "Access Not Authorised" and NO dispute data is requested. Nothing is requested before the check has passed. The zone still comes from the person's ZoneRep-N tag, exactly as before. The AccessLog.js line added in V1.3.0 is removed: VerificationModal V2.4.0 now writes the Access Log row (detail "Zone Disputes"). Dispute list, filters, wording and layout unchanged. Requires VerificationModal.js V2.4.0 in the same folder.
+-->
+<!--
   V1.3.0 (Nov 2026, access log): Opening this module is now recorded in the Access Log (type Module-Access, detail "Zone Disputes"): one <script src="AccessLog.js" data-module="Zone Disputes"> line added. AccessLog.js is a new shared file; add it to the same folder as this page. Nothing else changed. System Logs V1.8.0 labels the rows.
 -->
 <!--
@@ -13,7 +16,7 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepRelations.html
   System:           Lake Illawong Management Central System
   Component Type:   ZoneRep Module
-  Frontend Version: V1.3.0
+  Frontend Version: V1.4.0
   Backend:          RelationsManager V1.0.18 -- getRelationsByZone
   Status:           DEVELOPMENT
   Created:          Sep 2026
@@ -103,9 +106,9 @@ VERSION HISTORY:
     to expand into given the minimal field scope.
 
 AUTHENTICATION:
-  Session inherited from ZoneRepPortal.html (portalZoneRepVerified).
-  Zone extracted from ZoneRep-N role tag in session roleTags.
-  Redirects to ZoneRepPortal.html if session absent.
+  OTP via VerificationModal.js (V1.4.0). Shared session (lakeIllawongSession);
+  role ZoneRep-Portal (or Developer) via VerificationModal.checkAccess.
+  Zone extracted from the ZoneRep-N role tag. Session key: portalZoneRepVerified.
 
 SYSTEM CONNECTIONS:
   Backend: RelationsManager V1.0.18
@@ -165,6 +168,7 @@ TECHNICAL:
         }
         .portal-back-btn:hover, .btn-refresh:hover { background: rgba(255,255,255,0.25); }
         .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+        .hidden { display: none !important; }
         .top-btn-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 20px 0; }
 
         /* ── INFO NOTICE ────────────────────────────────────────── */
@@ -276,7 +280,18 @@ TECHNICAL:
     </style>
 </head>
 <body>
-<div class="container">
+<!-- V1.4.0: shown only if the signed-in person is not allowed in (see handleVerified) -->
+<div class="container hidden" id="deniedView">
+    <div class="error-state" style="max-width: 500px; margin: 60px auto 20px;">
+        <div class="state-icon">&#128683;</div>
+        <h2 style="font-size: 1.4rem; font-weight: 600; margin-bottom: 12px; color: white;">Access Not Authorised</h2>
+        <div class="state-text" style="margin-bottom: 24px;">Your account does not have access to Zone Disputes. Please contact management if you believe this is an error.</div>
+        <button class="portal-back-btn" onclick="window.location.href='ZoneRepPortal.html'">&#8592; Back to Portal</button>
+    </div>
+</div>
+
+<!-- V1.4.0: hidden until the sign-in has passed -->
+<div class="container hidden" id="pageContent">
 
     <!-- Header -->
     <div class="header">
@@ -335,8 +350,8 @@ TECHNICAL:
     </div>
 
 </div>
+<script src="VerificationModal.js"></script>
 <script src="ApiClient.js"></script>
-<script src="AccessLog.js" data-module="Zone Disputes"></script>
 <script>
     const CONFIG = {
         BACKEND_URL: 'https://script.google.com/macros/s/AKfycbyTuaQ90JhsVxgzD7olxO_MicP5JNlcTiQk2gQd7cwi0prHSBtx8TVl2GZQTTFT7jVN-A/exec',
@@ -344,17 +359,41 @@ TECHNICAL:
         PORTAL_URL:  'ZoneRepPortal.html'
     };
 
+    // V1.4.0: Access Standard. Data is only requested once accessOk is true.
+    const ALLOWED_ROLES = ['ZoneRep-Portal'];
+    let accessOk = false;
+
     let allRelations = [];
     let currentZone   = '';
 
     // ── INIT ──────────────────────────────────────────────────────────────
+    // V1.4.0: sign-in first. Runs on every load, including when a shared
+    // session already exists (onSuccess is then called straight away).
     document.addEventListener('DOMContentLoaded', function () {
-        const session = sessionStorage.getItem(CONFIG.SESSION_KEY);
-        if (!session) { window.location.href = CONFIG.PORTAL_URL; return; }
+        const alreadyVerified = VerificationModal.init({
+            moduleName: 'Zone Disputes',
+            moduleIcon: '\u2696\uFE0F',
+            sessionKey: CONFIG.SESSION_KEY,
+            smsOnly: false,
+            onSuccess: handleVerified
+        });
+        if (!alreadyVerified) VerificationModal.show();
+    });
 
-        const rolesRaw = sessionStorage.getItem(CONFIG.SESSION_KEY + '_roles');
-        const roles    = rolesRaw ? JSON.parse(rolesRaw) : [];
-        const zoneTag  = roles.find(r => /^ZoneRep-\d+$/.test(r));
+    function handleVerified(userData) {
+        const r = VerificationModal.checkAccess(ALLOWED_ROLES);
+        if (!r.ok) {
+            accessOk = false;
+            document.getElementById('pageContent').classList.add('hidden');
+            document.getElementById('deniedView').classList.remove('hidden');
+            return;
+        }
+        accessOk = true;
+        document.getElementById('deniedView').classList.add('hidden');
+        document.getElementById('pageContent').classList.remove('hidden');
+
+        const roles    = r.user.roleTags || [];
+        const zoneTag  = roles.find(t => /^ZoneRep-\d+$/.test(t));
 
         if (!zoneTag) {
             showListError('No zone assignment found in your account. Please contact the system administrator.');
@@ -368,7 +407,7 @@ TECHNICAL:
         document.getElementById('infoNotice').style.display = 'block';
 
         loadRelations();
-    });
+    }
 
     function refreshList() {
         const btn = document.getElementById('btnRefresh');
@@ -404,6 +443,7 @@ TECHNICAL:
     // ── LOAD ─────────────────────────────────────────────────────────────
     var loadSeq = 0;
     function loadRelations() {
+        if (!accessOk) return;   // V1.4.0: nothing is requested before the sign-in has passed
         const mySeq = ++loadSeq;
         document.getElementById('relationList').innerHTML =
             '<div class="loading-state"><div class="spinner"></div><div class="state-text">Loading Zone ' + currentZone + ' disputes...</div></div>';
