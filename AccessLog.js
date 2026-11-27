@@ -1,10 +1,12 @@
 /**
  * =====================================================================
- * ACCESS LOG V1.0.0 - records that someone opened a module
+ * ACCESS LOG V1.1.0 - records that someone opened a module
  * =====================================================================
  * FILE: AccessLog.js (generic name, no version in the filename; the version
  *       is tracked here. Same convention as ApiClient.js and VerificationModal.js)
  * CREATED: November 2026
+ * V1.1.0 (Nov 2026): the detail names the portal in the page's ?portal= address, and the
+ *   once-a-day record is kept per detail (see VerificationModal V2.5.0). No other change.
  *
  * PURPOSE: For modules that do NOT use VerificationModal.js (open modules and
  *   the Zone Rep pages that check the old per-portal session). Modules that
@@ -43,6 +45,17 @@
     // The <script> tag that loaded this file carries the module name.
     var tag = document.currentScript;
     var moduleName = (tag && tag.getAttribute('data-module')) || document.title || 'Module';
+
+    // V1.1.0: when the page was opened with ?portal=..., the detail names that
+    // portal (e.g. "Desktop Explorer (Operations Portal)"), and the once-a-day
+    // record is kept per detail, so each route into a module is logged.
+    try {
+        var portalParam = new URLSearchParams(window.location.search).get('portal');
+        if (portalParam) {
+            var labels = { operations: 'Operations Portal', zonerep: 'Zone Rep Portal', residents: 'Resident Portal' };
+            moduleName = moduleName + ' (' + (labels[portalParam.toLowerCase()] || portalParam) + ')';
+        }
+    } catch (e) {}
 
     function who() {
         try {
