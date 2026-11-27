@@ -1,9 +1,9 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V2.3.0
+ * VERIFICATION MODAL COMPONENT V2.4.0
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 2.3.0
+ * VERSION: 2.4.0
  * CREATED: February 16, 2026
  * LAST UPDATED: November 2026
  * FILE: VerificationModal.js (generic name, no version in the filename)
@@ -14,6 +14,22 @@
  * as ApiClient.js and EventEntryModal.js. The frozen predecessor
  * VerificationModal_V1_0.js keeps the old "1.0" numbering and must not be
  * changed; ALL changes go in this file only.):
+ * - V2.4.0 (Nov 2026, module access log): every time a signed-in person
+ *   opens a module, one row is added to the AccessLog sheet (type
+ *   'Module-Access', name, unit, detail = the module's moduleName, e.g.
+ *   'Document Library'). Why: with 90-day sessions the sign-in log no longer
+ *   shows who is using what. It is written from init() when the person is
+ *   already signed in, and from a successful verification, so every page
+ *   that uses this file is covered with no page edits. At most ONE row per
+ *   person, per module, per device, per calendar day (a small
+ *   'lakeIllawongModuleLog' record in localStorage), so refreshes and
+ *   navigating back and forth do not fill the sheet. It uses the existing
+ *   logAccess action (no backend change), is sent once, never retried, and
+ *   any failure is swallowed, so it can never delay or block a page. Name
+ *   and unit are as held in the person's session (the same basis as the
+ *   existing Portal-Login rows). The Operations Portal and Zone Rep Portal
+ *   keep writing their own Portal-Login row as well. Kill switch: set
+ *   USE_ACCESS_LOG to false below. Nothing else changed from V2.3.0.
  * - V2.3.0 (Nov 2026, longer session): the sliding window goes from 30 to
  *   90 days and the hard cap from 90 days to 365 days (12 months), both
  *   counted as before. Why: a resident who uses the portals regularly is
@@ -314,6 +330,10 @@ const VerificationModal = (function() {
     const LEGACY_SUFFIXES = ['', '_name', '_unit', '_roles', '_identifier', '_email', '_phone', '_expires'];
     let sharedUsable = null;                    // null = not tested yet
 
+    // Nov 2026 (V2.4.0, module access log): see change log. false = no logging.
+    const USE_ACCESS_LOG = true;
+    const MODULE_LOG_KEY = 'lakeIllawongModuleLog';
+
     let modalInjected = false;
     let expiryTimerInterval = null;
     let resendTimerInterval = null;
@@ -420,6 +440,35 @@ const VerificationModal = (function() {
         });
     }
 
+    // V2.4.0: record that this person opened this module (once per person,
+    // module, device and calendar day). Fire-and-forget; never throws.
+    function _logModuleAccess(userData) {
+        try {
+            if (!USE_ACCESS_LOG || !userData || !userData.name) return;
+            const moduleName = config.moduleName || document.title || 'Module';
+            const d = new Date();
+            const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+            const key = userData.name + '|' + moduleName;
+            let seen = {};
+            if (_sharedOk()) {
+                try { seen = JSON.parse(localStorage.getItem(MODULE_LOG_KEY) || '{}') || {}; } catch (e) { seen = {}; }
+                if (seen[key] === today) return;
+                // keep only today's entries so the record stays tiny
+                Object.keys(seen).forEach(function (k) { if (seen[k] !== today) delete seen[k]; });
+                seen[key] = today;
+                try { localStorage.setItem(MODULE_LOG_KEY, JSON.stringify(seen)); } catch (e) {}
+            }
+            _callOnce('logAccess', {
+                type: 'Module-Access',
+                name: userData.name,
+                unit: userData.unit || '',
+                detail: moduleName
+            }, 15000).catch(function () {});
+        } catch (e) {
+            // logging must never affect the page
+        }
+    }
+
     // Initialize
     function init(options) {
         config = { ...config, ...options };
@@ -427,6 +476,7 @@ const VerificationModal = (function() {
         // Check if already verified
         if (config.useSessionStorage && isVerified()) {
             const userData = getStoredUserData();
+            _logModuleAccess(userData);
             if (config.onSuccess && userData) {
                 setTimeout(() => config.onSuccess(userData), 0);
             }
@@ -1308,6 +1358,7 @@ const VerificationModal = (function() {
                 };
 
                 storeUserData(userData);
+                _logModuleAccess(userData);
                 hide();
 
                 if (config.onSuccess) {
