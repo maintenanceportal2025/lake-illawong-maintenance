@@ -1,9 +1,9 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V2.2.1
+ * VERIFICATION MODAL COMPONENT V2.3.0
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 2.2.1
+ * VERSION: 2.3.0
  * CREATED: February 16, 2026
  * LAST UPDATED: November 2026
  * FILE: VerificationModal.js (generic name, no version in the filename)
@@ -14,6 +14,18 @@
  * as ApiClient.js and EventEntryModal.js. The frozen predecessor
  * VerificationModal_V1_0.js keeps the old "1.0" numbering and must not be
  * changed; ALL changes go in this file only.):
+ * - V2.3.0 (Nov 2026, longer session): the sliding window goes from 30 to
+ *   90 days and the hard cap from 90 days to 365 days (12 months), both
+ *   counted as before. Why: a resident who uses the portals regularly is
+ *   no longer asked for a code every quarter, but everyone still verifies
+ *   again at least once a year, which refreshes role tags and drops anyone
+ *   who has left. Only the two constants SLIDE_DAYS and CAP_DAYS (and the
+ *   comments that quote them) changed; no logic, UI or API change. Sessions
+ *   already in a browser carry over: they keep their original verifiedAt, so
+ *   the new 365-day cap counts from that date, and the next page load
+ *   slides the expiry out to 90 days. Nobody is signed out by deploying.
+ *   Shared-device warning: a longer session makes Log Out more important on
+ *   a device other people use (e.g. a public library computer).
  * - V2.2.1 (Nov 2026, shared role check): new checkAccess(allowedRoles), a
  *   read-only helper so any page can make its role check in one line:
  *     const r = VerificationModal.checkAccess(['Relations-Manager']);
@@ -34,7 +46,7 @@
  *   on any page is already verified on every other page that uses this file.
  *   Each page still makes its OWN role check in onSuccess (unchanged), so a
  *   shared sign-in never grants access to anything the roles do not allow.
- *   (2) Lifetime: 30 days SLIDING (every page that loads while signed in
+ *   (2) Lifetime (superseded by V2.3.0: now 90 sliding / 365 cap): 30 days SLIDING (every page that loads while signed in
  *   pushes the expiry out to 30 days from now) with a HARD CAP of 90 days
  *   from the original verification, after which a new code is required.
  *   This applies to every portal including Admin and SysAdmin. The
@@ -287,8 +299,8 @@ const VerificationModal = (function() {
 
     // Nov 2026 (V2.2.0, shared session): see change log.
     const SHARED_KEY = 'lakeIllawongSession';   // one session for every portal (localStorage)
-    const SLIDE_DAYS = 30;                      // sliding lifetime
-    const CAP_DAYS = 90;                        // hard cap from the original verification
+    const SLIDE_DAYS = 90;                      // sliding lifetime (V2.3.0: was 30)
+    const CAP_DAYS = 365;                       // hard cap from the original verification (V2.3.0: was 90)
     const DAY_MS = 24 * 60 * 60 * 1000;
     // Every per-portal key used anywhere in the system (cleared on log out)
     const LEGACY_KEYS = [
@@ -334,7 +346,7 @@ const VerificationModal = (function() {
     }
 
     // Returns the shared session if there is one that is still valid, else null.
-    // An expired (sliding or 90-day cap) session is cleared everywhere here.
+    // An expired (sliding or 365-day cap) session is cleared everywhere here.
     function _readShared() {
         if (!_sharedOk()) return null;
         let raw = null;
@@ -365,7 +377,7 @@ const VerificationModal = (function() {
         }
     }
 
-    // Push the sliding expiry out to 30 days from now, never past the 90-day cap.
+    // Push the sliding expiry out to 90 days from now, never past the 365-day cap.
     function _slide(s) {
         const now = Date.now();
         s.expiresAt = Math.min(now + SLIDE_DAYS * DAY_MS, s.verifiedAt + CAP_DAYS * DAY_MS);
@@ -584,7 +596,7 @@ const VerificationModal = (function() {
         };
     }
 
-    // Store user data (a new verification: starts a fresh 30-day / 90-day clock)
+    // Store user data (a new verification: starts a fresh 90-day / 365-day clock)
     function storeUserData(userData) {
         if (!config.useSessionStorage) return;
 
