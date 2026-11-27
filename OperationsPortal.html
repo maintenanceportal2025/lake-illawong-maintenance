@@ -1,4 +1,7 @@
 <!--
+  V1.2.3 (Nov 2026, access log): Coming back to the portal from a module (Back to Portal) no longer adds another Portal Login row. The portal's own Portal-Login row is now written once per person per browser tab/session: it is recorded only after the server confirms the row, and not repeated while the same person stays in the same tab (a lost send is tried again on the next load). A new tab, a new day on a closed tab, or a different person signing in is logged as before. Nothing else changed (sign-in, role check, cards).
+-->
+<!--
   V1.2.2 (Nov 2026, tidy-up): Director can see the Chronicle and Annual Report cards (Relations Manager stays Relations-Manager only). 
   (Older history follows in the header block below.)
 -->
@@ -359,7 +362,18 @@ RELATED FILES: VerificationModal.js, SystemHub.html, logo.png
             }
         }
 
+        // V1.2.3: once per person per browser tab/session. Recorded only after
+        // the server confirms the row, so a lost send is retried on the next load.
+        var PORTAL_LOG_KEY = 'lakeIllawongPortalLogged_operations';
+        function portalAlreadyLogged(name) {
+            try { return sessionStorage.getItem(PORTAL_LOG_KEY) === (name || ''); } catch (e) { return false; }
+        }
+        function markPortalLogged(name) {
+            try { sessionStorage.setItem(PORTAL_LOG_KEY, name || ''); } catch (e) {}
+        }
+
         function logPortalAccess(name, unit) {
+            if (portalAlreadyLogged(name)) return;
             var cbName = 'logcb_' + Date.now();
             var script = document.createElement('script');
             var settled = false;
@@ -369,7 +383,7 @@ RELATED FILES: VerificationModal.js, SystemHub.html, logo.png
                 window[cbName] = function () {};
                 try { document.head.removeChild(script); } catch (e) {}
             }
-            window[cbName] = function () { finish(); };
+            window[cbName] = function (r) { if (r && r.success) markPortalLogged(name); finish(); };
             script.onerror = function () { finish(); };
             script.src = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec'
                 + '?action=logAccess&callback=' + cbName
