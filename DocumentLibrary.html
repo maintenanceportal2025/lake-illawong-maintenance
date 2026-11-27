@@ -6,13 +6,19 @@ DOCUMENT INFORMATION:
   File Name:        DocumentLibrary.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V2.6.0
+  Frontend Version: V2.7.0
   Backend:          DocumentLibrary V2.14
   Status:           PRODUCTION
   Created:          March 2026
   Last Modified:    Nov 2026
 
 VERSION HISTORY:
+  V2.7.0 (Nov 2026): Each document in the list (desktop rows and phone cards)
+    now shows "Updated 27 Nov 2026" under its description: the later of the
+    date it was added and the date its file was last replaced (the same date
+    that drives the New marker). Shown for every document so residents can see
+    how current it is, which matters most for undated documents such as the
+    Welcome Pack. Display only; no other change.
   V2.6.0 (Nov 2026): A document whose file has been REPLACED in the Manager
     (Edit > Replace file, backend V2.15) shows as New again, and sits first
     among undated documents. The "New" markers (document rows and category /
@@ -598,6 +604,13 @@ TECHNICAL:
             line-height: 1.3;
         }
 
+        /* V2.7.0: Updated date */
+        .doc-row-updated {
+            color: #94a3b8;
+            font-size: 0.75rem;
+            margin-top: 3px;
+        }
+
         .doc-row-category {
             color: #374151;
             font-size: 0.85rem;
@@ -954,6 +967,16 @@ function isNewDoc(doc) {
     const latest = Math.max(isNaN(a) ? -Infinity : a, isNaN(u) ? -Infinity : u);
     if (latest === -Infinity) return false;
     return isNew(new Date(latest).toISOString());
+}
+
+// V2.7.0: the "Updated" date shown on each document: the later of Date Added
+// and the date the file was replaced. '' when neither is a usable date.
+function updatedLabel(doc) {
+    const a = doc && doc.dateAdded   ? new Date(doc.dateAdded).getTime()   : NaN;
+    const u = doc && doc.lastUpdated ? new Date(doc.lastUpdated).getTime() : NaN;
+    const latest = Math.max(isNaN(a) ? -Infinity : a, isNaN(u) ? -Infinity : u);
+    if (latest === -Infinity) return '';
+    return 'Updated ' + new Date(latest).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function isNew(dateAdded) {
@@ -1368,6 +1391,7 @@ function docRowHTML(doc, typeIcons) {
                     ${isNewDoc(doc) ? '<span class="new-pill">New</span>' : ''}
                 </div>
                 ${doc.description ? `<div class="doc-row-desc">${escHtml(doc.description)}</div>` : ''}
+                ${updatedLabel(doc) ? `<div class="doc-row-updated">${escHtml(updatedLabel(doc))}</div>` : ''}
             </div>
             <div class="doc-row-category">${escHtml(docPath(doc))}</div>
             <div class="doc-row-type">${typeIcons[doc.sourceType] || '📄'}</div>
@@ -1384,6 +1408,7 @@ function mobileItemHTML(doc, typeIcons) {
                 ${isNewDoc(doc) ? '<span class="new-pill">New</span>' : ''}
             </div>
             ${doc.description ? `<div class="mobile-doc-item-desc">${escHtml(doc.description)}</div>` : ''}
+            ${updatedLabel(doc) ? `<div class="doc-row-updated">${escHtml(updatedLabel(doc))}</div>` : ''}
             <div class="mobile-doc-item-meta">
                 <span>${escHtml(docPath(doc))}</span>
                 <span>${typeIcons[doc.sourceType] || '📄'}</span>
