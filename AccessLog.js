@@ -1,12 +1,14 @@
 /**
  * =====================================================================
- * ACCESS LOG V1.1.0 - records that someone opened a module
+ * ACCESS LOG V1.2.0 - records that someone opened a module
  * =====================================================================
  * FILE: AccessLog.js (generic name, no version in the filename; the version
  *       is tracked here. Same convention as ApiClient.js and VerificationModal.js)
  * CREATED: November 2026
  * V1.1.0 (Nov 2026): the detail names the portal in the page's ?portal= address, and the
  *   once-a-day record is kept per detail (see VerificationModal V2.5.0). No other change.
+ * V1.2.0 (Nov 2026): the once-a-day record is written only AFTER the server confirms the row, so a
+ *   lost send is tried again on the next open (see VerificationModal V2.6.0). No other change.
  *
  * PURPOSE: For modules that do NOT use VerificationModal.js (open modules and
  *   the Zone Rep pages that check the old per-portal session). Modules that
@@ -73,14 +75,39 @@
         return null;
     }
 
-    function send(name, unit) {
+    var inFlight = false;
+
+    function today() {
+        var d = new Date();
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function readSeen() {
+        try { return JSON.parse(localStorage.getItem(LOG_KEY) || '{}') || {}; } catch (e) { return {}; }
+    }
+
+    // Record "done for today" -- only called once the server has confirmed the row.
+    function markDone(key) {
+        try {
+            var seen = readSeen(), t = today();
+            Object.keys(seen).forEach(function (k) { if (seen[k] !== t) delete seen[k]; });
+            seen[key] = t;
+            localStorage.setItem(LOG_KEY, JSON.stringify(seen));
+        } catch (e) { /* storage blocked: nothing more to do */ }
+    }
+
+    function send(name, unit, key) {
         var cb = 'alcb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
         var script = document.createElement('script');
         function cleanup() {
+            inFlight = false;
             window[cb] = function () {};
             try { document.head.removeChild(script); } catch (e) {}
         }
-        window[cb] = cleanup;
+        window[cb] = function (r) {
+            if (r && r.success) markDone(key);
+            cleanup();
+        };
         script.onerror = cleanup;
         var q = '?action=logAccess&callback=' + cb +
             '&type=Module-Access' +
@@ -88,25 +115,20 @@
             '&unit=' + encodeURIComponent(unit || '') +
             '&detail=' + encodeURIComponent(moduleName);
         script.src = URL_ + q;
+        inFlight = true;
         document.head.appendChild(script);
+        // no reply at all: free the guard so a later load can try again
+        setTimeout(function () { if (inFlight) { inFlight = false; } }, 15000);
     }
 
     function logOpen() {
         try {
-            if (!ENABLED) return;
+            if (!ENABLED || inFlight) return;
             var p = who();
             var name = p ? p.name : 'Not signed in';
-            var d = new Date();
-            var today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
             var key = name + '|' + moduleName;
-            try {
-                var seen = JSON.parse(localStorage.getItem(LOG_KEY) || '{}') || {};
-                if (seen[key] === today) return;
-                Object.keys(seen).forEach(function (k) { if (seen[k] !== today) delete seen[k]; });
-                seen[key] = today;
-                localStorage.setItem(LOG_KEY, JSON.stringify(seen));
-            } catch (e) { /* storage blocked: log anyway */ }
-            send(name, p ? p.unit : '');
+            if (readSeen()[key] === today()) return;
+            send(name, p ? p.unit : '', key);
         } catch (e) { /* logging must never affect the page */ }
     }
 
