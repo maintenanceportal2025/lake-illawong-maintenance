@@ -1,4 +1,7 @@
 <!--
+  V1.15.0 (Nov 2026, access log): This form needs no sign-in, so it never appeared in the Access Log. It now writes to it, using the existing logAccess action on ManagementCentral (no backend change), sent once through ApiClient and never resent; any failure is ignored and can never delay or block the form. Two kinds of row (type 'Module-Access', as the Module Access rows from VerificationModal V2.4.0): (1) when the form is opened, detail "Report a Problem" -- name and unit come from the shared sign-in if the person happens to be signed in on this device, otherwise the name is "Not signed in" -- at most once per device per day; (2) when a report is successfully submitted, detail "Report a Problem - Submitted", with the name and Location the resident chose on the form. No form behaviour, layout, transport or submit logic changed. Needs System Logs V1.8.0 to label the rows.
+-->
+<!--
   V1.14.0 (Nov 2026, tidy-up): Tidy-up: logo 90px round, title 2.2rem/700 and subtitle 1rem/500 follow the Design System header standard; Back button reads "Back to Portal". The in-flight Back blocking is unchanged. 
   (Older history follows in the header block below.)
 -->
@@ -11,7 +14,7 @@ DOCUMENT INFORMATION:
   File Name:        ResidentSubmissionForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.14.0
+  Frontend Version: V1.15.0
   Backend:          ResidentSubmissionForm V1.7.0
   Status:           PRODUCTION
   Created:          Oct 2025
@@ -1261,8 +1264,51 @@ TECHNICAL:
         // V1.13.0 - true while a submission is in flight (blocks Back to Portal)
         let isSubmitting = false;
 
+        // V1.15.0 - Access Log. Uses ManagementCentral's existing logAccess action.
+        // Fire-and-forget: one write via ApiClient, never resent, errors ignored.
+        const ACCESS_LOG_URL = 'https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec';
+        const ACCESS_LOG_MODULE = 'Report a Problem';
+
+        function sendAccessLog(name, unit, detail) {
+            try {
+                if (typeof ApiClient === 'undefined') return;
+                ApiClient.call(ACCESS_LOG_URL, 'logAccess', {
+                    type: 'Module-Access',
+                    name: name || 'Not signed in',
+                    unit: unit || '',
+                    detail: detail
+                }, { write: true, timeout: 15000 }).catch(function () {});
+            } catch (e) { /* logging must never affect the form */ }
+        }
+
+        // Who is signed in on this device, if anyone (read-only look at the shared sign-in).
+        function getSignedInPerson() {
+            try {
+                const s = JSON.parse(localStorage.getItem('lakeIllawongSession') || 'null');
+                if (s && s.name && s.expiresAt && Date.now() < s.expiresAt) return { name: s.name, unit: s.unit || '' };
+            } catch (e) {}
+            return null;
+        }
+
+        // Log the visit: once per device per calendar day.
+        function logFormOpened() {
+            try {
+                const d = new Date();
+                const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                const who = getSignedInPerson();
+                const key = 'lakeIllawongFormLog_' + ACCESS_LOG_MODULE;
+                const mark = (who ? who.name : '') + '|' + today;
+                try {
+                    if (localStorage.getItem(key) === mark) return;
+                    localStorage.setItem(key, mark);
+                } catch (e) { /* storage blocked: log anyway */ }
+                sendAccessLog(who ? who.name : '', who ? who.unit : '', ACCESS_LOG_MODULE);
+            } catch (e) {}
+        }
+
         // Load dropdowns on page load
         document.addEventListener('DOMContentLoaded', function() {
+            logFormOpened();
             loadDropdownOptions();
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('problemDescription').addEventListener('input', updateSubmitButton);
@@ -1552,6 +1598,8 @@ TECHNICAL:
                 hideLoadingModal();
 
                 if (response.success) {
+                    // V1.15.0 - Access Log: who reported, from which Location
+                    sendAccessLog(formData.reportedBy, formData.unitNumber, ACCESS_LOG_MODULE + ' - Submitted');
                     // Show success modal instead of inline message
                     showSuccessModal(response.friendlyPID, formData.unitNumber);
 
