@@ -1,9 +1,9 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V2.4.0
+ * VERIFICATION MODAL COMPONENT V2.5.0
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 2.4.0
+ * VERSION: 2.5.0
  * CREATED: February 16, 2026
  * LAST UPDATED: November 2026
  * FILE: VerificationModal.js (generic name, no version in the filename)
@@ -14,6 +14,16 @@
  * as ApiClient.js and EventEntryModal.js. The frozen predecessor
  * VerificationModal_V1_0.js keeps the old "1.0" numbering and must not be
  * changed; ALL changes go in this file only.):
+ * - V2.5.0 (Nov 2026, access log names the portal): a module that is opened
+ *   from more than one portal (Desktop Explorer, Periodic Reports, Timeline
+ *   Viewer, Problem Queue and others) was logged only once a day per person,
+ *   so a visit from the second portal was silently skipped (seen 27 Nov: the
+ *   Desktop Explorer row appeared for the Zone Rep Portal but not for the
+ *   Operations Portal). The log detail now carries the portal named in the
+ *   page's ?portal= address, e.g. "Desktop Explorer (Operations Portal)" or
+ *   "Periodic Reports (Zone Rep Portal)", and the once-a-day record is kept
+ *   per detail, so each route is logged. A page opened without ?portal= logs
+ *   its plain module name, exactly as in V2.4.0. Nothing else changed.
  * - V2.4.0 (Nov 2026, module access log): every time a signed-in person
  *   opens a module, one row is added to the AccessLog sheet (type
  *   'Module-Access', name, unit, detail = the module's moduleName, e.g.
@@ -440,12 +450,25 @@ const VerificationModal = (function() {
         });
     }
 
+    // V2.5.0: the log detail names the portal the module was opened from, when
+    // the page was opened with ?portal=... (e.g. "Desktop Explorer (Operations
+    // Portal)"). The once-a-day record is kept per detail, so a module used from
+    // two portals is logged once for each, not once in total.
+    function _logDetail(moduleName) {
+        try {
+            const p = new URLSearchParams(window.location.search).get('portal');
+            if (!p) return moduleName;
+            const labels = { operations: 'Operations Portal', zonerep: 'Zone Rep Portal', residents: 'Resident Portal' };
+            return moduleName + ' (' + (labels[p.toLowerCase()] || p) + ')';
+        } catch (e) { return moduleName; }
+    }
+
     // V2.4.0: record that this person opened this module (once per person,
     // module, device and calendar day). Fire-and-forget; never throws.
     function _logModuleAccess(userData) {
         try {
             if (!USE_ACCESS_LOG || !userData || !userData.name) return;
-            const moduleName = config.moduleName || document.title || 'Module';
+            const moduleName = _logDetail(config.moduleName || document.title || 'Module');
             const d = new Date();
             const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
             const key = userData.name + '|' + moduleName;
