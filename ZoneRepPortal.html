@@ -1,4 +1,7 @@
 <!--
+  V2.8.1 (Nov 2026, access log): Coming back to the portal from a module (Back to Portal) no longer adds another Portal Login row. The portal's own Portal-Login row is now written once per person per browser tab/session: it is recorded only after the server confirms the row, and not repeated while the same person stays in the same tab (a lost send is tried again on the next load). A new tab, a new day on a closed tab, or a different person signing in is logged as before. Nothing else changed (sign-in, role check, cards).
+-->
+<!--
   V2.8.0 (Nov 2026, tidy-up): Tidy-up: logo is now 120px round (cover) with 70px on mobile, title and subtitle follow the Design System header standard. The module cards are now small cards grouped by function (Zone & Residents; Reports & Analysis) with the description shown on hover; the Back to System Hub button sits below the header divider.
   (Older history follows in the header block below.)
 -->
@@ -11,7 +14,7 @@ DOCUMENT INFORMATION:
   File Name:        ZoneRepPortal.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Portal
-  Frontend Version: V2.8.0
+  Frontend Version: V2.8.1
   Status:           PRODUCTION
   Created:          2025
   Last Modified:    Nov 2026
@@ -706,14 +709,20 @@ MODULES (7 active, 1 future):
             console.log(`⚡ Zone Rep Portal V2.3 loaded in ${loadTime} seconds`);
         });
       function logPortalAccess(name, unit) {
-    // Audit write: sent once via ApiClient (never resent); result ignored.
+    // Audit write: sent once via ApiClient (never resent); a lost reply is ignored.
+    // V2.8.1: once per person per browser tab/session. Recorded only after the
+    // server confirms the row, so a lost send is retried on the next load.
     if (typeof ApiClient === 'undefined') return;
+    var logKey = 'lakeIllawongPortalLogged_zonerep';
+    try { if (sessionStorage.getItem(logKey) === (name || '')) return; } catch (e) {}
     ApiClient.call('https://script.google.com/macros/s/AKfycbzVF25ss7kEmhE42Sf-i_vpLIL1FpTe2AjNeb0b8MqP_eBXAxV9ghWcuwe25hdEuqBFjw/exec', 'logAccess', {
         type: 'Portal-Login',
         name: name || '',
         unit: unit || '',
         detail: 'Zone Rep Portal'
-    }, { write: true, timeout: 15000 }).catch(function() {});
+    }, { write: true, timeout: 15000 }).then(function(r) {
+        if (r && r.success) { try { sessionStorage.setItem(logKey, name || ''); } catch (e) {} }
+    }).catch(function() {});
 }
     </script>
 </body>
