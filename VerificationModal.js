@@ -1,9 +1,9 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V2.6.0
+ * VERIFICATION MODAL COMPONENT V2.7.0
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 2.6.0
+ * VERSION: 2.7.0
  * CREATED: February 16, 2026
  * LAST UPDATED: November 2026
  * FILE: VerificationModal.js (generic name, no version in the filename)
@@ -14,6 +14,11 @@
  * as ApiClient.js and EventEntryModal.js. The frozen predecessor
  * VerificationModal_V1_0.js keeps the old "1.0" numbering and must not be
  * changed; ALL changes go in this file only.):
+ * - V2.7.0 (Nov 2026, no double row for the portals): the Operations Portal and
+ *   the Zone Rep Portal write their own Portal-Login row, so this file no
+ *   longer writes a second (Module-Access) row for them. A portal connection is
+ *   now ONE row. Done with the list SELF_LOGGING below; add a module name there
+ *   if another page ever logs itself. Nothing else changed from V2.6.0.
  * - V2.6.0 (Nov 2026, access log retries a lost send): the once-a-day record
  *   was written BEFORE the log row was sent, so one lost request (Apps Script
  *   replies are sometimes dropped; seen 27 Nov on Periodic Reports) silenced
@@ -353,6 +358,7 @@ const VerificationModal = (function() {
     // Nov 2026 (V2.4.0, module access log): see change log. false = no logging.
     const USE_ACCESS_LOG = true;
     const MODULE_LOG_KEY = 'lakeIllawongModuleLog';
+    const SELF_LOGGING = ['Operations Portal', 'Zone Rep Portal'];   // V2.7.0: pages that write their own Portal-Login row
     const logInFlight = {};   // V2.6.0: key -> true while a log send is awaiting its reply
 
     let modalInjected = false;
@@ -479,6 +485,7 @@ const VerificationModal = (function() {
     function _logModuleAccess(userData) {
         try {
             if (!USE_ACCESS_LOG || !userData || !userData.name) return;
+            if (SELF_LOGGING.indexOf(config.moduleName) !== -1) return;
             const moduleName = _logDetail(config.moduleName || document.title || 'Module');
             const d = new Date();
             const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
