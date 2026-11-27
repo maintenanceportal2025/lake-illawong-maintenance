@@ -1,9 +1,9 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V2.5.0
+ * VERIFICATION MODAL COMPONENT V2.6.0
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 2.5.0
+ * VERSION: 2.6.0
  * CREATED: February 16, 2026
  * LAST UPDATED: November 2026
  * FILE: VerificationModal.js (generic name, no version in the filename)
@@ -14,6 +14,16 @@
  * as ApiClient.js and EventEntryModal.js. The frozen predecessor
  * VerificationModal_V1_0.js keeps the old "1.0" numbering and must not be
  * changed; ALL changes go in this file only.):
+ * - V2.6.0 (Nov 2026, access log retries a lost send): the once-a-day record
+ *   was written BEFORE the log row was sent, so one lost request (Apps Script
+ *   replies are sometimes dropped; seen 27 Nov on Periodic Reports) silenced
+ *   that module for the rest of the day on that device. The record is now
+ *   written only AFTER the server confirms the row ({success:true}); a send
+ *   that fails or gets no reply is simply tried again the next time the module
+ *   opens. A send already on its way is not repeated by a second load of the
+ *   same module. Trade-off: if a reply is lost AFTER the row was written, the
+ *   next open adds a second row (a duplicate is better than a gap). Nothing
+ *   else changed from V2.5.0.
  * - V2.5.0 (Nov 2026, access log names the portal): a module that is opened
  *   from more than one portal (Desktop Explorer, Periodic Reports, Timeline
  *   Viewer, Problem Queue and others) was logged only once a day per person,
@@ -343,6 +353,7 @@ const VerificationModal = (function() {
     // Nov 2026 (V2.4.0, module access log): see change log. false = no logging.
     const USE_ACCESS_LOG = true;
     const MODULE_LOG_KEY = 'lakeIllawongModuleLog';
+    const logInFlight = {};   // V2.6.0: key -> true while a log send is awaiting its reply
 
     let modalInjected = false;
     let expiryTimerInterval = null;
@@ -472,21 +483,30 @@ const VerificationModal = (function() {
             const d = new Date();
             const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
             const key = userData.name + '|' + moduleName;
-            let seen = {};
+            // V2.6.0: the once-a-day record is only written AFTER the server has
+            // confirmed the row, so a lost send is tried again on the next open.
+            if (logInFlight[key]) return;   // a send for this module is already on its way
             if (_sharedOk()) {
+                let seen = {};
                 try { seen = JSON.parse(localStorage.getItem(MODULE_LOG_KEY) || '{}') || {}; } catch (e) { seen = {}; }
                 if (seen[key] === today) return;
-                // keep only today's entries so the record stays tiny
-                Object.keys(seen).forEach(function (k) { if (seen[k] !== today) delete seen[k]; });
-                seen[key] = today;
-                try { localStorage.setItem(MODULE_LOG_KEY, JSON.stringify(seen)); } catch (e) {}
             }
+            logInFlight[key] = true;
             _callOnce('logAccess', {
                 type: 'Module-Access',
                 name: userData.name,
                 unit: userData.unit || '',
                 detail: moduleName
-            }, 15000).catch(function () {});
+            }, 15000).then(function (r) {
+                logInFlight[key] = false;
+                if (!r || !r.success || !_sharedOk()) return;
+                let seen = {};
+                try { seen = JSON.parse(localStorage.getItem(MODULE_LOG_KEY) || '{}') || {}; } catch (e) { seen = {}; }
+                // keep only today's entries so the record stays tiny
+                Object.keys(seen).forEach(function (k) { if (seen[k] !== today) delete seen[k]; });
+                seen[key] = today;
+                try { localStorage.setItem(MODULE_LOG_KEY, JSON.stringify(seen)); } catch (e) {}
+            }, function () { logInFlight[key] = false; });
         } catch (e) {
             // logging must never affect the page
         }
