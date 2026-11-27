@@ -11,24 +11,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Submit on Behalf - Lake Illawong</title>
+    <script src="VerificationModal.js"></script>
     <script src="ApiClient.js"></script>
-    <script src="AccessLog.js" data-module="Submit on Behalf"></script>
+    <!--
+    V1.5.0 (Nov 2026, shared sign-in): Brought into line with the other modules (Access Standard). The page used its own check -- "is the old Zone Rep session key present?" -- and sent anyone without it back to the Zone Rep Portal. It now loads VerificationModal.js: a person who is not signed in is asked for a code right here, a person already signed in (any page) goes straight in, and the role check is VerificationModal.checkAccess(['ZoneRep-Portal']) (the Developer tag always passes). Anyone else sees "Access Not Authorised" and the unit list is never requested. The name and zone come from the shared sign-in. The zone is now taken from the ZoneRep-<number> tag only (before, the first tag starting "ZoneRep-" was used, which could have picked up the ZoneRep-Portal tag if it was listed first). The AccessLog.js line added in V1.4.0 is removed: VerificationModal V2.4.0 now writes the Access Log row (detail "Submit on Behalf"). Form, units, submit and wording unchanged. Requires VerificationModal.js V2.4.0 in the same folder.
+    -->
     <!--
     =====================================================================
     LAKE ILLAWONG - ZONE REP SUBMISSION FORM
     =====================================================================
     PURPOSE: Zone Rep problem submission with zone-filtered selection
-    VERSION: V1.4.0
+    VERSION: V1.5.0
     LAST UPDATED: November 2026
     DESIGN SYSTEM: Lake Illawong Unified v2.0
     - Glass-morphism throughout (converted from V1.4 white card design)
     - Back button: portal-back-btn standard
-    AUTHENTICATION: Session guard — portalZoneRepVerified
+    AUTHENTICATION: OTP via VerificationModal.js (V1.5.0); shared session; role ZoneRep-Portal (or Developer). Session key: portalZoneRepVerified
     BACKEND: ResidentSubmissionForm_V1.2.js (getZoneUnits, submitFault)
 
     HOW IT WORKS:
-    1. Session guard checks portalZoneRepVerified
-    2. Zone and name read from session (portalZoneRepVerified_roles / _name)
+    1. VerificationModal sign-in + role check (ZoneRep-Portal)
+    2. Zone and name read from the shared sign-in (roleTags / name)
     3. Units filtered by zone appear in dropdown
     4. Zone Rep name sent as "reportedBy" to backend
     5. Backend finds Zone Rep email in UnitList (Zone Reps ARE residents)
@@ -389,8 +392,19 @@
     </style>
 </head>
 
-<body style="display:none">
-    <div class="container">
+<body>
+    <!-- V1.5.0: shown only if the signed-in person is not allowed in (see handleVerified) -->
+    <div class="container hidden" id="deniedView">
+        <div class="glass-panel" style="text-align: center; max-width: 500px; margin: 60px auto 20px;">
+            <div style="font-size: 3rem; margin-bottom: 16px;">&#128683;</div>
+            <h2 style="font-size: 1.4rem; font-weight: 600; margin-bottom: 12px;">Access Not Authorised</h2>
+            <p style="color: var(--glass-text-muted); margin-bottom: 24px;">Your account does not have access to Submit on Behalf. Please contact management if you believe this is an error.</p>
+            <button class="portal-back-btn" onclick="window.location.href='ZoneRepPortal.html'">&#8592; Back to Portal</button>
+        </div>
+    </div>
+
+    <!-- V1.5.0: hidden until the sign-in has passed -->
+    <div class="container hidden" id="pageContent">
 
         <!-- HEADER -->
         <div class="header">
@@ -459,28 +473,47 @@
     </div>
 
     <script>
-        // SESSION GUARD
-        if (!sessionStorage.getItem('portalZoneRepVerified')) {
-            window.location.href = 'ZoneRepPortal.html';
-        } else {
-            document.body.style.display = '';
-        }
+        // V1.5.0: Access Standard. Nothing is requested until accessOk is true.
+        const ALLOWED_ROLES = ['ZoneRep-Portal'];
+        let accessOk = false;
 
         const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyQZ2m6zSnN0LSD1BTBNn3hK81YextFLU89_DHB8ijjFi8U51Pa8QWlpu52H7AdGaXLcA/exec';
 
         let selectedZoneRepName = '';
         let selectedZone = '';
 
+        // V1.5.0: sign-in first. Runs on every load, including when a shared
+        // session already exists (onSuccess is then called straight away).
         document.addEventListener('DOMContentLoaded', function() {
-            initialiseFromSession();
+            const alreadyVerified = VerificationModal.init({
+                moduleName: 'Submit on Behalf',
+                moduleIcon: '\uD83D\uDCDD',
+                sessionKey: 'portalZoneRepVerified',
+                smsOnly: false,
+                onSuccess: handleVerified
+            });
+            if (!alreadyVerified) VerificationModal.show();
         });
 
-        function initialiseFromSession() {
-            const name = sessionStorage.getItem('portalZoneRepVerified_name') || '';
-            const rolesRaw = sessionStorage.getItem('portalZoneRepVerified_roles') || '[]';
-            const roles = JSON.parse(rolesRaw);
+        function handleVerified(userData) {
+            const r = VerificationModal.checkAccess(ALLOWED_ROLES);
+            if (!r.ok) {
+                accessOk = false;
+                document.getElementById('pageContent').classList.add('hidden');
+                document.getElementById('deniedView').classList.remove('hidden');
+                return;
+            }
+            accessOk = true;
+            document.getElementById('deniedView').classList.add('hidden');
+            document.getElementById('pageContent').classList.remove('hidden');
+            initialiseFromSession(r.user);
+        }
 
-            const zoneRepTag = roles.find(r => r.startsWith('ZoneRep-'));
+        function initialiseFromSession(user) {
+            const name = user.name || '';
+            const roles = user.roleTags || [];
+
+            const zoneRepTag = roles.find(r => /^ZoneRep-\d+$/.test(r));
             if (!zoneRepTag) {
                 document.getElementById('infoText').textContent = 'No zone assignment found. Please contact management.';
                 return;
