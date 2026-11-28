@@ -1,5 +1,9 @@
 <!--
-  V1.7.0 (Nov 2026, tidy-up): Role tag renamed to Management-Central (the disused portal tags are gone from this module). Logo, title and subtitle now follow the Design System header standard. 
+  V1.7.1 (Nov 2026, security step 1.4b): The Developer role tag is no longer offered as a tick box when adding or editing a contact. A person who already holds Developer keeps it when saved. Nothing else changed.
+  (Older history follows in the header block below.)
+-->
+<!--
+  V1.7.0 (Nov 2026, tidy-up): Role tag renamed to Management-Central (the disused portal tags are gone from this module). Logo, title and subtitle now follow the Design System header standard.
   (Older history follows in the header block below.)
 -->
 <!--
@@ -11,13 +15,24 @@ DOCUMENT INFORMATION:
   File Name:        ManagementCentral.html
   System:           Lake Illawong Management Central System
   Component Type:   Staff Module (Admin Portal)
-  Frontend Version: V1.7.0
+  Frontend Version: V1.7.1
   Backend:          ManagementCentral.js
   Status:           PRODUCTION
   Created:          2025
-  Last Modified:    Oct 2026
+  Last Modified:    Nov 2026
 
 VERSION HISTORY:
+  V1.7.1 (Nov 2026): Security step 1.4b (companion to backend V1.5.12, which
+                     refuses a NEW grant of the Developer tag). The Developer
+                     role is hidden from the Community Roles tick boxes in the
+                     Add and Edit Contact form (buildRoleCheckboxesHTML). It is
+                     still set directly in the UnitList sheet, Role Tags column.
+                     Because a hidden tag would otherwise be dropped when the
+                     form is saved, saveResident() now carries Developer through
+                     unchanged when the contact being edited already holds it,
+                     so editing a Developer holder never removes the tag. The
+                     Role Assignment tab (the Roles list itself) is untouched.
+                     Nothing else changed.
   V1.6.0 (Nov 2026): Access control. Management Central adds, edits and deletes
                      contacts, roles and dropdowns, so it is a Restricted
                      module. The old guard only checked that portalAdminVerified
@@ -885,16 +900,16 @@ TECHNICAL:
         flex-direction: column;
         gap: 15px;
     }
-    
+
     .header-text {
         align-items: center;
         text-align: center;
     }
-    
+
     .header-title {
         font-size: 1.8rem;
     }
-    
+
     .logo-image { width: 70px; height: 70px; }
 
     </style>
@@ -917,7 +932,7 @@ TECHNICAL:
         <button class="btn-back-glass" onclick="window.location.href=PORTAL_PAGE" style="display:inline-block; margin-bottom: 16px;">← Back to Portal</button>
 
         <div class="content">
-            
+
 
             <div class="tabs">
                     <button class="tab active" onclick="showTab('contacts')">Contact Management</button>
@@ -1054,7 +1069,7 @@ TECHNICAL:
                     </div>
                 </div>
 
-                
+
             </div>
         </div>
     </div>
@@ -1066,7 +1081,7 @@ TECHNICAL:
                 <h3 class="modal-title">➕ Add New Contact</h3>
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
-            
+
             <div class="modal-body">
                 <form id="residentForm">
                     <div class="form-grid">
@@ -1074,22 +1089,22 @@ TECHNICAL:
                             <label class="form-label">Unit Number</label>
                             <input type="text" class="form-input" id="unitNumber">
                         </div>
-                        
+
                         <div class="form-group">
                             <label class="form-label">Resident Name</label>
                             <input type="text" class="form-input" id="residentName">
                         </div>
-                        
+
                         <div class="form-group">
                             <label class="form-label">Email</label>
                             <input type="email" class="form-input" id="email">
                         </div>
-                        
+
                         <div class="form-group">
                             <label class="form-label">Phone</label>
                             <input type="tel" class="form-input" id="phone">
                         </div>
-                        
+
                         <div class="form-group">
                             <label class="form-label">Zone</label>
                             <select class="form-select" id="zone">
@@ -1101,7 +1116,7 @@ TECHNICAL:
                                 <option value="Zone 5">Zone 5</option>
                             </select>
                         </div>
-                        
+
                         <div class="form-group">
                             <label class="form-label">Stage</label>
                             <select class="form-select" id="stage">
@@ -1109,7 +1124,7 @@ TECHNICAL:
                                 <option value="Stage 2">Stage 2</option>
                             </select>
                         </div>
-                        
+
                         <div class="form-group full-width">
                             <label class="form-label">Community Roles *</label>
                             <div class="role-grid">
@@ -1150,7 +1165,7 @@ TECHNICAL:
                     </div>
                 </form>
             </div>
-            
+
             <div class="modal-footer">
                 <button type="button" onclick="closeModal()" style="background: var(--text-muted); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer;">
                     Cancel
@@ -1258,10 +1273,10 @@ TECHNICAL:
         async function loadContacts() {
             try {
                 showToast('Loading contacts from V1.0 backend...', 'info');
-                
+
                 // CHANGED: getUnitListData instead of getAllContacts
                 const response = await makeAPICall('getUnitListData');
-                
+
                 if (response.success) {
                     // CHANGED: response.residents instead of response.contacts
                     contactsData = response.residents || [];
@@ -1279,9 +1294,9 @@ TECHNICAL:
         async function testBackendConnection() {
             try {
                 showToast('Testing V1.0 backend connection...', 'info');
-                
+
                 const response = await makeAPICall('testConnection');
-                
+
                 if (response.success) {
                     showToast(`✅ V1.0 Backend connected: ${response.message}`, 'success');
                     console.log('Backend info:', response);
@@ -1297,7 +1312,7 @@ TECHNICAL:
         // Display functions - MINIMAL CHANGES
         function displayContacts(contacts) {
             const tableBody = document.getElementById('contactsTableBody');
-            
+
             if (!contacts || contacts.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">No contacts found</td></tr>';
                 return;
@@ -1332,22 +1347,22 @@ TECHNICAL:
         // WORKING V1.1 CRUD functions
         async function showAddResident() {
             console.log('Opening Add Resident Modal...');
-            
+
             // Load available roles from backend
             const availableRoles = await loadAvailableRoles();
-            
+
             currentEditResident = null;
             document.getElementById('residentForm').reset();
-            
+
             // UPDATE THE ROLE-GRID DIV WITH DYNAMIC ROLES
             const roleGrid = document.querySelector('.role-grid');
             if (roleGrid) {
                 roleGrid.innerHTML = buildRoleCheckboxesHTML(availableRoles);
             }
-            
+
             // Update modal title
             document.querySelector('.modal-title').innerHTML = '➕ Add New Contact';
-            
+
             document.getElementById('residentModal').classList.add('show');
         }
 
@@ -1367,7 +1382,18 @@ TECHNICAL:
                 showToast('Please select at least one role', 'warning');
                 return;
             }
-            
+
+            // V1.7.1: Developer is not offered as a tick box, so carry it through
+            // unchanged when the contact being edited already holds it.
+            if (currentEditResident) {
+                const heldHidden = (currentEditResident.roleTags || '').split(',')
+                    .map(r => r.trim())
+                    .filter(r => isHiddenRole(r));
+                heldHidden.forEach(r => {
+                    if (selectedRoles.indexOf(r) === -1) selectedRoles.push(r);
+                });
+            }
+
             const formData = {
                 unitNumber: document.getElementById('unitNumber').value,
                 residentName: document.getElementById('residentName').value,
@@ -1415,14 +1441,14 @@ TECHNICAL:
 
         async function editResident(rowIndex) {
             console.log('Opening Edit Resident Modal for rowIndex:', rowIndex);
-            
+
             // Load available roles from backend
             const availableRoles = await loadAvailableRoles();
-            
+
             const resident = contactsData.find(r => r.rowIndex === rowIndex);
             if (resident) {
                 currentEditResident = resident;
-                
+
                 // Populate form with existing data
                 document.getElementById('unitNumber').value = resident.unitNumber || '';
                 document.getElementById('residentName').value = resident.residentName || '';
@@ -1430,19 +1456,19 @@ TECHNICAL:
                 document.getElementById('phone').value = resident.phone || '';
                 document.getElementById('zone').value = resident.zone || '';
                 document.getElementById('stage').value = resident.stage || 'Stage 1';
-                
+
                 // Parse existing roles
                 const roles = (resident.roleTags || '').split(',').map(r => r.trim());
-                
+
                 // UPDATE THE ROLE-GRID DIV WITH DYNAMIC ROLES AND EXISTING SELECTIONS
                 const roleGrid = document.querySelector('.role-grid');
                 if (roleGrid) {
                     roleGrid.innerHTML = buildRoleCheckboxesHTML(availableRoles, roles);
                 }
-                
+
                 // Update modal title
                 document.querySelector('.modal-title').innerHTML = '✏️ Edit Contact';
-                
+
                 document.getElementById('residentModal').classList.add('show');
             }
         }
@@ -1478,7 +1504,7 @@ TECHNICAL:
     let filtered = contactsData;
 
     if (searchTerm) {
-        filtered = filtered.filter(contact => 
+        filtered = filtered.filter(contact =>
             (contact.residentName || '').toLowerCase().includes(searchTerm) ||
             (contact.unitNumber || '').toLowerCase().includes(searchTerm) ||
             (contact.email || '').toLowerCase().includes(searchTerm) ||
@@ -1502,21 +1528,21 @@ TECHNICAL:
 
 
 
-        // Utility functions 
+        // Utility functions
         function showTab(tabName) {
             // Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
-            
+
             // Remove active from all tabs
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
-            
+
             // Show selected tab content
             document.getElementById(tabName + '-tab').classList.add('active');
-            
+
             // Add active to selected tab
             event.target.classList.add('active');
         }
@@ -1526,7 +1552,7 @@ TECHNICAL:
             toast.className = `toast ${type}`;
             toast.textContent = message;
             document.body.appendChild(toast);
-            
+
             setTimeout(() => toast.classList.add('show'), 100);
             setTimeout(() => {
                 toast.classList.remove('show');
@@ -1550,12 +1576,12 @@ TECHNICAL:
                 console.log('Using cached roles:', cachedRoles);
                 return cachedRoles;
             }
-            
+
             console.log('Loading available roles from Roles TAB...');
-            
+
             try {
                 const response = await makeAPICall('getRoles', {});
-                
+
                 if (response.success) {
                     console.log(`Loaded ${response.roles.length} roles:`, response.roles);
                     cachedRoles = response.roles; // Cache the result
@@ -1570,18 +1596,26 @@ TECHNICAL:
             }
         }
 
+        // V1.7.1: tags that are never offered as tick boxes (they are set directly
+        // in the UnitList sheet). Matching is exact and case-insensitive.
+        const HIDDEN_ROLES = ['developer'];
+        function isHiddenRole(name) {
+            return HIDDEN_ROLES.indexOf(String(name || '').trim().toLowerCase()) !== -1;
+        }
+
         // 2. ADD THIS FUNCTION TO BUILD ROLE CHECKBOXES (MATCHES YOUR EXACT HTML STRUCTURE)
 function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
     console.log('Building role checkboxes for:', availableRoles.length, 'roles');
-    
+
     let checkboxesHTML = '';
-    
+
     availableRoles.forEach(role => {
         // Extract role name from the object (role.name instead of role)
         const roleName = role.name || role;
+        if (isHiddenRole(roleName)) return;   // V1.7.1: Developer is not offered here
         const isChecked = selectedRoles.includes(roleName) || (roleName === 'Resident' && selectedRoles.length === 0);
         const checkedAttr = isChecked ? 'checked' : '';
-        
+
         checkboxesHTML += `
             <label class="role-option">
                 <input type="checkbox" name="roles" value="${roleName}" ${checkedAttr}>
@@ -1589,7 +1623,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
             </label>
         `;
     });
-    
+
     return checkboxesHTML;
 }
 
@@ -1600,7 +1634,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         // EXISTING DISPLAY FUNCTIONS (UPDATED WITH FIXED DELETE CALLS)
         function displayCategories() {
             const categoriesList = document.getElementById('categoriesList');
-            
+
             if (!categoriesData || categoriesData.length === 0) {
                 categoriesList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">No categories found</div>';
                 return;
@@ -1624,10 +1658,10 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         function displaySubCategories() {
     const subCategoriesList = document.getElementById('subCategoriesList');
-    
+
     // FIXED: No longer references categorySelector - displays all sub-categories
     const filteredSubCategories = subCategoriesData;
-    
+
     if (!filteredSubCategories || filteredSubCategories.length === 0) {
         subCategoriesList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">No sub-categories found</div>';
         return;
@@ -1644,7 +1678,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
     `).join('');
 }
 
-        
+
 
         function loadSubCategories() {
             displaySubCategories();
@@ -1653,7 +1687,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         async function loadDropdowns() {
     try {
         showToast('Loading all dropdown data...', 'info');
-        
+
         // Load categories
         const categoriesResponse = await makeAPICall('getCategories');
         if (categoriesResponse.success) {
@@ -1663,7 +1697,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         } else {
             throw new Error(categoriesResponse.error || 'Failed to load categories');
         }
-        
+
         // Load sub-categories
         const subCategoriesResponse = await makeAPICall('getSubCategories');
         if (subCategoriesResponse.success) {
@@ -1672,7 +1706,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         } else {
             throw new Error(subCategoriesResponse.error || 'Failed to load sub-categories');
         }
-        
+
         // Load assigned by
         const assignedByResponse = await makeAPICall('getAssignedBy');
         if (assignedByResponse.success) {
@@ -1681,9 +1715,9 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         } else {
             throw new Error(assignedByResponse.error || 'Failed to load assigned by');
         }
-        
+
         showToast('✅ All dropdown data loaded successfully', 'success');
-        
+
     } catch (error) {
         console.error('Load dropdowns error:', error);
         showToast('❌ Failed to load dropdown data: ' + error.message, 'error');
@@ -1692,16 +1726,16 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function addCategory() {
             const categoryName = document.getElementById('newCategoryInput').value.trim();
-            
+
             if (!categoryName) {
                 showToast('Please enter a category name', 'warning');
                 return;
             }
-            
+
             try {
                 showToast('Adding category...', 'info');
                 const response = await makeAPICall('addCategory', { category: categoryName });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Category added successfully', 'success');
                     document.getElementById('newCategoryInput').value = '';
@@ -1717,16 +1751,16 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function addSubCategory() {
             const subCategoryName = document.getElementById('newSubCategoryInput').value.trim();
-            
+
             if (!subCategoryName) {
                 showToast('Please enter a sub-category name', 'warning');
                 return;
             }
-            
+
             try {
                 showToast('Adding sub-category...', 'info');
                 const response = await makeAPICall('addSubCategory', { subCategory: subCategoryName });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Sub-category added successfully', 'success');
                     document.getElementById('newSubCategoryInput').value = '';
@@ -1742,17 +1776,17 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function editCategory(id, currentName) {
             const newName = prompt('Edit category name:', currentName);
-            
+
             if (newName === null) return;
             if (!newName.trim()) {
                 showToast('Category name cannot be empty', 'warning');
                 return;
             }
-            
+
             try {
                 showToast('Updating category...', 'info');
                 const response = await makeAPICall('updateCategory', { id: id, name: newName });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Category updated successfully', 'success');
                     await loadDropdowns();
@@ -1767,17 +1801,17 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function editSubCategory(id, currentName, categoryId) {
             const newName = prompt('Edit sub-category name:', currentName);
-            
+
             if (newName === null) return;
             if (!newName.trim()) {
                 showToast('Sub-category name cannot be empty', 'warning');
                 return;
             }
-            
+
             try {
                 showToast('Updating sub-category...', 'info');
                 const response = await makeAPICall('updateSubCategory', { id: id, name: newName });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Sub-category updated successfully', 'success');
                     await loadDropdowns();
@@ -1792,36 +1826,36 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function deleteCategoryFrontend(categoryId) {
             console.log('Delete category called with:', categoryId, typeof categoryId);
-            
+
             // Check if categoryId is undefined or invalid
             if (!categoryId || categoryId === 'undefined' || categoryId === 'null') {
                 showToast('Error: No valid category ID provided', 'error');
                 console.error('Invalid category ID:', categoryId);
                 return;
             }
-            
+
             // Convert to integer if it's a string
             const idToSend = typeof categoryId === 'string' ? parseInt(categoryId) : categoryId;
-            
+
             // Check if conversion resulted in a valid number
             if (isNaN(idToSend)) {
                 showToast('Error: Invalid category ID format', 'error');
                 console.error('Category ID is not a number:', categoryId);
                 return;
             }
-            
+
             // Find the category name for confirmation message
             const category = categoriesData.find(cat => cat.id == idToSend);
             const categoryName = category ? category.name : 'this category';
-            
+
             if (!confirm(`Are you sure you want to delete "${categoryName}"?`)) return;
-            
+
             try {
                 showToast('Deleting category...', 'info');
                 console.log('Sending to backend - categoryId:', idToSend);
-                
+
                 const response = await makeAPICall('deleteCategory', { categoryId: idToSend });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Category deleted successfully', 'success');
                     loadDropdowns(); // Reload to show changes
@@ -1836,36 +1870,36 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function deleteSubCategoryFrontend(subCategoryId) {
             console.log('Delete subcategory called with:', subCategoryId, typeof subCategoryId);
-            
+
             // Check if subCategoryId is undefined or invalid
             if (!subCategoryId || subCategoryId === 'undefined' || subCategoryId === 'null') {
                 showToast('Error: No valid subcategory ID provided', 'error');
                 console.error('Invalid subcategory ID:', subCategoryId);
                 return;
             }
-            
+
             // Convert to integer if it's a string
             const idToSend = typeof subCategoryId === 'string' ? parseInt(subCategoryId) : subCategoryId;
-            
+
             // Check if conversion resulted in a valid number
             if (isNaN(idToSend)) {
                 showToast('Error: Invalid subcategory ID format', 'error');
                 console.error('Subcategory ID is not a number:', subCategoryId);
                 return;
             }
-            
+
             // Find the subcategory name for confirmation message
             const subCategory = subCategoriesData.find(sub => sub.id == idToSend);
             const subCategoryName = subCategory ? subCategory.name : 'this sub-category';
-            
+
             if (!confirm(`Are you sure you want to delete "${subCategoryName}"?`)) return;
-            
+
             try {
                 showToast('Deleting sub-category...', 'info');
                 console.log('Sending to backend - subCategoryId:', idToSend);
-                
+
                 const response = await makeAPICall('deleteSubCategory', { subCategoryId: idToSend });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Sub-category deleted successfully', 'success');
                     loadDropdowns(); // Reload to show changes
@@ -1881,16 +1915,16 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         // ================== ASSIGNED BY FUNCTIONS =================
         async function addAssignedBy() {
             const assignedByName = document.getElementById('newAssignedByInput').value.trim();
-            
+
             if (!assignedByName) {
                 showToast('Please enter an assigned by name', 'warning');
                 return;
             }
-            
+
             try {
                 showToast('Adding assigned by...', 'info');
                 const response = await makeAPICall('addAssignedBy', { assignedBy: assignedByName });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Assigned by added successfully', 'success');
                     document.getElementById('newAssignedByInput').value = '';
@@ -1921,7 +1955,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         function displayAssignedBy() {
             const assignedByList = document.getElementById('assignedByList');
-            
+
             if (!assignedByData || assignedByData.length === 0) {
                 assignedByList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">No assigned by entries found</div>';
                 return;
@@ -1944,36 +1978,36 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function deleteAssignedByFrontend(assignedById) {
             console.log('Delete assigned by called with:', assignedById, typeof assignedById);
-            
+
             // Check if assignedById is undefined or invalid
             if (!assignedById || assignedById === 'undefined' || assignedById === 'null') {
                 showToast('Error: No valid assigned by ID provided', 'error');
                 console.error('Invalid assigned by ID:', assignedById);
                 return;
             }
-            
+
             // Convert to integer if it's a string
             const idToSend = typeof assignedById === 'string' ? parseInt(assignedById) : assignedById;
-            
+
             // Check if conversion resulted in a valid number
             if (isNaN(idToSend)) {
                 showToast('Error: Invalid assigned by ID format', 'error');
                 console.error('Assigned by ID is not a number:', assignedById);
                 return;
             }
-            
+
             // Find the assigned by name for confirmation message
             const assignedByItem = assignedByData.find(item => item.id == idToSend);
             const assignedByName = assignedByItem ? assignedByItem.name : 'this assigned by entry';
-            
+
             if (!confirm(`Are you sure you want to delete "${assignedByName}"?`)) return;
-            
+
             try {
                 showToast('Deleting assigned by...', 'info');
                 console.log('Sending to backend - assignedById:', idToSend);
-                
+
                 const response = await makeAPICall('deleteAssignedBy', { assignedById: idToSend });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Assigned by deleted successfully', 'success');
                     await loadAssignedBy(); // Reload to show changes
@@ -1988,17 +2022,17 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function editAssignedBy(id, currentName) {
             const newName = prompt('Edit assigned by name:', currentName);
-            
+
             if (newName === null) return;
             if (!newName.trim()) {
                 showToast('Assigned by name cannot be empty', 'warning');
                 return;
             }
-            
+
             try {
                 showToast('Updating assigned by...', 'info');
                 const response = await makeAPICall('updateAssignedBy', { id: id, name: newName });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Assigned by updated successfully', 'success');
                     await loadAssignedBy();
@@ -2018,7 +2052,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
             try {
                 showToast('Loading roles...', 'info');
                 const response = await makeAPICall('getRoles');
-                
+
                 if (response.success) {
                     rolesData = response.roles || [];
                     displayRoles();
@@ -2034,7 +2068,7 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         function displayRoles() {
             const rolesList = document.getElementById('rolesList');
-            
+
             if (!rolesData || rolesData.length === 0) {
                 rolesList.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">No roles found</div>';
                 return;
@@ -2057,16 +2091,16 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
 
         async function addRole() {
             const roleName = document.getElementById('newRoleInput').value.trim();
-            
+
             if (!roleName) {
                 showToast('Please enter a role name', 'warning');
                 return;
             }
-            
+
             try {
                 showToast('Adding role...', 'info');
                 const response = await makeAPICall('addRole', { role: roleName });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Role added successfully', 'success');
                     document.getElementById('newRoleInput').value = '';
@@ -2083,13 +2117,13 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         async function deleteRoleFrontend(roleId) {
             const role = rolesData.find(r => r.id == roleId);
             if (!role) return;
-            
+
             if (!confirm(`Delete role "${role.name}"?`)) return;
-            
+
             try {
                 showToast('Deleting role...', 'info');
                 const response = await makeAPICall('deleteRole', { roleId: roleId });
-                
+
                 if (response.success) {
                     showToast(response.message || 'Role deleted successfully', 'success');
                     await loadRoles();
@@ -2105,11 +2139,11 @@ function buildRoleCheckboxesHTML(availableRoles, selectedRoles = []) {
         async function editRole(id, currentName) {
             const newName = prompt('Edit role name:', currentName);
             if (!newName || newName.trim() === '') return;
-            
+
             try {
                 showToast('Updating role...', 'info');
                 const response = await makeAPICall('updateRole', { id: id, name: newName.trim() });
-                
+
                 if (response.success) {
                     showToast('Role updated successfully', 'success');
                     await loadRoles();
@@ -2173,7 +2207,7 @@ function filterByStage(stage) {
                     closeModal();
                 }
             };
-            
+
             // Keyboard shortcuts
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') {
