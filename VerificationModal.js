@@ -1,9 +1,9 @@
 /**
  * =====================================================================
- * VERIFICATION MODAL COMPONENT V2.7.0
+ * VERIFICATION MODAL COMPONENT V2.7.2
  * =====================================================================
  * PURPOSE: Reusable OTP verification for all Lake Illawong modules
- * VERSION: 2.7.0
+ * VERSION: 2.7.2
  * CREATED: February 16, 2026
  * LAST UPDATED: November 2026
  * FILE: VerificationModal.js (generic name, no version in the filename)
@@ -14,6 +14,23 @@
  * as ApiClient.js and EventEntryModal.js. The frozen predecessor
  * VerificationModal_V1_0.js keeps the old "1.0" numbering and must not be
  * changed; ALL changes go in this file only.):
+ * - V2.7.2 (Nov 2026, wrong code / Resend code fix; companion to ManagementCentral
+ *   V1.5.14. An earlier build, V2.7.1, was never put live): found by Tony's testing of the
+ *   new attempt limit (28 Nov). (1) After ANY rejected code (wrong, expired or
+ *   'Too many incorrect attempts') the code box is cleared back to its empty
+ *   state, the error message stays, and the cursor is put back in the box.
+ *   (2) Pressing Resend code went back to step 1 but left the code screen
+ *   untouched, so after the new code was sent the screen came back showing the
+ *   OLD code and the OLD error. A new helper, _resetStep2(), clears the code
+ *   box, hides the error and re-disables Verify; it runs when Resend code is
+ *   pressed and again just before the code screen is shown after a send.
+ *   (3) Verify is re-enabled after a failed attempt only if the box still holds
+ *   6 digits. (4) _startResendTimer() rebuilds the button label first; before,
+ *   a second countdown silently did not run once the first had finished,
+ *   because the label (and the seconds element inside it) had been replaced.
+ *   The 60-second Resend lock is NOT changed. No change to sessions, sending,
+ *   verifying, the relay, the access log or the API.
+ *   Nothing else changed from V2.7.0.
  * - V2.7.0 (Nov 2026, no double row for the portals): the Operations Portal and
  *   the Zone Rep Portal write their own Portal-Login row, so this file no
  *   longer writes a second (Module-Access) row for them. A portal connection is
@@ -1194,6 +1211,17 @@ const VerificationModal = (function() {
         document.getElementById('vmSendBtn').disabled = !identifier;
     }
 
+    // V2.7.2: clear the code screen (step 2) -- code box empty, error hidden,
+    // Verify disabled. Used by Resend code and just before step 2 is shown.
+    function _resetStep2() {
+        const codeInputEl = document.getElementById('vmCodeInput');
+        const error2El    = document.getElementById('vmError2');
+        const verifyBtnEl = document.getElementById('vmVerifyBtn');
+        if (codeInputEl) codeInputEl.value = '';
+        if (error2El) { error2El.classList.add('hidden'); error2El.textContent = ''; }
+        if (verifyBtnEl) { verifyBtnEl.disabled = true; verifyBtnEl.textContent = 'Verify →'; }
+    }
+
     // Send verification code
     async function _sendCode() {
         const method = document.querySelector('input[name="vmMethod"]:checked').value;
@@ -1226,7 +1254,8 @@ const VerificationModal = (function() {
             if (outcome.success) {
                 verificationData = { method, identifier, verificationId: outcome.verificationId };
 
-                // Show step 2
+                // Show step 2 (V2.7.2: always with an empty code box and no old error)
+                _resetStep2();
                 document.getElementById('vmStep1').classList.remove('active');
                 document.getElementById('vmStep2').classList.add('active');
 
@@ -1417,6 +1446,14 @@ const VerificationModal = (function() {
             } else {
                 errorEl.textContent = response.error || 'Invalid or expired code';
                 errorEl.classList.remove('hidden');
+
+                // V2.7.2: a rejected code is never left in the box -- clear it back to
+                // the empty state (placeholder) and put the cursor back in it
+                const codeEl = document.getElementById('vmCodeInput');
+                if (codeEl) {
+                    codeEl.value = '';
+                    try { codeEl.focus(); } catch (e) {}
+                }
             }
         } catch (error) {
             console.error('Verify code error:', error);
@@ -1424,13 +1461,16 @@ const VerificationModal = (function() {
             errorEl.classList.remove('hidden');
         } finally {
             clearTimeout(slowTimer);
-            btn.disabled = false;
+            // V2.7.2: only re-enable Verify if the box still holds 6 digits
+            const codeNow = document.getElementById('vmCodeInput');
+            btn.disabled = !codeNow || codeNow.value.length !== 6;
             btn.textContent = 'Verify →';
         }
     }
 
     // Resend code
     function _resend() {
+        _resetStep2();   // V2.7.2: do not carry the old code or error over
         document.getElementById('vmStep2').classList.remove('active');
         document.getElementById('vmStep1').classList.add('active');
     }
@@ -1488,9 +1528,15 @@ const VerificationModal = (function() {
 
         let seconds = 60;
         const btn = document.getElementById('vmResendBtn');
+
+        if (!btn) return; // Element doesn't exist
+
+        // V2.7.2: rebuild the label first -- once a countdown has finished (or
+        // Resend was enabled early) the label is plain text with no seconds element
+        btn.innerHTML = 'Resend code (<span id="vmResendTimer">60</span>s)';
         const timer = document.getElementById('vmResendTimer');
 
-        if (!btn || !timer) return; // Elements don't exist
+        if (!timer) return;
 
         btn.disabled = true;
 
