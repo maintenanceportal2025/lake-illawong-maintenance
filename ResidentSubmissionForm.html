@@ -1,4 +1,7 @@
 <!--
+  V1.15.1 (Nov 2026, access log): The "opened" row is now marked as done for the day only after the server confirms it. Before, the mark was saved before sending, so one lost send meant no row for that device for the rest of the day (the same fault found and fixed in the other modules). A lost send is now tried again on the next open. The Submitted row and everything else are unchanged.
+-->
+<!--
   V1.15.0 (Nov 2026, access log): This form needs no sign-in, so it never appeared in the Access Log. It now writes to it, using the existing logAccess action on ManagementCentral (no backend change), sent once through ApiClient and never resent; any failure is ignored and can never delay or block the form. Two kinds of row (type 'Module-Access', as the Module Access rows from VerificationModal V2.4.0): (1) when the form is opened, detail "Report a Problem" -- name and unit come from the shared sign-in if the person happens to be signed in on this device, otherwise the name is "Not signed in" -- at most once per device per day; (2) when a report is successfully submitted, detail "Report a Problem - Submitted", with the name and Location the resident chose on the form. No form behaviour, layout, transport or submit logic changed. Needs System Logs V1.8.0 to label the rows.
 -->
 <!--
@@ -14,7 +17,7 @@ DOCUMENT INFORMATION:
   File Name:        ResidentSubmissionForm.html
   System:           Lake Illawong Management Central System
   Component Type:   Resident Module
-  Frontend Version: V1.15.0
+  Frontend Version: V1.15.1
   Backend:          ResidentSubmissionForm V1.7.0
   Status:           PRODUCTION
   Created:          Oct 2025
@@ -1272,13 +1275,14 @@ TECHNICAL:
         function sendAccessLog(name, unit, detail) {
             try {
                 if (typeof ApiClient === 'undefined') return;
-                ApiClient.call(ACCESS_LOG_URL, 'logAccess', {
+                return ApiClient.call(ACCESS_LOG_URL, 'logAccess', {
                     type: 'Module-Access',
                     name: name || 'Not signed in',
                     unit: unit || '',
                     detail: detail
-                }, { write: true, timeout: 15000 }).catch(function () {});
+                }, { write: true, timeout: 15000 });
             } catch (e) { /* logging must never affect the form */ }
+            return null;
         }
 
         // Who is signed in on this device, if anyone (read-only look at the shared sign-in).
@@ -1290,7 +1294,8 @@ TECHNICAL:
             return null;
         }
 
-        // Log the visit: once per device per calendar day.
+        let openLogInFlight = false;
+        // Log the visit: once per device per calendar day (marked done only after the server confirms).
         function logFormOpened() {
             try {
                 const d = new Date();
@@ -1298,11 +1303,18 @@ TECHNICAL:
                 const who = getSignedInPerson();
                 const key = 'lakeIllawongFormLog_' + ACCESS_LOG_MODULE;
                 const mark = (who ? who.name : '') + '|' + today;
+                if (openLogInFlight) return;
                 try {
                     if (localStorage.getItem(key) === mark) return;
-                    localStorage.setItem(key, mark);
                 } catch (e) { /* storage blocked: log anyway */ }
-                sendAccessLog(who ? who.name : '', who ? who.unit : '', ACCESS_LOG_MODULE);
+                // V1.15.1: mark the day as done only after the server confirms the row
+                openLogInFlight = true;
+                const p = sendAccessLog(who ? who.name : '', who ? who.unit : '', ACCESS_LOG_MODULE);
+                if (!p || !p.then) { openLogInFlight = false; return; }
+                p.then(function (r) {
+                    openLogInFlight = false;
+                    if (r && r.success) { try { localStorage.setItem(key, mark); } catch (e) {} }
+                }, function () { openLogInFlight = false; });
             } catch (e) {}
         }
 
